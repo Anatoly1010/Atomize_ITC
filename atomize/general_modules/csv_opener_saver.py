@@ -20,11 +20,11 @@ class Saver_Opener():
 
         # for open directory specified in the config file
         #path_to_main = os.path.abspath(os.getcwd())
-        path_to_main = os.path.abspath(os.path.join(os.path.dirname( __file__ ), '..'))
+        self.path_to_main = os.path.abspath(os.path.join(os.path.dirname( __file__ ), '..'))
         #os.path.abspath(os.path.join(os.path.dirname( __file__ ), '..', 'templates'))
         # configuration data
         #path_config_file = os.path.join(path_to_main,'atomize/config.ini')
-        path_config_file = os.path.join(path_to_main,'config.ini')
+        path_config_file = os.path.join(self.path_to_main,'config.ini')
         config = configparser.ConfigParser()
         config.read(path_config_file)
         # directories
@@ -86,7 +86,7 @@ class Saver_Opener():
             QTimer.singleShot(50, self.app.quit)
             self.app.exec()
 
-            np.savetxt(file_path, np.transpose(data), fmt = '%.4e', delimiter = ',', newline = '\n', header = header, footer = '', comments = '#', encoding = None)
+            np.savetxt(file_path, np.transpose(data), fmt = '%.5e', delimiter = ',', newline = '\n', header = header, footer = '', comments = '#', encoding = None)
         
         elif self.test_flag == 'test':
             pass
@@ -178,7 +178,7 @@ class Saver_Opener():
             QTimer.singleShot(50, self.app.quit)
             self.app.exec()
 
-            np.savetxt(file_path, data, fmt = '%.4e', delimiter = ',', newline = '\n', header = header, footer = '', comments = '#', encoding = None)
+            np.savetxt(file_path, data, fmt = '%.5e', delimiter = ',', newline = '\n', header = header, footer = '', comments = '#', encoding = None)
         
         elif self.test_flag == 'test':
             pass
@@ -220,7 +220,7 @@ class Saver_Opener():
     def save_header(self, filename, header = '', mode = 'w'):
         if self.test_flag != 'test':
             file_for_save = open(filename, mode)
-            np.savetxt(file_for_save, [], fmt='%.4e', delimiter=',', \
+            np.savetxt(file_for_save, [], fmt='%.5e', delimiter=',', \
                                         newline='\n', header=header, footer='', comments='# ', encoding=None)
             file_for_save.close()
         elif self.test_flag == 'test':
@@ -231,7 +231,7 @@ class Saver_Opener():
         if self.test_flag != 'test':
             if len( data.shape ) == 2:
                 file_for_save = open(filename, mode)
-                np.savetxt(file_for_save, data, fmt='%.4e', delimiter=',', \
+                np.savetxt(file_for_save, data, fmt='%.5e', delimiter=',', \
                                             newline='\n', header=header, footer='', comments='# ', encoding=None)
                 file_for_save.close()
 
@@ -240,13 +240,13 @@ class Saver_Opener():
                     if i == 0:
                         file_for_save_i = filename
                         file_for_save = open(file_for_save_i, mode)
-                        np.savetxt(file_for_save, np.transpose( data[i] ), fmt='%.4e', delimiter=',', \
+                        np.savetxt(file_for_save, np.transpose( data[i] ), fmt='%.5e', delimiter=',', \
                                                     newline='\n', header=header, footer='', comments='# ', encoding=None)
                         file_for_save.close()
                     else:
-                        file_for_save_i = filename.split('.csv')[0] + '_' + str(i)  + '.csv'
+                        file_for_save_i = filename.split('.csv')[0] + '_' + str(i) + '.csv'
                         file_for_save = open(file_for_save_i, mode)
-                        np.savetxt(file_for_save, np.transpose( data[i] ), fmt='%.4e', delimiter=',', \
+                        np.savetxt(file_for_save, np.transpose( data[i] ), fmt='%.5e', delimiter=',', \
                                                     newline='\n', header=header, footer='', comments='# ', encoding=None)
                         file_for_save.close()
 
