@@ -28,9 +28,9 @@ from PyQt6 import QtWidgets, uic, QtCore, QtGui
 from pyqtgraph.dockarea import DockArea
 import atomize.main.messenger_socket_server as socket_server
 ###AWG
-#sys.path.append('/home/pulseepr/Sources/AWG/Examples/python')
-#from pyspcm import *
-#from spcm_tools import *
+sys.path.append('/home/pulseepr/Sources/AWG/Examples/python')
+from pyspcm import *
+from spcm_tools import *
 
 class MainWindow(QtWidgets.QMainWindow):
     """
@@ -254,8 +254,9 @@ class MainWindow(QtWidgets.QMainWindow):
             scat = meta['Scatter']
             taxis = meta['TimeAxis']
             verline = meta['Vline']
+            tex = meta['value']
             pw.plot(arr[0], arr[1], parametric=True, name=label, xname=xnam, xscale =xscal,\
-             yname=ynam, yscale =yscal, scatter=scat, timeaxis=taxis, vline=verline)
+             yname=ynam, yscale =yscal, scatter=scat, timeaxis=taxis, vline=verline, text=tex)
 
 
         elif operation == 'plot_z':
@@ -266,15 +267,22 @@ class MainWindow(QtWidgets.QMainWindow):
             yscal = meta['Y']
             znam = meta['Zname']
             zscal = meta['Z']
+            tex = meta['value']
             if start_step is not None:
                 (x0, dx), (y0, dy) = start_step
                 pw.setAxisLabels(xname=xnam, xscale =xscal, yname=ynam, yscale =yscal,\
                 zname=znam, zscale =zscal)
                 pw.setImage(arr, pos=(x0, y0), scale=(dx, dy)) # , axes={'y':0, 'x':1}
+                # Graph title
+                if tex != '':
+                    pw.setTitle(meta['value'])
             else:
                 pw.setAxisLabels(xname=xnam, xscale =xscal, yname=ynam, yscale =yscal,\
                  zname=znam, zscale =zscal)
                 pw.setImage(arr) # , axes={'y':0, 'x':1}
+                # Graph title
+                if tex != '':
+                    pw.setTitle(meta['value'])
 
 
         elif operation == 'append_y':
