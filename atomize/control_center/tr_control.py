@@ -304,6 +304,7 @@ class Worker(QWidget):
         import atomize.general_modules.csv_opener_saver_tk_kinter as openfile
 
         file_handler = openfile.Saver_Opener()
+        process = 'None'
         ##ag53131a = ag.Agilent_53131a()
         ##ls335 = ls.Lakeshore_335()
         ##a2012 = key.Keysight_2000_Xseries()
@@ -499,12 +500,12 @@ class Worker(QWidget):
 
                     #start_time = time.time()
                     if i % p10 == 0:
-                        general.plot_2d( p2, data,  xname='Time', start_step=( (0, 1), (START_FIELD, FIELD_STEP) ),\
-                            xscale='s', yname='Magnetic Field', yscale='G', zname='Intensity', zscale='V')
-                        general.text_label( p2, "Current Scan / Field: ", str(j) + ' / '+ str(field) )
+                        process = general.plot_2d( p2, data,  xname='Time', start_step=( (0, 1), (START_FIELD, FIELD_STEP) ),\
+                            xscale='s', yname='Magnetic Field', yscale='G', zname='Intensity', zscale='V', pr = process, \
+                            text = 'Current Scan / Field: ' + str(j) + ' / ' + str(field))
                         if p9 == 3:
-                            general.plot_1d( p2 + ' Pulse', np.arange( len(y3) ), y3, xname = 'Time',\
-                                xscale = 'Arb. U.', yname = 'Signal Intensity', yscale = 'V')
+                            process = general.plot_1d( p2 + ' Pulse', np.arange( len(y3) ), y3, xname = 'Time',\
+                                xscale = 'Arb. U.', yname = 'Signal Intensity', yscale = 'V', pr = process )
                     else:
                         pass
 

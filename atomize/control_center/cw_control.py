@@ -298,6 +298,7 @@ class Worker(QWidget):
         FIELD_STEP = p5
         initialization_step = 10
         SCANS = p7
+        process = 'None'
 
         points = int( (END_FIELD - START_FIELD) / FIELD_STEP ) + 1
         data = np.zeros(points)
@@ -338,9 +339,9 @@ class Worker(QWidget):
                     data[i] = ( data[i] * (j - 1) + random.random() ) / j
 
                     if i % p10 == 0:
-                        general.plot_1d( p2, x_axis, data, xname = 'Magnetic Field',\
-                            xscale = 'G', yname = 'Signal Intensity', yscale = 'V', label = p1 )
-                        general.text_label( p2, "Scan / Field: ", str(j) + ' / '+ str(field) )
+                        process = general.plot_1d( p2, x_axis, data, xname = 'Magnetic Field',\
+                            xscale = 'G', yname = 'Signal Intensity', yscale = 'V', label = p1, pr = process, \
+                            text = 'Scan / Field: ' + str(j) + ' / ' + str(field) )
                     else:
                         pass
 
