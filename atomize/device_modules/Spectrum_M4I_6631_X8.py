@@ -6,10 +6,10 @@ import sys
 import gc
 import random
 ###AWG
-##sys.path.append('/home/pulseepr/Sources/AWG/Examples/python')
+sys.path.append('/home/pulseepr/Sources/AWG/Examples/python')
 ###sys.path.append('/home/anatoly/AWG/spcm_examples/python')
 #sys.path.append('/home/anatoly/awg_files/python')
-sys.path.append('C:/Users/User/Desktop/Examples/python')
+##sys.path.append('C:/Users/User/Desktop/Examples/python')
 from math import sin, pi, exp, log2
 from itertools import groupby, chain
 from copy import deepcopy
