@@ -410,7 +410,9 @@ class MainWindow(QtWidgets.QMainWindow):
         # set tab distance
         self.textEdit.setTabStopDistance( QtGui.QFontMetricsF(self.textEdit.font()).horizontalAdvance(' ') * 4 )
         #self.textEdit.setTabStopWidth( 20 )
-        
+
+        self.label_filename.setStyleSheet("QLabel { color : rgb(193, 202, 227); }")
+
         self.text_errors.top_margin  = 2
         self.text_errors.setStyleSheet("QPlainTextEdit {background-color: rgb(42, 42, 64); color: rgb(211, 194, 78); }")
         self.text_errors.setCenterOnScroll(True)
@@ -663,7 +665,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # scroll to Experimental parameters
         QtCore.QTimer.singleShot(0, lambda: self.textEdit.verticalScrollBar().setValue(9))
-
+        self.label_filename.setText( str( self.script ) )
+    
     def save_file(self, filename):
         """
         A function to save a new experimental script.
