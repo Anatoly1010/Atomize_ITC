@@ -25,7 +25,7 @@ class CodeEditor(QPlainTextEdit):
     
     def __init__(self, parent=None):
         QPlainTextEdit.__init__(self, parent)
-       
+        
         self.top_margin = 0
         self.setTabStopDistance(30)                 # set the tab width
         self.lineNumberArea = LineNumberArea(self)
@@ -48,15 +48,14 @@ class CodeEditor(QPlainTextEdit):
             if block.isVisible() and bottom >= event.rect().top():
                 number = str(blockNumber + 1)
                 painter.setPen(QColor(192, 202, 227))
-                painter.setFont(QFont("Ubuntu", 9.0, weight = QtGui.QFont.Weight.Bold))
-                painter.drawText(-4, top + 1, self.lineNumberArea.width(), 
+                painter.setFont(QtGui.QFont("Ubuntu", 9.0, QtGui.QFont.Weight.Bold))
+                painter.drawText(-4, int(top + 1), self.lineNumberArea.width(), 
                     self.fontMetrics().height(),
                     Qt.AlignmentFlag.AlignRight, number)
             block = block.next()
             top = bottom
             bottom = top + self.blockBoundingRect(block).height() + 0.1
             blockNumber += 1
-        painter.end()
 
     def lineNumberAreaWidth(self):
         digits = len(str(self.blockCount()))
@@ -79,7 +78,7 @@ class CodeEditor(QPlainTextEdit):
             selection = QTextEdit.ExtraSelection()
             lineColor = QColor(48, 48, 75)           #color of the line highlighter QColor(136, 138, 133)  
             selection.format.setBackground(lineColor)
-            selection.format.setProperty(24576, True)  #QTextFormat.FullWidthSelection, True)
+            selection.format.setProperty( 24576, True)
             selection.cursor = self.textCursor()
             selection.cursor.clearSelection()
             extraSelections.append(selection)
