@@ -35,17 +35,18 @@ signal.signal(signal.SIGTERM, cleanup)
 POINTS = 300
 STEP = 4                  # in NS; delta_start for PUMP pulse; # delta_start = str(STEP) + ' ns' -> delta_start = '4 ns'
 STEP8 = 8
-FIELD = 3448
-AVERAGES = 2
+FIELD = 3426.5
+AVERAGES = 8
 SCANS = 1
 process = 'None'
+f1 = '83 MHz'
 
 # PULSES
-REP_RATE = '2000 Hz'
-PULSE_1_LENGTH = '16 ns'
-PULSE_2_LENGTH = '32 ns'
-PULSE_3_LENGTH = '32 ns'
-PULSE_PUMP_LENGTH = '18 ns'
+REP_RATE = '1000 Hz'
+PULSE_1_LENGTH = '26 ns'
+PULSE_2_LENGTH = '50 ns'
+PULSE_3_LENGTH = '50 ns'
+PULSE_PUMP_LENGTH = '12 ns'
 # 398 ns is delay from AWG trigger 1.25 GHz
 # 494 ns is delay from AWG trigger 1.00 GHz
 PULSE_1_START = '2100 ns'
@@ -61,7 +62,7 @@ PULSE_AWG_PUMP_START = '1676 ns'
 PHASE = 64
 
 # NAMES
-EXP_NAME = 'DEER RECT'
+EXP_NAME = 'RECT'
 CURVE_NAME = 'exp1'
 
 dig4450.digitizer_read_settings()
@@ -94,8 +95,8 @@ pb.pulser_pulse(name = 'P2', channel = 'MW', start = PULSE_3_START, length = PUL
 
 #PUMP
 pb.pulser_pulse(name = 'P3', channel = 'AWG', start = PULSE_PUMP_START, length = PULSE_PUMP_LENGTH, delta_start = str(STEP) + ' ns')
-pb.pulser_pulse(name = 'P4', channel = 'TRIGGER_AWG', start = PULSE_TRIGGER_AWG_START, length = '20 ns', delta_start = str(STEP) + ' ns')
-awg.awg_pulse(name = 'P5', channel = 'CH0', func = 'SINE', frequency = '70 MHz', phase = 0, \
+pb.pulser_pulse(name = 'P4', channel = 'TRIGGER_AWG', start = PULSE_TRIGGER_AWG_START, length = '30 ns', delta_start = str(STEP) + ' ns')
+awg.awg_pulse(name = 'P5', channel = 'CH0', func = 'SINE', frequency = f1, phase = 0, \
             length = PULSE_PUMP_LENGTH, sigma = PULSE_PUMP_LENGTH, start = PULSE_AWG_PUMP_START)
 # 398 ns is delay from AWG trigger 1.25 GHz
 # 494 ns is delay from AWG trigger 1.00 GHz
