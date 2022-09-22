@@ -9,14 +9,14 @@ import numpy as np
 import atomize.device_modules.config.config_utils as cutil
 import atomize.general_modules.general_functions as general
 
-class Tektronix_4000_Series:
+class Tektronix_3000_Series:
     #### Basic interaction functions
     def __init__(self):
 
         #### Inizialization
         # setting path to *.ini file
         self.path_current_directory = os.path.dirname(__file__)
-        self.path_config_file = os.path.join(self.path_current_directory, 'config','Tektronix_4032_config.ini')
+        self.path_config_file = os.path.join(self.path_current_directory, 'config','Tektronix_3052C_config.ini')
 
         # configuration data
         self.config = cutil.read_conf_util(self.path_config_file)
@@ -25,19 +25,24 @@ class Tektronix_4000_Series:
         # auxilary dictionaries
         self.channel_dict = {'CH1': 'CH1', 'CH2': 'CH2', 'CH3': 'CH3', 'CH4': 'CH4', }
         self.trigger_channel_dict = {'CH1': 'CH1', 'CH2': 'CH2', 'CH3': 'CH3', 'CH4': 'CH4', \
-                                'Ext': 'EXTernal', 'Line': 'LINE', }
+                                'Ext': 'EXT', 'Ext10': 'EXT10', 'Line': 'LINE', }
+
         self.number_averag_list = [2, 4, 8, 16, 32, 64, 128, 256, 512]
-        self.points_list = [1000, 10000, 100000, 1000000, 10000000]
+        self.points_list = [500, 10000]
         self.timebase_dict = {'s': 1, 'ms': 1000, 'us': 1000000, 'ns': 1000000000, }
-        self.timebase_helper_list = [1, 2, 4, 10, 20, 40, 100, 200, 400, 1000]
+        self.timebase_helper_list = [1, 2, 4, 10, 20, 40, 100, 200, 400, 1000, 2000, 4000, 10000, \
+                                    20000, 40000, 100000, 200000, 400000, 1000000, 2000000, 4000000, \
+                                    10000000, 20000000, 40000000, 100000000, 200000000, 400000000, \
+                                    1000000000, 2000000000, 4000000000, 10000000000]
         self.scale_dict = {'V': 1, 'mV': 1000, }
-        self.ac_type_dic = {'Normal': "SAM", 'Average': "AVE", 'Hres': "HIR",'Peak': "PEAK", }
-        self.ac_type_dic_return = {'Normal': "SAMPLE", 'Average': "AVERAGE", 'Hres': "HIRES",'Peak': "PEAKDETECT", }
+        self.ac_type_dic = {'Normal': "SAM", 'Average': "AVE", 'Peak': "PEAK", }
 
         # Ranges and limits
         self.analog_channels = int(self.specific_parameters['analog_channels'])
         self.sensitivity_min = float(self.specific_parameters['sensitivity_min'])
         self.sensitivity_max = float(self.specific_parameters['sensitivity_max'])
+        self.tb_max = 10000000000 # in ns
+        self.tb_min = 1           # in ns
 
         # Test run parameters
         # These values are returned by the modules in the test run 
@@ -57,13 +62,13 @@ class Tektronix_4000_Series:
                     try:
                         # test should be here
                         self.device_write('*CLS')
-                        answer = int(self.device_query('*TST?'))
-                        if answer == 0:
-                            self.status_flag = 1
-                        else:
-                            general.message('During internal device test errors are found')
-                            self.status_flag = 0
-                            sys.exit()
+                        #answer = int(self.device_query('*TST?'))
+                        #if answer == 0:
+                        #    self.status_flag = 1
+                        #else:
+                        #    general.message('During internal device test errors are found')
+                        #    self.status_flag = 0
+                        #    sys.exit()
                     except pyvisa.VisaIOError:
                         general.message("No connection")
                         self.status_flag = 0
@@ -84,7 +89,7 @@ class Tektronix_4000_Series:
         elif self.test_flag == 'test':
             self.test_start = 1
             self.test_stop = 1000
-            self.test_record_length = 2000
+            self.test_record_length = 10000
             self.test_impedance = '1 M'
             self.test_acquisition_type = 'Normal'
             self.test_num_aver = 2
@@ -133,7 +138,7 @@ class Tektronix_4000_Series:
 
     def device_read_binary(self, command):
         if self.status_flag == 1:
-            answer = self.device.query_binary_values(command, 'b', is_big_endian=True, container=np.array)
+            answer = self.device.query_binary_values(command, 'h', is_big_endian=True, container=np.array)
             # RPBinary, value from 0 to 255. 'b'
             # Endianness is primarily expressed as big-endian (BE) or little-endian (LE).
             # A big-endian system stores the most significant byte of a word at the smallest memory address 
@@ -220,7 +225,7 @@ class Tektronix_4000_Series:
                     sys.exit()
             elif len(ac_type) == 0:
                 raw_answer = str(self.device_query("ACQuire:MODe?"))
-                answer  = cutil.search_keys_dictionary(self.ac_type_dic_return, raw_answer)                
+                answer  = cutil.search_keys_dictionary(self.ac_type_dic, raw_answer)                
                 return answer
             else:
                 general.message("Invalid argument")
@@ -251,8 +256,6 @@ class Tektronix_4000_Series:
                     self.device_write("ACQuire:NUMAVg " + str(numave))
                 elif ac == 'Sample':
                     general.message("Your are in SAMple mode")
-                elif ac == 'Hres':
-                    general.message("Your are in HRES mode")
                 elif ac == 'Peak':
                     general.message("Your are in PEAK mode")
             elif len(number_of_averages) == 0:
@@ -276,33 +279,32 @@ class Tektronix_4000_Series:
         if self.test_flag != 'test':
             if  len(timebase) == 1:
                 temp = timebase[0].split(' ')
-                if temp[1] == 'ns' and float(temp[0]) >= 60 and float(temp[0]) <= 90:
-                    if timebase != '80 ns':
-                        self.device_write("HORizontal:SCAle " + str(80/1000000000))
-                        general.message("Desired timebase cannot be set, the nearest available value is used")
-                    else:
-                        self.device_write("HORizontal:SCAle " + str(80/1000000000))              
+                if temp[1] == 's':
+                    number_tb_raw = 1000000000 * int(temp[0])
+                elif temp[1] == 'ms':
+                    number_tb_raw = 1000000 * int(temp[0])
+                elif temp[1] == 'us':
+                    number_tb_raw = 1000 * int(temp[0])
+                elif temp[1] == 'ns':
+                    number_tb_raw = 1 * int(temp[0])
                 else:
-                    number_tb = min(self.timebase_helper_list, key = lambda x: abs(x - int(temp[0])))
-                    if number_tb > 40 and temp[1] == 's':
-                        number_tb = 40
-                    if number_tb == 1000 and temp[1] == 'ns':
-                        number_tb = 1
-                        temp[1] = 'us'
-                    elif number_tb == 1000 and temp[1] == 'us':
-                        number_tb = 1
-                        temp[1] = 'ms'
-                    elif number_tb == 1000 and temp[1] == 'ms':
-                        number_tb = 1
-                        temp[1] = 's'
-                    if int(number_tb) != float(temp[0]):
-                        general.message("Desired timebase cannot be set, the nearest available value is used")
-                    if temp[1] in self.timebase_dict:
-                        coef = self.timebase_dict[temp[1]]
-                        self.device_write("HORizontal:SCAle "+ str(number_tb/coef))
-                    else:
-                        general.message("Incorrect timebase")
-                        sys.exit()
+                    general.message("Incorrect dimension")
+                    sys.exit()
+
+                number_tb = min(self.timebase_helper_list, key = lambda x: abs(x - int(number_tb_raw)))
+                
+                if int(number_tb) != int(number_tb_raw):
+                    general.message("Desired timebase cannot be set, the nearest available value is used")
+
+                if number_tb > self.tb_max:
+                    number_tb = self.tb_max
+                    general.message("Timebase cannot be higher than 10 s. The nearest available value is set")
+                if number_tb < self.tb_min:
+                    number_tb = self.tb_min
+                    general.message("Timebase cannot be lower than 1 ns. The nearest available value is set")
+
+                self.device_write("HORizontal:SCAle "+ str(number_tb/1000000000))            
+
             elif len(timebase) == 0:
                 answer = float(self.device_query("HORizontal:SCAle?"))*1000000
                 return answer
@@ -313,22 +315,19 @@ class Tektronix_4000_Series:
         elif self.test_flag == 'test':
             if  len(timebase) == 1:
                 temp = timebase[0].split(' ')
-                number_tb = min(self.timebase_helper_list, key = lambda x: abs(x - int(temp[0])))
-                if number_tb > 40 and temp[1] == 's':
-                        number_tb = 40
-                if number_tb == 1000 and temp[1] == 'ns':
-                    number_tb = 1
-                    temp[1] = 'us'
-                elif number_tb == 1000 and temp[1] == 'us':
-                    number_tb = 1
-                    temp[1] = 'ms'
-                elif number_tb == 1000 and temp[1] == 'ms':
-                    number_tb = 1
-                    temp[1] = 's'
-                if temp[1] in self.timebase_dict:
-                    coef = self.timebase_dict[temp[1]]
-                else:
-                    assert (1 == 2), 'Invalid timebase argument'
+                assert(temp[1] in self.timebase_dict), "Incorrect timebase dimension"
+                
+                if temp[1] == 's':
+                    number_tb_raw = 1000000000 * int(temp[0])
+                elif temp[1] == 'ms':
+                    number_tb_raw = 1000000 * int(temp[0])
+                elif temp[1] == 'us':
+                    number_tb_raw = 1000 * int(temp[0])
+                elif temp[1] == 'ns':
+                    number_tb_raw = 1 * int(temp[0])
+
+                number_tb = min(self.timebase_helper_list, key = lambda x: abs(x - int(number_tb_raw)))
+
             elif len(timebase) == 0:
                 answer = self.test_timebase
                 return answer
@@ -364,7 +363,7 @@ class Tektronix_4000_Series:
                 flag = self.channel_dict[ch]
                 if flag[0] == 'C' and int(flag[-1]) <= self.analog_channels:
                     self.device_write('DATa:SOUrce ' + str(flag))
-                    preamble = self.device_query("WFMOutpre?")
+                    preamble = self.device_query("WFMPre?")
                     return preamble
                 else:
                     general.message("Invalid channel is given")
@@ -403,15 +402,15 @@ class Tektronix_4000_Series:
                 if flag[0] == 'C' and int(flag[-1]) <= self.analog_channels:
                     self.device_write('DATa:SOUrce ' + str(flag))
                     self.device_write('DATa:ENCdg RIBinary')
-                    #self.device_write('DATa:WIDth ' + 2) #?
+                    self.device_write('DATa:WIDth ' + '2') #?
 
                     array_y = self.device_read_binary('CURVe?')
-                    #x_orig=float(self.device_query("WFMOutpre:XZEro?"))
-                    #x_inc=float(self.device_query("WFMOutpre:XINcr?"))
+                    #x_orig=float(self.device_query("WFMPre:XZEro?"))
+                    #x_inc=float(self.device_query("WFMPre:XINcr?"))
                     #general.message(preamble)
-                    y_ref = float(self.device_query("WFMOutpre:YOFf?"))
-                    y_inc = float(self.device_query("WFMOutpre:YMUlt?"))
-                    y_orig = float(self.device_query("WFMOutpre:YZEro?"))
+                    y_ref = float(self.device_query("WFMPre:YOFf?"))
+                    y_inc = float(self.device_query("WFMPre:YMUlt?"))
+                    y_orig = float(self.device_query("WFMPre:YZEro?"))
                     #general.message(y_inc)
                     #general.message(y_orig)
                     #general.message(y_ref)
@@ -522,7 +521,6 @@ class Tektronix_4000_Series:
                     if ch in self.channel_dict:
                         flag = self.channel_dict[ch]
                         if flag[0] == 'C' and int(flag[-1]) <= self.analog_channels:
-                            #POSition
                             self.device_write(str(flag) + ':OFFSet ' + str(val/coef))
                         else:
                             general.message("Invalid channel is given")
@@ -539,7 +537,6 @@ class Tektronix_4000_Series:
                 if ch in self.channel_dict:
                     flag = self.channel_dict[ch]
                     if flag[0] == 'C' and int(flag[-1]) <= self.analog_channels:
-                        #POSition?
                         answer = float(self.device_query(str(flag) + ':OFFSet?'))*1000
                         return answer
                     else:
@@ -581,6 +578,12 @@ class Tektronix_4000_Series:
                 assert(1 == 2), "Incorrect offset argument"
 
     def oscilloscope_horizontal_offset(self, *h_offset):
+        """
+        It can vary from 100% pretrigger (which means the trigger point is off screen to the
+        right), measured in seconds, to about 50 s (depending on time base setting) post
+        trigger (which means the trigger point is off screen to the left). Delay time is
+        positive when the trigger is located to the left of the center screen
+        """
         if self.test_flag != 'test':
             if len(h_offset) == 1:
                 temp = h_offset[0].split(" ")
@@ -683,7 +686,7 @@ class Tektronix_4000_Series:
                 if ch in self.channel_dict:
                     flag = self.channel_dict[ch]
                     if flag[0] == 'C' and int(flag[-1]) <= self.analog_channels:
-                        self.device_write(str(flag) + ':TERmination ' + str(cpl))
+                        self.device_write(str(flag) + ':IMPedance ' + str(cpl))
                     else:
                         general.message("Invalid channel is given")
                         sys.exit()
@@ -696,10 +699,10 @@ class Tektronix_4000_Series:
                 if ch in self.channel_dict:
                     flag = self.channel_dict[ch]
                     if flag[0] == 'C' and int(flag[-1]) <= self.analog_channels:
-                        answer = self.device_query(str(flag) + ':TERmination?')
-                        if float(answer) == 1000000:
+                        answer = self.device_query(str(flag) + ':IMPedance?')
+                        if str(answer) == 'MEG':
                             return '1 M'
-                        elif float(answer) == 50:
+                        elif str(answer) == 'FIF':
                             return '50'
                     else:
                         general.message("Invalid channel is given")
@@ -763,6 +766,14 @@ class Tektronix_4000_Series:
                 assert(1 == 2), 'Incorrect trigger mode argument'
 
     def oscilloscope_trigger_channel(self, *channel):
+        """
+        EXT sets the trigger source to the regular external trigger input connector with a
+        signal input range of -0.8 V to +0.8 V. EXT is not available in 4 channel
+        TDS3000 Series instruments.
+        EXT10 sets the trigger source to the reduced external trigger with a signal input
+        range of -8 V to +8 V. EXT10 is not available in 4 channel TDS3000 Series
+        instruments
+        """
         if self.test_flag != 'test':    
             if len(channel) == 1:
                 ch = str(channel[0])
@@ -806,6 +817,7 @@ class Tektronix_4000_Series:
             if len(level) == 2:
                 ch = str(level[0])
                 lvl = level[1]
+
                 if lvl != 'ECL' and lvl != 'TTL':
                     lvl_value = float((lvl.split(" "))[0])
                     if str((lvl.split(" "))[1]) == 'V':
@@ -816,30 +828,13 @@ class Tektronix_4000_Series:
                         general.message("Invalid dimension")
                         sys.exit()
 
-                if ch in self.channel_dict:
-                    flag = self.channel_dict[ch]
-                    if flag[0] == 'C' and int(flag[-1]) <= self.analog_channels:
-                        self.device_write("TRIGger:A:LEVel:" + str(flag) + ' ' + str(lvl_value))
-                    else:
-                        general.message("Invalid trigger channel is given")
-                        sys.exit()
-                else:
-                    general.message("Invalid trigger channel is given")
-                    sys.exit()
+                self.device_write("TRIGger:A:LEVel " + str(lvl_value))
 
             elif len(level) == 1:
                 ch = str(level[0])
-                if ch in self.channel_dict:
-                    flag = self.channel_dict[ch]
-                    if flag[0] == 'C' and int(flag[-1]) <= self.analog_channels:
-                        answer = float(self.device_query('TRIGger:A:LEVel:' + str(flag) + '?'))
-                        return answer
-                    else:
-                        general.message("Invalid channel is given")
-                        sys.exit()
-                else:
-                    general.message("Incorrect channel is given")
-                    sys.exit()
+                answer = float(self.device_query('TRIGger:A:LEVel?'))
+                return answer
+
             else:
                 general.message("Invalid argument")
                 sys.exit()
@@ -851,21 +846,12 @@ class Tektronix_4000_Series:
                 if lvl != 'ECL' and lvl != 'TTL':
                     lvl_value = (lvl.split(" "))[0]
                     assert( str((lvl.split(" "))[1]) in self.scale_dict ), "Incorrect dimension"
-                assert(ch in self.channel_dict), 'Invalid channel is given'
-                flag = self.channel_dict[ch]
-                if flag[0] == 'C' and int(flag[-1]) > self.analog_channels:
-                    assert(1 == 2), 'Invalid trigger channel is given'
                 else:
                     pass
             elif len(level) == 1:
                 ch = str(level[0])
-                assert(ch in self.channel_dict), 'Invalid trigger channel is given'
-                flag = self.channel_dict[ch]
-                if flag[0] == 'C' and int(flag[-1]) > self.analog_channels:
-                    assert(1 == 2), 'Invalid channel is given'
-                else:
-                    answer = self.test_trigger_level
-                    return answer
+                answer = self.test_trigger_level
+                return answer
             else:
                 assert(1 == 2), "Invalid trigger level argument"
 
