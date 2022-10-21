@@ -291,7 +291,7 @@ class CrosshairDock(CloseableDock):
                             self.curves[name].setData(*args_mod, **kwargs)
 
                             # 05-01-2022; shift and delete graphs
-                            del_action = QtWidgets.QAction(str(name), self)
+                            del_action = QtGui.QAction(str(name), self)
                             shifter = QtWidgets.QDoubleSpinBox()
                             shiftAction = QtWidgets.QWidgetAction(self)
                             self.add_del_shift_actions(name, del_action, shifter, shiftAction)

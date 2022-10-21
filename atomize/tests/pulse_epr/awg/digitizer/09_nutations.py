@@ -32,45 +32,53 @@ def cleanup(*args):
 signal.signal(signal.SIGTERM, cleanup)
 
 ### Experimental parameters
-POINTS = 1001
-STEP = 16                  # in NS;
-FIELD = 3447
-AVERAGES = 20
-SCANS = 4
+POINTS = 75
+STEP = 2                  # in NS;
+FIELD = 3480.8
+AVERAGES = 600
+SCANS = 1
 process = 'None'
 
 # PULSES
 REP_RATE = '500 Hz'
-PULSE_1_LENGTH = '50 ns'
-PULSE_2_LENGTH = '100 ns'
+PULSE_1_LENGTH = '10 ns'
+PULSE_2_LENGTH = '80 ns'
+PULSE_3_LENGTH = '80 ns'
 # 398 ns is delay from AWG trigger 1.25 GHz
 # 494 ns is delay from AWG trigger 1.00 GHz
 PULSE_AWG_1_START = '0 ns'
-PULSE_AWG_2_START = '400 ns'
-PULSE_DETECTION = '800 ns'
+PULSE_AWG_2_START = '250 ns'
+PULSE_AWG_3_START = '750 ns'
+PULSE_DETECTION = '1250 ns'
 PULSE_1_START = general.const_shift(PULSE_AWG_1_START, 494)
 PULSE_2_START = general.const_shift(PULSE_AWG_2_START, 494)
+PULSE_3_START = general.const_shift(PULSE_AWG_3_START, 494)
 PULSE_SIGNAL_START = general.const_shift(PULSE_DETECTION, 494)
+PHASES = 4
 
 SHAPE = 'SINE'
-FREQ = '80 MHz'
+FREQ = '50 MHz'
+AMPL_2 =  9            # percent
+AMPL_3 = 18
 
 # NAMES
-EXP_NAME = 'T2_AWG'
+EXP_NAME = 'Nut'
 
 # Setting pulses
 pb.pulser_pulse(name = 'P0', channel = 'TRIGGER_AWG', start = '0 ns', length = '30 ns')
 
 # For each awg_pulse; length should be longer than in awg_pulse
-pb.pulser_pulse(name = 'P1', channel = 'AWG', start = PULSE_1_START, length = PULSE_1_LENGTH)
-pb.pulser_pulse(name = 'P2', channel = 'AWG', start = PULSE_2_START, length = PULSE_2_LENGTH, delta_start = str(int(STEP/2)) + ' ns')
+pb.pulser_pulse(name = 'P1', channel = 'AWG', start = PULSE_1_START, length = PULSE_1_LENGTH, length_increment = str(STEP) + ' ns')
+pb.pulser_pulse(name = 'P2', channel = 'AWG', start = PULSE_2_START, length = PULSE_2_LENGTH)
+pb.pulser_pulse(name = 'P3', channel = 'AWG', start = PULSE_3_START, length = PULSE_3_LENGTH)
 
-pb.pulser_pulse(name = 'P3', channel = 'TRIGGER', start = PULSE_SIGNAL_START, length = '100 ns', delta_start = str(STEP) + ' ns')
-awg.awg_pulse(name = 'P4', channel = 'CH0', func = SHAPE, frequency = FREQ, phase = 0, \
-            length = PULSE_1_LENGTH, sigma = PULSE_1_LENGTH, start = PULSE_AWG_1_START, phase_list = ['+x', '-x'])
+pb.pulser_pulse(name = 'P4', channel = 'TRIGGER', start = PULSE_SIGNAL_START, length = '100 ns')
 awg.awg_pulse(name = 'P5', channel = 'CH0', func = SHAPE, frequency = FREQ, phase = 0, \
-            length = PULSE_2_LENGTH, sigma = PULSE_2_LENGTH, start = PULSE_AWG_2_START, delta_start = str(int(STEP/2)) + ' ns', phase_list = ['+x', '+x'])
-
+            length = PULSE_1_LENGTH, sigma = PULSE_1_LENGTH, start = PULSE_AWG_1_START, phase_list = ['+x','+x','-x','-x'], length_increment = str(STEP) + ' ns')
+awg.awg_pulse(name = 'P6', channel = 'CH0', func = SHAPE, frequency = FREQ, phase = 0, \
+            length = PULSE_2_LENGTH, sigma = PULSE_2_LENGTH, start = PULSE_AWG_2_START, phase_list = ['+x','-x','+x','-x'], d_coef = 100/AMPL_2 )
+awg.awg_pulse(name = 'P7', channel = 'CH0', func = SHAPE, frequency = FREQ, phase = 0, \
+            length = PULSE_3_LENGTH, sigma = PULSE_3_LENGTH, start = PULSE_AWG_3_START, phase_list = ['+x','+x','+x','+x'], d_coef = 100/AMPL_3 )
 
 pb.pulser_repetition_rate( REP_RATE )
 pb.pulser_update()
@@ -91,13 +99,13 @@ dig4450.digitizer_number_of_averages(AVERAGES)
 time_res = int( 1000 / int(dig4450.digitizer_sample_rate().split(' ')[0]) )
 # a full oscillogram will be transfered
 wind = dig4450.digitizer_number_of_points()
-cycle_data_x = np.zeros( (2, int(wind)) )
-cycle_data_y = np.zeros( (2, int(wind)) )
+cycle_data_x = np.zeros( (PHASES, int(wind)) )
+cycle_data_y = np.zeros( (PHASES, int(wind)) )
 data = np.zeros( (2, int(wind), POINTS) )
 
 # Data saving
 header = 'Date: ' + str(datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")) + '\n' + \
-         'T2 Measurement; AWG\n' + 'Field: ' + str(FIELD) + ' G \n' + str(mw.mw_bridge_att1_prd()) + '\n' + \
+         'Nutation; AWG\n' + 'Field: ' + str(FIELD) + ' G \n' + str(mw.mw_bridge_att1_prd()) + '\n' + \
           str(mw.mw_bridge_att2_prd()) + '\n' + str(mw.mw_bridge_att_prm()) + '\n' + str(mw.mw_bridge_synthesizer()) + '\n' + \
           'Repetition Rate: ' + str(pb.pulser_repetition_rate()) + '\n' + 'Number of Scans: ' + str(SCANS) + '\n' +\
           'Averages: ' + str(AVERAGES) + '\n' + 'Points: ' + str(POINTS) + '\n' + 'Window: ' + str(wind * time_res) + ' ns\n' \
@@ -117,7 +125,7 @@ for j in general.scans(SCANS):
         # phase cycle
         k = 0
         pb.pulser_update()
-        while k < 2:
+        while k < PHASES:
 
             awg.awg_next_phase()
             x_axis, cycle_data_x[k], cycle_data_y[k] = dig4450.digitizer_get_curve()
@@ -126,18 +134,18 @@ for j in general.scans(SCANS):
             k += 1
         
         # acquisition cycle
-        x, y = pb.pulser_acquisition_cycle(cycle_data_x, cycle_data_y, acq_cycle = ['+', '-'])
+        x, y = pb.pulser_acquisition_cycle(cycle_data_x, cycle_data_y, acq_cycle = ['+','-','+','-'])
         
         data[0, :, i] = ( data[0, :, i] * (j - 1) + x ) / j
         data[1, :, i] = ( data[1, :, i] * (j - 1) + y ) / j
 
         process = general.plot_2d(EXP_NAME, data, start_step = ( (0, time_res), (0, STEP) ), xname = 'Time',\
-            xscale = 'ns', yname = 'Delay', yscale = 'ns', zname = 'Intensity', zscale = 'V', pr = process, \
+            xscale = 'ns', yname = 'Length', yscale = 'ns', zname = 'Intensity', zscale = 'V', pr = process, \
             text = 'Scan / Time: ' + str(j) + ' / ' + str(i*STEP))
 
         #awg.awg_stop()
-        awg.awg_shift()
-        pb.pulser_shift()
+        awg.awg_increment()
+        pb.pulser_increment()
 
     awg.awg_pulse_reset()
     pb.pulser_pulse_reset()
