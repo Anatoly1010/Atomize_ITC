@@ -200,6 +200,7 @@ class CrosshairDock(CloseableDock):
             self.plot_widget.setLabel("bottom", text=kwargs.get('xname', ''))
         else:
             self.plot_widget.setLabel("bottom", text=kwargs.get('xname', ''), units=kwargs.get('xscale', ''))
+        
         self.plot_widget.setLabel("left", text=kwargs.get('yname', ''), units=kwargs.get('yscale', ''))
         name = kwargs.get('name', '')
 
@@ -245,14 +246,19 @@ class CrosshairDock(CloseableDock):
                                     self.setTitle( temp )
 
                                 # 05-01-2022; shift and delete graphs
-                                del_action = QtGui.QAction(str(name), self)
+                                del_action = QtWidgets.QAction(str(name), self)
                                 shifter = QtWidgets.QDoubleSpinBox()
                                 shiftAction = QtWidgets.QWidgetAction(self)
                                 self.add_del_shift_actions(name, del_action, shifter, shiftAction)
 
+
                 else:
                     kwargs['pen'] = self.used_colors[name]
                     self.curves[name].setData(*args, **kwargs)
+                    # Text label above the graph
+                    temp = kwargs.get('text', '')
+                    if temp != '':
+                        self.setTitle( temp )
 
                 # vertical lines
                 if vline_arg != 'False':
@@ -267,7 +273,6 @@ class CrosshairDock(CloseableDock):
                             self.vl2 = self.plot_widget.addLine( x = self.ver_line_2 )
                     except IndexError:
                         pass
-
         else:
             if kwargs.get('scatter', '') == 'True':
                 kwargs['pen'] = None;
@@ -324,7 +329,11 @@ class CrosshairDock(CloseableDock):
                 else:
                     kwargs['pen'] = self.used_colors[name] = self.avail_colors.pop()
                     self.curves[name] = self.plot_widget.plot(*args, **kwargs)
-
+                    # Text label above the graph
+                    temp = kwargs.get('text', '')
+                    if temp != '':
+                        self.setTitle( temp )
+                    
                 # vertical lines
                 if vline_arg != 'False':
                     try:
@@ -333,7 +342,7 @@ class CrosshairDock(CloseableDock):
                         self.vl2 = self.plot_widget.addLine( x = float(vline_arg[1]) )
                     except IndexError:
                         pass
-                    
+            
             if self.qaction_added == 0:
                 del_action_2 = QtGui.QAction(str(name), self)
                 shifter_2 = QtWidgets.QDoubleSpinBox()
