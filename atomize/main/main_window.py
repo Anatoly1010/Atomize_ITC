@@ -111,6 +111,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.process_cw = QtCore.QProcess(self)
         self.process_temp = QtCore.QProcess(self)
         self.process_field = QtCore.QProcess(self)
+        self.process_mw = QtCore.QProcess(self)
 
         # check where we are
         self.system = platform.system()
@@ -124,6 +125,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.process_cw.setProgram('python.exe')
             self.process_temp.setProgram('python.exe')
             self.process_field.setProgram('python.exe')
+            self.process_mw.setProgram('python.exe')
         elif self.system == 'Linux':
             self.editor = str(config['DEFAULT']['editor'])
             if self.editor == 'nano' or self.editor == 'vi':
@@ -138,6 +140,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.process_cw.setProgram('python3')
             self.process_temp.setProgram('python3')
             self.process_field.setProgram('python3')
+            self.process_mw.setProgram('python3')
 
         self.process.finished.connect(self.on_finished_checking)
         self.process_python.finished.connect(self.on_finished_script)
@@ -452,6 +455,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.button_tr.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97);\
          border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }\
           QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
+        self.button_mw.clicked.connect(self.start_mw_control)
+        self.button_mw.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97);\
+         border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }\
+          QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
         self.label_creator.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
 
     def _on_destroyed(self):
@@ -465,6 +472,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.process_cw.close()
         self.process_temp.close()
         self.process_field.close()
+        self.process_mw.close()
     
     def clear_errors(self):
         self.text_errors.clear()
@@ -480,6 +488,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.process_cw.terminate()
         self.process_temp.terminate()
         self.process_field.terminate()
+        self.process_mw.terminate()
         sys.exit()
         ####
         #### QProcess: Destroyed while process ("python3") is still running.
@@ -504,6 +513,13 @@ class MainWindow(QtWidgets.QMainWindow):
         elif self.test_flag == 0 and exec_code == True:
             self.process_python.setArguments([self.script])
             self.process_python.start()
+
+    def start_mw_control(self):
+        """
+        A function to run an pulse_creator.
+        """
+        self.process_mw.setArguments(['atomize/control_center/mw_bridge_control.py'])
+        self.process_mw.start()
 
     def start_tr_control(self):
         """
@@ -759,7 +775,8 @@ class MainWindow(QtWidgets.QMainWindow):
 class NameList(QDockWidget):
     def __init__(self, window):
         super(NameList, self).__init__('Current Plots:')
-
+        self.setFeatures(QDockWidget.NoDockWidgetFeatures)
+        
         #directories
         self.path_to_main = os.path.abspath( os.getcwd() )
         # configuration data

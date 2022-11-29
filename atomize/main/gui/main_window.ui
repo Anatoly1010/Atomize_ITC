@@ -63,7 +63,7 @@ QTabBar::tab:selected {
        <enum>QTabWidget::Rounded</enum>
       </property>
       <property name="currentIndex">
-       <number>0</number>
+       <number>2</number>
       </property>
       <property name="iconSize">
        <size>
@@ -734,7 +734,29 @@ QTabBar::tab:selected {
              <string notr="true">background-color: rgb(136, 138, 133);</string>
             </property>
             <property name="text">
-             <string>Field</string>
+             <string>Magnetic Field</string>
+            </property>
+           </widget>
+          </item>
+          <item row="1" column="1">
+           <widget class="QPushButton" name="button_mw">
+            <property name="minimumSize">
+             <size>
+              <width>0</width>
+              <height>40</height>
+             </size>
+            </property>
+            <property name="font">
+             <font>
+              <weight>75</weight>
+              <bold>true</bold>
+             </font>
+            </property>
+            <property name="styleSheet">
+             <string notr="true">background-color: rgb(136, 138, 133);</string>
+            </property>
+            <property name="text">
+             <string>MW Bridge</string>
             </property>
            </widget>
           </item>
