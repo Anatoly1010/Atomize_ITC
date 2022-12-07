@@ -27,7 +27,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         uic.loadUi(gui_path, self)                        # Design file
 
-        ##bh15 = bh.BH_15()
+        self.bh15 = bh.BH_15()
 
         # Connection of different action to different Menus and Buttons
         self.button_off.clicked.connect(self.turn_off)
@@ -53,7 +53,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.initialization_step = int( self.box_ini.value() )
 
         self.cur_field = 0
-        ##bh15.magnet_setup(100, 1)
+        self.bh15.magnet_setup(100, 1)
 
         #print('CF: ' + str(self.cur_field))
         #print('F: ' + str(self.field))
@@ -63,18 +63,17 @@ class MainWindow(QtWidgets.QMainWindow):
         A function to do some actions when the main window is closing.
         """
         while self.cur_field > ( self.initialization_step + 1 ):
-            ##self.cur_field = bh15.magnet_field( self.cur_field - self.initialization_step )
-            self.cur_field = self.cur_field - self.initialization_step
+            self.cur_field = self.bh15.magnet_field( self.cur_field - self.initialization_step )
+            #self.cur_field = self.cur_field - self.initialization_step
             #print('CF: ' + str(self.cur_field))
             #print('F: ' + str(self.field))
 
-        ##self.cur_field = bh15.magnet_field( 0 )
+        self.cur_field = self.bh15.magnet_field( 0 )
         self.cur_field = 0
         self.field = 0
 
         #print('CF: ' + str(self.cur_field))
         #print('F: ' + str(self.field))
-
 
     def quit(self):
         """
@@ -96,23 +95,23 @@ class MainWindow(QtWidgets.QMainWindow):
         self.field = float( self.Set_point.value() )
         if self.cur_field < self.field:
             while self.cur_field < self.field:
-                ##self.cur_field = bh15.magnet_field( self.cur_field + self.initialization_step )
-                self.cur_field = self.cur_field + self.initialization_step
+                self.cur_field = self.bh15.magnet_field( self.cur_field + self.initialization_step )
+                #self.cur_field = self.cur_field + self.initialization_step
                 #print('CF: ' + str(self.cur_field))
                 #print('F: ' + str(self.field))
 
-            ##self.cur_field = bh15.magnet_field( self.field )
+            self.cur_field = self.bh15.magnet_field( self.field )
             self.cur_field = self.field
             #print('CF: ' + str(self.cur_field))
             #print('F: ' + str(self.field))
         else:
             while self.cur_field > self.field:
-                ##self.cur_field = bh15.magnet_field( self.cur_field - self.initialization_step )
-                self.cur_field = self.cur_field - self.initialization_step
+                self.cur_field = self.bh15.magnet_field( self.cur_field - self.initialization_step )
+                #self.cur_field = self.cur_field - self.initialization_step
                 #print('CF: ' + str(self.cur_field))
                 #print('F: ' + str(self.field))
 
-            ##self.cur_field = bh15.magnet_field( self.field )
+            self.cur_field = self.bh15.magnet_field( self.field )
             self.cur_field =  self.field 
             #print('CF: ' + str(self.cur_field))
             #print('F: ' + str(self.field))

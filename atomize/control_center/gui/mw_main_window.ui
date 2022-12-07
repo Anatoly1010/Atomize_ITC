@@ -639,6 +639,9 @@
       <property name="contextMenuPolicy">
        <enum>Qt::NoContextMenu</enum>
       </property>
+      <property name="styleSheet">
+       <string notr="true"/>
+      </property>
       <property name="readOnly">
        <bool>true</bool>
       </property>

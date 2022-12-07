@@ -77,6 +77,14 @@ class MainWindow(QtWidgets.QMainWindow):
         self.Acq_number.valueChanged.connect(self.acq_number)
         self.Acq_number.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); }")
 
+        self.combo_trig_ch.setStyleSheet("QComboBox { color : rgb(193, 202, 227); selection-color: rgb(211, 194, 78); }")
+        
+        cur_trig_ch = str( self.combo_trig_ch.currentText() )
+        MESSAGE = b':TRIG:EDGE:SOUR ' + cur_trig_ch.encode() + b'\n'
+        self.telnet.write( MESSAGE )
+        
+        self.combo_trig_ch.currentIndexChanged.connect(self.trigger_channel)
+
     def _on_destroyed(self):
         """
         A function to do some actions when the main window is closing.
@@ -90,6 +98,15 @@ class MainWindow(QtWidgets.QMainWindow):
         self._on_destroyed()
         sys.exit()
 
+    def trigger_channel(self):
+        """
+        A function to change a trigger channel
+        """
+
+        trig_ch = str( self.combo_trig_ch.currentText() )
+        MESSAGE = b':TRIG:EDGE:SOUR ' + trig_ch.encode() + b'\n'
+        self.telnet.write( MESSAGE )
+        
     def hor_offset(self):
         """
         A function to change a horizontal offset

@@ -28,7 +28,7 @@ from PyQt6 import QtWidgets, uic, QtCore, QtGui
 from pyqtgraph.dockarea import DockArea
 import atomize.main.messenger_socket_server as socket_server
 ###AWG
-sys.path.append('/home/pulseepr/Sources/AWG/Examples/python')
+sys.path.append('/home/fel/sources/AWG/Examples/python')
 
 from pyspcm import *
 from spcm_tools import *
@@ -112,6 +112,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.process_temp = QtCore.QProcess(self)
         self.process_field = QtCore.QProcess(self)
         self.process_mw = QtCore.QProcess(self)
+        self.process_tune_preset = QtCore.QProcess(self)
+        self.process_phasing = QtCore.QProcess(self)
+        self.process_t2 = QtCore.QProcess(self)
+        self.process_t1 = QtCore.QProcess(self)
+        self.process_ed = QtCore.QProcess(self)
 
         # check where we are
         self.system = platform.system()
@@ -126,6 +131,11 @@ class MainWindow(QtWidgets.QMainWindow):
             self.process_temp.setProgram('python.exe')
             self.process_field.setProgram('python.exe')
             self.process_mw.setProgram('python.exe')
+            self.process_tune_preset.setProgram('python.exe')
+            self.process_phasing.setProgram('python.exe')
+            self.process_t2.setProgram('python.exe')
+            self.process_t1.setProgram('python.exe')
+            self.process_ed.setProgram('python.exe')
         elif self.system == 'Linux':
             self.editor = str(config['DEFAULT']['editor'])
             if self.editor == 'nano' or self.editor == 'vi':
@@ -141,6 +151,11 @@ class MainWindow(QtWidgets.QMainWindow):
             self.process_temp.setProgram('python3')
             self.process_field.setProgram('python3')
             self.process_mw.setProgram('python3')
+            self.process_tune_preset.setProgram('python3')
+            self.process_phasing.setProgram('python3')
+            self.process_t2.setProgram('python3')
+            self.process_t1.setProgram('python3')
+            self.process_ed.setProgram('python3')
 
         self.process.finished.connect(self.on_finished_checking)
         self.process_python.finished.connect(self.on_finished_script)
@@ -459,6 +474,27 @@ class MainWindow(QtWidgets.QMainWindow):
         self.button_mw.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97);\
          border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }\
           QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
+        self.button_rect.clicked.connect(self.start_rect_phasing)
+        self.button_rect.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97);\
+         border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }\
+          QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
+        self.button_tune_preset.clicked.connect(self.start_tune_preset)
+        self.button_tune_preset.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97);\
+         border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }\
+          QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
+        self.button_t2.clicked.connect(self.start_t2_preset)
+        self.button_t2.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97);\
+         border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }\
+          QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
+        self.button_ed.clicked.connect(self.start_ed_preset)
+        self.button_ed.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97);\
+         border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }\
+          QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
+        self.button_t1.clicked.connect(self.start_t1_preset)
+        self.button_t1.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97);\
+         border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }\
+          QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
+
         self.label_creator.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
 
     def _on_destroyed(self):
@@ -473,6 +509,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.process_temp.close()
         self.process_field.close()
         self.process_mw.close()
+        self.process_tune_preset.close()
+        self.process_phasing.close()
+        self.process_t2.close()
+        self.process_t1.close()
+        self.process_ed.close()
     
     def clear_errors(self):
         self.text_errors.clear()
@@ -489,6 +530,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.process_temp.terminate()
         self.process_field.terminate()
         self.process_mw.terminate()
+        self.process_tune_preset.terminate()
+        self.process_phasing.terminate()
+        self.process_t2.terminate()
+        self.process_t1.terminate()
+        self.process_ed.terminate()
         sys.exit()
         ####
         #### QProcess: Destroyed while process ("python3") is still running.
@@ -513,6 +559,41 @@ class MainWindow(QtWidgets.QMainWindow):
         elif self.test_flag == 0 and exec_code == True:
             self.process_python.setArguments([self.script])
             self.process_python.start()
+
+    def start_ed_preset(self):
+        """
+        A function to run an phasing for rect channel.
+        """
+        self.process_ed.setArguments(['atomize/control_center/ed_preset.py'])
+        self.process_ed.start()
+
+    def start_t1_preset(self):
+        """
+        A function to run an phasing for rect channel.
+        """
+        self.process_t1.setArguments(['atomize/control_center/t1_preset.py'])
+        self.process_t1.start()
+
+    def start_t2_preset(self):
+        """
+        A function to run an phasing for rect channel.
+        """
+        self.process_t2.setArguments(['atomize/control_center/t2_preset.py'])
+        self.process_t2.start()
+
+    def start_rect_phasing(self):
+        """
+        A function to run an phasing for rect channel.
+        """
+        self.process_phasing.setArguments(['atomize/control_center/phasing.py'])
+        self.process_phasing.start()
+
+    def start_tune_preset(self):
+        """
+        A function to run tuning.
+        """
+        self.process_tune_preset.setArguments(['atomize/control_center/tune_preset.py'])
+        self.process_tune_preset.start()
 
     def start_mw_control(self):
         """

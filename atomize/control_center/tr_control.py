@@ -72,28 +72,23 @@ class MainWindow(QtWidgets.QMainWindow):
         self.box_step_field.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); }")
         self.cur_step = float( self.box_step_field.value() )
         
-        self.box_graph.valueChanged.connect(self.graph_show)
-        self.box_graph.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); }")
-        self.cur_graph = float( self.box_graph.value() )
-        self.box_graph.lineEdit().setReadOnly( True )
-
         self.box_off_res_field.valueChanged.connect(self.offres_field)
         self.box_off_res_field.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); }")
         self.cur_offres_field = float( self.box_off_res_field.value() )
         
         self.box_scan.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); }")
         self.box_scan.valueChanged.connect(self.scan)
-        self.box_scan.lineEdit().setReadOnly( True )
+        #self.box_scan.lineEdit().setReadOnly( True )
         self.cur_scan = int( self.box_scan.value() )
         
         self.box_ave.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); }")
         self.box_ave.valueChanged.connect(self.ave)
-        self.box_ave.lineEdit().setReadOnly( True )
+        #self.box_ave.lineEdit().setReadOnly( True )
         self.cur_ave = int( self.box_ave.value() )
         
         self.box_ave_offres.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); }")
         self.box_ave_offres.valueChanged.connect(self.ave_offres)
-        self.box_ave_offres.lineEdit().setReadOnly( True )
+        #self.box_ave_offres.lineEdit().setReadOnly( True )
         self.cur_ave_offres = int( self.box_ave_offres.value() )
 
         self.combo_num_osc.currentIndexChanged.connect(self.num_osc)
@@ -102,6 +97,10 @@ class MainWindow(QtWidgets.QMainWindow):
         else:
             self.cur_num_osc = int( self.combo_num_osc.currentText() )
         self.combo_num_osc.setStyleSheet("QComboBox { color : rgb(193, 202, 227); selection-color: rgb(211, 194, 78); }")
+
+        self.combo_trig_ch.setStyleSheet("QComboBox { color : rgb(193, 202, 227); selection-color: rgb(211, 194, 78); }")
+        self.cur_trig_ch = str( self.combo_trig_ch.currentText() )
+        self.combo_trig_ch.currentIndexChanged.connect(self.trig_ch)
         
         """
         Create a process to interact with an experimental script that will run on a different thread.
@@ -134,6 +133,13 @@ class MainWindow(QtWidgets.QMainWindow):
     def exp_name(self):
         self.cur_exp_name = self.text_edit_exp_name.toPlainText()
         #print( self.cur_exp_name )
+
+    def trig_ch(self):
+        """
+        A function to send a trigger channel
+        """
+        self.cur_trig_ch = str( self.combo_trig_ch.currentText() )
+        #print(self.cur_end_field)
 
     def end_field(self):
         """
@@ -189,18 +195,6 @@ class MainWindow(QtWidgets.QMainWindow):
             self.cur_num_osc = 3
         else:
             self.cur_num_osc = int( self.combo_num_osc.currentText() )
-        #print( self.cur_num_osc )
-
-    def graph_show(self):
-        """
-        A function to send a number of points for drawing
-        """
-        self.cur_graph = int( self.box_graph.value() )
-        #print(self.cur_graph)
-        try:
-            self.parent_conn.send( 'GR' + str( self.cur_graph ) )
-        except AttributeError:
-            self.message('Experimental script is not running')
 
     def ave_offres(self):
         """
@@ -257,7 +251,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # sending parameters for initial initialization
         self.exp_process = Process( target = self.worker.exp_on, args = ( self.child_conn, self.cur_offres_field, self.cur_exp_name, \
                                             self.cur_end_field, self.cur_start_field, self.cur_step, self.cur_ave_offres, self.cur_scan, \
-                                            self.cur_ave, self.cur_num_osc, self.cur_graph, ) )
+                                            self.cur_ave, self.cur_num_osc, self.cur_trig_ch, ) )
             
 
         self.exp_process.start()
@@ -289,15 +283,15 @@ class Worker(QWidget):
         """
         # [                  1,                 2,                  3,                    4, ]
         #self.cur_offres_field, self.cur_exp_name, self.cur_end_field, self.cur_start_field, 
-        # [          5,                   6,              7,           8,                9 ,            10 ]
-        #self.cur_step, self.cur_ave_offres, self.cur_scan, self.cur_ave, self.cur_num_osc, self.cur_graph 
+        # [          5,                   6,              7,           8,                9,               10   ]
+        #self.cur_step, self.cur_ave_offres, self.cur_scan, self.cur_ave, self.cur_num_osc, self.cur_trig_ch
 
         # should be inside dig_on() function;
         # freezing after digitizer restart otherwise
-        #import time
+        import sys
         import atomize.general_modules.general_functions as general
         import atomize.device_modules.Keysight_2000_Xseries as key
-        #import atomize.device_modules.Keysight_2000_Xseries_2 as key2
+        import atomize.device_modules.Keysight_2000_Xseries_2 as key2
         import atomize.device_modules.BH_15 as bh
         import atomize.device_modules.Lakeshore_335 as ls
         import atomize.device_modules.Agilent_53131a as ag
@@ -305,30 +299,46 @@ class Worker(QWidget):
 
         file_handler = openfile.Saver_Opener()
         process = 'None'
-        ##ag53131a = ag.Agilent_53131a()
-        ##ls335 = ls.Lakeshore_335()
-        ##a2012 = key.Keysight_2000_Xseries()
-        ##bh15 = bh.BH_15()
-        ##if p9 > 1:
-            ##a2012_2 = key2.Keysight_2000_Xseries()
-
+        ag53131a = ag.Agilent_53131a()
+        ls335 = ls.Lakeshore_335()
+        a2012 = key.Keysight_2000_Xseries()
+        bh15 = bh.BH_15()
         
-        ##a2012.oscilloscope_trigger_channel('CH2')
-        ##a2012.oscilloscope_acquisition_type('Average')
-        ##a2012.oscilloscope_stop()
-        ##if p9 > 1:
-            ##a2012_2.oscilloscope_trigger_channel('CH2')
-            ##a2012_2.oscilloscope_acquisition_type('Average')
-            ##a2012_2.oscilloscope_stop()
+        ag53131a.freq_counter_digits(8)
+        ag53131a.freq_counter_stop_mode('Digits')
 
-        ##a2012.oscilloscope_record_length( 4000 )
-        ##real_length = a2012.oscilloscope_record_length( )
-        real_length = 4000
-        ##if p9 > 1:
-            ##a2012_2.oscilloscope_record_length( 4000 )
+        if p9 == 1:
+            a2012.oscilloscope_trigger_channel(p10)
+            a2012.oscilloscope_acquisition_type('Average')
+            a2012.oscilloscope_run_stop()
+
+        else:
+            a2012_2 = key2.Keysight_2000_Xseries()
+            
+            a2012.oscilloscope_trigger_channel(p10)
+            a2012.oscilloscope_acquisition_type('Average')
+            a2012.oscilloscope_run_stop()
+
+            a2012_2.oscilloscope_trigger_channel('CH2')
+            a2012_2.oscilloscope_acquisition_type('Average')
+            a2012_2.oscilloscope_run_stop()
+
+        a2012.oscilloscope_record_length( 4000 )
+        try:
+            real_length = a2012.oscilloscope_record_length( )
+        except ZeroDivisionError:
+            general.message('Incorrect Trigger Channel')
+
+        t_res = round( a2012.oscilloscope_timebase() / real_length, 6 )    # in us
+        t_res_rough = round( t_res, 2 )
+        ##real_length = 4000
+        if p9 > 1:
+            a2012_2.oscilloscope_record_length( 4000 )
+            t_res_2 = round( a2012_2.oscilloscope_timebase() / real_length, 6 ) # in us
+            t_res_2_rough = round( t_res_2, 2 )
 
         # parameters for initial initialization
-        field = 0
+        field = 100
         START_FIELD = p4
         END_FIELD = p3
         FIELD_STEP = p5
@@ -336,16 +346,34 @@ class Worker(QWidget):
         initialization_step = 10
         SCANS = p7
         points = int( (END_FIELD - START_FIELD) / FIELD_STEP ) + 1
-        if p9 == 1:
-            data = np.zeros( (2, real_length, points) )
-            data_offres = np.zeros( (real_length, 1) )
-        else:
-            data = np.zeros( (4, real_length, points) )
-            data_offres = np.zeros( (real_length, 2) )
 
-        axis_x = np.arange(4000)
+        if p9 == 1:
+            data = np.zeros( (2, real_length, points + 1) )
+        elif p9 == 2:
+            data = np.zeros( (4, real_length, points + 1) )
+        else:
+            data = np.zeros( (5, real_length, points + 1) )
         
-        ##bh15.magnet_setup(OFFRES_FIELD, p5)
+        ##axis_x = np.arange(4000)
+        
+        bh15.magnet_setup(field, p5)
+        temp_start = str( ls335.tc_temperature('B') )
+
+        # Oscilloscopes bugs
+        a2012.oscilloscope_number_of_averages(2)
+        if p9 > 1:
+            a2012_2.oscilloscope_number_of_averages(2)
+
+        a2012.oscilloscope_start_acquisition()
+        if p9 > 1:
+            a2012_2.oscilloscope_start_acquisition()
+        
+        if p9 == 1:
+            y = a2012.oscilloscope_get_curve('CH1')
+
+        elif p9 == 2:
+            y = a2012.oscilloscope_get_curve('CH1')
+            y2 = a2012_2.oscilloscope_get_curve('CH1')
 
         # the idea of automatic and dynamic changing is
         # sending a new value of repetition rate via self.command
@@ -354,101 +382,151 @@ class Worker(QWidget):
         while self.command != 'exit':
             # Start of experiment
             while field < OFFRES_FIELD:
-                ##field = bh15.magnet_field( field + initialization_step )
+                field = bh15.magnet_field( field + initialization_step )
                 field = field + initialization_step
 
-            header = 'test'
             # Data saving
-            ## str( ls335.tc_temperature('B') )
-            ## str( ag53131a.freq_counter_frequency('CH3') / 1000000 )
-            ## str( t3034.oscilloscope_timebase()*1000 / real_length )
-            """
-            header = 'Date: ' + str(datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")) + '\n' + 'Continious Wave EPR Spectrum\n' + \
-                        'Start Field: ' + str(START_FIELD) + ' G \n' + 'End Field: ' + str(END_FIELD) + ' G \n' + \
-                        'Field Step: ' + str(FIELD_STEP) + ' G \n' + 'Number of Scans: ' + str(SCANS) + '\n' + \
-                        'Temperature: ' + str( 10 ) + ' K\n' +\
-                        'Time Constant: ' + str(p8) + '\n' + 'Modulation amplitude: ' + str(p6) + ' V\n' + \
-                        'Frequency: ' + str( 9.750 ) + ' GHz\n' + 'Field (G), X (V)'
-            """
-
-            #file_handler.save_1D_dialog( ( x_axis, data ), header = header )
             j = 1
             if p9 == 1:
                 file_save_1, file_save_param = file_handler.create_file_parameters('.param')
-                print(file_save_param)
+                ##t_res = 1
+                header = 'Date: ' + str(datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")) + '\n' + 'Time Resolved EPR Spectrum\n' + \
+                            'Start Field: ' + str(START_FIELD) + ' G \n' + 'End Field: ' + str(END_FIELD) + ' G \n' + \
+                            'Field Step: ' + str(FIELD_STEP) + ' G \n' + \
+                            'Off Resonance Field: ' + str(OFFRES_FIELD) + ' G \n' + \
+                            'Number of Off Resonance Averages: ' + str(p6) + '\n' + \
+                            'Number of Averages: ' + str(p8) + '\n' + \
+                            'Number of Scans: ' + str(SCANS) + '\n' + \
+                            'Temperature Start Exp: ' + str( temp_start ) + ' K\n' +\
+                            'Temperature End Exp: ' + str( temp_start ) + ' K\n' +\
+                            'Record Length: ' + str(real_length) + ' Points\n' + 'Time Resolution: ' + str(t_res) + ' us\n' + \
+                            'Frequency: ' + str( round( ag53131a.freq_counter_frequency('CH3') / 1000000, 6) ) + ' GHz\n' + '2D Data'
+                
                 file_handler.save_header(file_save_1, header = header, mode = 'w')
             elif p9 == 2:
                 file_save_1, file_save_2 = file_handler.create_file_parameters('_osc2.csv')
+
+                header = 'Date: ' + str(datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")) + '\n' + 'Time Resolved EPR Spectrum\n' + \
+                            'Start Field: ' + str(START_FIELD) + ' G \n' + 'End Field: ' + str(END_FIELD) + ' G \n' + \
+                            'Field Step: ' + str(FIELD_STEP) + ' G \n' + \
+                            'Off Resonance Field: ' + str(OFFRES_FIELD) + ' G \n' + \
+                            'Number of Off Resonance Averages: ' + str(p6) + '\n' + \
+                            'Number of Averages: ' + str(p8) + '\n' + \
+                            'Number of Scans: ' + str(SCANS) + '\n' + \
+                            'Temperature Start Exp: ' + str( temp_start ) + ' K\n' +\
+                            'Temperature End Exp: ' + str( temp_start ) + ' K\n' +\
+                            'Record Length: ' + str(real_length) + ' Points\n' + 'Time Resolution: ' + str(t_res) + ' us\n' + \
+                            'Frequency: ' + str( round( ag53131a.freq_counter_frequency('CH3') / 1000000, 6) ) + ' GHz\n' + '2D Data'
+
+                header_2 = 'Date: ' + str(datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")) + '\n' + 'Time Resolved EPR Spectrum\n' + \
+                            'Start Field: ' + str(START_FIELD) + ' G \n' + 'End Field: ' + str(END_FIELD) + ' G \n' + \
+                            'Field Step: ' + str(FIELD_STEP) + ' G \n' + \
+                            'Off Resonance Field: ' + str(OFFRES_FIELD) + ' G \n' + \
+                            'Number of Off Resonance Averages: ' + str(p6) + '\n' + \
+                            'Number of Averages: ' + str(p8) + '\n' + \
+                            'Number of Scans: ' + str(SCANS) + '\n' + \
+                            'Temperature Start Exp: ' + str( temp_start ) + ' K\n' +\
+                            'Temperature End Exp: ' + str( temp_start ) + ' K\n' +\
+                            'Record Length: ' + str(real_length) + ' Points\n' + 'Time Resolution: ' + str(t_res_2) + ' us\n' + \
+                            'Frequency: ' + str( round( ag53131a.freq_counter_frequency('CH3') / 1000000, 6) ) + ' GHz\n' + '2D Data'
+
                 file_handler.save_header(file_save_1, header = header, mode = 'w')
-                file_handler.save_header(file_save_2, header = header, mode = 'w')
+                file_handler.save_header(file_save_2, header = header_2, mode = 'w')
+
             elif p9 == 3:
                 file_save_1, file_save_2 = file_handler.create_file_parameters('_osc2.csv')
                 file_save_3 = file_save_1.split('.csv')[0] + '_pulse.csv'
+
+                header = 'Date: ' + str(datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")) + '\n' + 'Time Resolved EPR Spectrum\n' + \
+                            'Start Field: ' + str(START_FIELD) + ' G \n' + 'End Field: ' + str(END_FIELD) + ' G \n' + \
+                            'Field Step: ' + str(FIELD_STEP) + ' G \n' + \
+                            'Off Resonance Field: ' + str(OFFRES_FIELD) + ' G \n' + \
+                            'Number of Off Resonance Averages: ' + str(p6) + '\n' + \
+                            'Number of Averages: ' + str(p8) + '\n' + \
+                            'Number of Scans: ' + str(SCANS) + '\n' + \
+                            'Temperature Start Exp: ' + str( temp_start ) + ' K\n' +\
+                            'Temperature End Exp: ' + str( temp_start ) + ' K\n' +\
+                            'Record Length: ' + str(real_length) + ' Points\n' + 'Time Resolution: ' + str(t_res) + ' us\n' + \
+                            'Frequency: ' + str( round( ag53131a.freq_counter_frequency('CH3') / 1000000, 6) ) + ' GHz\n' + '2D Data'
+
+                header_2 = 'Date: ' + str(datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")) + '\n' + 'Time Resolved EPR Spectrum\n' + \
+                            'Start Field: ' + str(START_FIELD) + ' G \n' + 'End Field: ' + str(END_FIELD) + ' G \n' + \
+                            'Field Step: ' + str(FIELD_STEP) + ' G \n' + \
+                            'Off Resonance Field: ' + str(OFFRES_FIELD) + ' G \n' + \
+                            'Number of Off Resonance Averages: ' + str(p6) + '\n' + \
+                            'Number of Averages: ' + str(p8) + '\n' + \
+                            'Number of Scans: ' + str(SCANS) + '\n' + \
+                            'Temperature Start Exp: ' + str( temp_start ) + ' K\n' +\
+                            'Temperature End Exp: ' + str( temp_start ) + ' K\n' +\
+                            'Record Length: ' + str(real_length) + ' Points\n' + 'Time Resolution: ' + str(t_res_2) + ' us\n' + \
+                            'Frequency: ' + str( round( ag53131a.freq_counter_frequency('CH3') / 1000000, 6) ) + ' GHz\n' + '2D Data'
+
                 file_handler.save_header(file_save_1, header = header, mode = 'w')
-                file_handler.save_header(file_save_2, header = header, mode = 'w')
-                file_handler.save_header(file_save_3, header = header, mode = 'w')
+                file_handler.save_header(file_save_2, header = header_2, mode = 'w')
+                file_handler.save_header(file_save_3, header = header_2, mode = 'w')
 
             while j <= SCANS:
                 if self.command == 'exit':
                     break
 
-                ##field = bh15.magnet_field( OFFRES_FIELD )
+                field = bh15.magnet_field( OFFRES_FIELD )
                 field = OFFRES_FIELD
-                ##a2012.oscilloscope_number_of_averages(p6)
-                ##if p9 > 1:
-                    ##a2012_2.oscilloscope_number_of_averages(p6)
+
+                general.wait('2000 ms')
+
+                a2012.oscilloscope_number_of_averages(p6)
+                if p9 > 1:
+                    a2012_2.oscilloscope_number_of_averages(p6)
                 
-                ##a2012.oscilloscope_start_acquisition()
-                ##if p9 > 1:
-                    ##a2012_2.oscilloscope_start_acquisition()
+                a2012.oscilloscope_start_acquisition()
+                if p9 > 1:
+                    a2012_2.oscilloscope_start_acquisition()
 
-                ch_time = np.random.randint(250, 500, 1)
+                ##ch_time = np.random.randint(250, 500, 1)
                 if p9 == 1:
-                    ##y = a2012.oscilloscope_get_curve('CH1')
-                    ##data_offres[:, 0] = ( data_offres[:, 0] * (j - 1) + y ) / j
-                    y = 1 + 10*np.exp(-axis_x/ch_time) + 50*np.random.normal(size = (4000))
-                    data_offres[:, 0] = ( data_offres[:, 0] * (j - 1) + y ) / j
+                    y = a2012.oscilloscope_get_curve('CH1')
+                    ##y = 1 + 10*np.exp(-axis_x/ch_time) + 50*np.random.normal(size = (4000))
+                    data[0, :, 0] = ( data[0, :, 0] * (j - 1) + y ) / j
+                    data[1, :, 0] = ( data[0, :, 0] - data[0, :, 0] )
                     
-                    file_handler.save_data(file_save_1, y, header = 'offres' + str(field), mode = 'a')
                 elif p9 == 2:
-                    ##y = a2012.oscilloscope_get_curve('CH1')
-                    ##data_offres[:, 0] = ( data_offres[:, 0] * (j - 1) + y ) / j
-                    y = 1 + 10*np.exp(-axis_x/ch_time) + 50*np.random.normal(size = (4000))
-                    data_offres[:, 0] = ( data_offres[:, 0] * (j - 1) + y ) / j
-                    ##y2 = a2012_2.oscilloscope_get_curve('CH1')
-                    ##data_offres[:, 1] = ( data_offres[:, 1] * (j - 1) + y2 ) / j
-                    y2 = 1 + 10*np.exp(-axis_x/ch_time) + 50*np.random.normal(size = (4000))
-                    data_offres[:, 1] = ( data_offres[:, 1] * (j - 1) + y2 ) / j
+                    y = a2012.oscilloscope_get_curve('CH1')
+                    ##y = 1 + 10*np.exp(-axis_x/ch_time) + 50*np.random.normal(size = (4000))
+                    data[0, :, 0] = ( data[0, :, 0] * (j - 1) + y ) / j
+                    data[1, :, 0] = ( data[0, :, 0] - data[0, :, 0] )
 
-                    file_handler.save_data(file_save_1, y, header = 'offres' + str(field), mode = 'a')
-                    file_handler.save_data(file_save_2, y2, header = 'offres' + str(field), mode = 'a')
+                    y2 = a2012_2.oscilloscope_get_curve('CH1')
+                    ##y2 = 1 + 10*np.exp(-axis_x/ch_time) + 50*np.random.normal(size = (4000))
+                    data[2, :, 0] = ( data[2, :, 0] * (j - 1) + y2 ) / j
+                    data[3, :, 0] = ( data[2, :, 0] - data[2, :, 0] )
 
                 elif p9 == 3:
-                    ##y = a2012.oscilloscope_get_curve('CH1')
-                    ##data_offres[:, 0] = ( data_offres[:, 0] * (j - 1) + y ) / j
-                    y = 1 + 10*np.exp(-axis_x/ch_time) + 50*np.random.normal(size = (4000))
-                    data_offres[:, 0] = ( data_offres[:, 0] * (j - 1) + y ) / j
-                    ##y2 = a2012_2.oscilloscope_get_curve('CH1')
-                    ##data_offres[:, 1] = ( data_offres[:, 1] * (j - 1) + y2 ) / j
-                    y2 = 1 + 10*np.exp(-axis_x/ch_time) + 50*np.random.normal(size = (4000))
-                    data_offres[:, 1] = ( data_offres[:, 1] * (j - 1) + y2 ) / j
-                    ##y3 = a2012_2.oscilloscope_get_curve('CH2')
-                    y3 = 1 + 10*np.exp(-axis_x/ch_time) + 50*np.random.normal(size = (4000))
-                    
-                    file_handler.save_data(file_save_1, y, header = 'offres' + str(field), mode = 'a')
-                    file_handler.save_data(file_save_2, y2, header = 'offres' + str(field), mode = 'a')
-                    file_handler.save_data(file_save_3, y3, header = 'offres' + str(field), mode = 'a')
+                    y = a2012.oscilloscope_get_curve('CH1')
+                    ##y = 1 + 10*np.exp(-axis_x/ch_time) + 50*np.random.normal(size = (4000))
+                    data[0, :, 0] = ( data[0, :, 0] * (j - 1) + y ) / j
+                    data[1, :, 0] = ( data[0, :, 0] - data[0, :, 0] )
+
+                    y2 = a2012_2.oscilloscope_get_curve('CH1')
+                    ##y2 = 1 + 10*np.exp(-axis_x/ch_time) + 50*np.random.normal(size = (4000))
+                    data[2, :, 0] = ( data[2, :, 0] * (j - 1) + y2 ) / j
+                    data[3, :, 0] = ( data[2, :, 0] - data[2, :, 0] )
+
+                    y3 = a2012_2.oscilloscope_get_curve('CH2')
+                    ##y3 = 1 + 10*np.exp(-axis_x/ch_time) + 50*np.random.normal(size = (4000))
+                    data[4, :, 0] = ( data[4, :, 0] * (j - 1) + y3 ) / j
 
                 while field < START_FIELD:
-                    ##field = bh15.magnet_field( field + initialization_step )
+                    field = bh15.magnet_field( field + initialization_step )
                     field = field + initialization_step
 
-                ##field = bh15.magnet_field( START_FIELD )
+                field = bh15.magnet_field( START_FIELD )
                 field = START_FIELD
 
-                ##a2012.oscilloscope_number_of_averages(p8)
-                ##if p9 > 1:
-                    ##a2012_2.oscilloscope_number_of_averages(p8)
+                general.wait('2000 ms')
+
+                a2012.oscilloscope_number_of_averages(p8)
+                if p9 > 1:
+                    a2012_2.oscilloscope_number_of_averages(p8)
 
                 i = 0
                 while field <= END_FIELD:
@@ -458,68 +536,58 @@ class Worker(QWidget):
 
                     #general.wait('2000 ms')
 
-                    ##a2012.oscilloscope_start_acquisition()
-                    ##if p9 > 1:
-                        ##a2012_2.oscilloscope_start_acquisition()
+                    a2012.oscilloscope_start_acquisition()
+                    if p9 > 1:
+                        a2012_2.oscilloscope_start_acquisition()
                     
-                    ch_time = np.random.randint(250, 500, 1)
+                    ##ch_time = np.random.randint(250, 500, 1)
                     if p9 == 1:
-                        ##y = a2012.oscilloscope_get_curve('CH1')
-                        y = 1 + 100*np.exp(-axis_x/ch_time) + 7*np.random.normal(size = (4000))
+                        y = a2012.oscilloscope_get_curve('CH1')
+                        ##y = 1 + 100*np.exp(-axis_x/ch_time) + 7*np.random.normal(size = (4000))
                         
-                        file_handler.save_data(file_save_1, y, header = 'f' + str(field), mode = 'a')
-                        data[0, :, i] = ( data[0, :, i] * (j - 1) + y ) / j
-                        data[1, :, i] = ( data[0, :, i] - data_offres[:, 0] )
+                        data[0, :, i+1] = ( data[0, :, i+1] * (j - 1) + y ) / j
+                        data[1, :, i+1] = ( data[0, :, i+1] - data[0, :, 0] )
+
                     elif p9 == 2:
-                        ##y = a2012.oscilloscope_get_curve('CH1')
-                        y = 1 + 100*np.exp(-axis_x/ch_time) + 7*np.random.normal(size = (4000))
-                        ##y2 = a2012_2.oscilloscope_get_curve('CH1')
-                        y2 = 1 + 100*np.exp(-axis_x/ch_time) + 7*np.random.normal(size = (4000))
-                        file_handler.save_data(file_save_1, y, header = 'f' + str(field), mode = 'a')
-                        file_handler.save_data(file_save_2, y2, header = 'f' + str(field), mode = 'a')
+                        y = a2012.oscilloscope_get_curve('CH1')
+                        ##y = 1 + 100*np.exp(-axis_x/ch_time) + 7*np.random.normal(size = (4000))
+                        y2 = a2012_2.oscilloscope_get_curve('CH1')
+                        ##y2 = 1 + 100*np.exp(-axis_x/ch_time) + 7*np.random.normal(size = (4000))
 
-                        data[0, :, i] = ( data[0, :, i] * (j - 1) + y ) / j
-                        data[2, :, i] = ( data[2, :, i] * (j - 1) + y2) / j
-                        data[1, :, i] = ( data[0, :, i] - data_offres[:, 0] )
-                        data[3, :, i] = ( data[2, :, i] - data_offres[:, 1] )
+                        data[0, :, i+1] = ( data[0, :, i+1] * (j - 1) + y ) / j
+                        data[2, :, i+1] = ( data[2, :, i+1] * (j - 1) + y2) / j
+                        data[1, :, i+1] = ( data[0, :, i+1] - data[0, :, 0] )
+                        data[3, :, i+1] = ( data[2, :, i+1] - data[2, :, 0] )
+
                     elif p9 == 3:
-                        ##y = a2012.oscilloscope_get_curve('CH1')
-                        y = 1 + 100*np.exp(-axis_x/ch_time) + 7*np.random.normal(size = (4000))
-                        ##y2 = a2012_2.oscilloscope_get_curve('CH1')
-                        y2 = 1 + 100*np.exp(-axis_x/ch_time) + 7*np.random.normal(size = (4000))
-                        ##y3 = a2012_2.oscilloscope_get_curve('CH2')
-                        y3 = 1 + 100*np.exp(-axis_x/ch_time) + 7*np.random.normal(size = (4000))
-                        file_handler.save_data(file_save_1, y, header = 'f' + str(field), mode = 'a')
-                        file_handler.save_data(file_save_2, y2, header = 'f' + str(field), mode = 'a')
-                        file_handler.save_data(file_save_3, y3, header = 'f' + str(field), mode = 'a')
+                        y = a2012.oscilloscope_get_curve('CH1')
+                        ##y = 1 + 100*np.exp(-axis_x/ch_time) + 7*np.random.normal(size = (4000))
+                        y2 = a2012_2.oscilloscope_get_curve('CH1')
+                        ##y2 = 1 + 100*np.exp(-axis_x/ch_time) + 7*np.random.normal(size = (4000))
+                        y3 = a2012_2.oscilloscope_get_curve('CH2')
+                        ##y3 = 1 + 100*np.exp(-axis_x/ch_time) + 50*np.random.normal(size = (4000))
 
-                        data[0, :, i] = ( data[0, :, i] * (j - 1) + y ) / j
-                        data[2, :, i] = ( data[2, :, i] * (j - 1) + y2) / j
-                        data[1, :, i] = ( data[0, :, i] - data_offres[:, 0] )
-                        data[3, :, i] = ( data[2, :, i] - data_offres[:, 1] )
+                        data[0, :, i+1] = ( data[0, :, i+1] * (j - 1) + y ) / j
+                        data[2, :, i+1] = ( data[2, :, i+1] * (j - 1) + y2) / j
+                        data[1, :, i+1] = ( data[0, :, i+1] - data[0, :, 0] )
+                        data[3, :, i+1] = ( data[2, :, i+1] - data[2, :, 0] )
+                        data[4, :, i+1] = ( data[4, :, i+1] * (j - 1) + y3 ) / j
 
                     #start_time = time.time()
-                    if i % p10 == 0:
-                        process = general.plot_2d( p2, data,  xname='Time', start_step=( (0, 1), (START_FIELD, FIELD_STEP) ),\
-                            xscale='s', yname='Magnetic Field', yscale='G', zname='Intensity', zscale='V', pr = process, \
-                            text = 'Current Scan / Field: ' + str(j) + ' / ' + str(field))
-                        if p9 == 3:
-                            process = general.plot_1d( p2 + ' Pulse', np.arange( len(y3) ), y3, xname = 'Time',\
-                                xscale = 'Arb. U.', yname = 'Signal Intensity', yscale = 'V', pr = process )
-                    else:
-                        pass
+
+                    # (0, t_res) xscale='us'
+                    process = general.plot_2d( p2, data[:,:,1:points+1],  xname='Time', start_step=( (0, t_res_rough), (START_FIELD, FIELD_STEP) ),\
+                        xscale='us', yname='Field', yscale='G', zname='Intensity', zscale='V', pr = process, \
+                        text = 'Scan / Field: ' + str(j) + ' / ' + str(field))
 
                     #general.message( str( time.time() - start_time ) )
 
                     field = round( (FIELD_STEP + field), 3 )
-                    ##bh15.magnet_field(field)
+                    bh15.magnet_field(field)
 
                     # check our polling data
                     if self.command[0:2] == 'SC':
                         SCANS = int( self.command[2:] )
-                        self.command = 'start'
-                    elif self.command[0:2] == 'GR':
-                        p10 = int( self.command[2:] )
                         self.command = 'start'
                     elif self.command == 'exit':
                         break
@@ -530,10 +598,10 @@ class Worker(QWidget):
                     i += 1
 
                 while field > OFFRES_FIELD:
-                    ##field = bh15.magnet_field( field - initialization_step )
+                    field = bh15.magnet_field( field - initialization_step )
                     field = field - initialization_step
                 
-                ##field = bh15.magnet_field( OFFRES_FIELD )
+                field = bh15.magnet_field( OFFRES_FIELD )
                 field = OFFRES_FIELD
                 j += 1
 
@@ -542,12 +610,86 @@ class Worker(QWidget):
 
         if self.command == 'exit':
             general.message('Script finished')
-            while field > OFFRES_FIELD:
-                ##field = bh15.magnet_field( field - initialization_step )
-                field = field - initialization_step
-            ##field = bh15.magnet_field( OFFRES_FIELD )
-            field = OFFRES_FIELD
+            
+            temp_end = str( ls335.tc_temperature('B') )
+            if p9 == 1:
+                ##t_res = 1
+                header = 'Date: ' + str(datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")) + '\n' + 'Time Resolved EPR Spectrum\n' + \
+                            'Start Field: ' + str(START_FIELD) + ' G \n' + 'End Field: ' + str(END_FIELD) + ' G \n' + \
+                            'Field Step: ' + str(FIELD_STEP) + ' G \n' + \
+                            'Off Resonance Field: ' + str(OFFRES_FIELD) + ' G \n' + \
+                            'Number of Off Resonance Averages: ' + str(p6) + '\n' + \
+                            'Number of Averages: ' + str(p8) + '\n' + \
+                            'Number of Scans: ' + str(SCANS) + '\n' + \
+                            'Temperature Start Exp: ' + str( temp_start ) + ' K\n' +\
+                            'Temperature End Exp: ' + str( temp_end ) + ' K\n' +\
+                            'Record Length: ' + str(real_length) + ' Points\n' + 'Time Resolution: ' + str(t_res) + ' us\n' + \
+                            'Frequency: ' + str( round( ag53131a.freq_counter_frequency('CH3') / 1000000, 6) ) + ' GHz\n' + '2D Data'
 
+                file_handler.save_data(file_save_1, np.transpose( data[0, :, :] ), header = header)
+            elif p9 == 2:
+
+                header = 'Date: ' + str(datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")) + '\n' + 'Time Resolved EPR Spectrum\n' + \
+                            'Start Field: ' + str(START_FIELD) + ' G \n' + 'End Field: ' + str(END_FIELD) + ' G \n' + \
+                            'Field Step: ' + str(FIELD_STEP) + ' G \n' + \
+                            'Off Resonance Field: ' + str(OFFRES_FIELD) + ' G \n' + \
+                            'Number of Off Resonance Averages: ' + str(p6) + '\n' + \
+                            'Number of Averages: ' + str(p8) + '\n' + \
+                            'Number of Scans: ' + str(SCANS) + '\n' + \
+                            'Temperature Start Exp: ' + str( temp_start ) + ' K\n' +\
+                            'Temperature End Exp: ' + str( temp_end ) + ' K\n' +\
+                            'Record Length: ' + str(real_length) + ' Points\n' + 'Time Resolution: ' + str(t_res) + ' us\n' + \
+                            'Frequency: ' + str( round( ag53131a.freq_counter_frequency('CH3') / 1000000, 6) ) + ' GHz\n' + '2D Data'
+
+                header_2 = 'Date: ' + str(datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")) + '\n' + 'Time Resolved EPR Spectrum\n' + \
+                            'Start Field: ' + str(START_FIELD) + ' G \n' + 'End Field: ' + str(END_FIELD) + ' G \n' + \
+                            'Field Step: ' + str(FIELD_STEP) + ' G \n' + \
+                            'Off Resonance Field: ' + str(OFFRES_FIELD) + ' G \n' + \
+                            'Number of Off Resonance Averages: ' + str(p6) + '\n' + \
+                            'Number of Averages: ' + str(p8) + '\n' + \
+                            'Number of Scans: ' + str(SCANS) + '\n' + \
+                            'Temperature Start Exp: ' + str( temp_start ) + ' K\n' +\
+                            'Temperature End Exp: ' + str( temp_end ) + ' K\n' +\
+                            'Record Length: ' + str(real_length) + ' Points\n' + 'Time Resolution: ' + str(t_res_2) + ' us\n' + \
+                            'Frequency: ' + str( round( ag53131a.freq_counter_frequency('CH3') / 1000000, 6) ) + ' GHz\n' + '2D Data'
+
+                file_handler.save_data(file_save_1, np.transpose( data[0, :, :] ), header = header)
+                file_handler.save_data(file_save_2, np.transpose( data[2, :, :] ), header = header_2)
+            elif p9 == 3:
+
+                header = 'Date: ' + str(datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")) + '\n' + 'Time Resolved EPR Spectrum\n' + \
+                            'Start Field: ' + str(START_FIELD) + ' G \n' + 'End Field: ' + str(END_FIELD) + ' G \n' + \
+                            'Field Step: ' + str(FIELD_STEP) + ' G \n' + \
+                            'Off Resonance Field: ' + str(OFFRES_FIELD) + ' G \n' + \
+                            'Number of Off Resonance Averages: ' + str(p6) + '\n' + \
+                            'Number of Averages: ' + str(p8) + '\n' + \
+                            'Number of Scans: ' + str(SCANS) + '\n' + \
+                            'Temperature Start Exp: ' + str( temp_start ) + ' K\n' +\
+                            'Temperature End Exp: ' + str( temp_end ) + ' K\n' +\
+                            'Record Length: ' + str(real_length) + ' Points\n' + 'Time Resolution: ' + str(t_res) + ' us\n' + \
+                            'Frequency: ' + str( round( ag53131a.freq_counter_frequency('CH3') / 1000000, 6) ) + ' GHz\n' + '2D Data'
+
+                header_2 = 'Date: ' + str(datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")) + '\n' + 'Time Resolved EPR Spectrum\n' + \
+                            'Start Field: ' + str(START_FIELD) + ' G \n' + 'End Field: ' + str(END_FIELD) + ' G \n' + \
+                            'Field Step: ' + str(FIELD_STEP) + ' G \n' + \
+                            'Off Resonance Field: ' + str(OFFRES_FIELD) + ' G \n' + \
+                            'Number of Off Resonance Averages: ' + str(p6) + '\n' + \
+                            'Number of Averages: ' + str(p8) + '\n' + \
+                            'Number of Scans: ' + str(SCANS) + '\n' + \
+                            'Temperature Start Exp: ' + str( temp_start ) + ' K\n' +\
+                            'Temperature End Exp: ' + str( temp_end ) + ' K\n' +\
+                            'Record Length: ' + str(real_length) + ' Points\n' + 'Time Resolution: ' + str(t_res_2) + ' us\n' + \
+                            'Frequency: ' + str( round( ag53131a.freq_counter_frequency('CH3') / 1000000, 6) ) + ' GHz\n' + '2D Data'
+
+                file_handler.save_data(file_save_1, np.transpose( data[0, :, :] ), header = header)
+                file_handler.save_data(file_save_2, np.transpose( data[2, :, :] ), header = header_2)
+                file_handler.save_data(file_save_3, np.transpose( data[4, :, :] ), header = header_2)
+
+            while field > OFFRES_FIELD:
+                field = bh15.magnet_field( field - initialization_step )
+                field = field - initialization_step
+            field = bh15.magnet_field( OFFRES_FIELD )
+            field = OFFRES_FIELD
 
 def main():
     """

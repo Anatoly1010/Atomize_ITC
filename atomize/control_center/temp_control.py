@@ -10,6 +10,7 @@ from threading import Timer
 #from PyQt6.QtWidgets import QListView, QAction
 from PyQt6 import QtWidgets, uic #, QtCore, QtGui
 from PyQt6.QtGui import QIcon
+from PyQt6.QtCore import QObject, pyqtSignal
 import atomize.device_modules.Lakeshore_335 as ls
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -22,16 +23,20 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         super(MainWindow, self).__init__(*args, **kwargs)
         
-        #self.destroyed.connect(lambda: self._on_destroyed())         # connect some actions to exit
+        self.destroyed.connect(lambda: self._on_destroyed())         # connect some actions to exit
         # Load the UI Page
         path_to_main = os.path.dirname(os.path.abspath(__file__))
         gui_path = os.path.join(path_to_main,'gui/temp_main_window.ui')
         icon_path = os.path.join(path_to_main, 'gui/icon_temp.png')
         self.setWindowIcon( QIcon(icon_path) )
 
+        # Create a signal to emit
+        self.communicate = Communicate()
+        self.communicate.sig_lm335[list].connect(self.update_labels)
+
         uic.loadUi(gui_path, self)                        # Design file
 
-        #self.ls335 = ls.Lakeshore_335()
+        self.ls335 = ls.Lakeshore_335()
 
         # Connection of different action to different Menus and Buttons
         self.button_off.clicked.connect(self.turn_off)
@@ -52,6 +57,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.label_2.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
         self.label_3.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
         self.label_4.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
+        self.label_5.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
         self.label_temp2a.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
         self.label_temp3a.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
         self.label_heater.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
@@ -61,9 +67,13 @@ class MainWindow(QtWidgets.QMainWindow):
         self.Set_point.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); }")
         self.point = float( self.Set_point.value() )
 
+        self.combo_range.currentIndexChanged.connect(self.heater_range)
+        self.cur_range = self.combo_range.currentText() 
+        self.combo_range.setStyleSheet("QComboBox { color : rgb(193, 202, 227); selection-color: rgb(211, 194, 78); }")
+
         self.start_flag = 0
 
-        #self.ls335.tc_setpoint( self.point )
+        self.ls335.tc_setpoint( self.point )
 
     def _on_destroyed(self):
         """
@@ -71,8 +81,6 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         try:
             self.rt.stop()
-            self.rt2.stop()
-            self.rt3.stop()
         except AttributeError:
             sys.exit()
             
@@ -83,6 +91,33 @@ class MainWindow(QtWidgets.QMainWindow):
         self._on_destroyed()
         sys.exit()
 
+    def heater_range(self):
+        """
+        A function to set heater range
+        """
+        self.cur_range = self.combo_range.currentText()
+        # preventing coincidences of the commands
+        if self.start_flag == 1:
+            self.update_stop()
+            time.sleep(0.2)
+            rang = self.chose_range( self.cur_range )
+            self.ls335.tc_heater_range( rang )
+            time.sleep(0.2)
+            self.update_start()
+        else:
+            rang = self.chose_range( self.cur_range )
+            self.ls335.tc_heater_range( rang )
+
+    def chose_range(self, text):
+        if text == 'High':
+            return '50 W'
+        elif text == 'Medium':
+            return '5 W'
+        elif text == 'Low':
+            return '0.5 W'
+        else:
+            return 'Off'
+
     def set_point(self):
         """
         A function to change a set point
@@ -92,9 +127,9 @@ class MainWindow(QtWidgets.QMainWindow):
         # preventing coincidences of the commands
         if self.start_flag == 1:
             self.update_stop()
-            time.sleep(0.1)
+            time.sleep(0.2)
             self.ls335.tc_setpoint( self.point )
-            time.sleep(0.1)
+            time.sleep(0.2)
             self.update_start()
         else:
             self.ls335.tc_setpoint( self.point )
@@ -103,33 +138,34 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         A function to stop oscilloscope
         """
-        self._on_destroyed()
+        try:
+            self.rt.stop()
+        except AttributeError:
+            pass
         self.start_flag = 0
 
-    def ch2a_temp(self):
-        self.label_temp2a.setText( ' ' + str( self.ls335.tc_temperature('A') ) )
-        #self.label_temp2a.setText( ' ' + str( round( random.random(), 2 ) ) )
+    def all_values(self):
+        ta = self.ls335.tc_temperature('A')
+        tb = self.ls335.tc_temperature('B')
+        heater = self.ls335.tc_heater_power( )[0]
+        data = [ta, tb, heater]
 
-    def ch3a_temp(self):
-        self.label_temp3a.setText( ' ' + str( self.ls335.tc_temperature('B') ) )
-        #self.label_temp3a.setText( ' ' + str( round( random.random(), 2 ) ) )
-
-    def heater_value(self):
-        self.label_heater.setText( ' ' + str( self.ls335.tc_heater_power( )[0] ) )
-        #self.label_heater.setText( ' ' + str( round( random.random(), 2 ) ) )
+        self.communicate.sig_lm335.emit( data )
 
     def update_start(self):
         """
         A function to start getting data from temperature controller
         """
         self.start_flag = 1
-        self.rt = RepeatedTimer( 2, self.ch2a_temp )
-        # give some time to answer
-        time.sleep(0.1)
-        self.rt2 = RepeatedTimer( 2, self.ch3a_temp )
-        time.sleep(0.1)
-        self.rt3 = RepeatedTimer( 2, self.heater_value )
-        time.sleep(0.1)
+        self.rt = RepeatedTimer( 1, self.all_values )
+
+    def update_labels(self, labels):
+        """
+        A function to update QLabel if there is a signal in another thread
+        """        
+        self.label_temp2a.setText( ' ' + str( labels[0] ) )
+        self.label_temp3a.setText( ' ' + str( labels[1] ) )
+        self.label_heater.setText( ' ' + str( labels[2] ) )
 
     def turn_off(self):
         """
@@ -142,6 +178,12 @@ class MainWindow(QtWidgets.QMainWindow):
         A function to open a documentation
         """
         pass
+
+class Communicate(QObject):
+    """
+    To update QPlainTextEdit and QLabels if there is a signal in another thread
+    """
+    sig_lm335 = pyqtSignal(list)
 
 class RepeatedTimer(object):
     """

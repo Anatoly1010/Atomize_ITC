@@ -9,10 +9,10 @@ ys = []
 ag53131a = ag.Agilent_53131a()
 
 
-#ag53131a.freq_counter_digits(8)
-ag53131a.freq_counter_gate_time('10 s')
-#ag53131a.freq_counter_stop_mode('Dig')
+ag53131a.freq_counter_digits(8)
+#ag53131a.freq_counter_gate_time('10 s')
+ag53131a.freq_counter_stop_mode('Digits')
 #general.message(ag53131a.freq_counter_stop_mode())
-general.message(ag53131a.freq_counter_gate_time())
+#general.message(ag53131a.freq_counter_gate_time())
 #general.message(ag53131a.freq_counter_digits())
-#general.message(ag53131a.freq_counter_frequency('CH3'))
+general.message(ag53131a.freq_counter_frequency('CH3'))

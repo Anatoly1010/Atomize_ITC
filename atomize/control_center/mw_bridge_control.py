@@ -71,7 +71,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.label_8.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
         self.label_9.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
 
-        self.telemetry_text.setStyleSheet("QPlainTextEdit { color : rgb(211, 194, 78); font-weight: bold; }") # rgb(193, 202, 227)
+        self.telemetry_text.setStyleSheet("QPlainTextEdit { color : rgb(211, 194, 78); }") # rgb(193, 202, 227)
         
         # Spinboxes
         self.Att1_prd.valueChanged.connect(self.att1_prd)

@@ -8,6 +8,6 @@ ys = []
 
 ls335 = ls.Lakeshore_335()
 
-ls335.tc_sensor(2)
-general.message(ls335.tc_sensor())
+#ls335.tc_sensor(2)
+general.message(ls335.tc_heater_range('Off'))
 

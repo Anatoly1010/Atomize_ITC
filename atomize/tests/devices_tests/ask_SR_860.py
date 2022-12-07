@@ -10,7 +10,7 @@ sr860 = sr.SR_860()
 
 #sr860.lock_in_get_data()
 
-sr860.lock_in_time_constant('1000 ms')
+sr860.lock_in_time_constant('300 ms')
 #i = 0
 
 #while i < 6:
