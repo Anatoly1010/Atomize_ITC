@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>360</width>
-    <height>447</height>
+    <height>467</height>
    </rect>
   </property>
   <property name="sizePolicy">
@@ -19,13 +19,13 @@
   <property name="minimumSize">
    <size>
     <width>360</width>
-    <height>447</height>
+    <height>467</height>
    </size>
   </property>
   <property name="maximumSize">
    <size>
     <width>360</width>
-    <height>447</height>
+    <height>467</height>
    </size>
   </property>
   <property name="font">
@@ -50,13 +50,13 @@
    <property name="minimumSize">
     <size>
      <width>360</width>
-     <height>447</height>
+     <height>467</height>
     </size>
    </property>
    <property name="maximumSize">
     <size>
      <width>360</width>
-     <height>447</height>
+     <height>467</height>
     </size>
    </property>
    <layout class="QGridLayout" name="gridLayout_2">
@@ -236,8 +236,8 @@
          <string>&lt;!DOCTYPE HTML PUBLIC &quot;-//W3C//DTD HTML 4.0//EN&quot; &quot;http://www.w3.org/TR/REC-html40/strict.dtd&quot;&gt;
 &lt;html&gt;&lt;head&gt;&lt;meta name=&quot;qrichtext&quot; content=&quot;1&quot; /&gt;&lt;style type=&quot;text/css&quot;&gt;
 p, li { white-space: pre-wrap; }
-&lt;/style&gt;&lt;/head&gt;&lt;body style=&quot; font-family:'MS Shell Dlg 2'; font-size:8.25pt; font-weight:400; font-style:normal;&quot;&gt;
-&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;span style=&quot; font-family:'Ubuntu'; font-size:11pt;&quot;&gt;c1&lt;/span&gt;&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+&lt;/style&gt;&lt;/head&gt;&lt;body style=&quot; font-family:'Ubuntu'; font-size:11pt; font-weight:400; font-style:normal;&quot;&gt;
+&lt;p style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;c1&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
         </property>
        </widget>
       </item>
@@ -275,7 +275,7 @@ p, li { white-space: pre-wrap; }
          <double>0.500000000000000</double>
         </property>
         <property name="value">
-         <double>3530.000000000000000</double>
+         <double>3590.000000000000000</double>
         </property>
        </widget>
       </item>
@@ -303,7 +303,7 @@ p, li { white-space: pre-wrap; }
          <double>0.500000000000000</double>
         </property>
         <property name="value">
-         <double>3370.000000000000000</double>
+         <double>3390.000000000000000</double>
         </property>
        </widget>
       </item>
@@ -421,12 +421,17 @@ p, li { white-space: pre-wrap; }
         <property name="verticalScrollBarPolicy">
          <enum>Qt::ScrollBarAlwaysOff</enum>
         </property>
+        <property name="markdown">
+         <string>ED
+
+</string>
+        </property>
         <property name="html">
          <string>&lt;!DOCTYPE HTML PUBLIC &quot;-//W3C//DTD HTML 4.0//EN&quot; &quot;http://www.w3.org/TR/REC-html40/strict.dtd&quot;&gt;
 &lt;html&gt;&lt;head&gt;&lt;meta name=&quot;qrichtext&quot; content=&quot;1&quot; /&gt;&lt;style type=&quot;text/css&quot;&gt;
 p, li { white-space: pre-wrap; }
-&lt;/style&gt;&lt;/head&gt;&lt;body style=&quot; font-family:'MS Shell Dlg 2'; font-size:8.25pt; font-weight:400; font-style:normal;&quot;&gt;
-&lt;p style=&quot; margin-top:7px; margin-bottom:7px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;span style=&quot; font-family:'Ubuntu'; font-size:11pt;&quot;&gt;ED&lt;/span&gt;&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+&lt;/style&gt;&lt;/head&gt;&lt;body style=&quot; font-family:'Ubuntu'; font-size:11pt; font-weight:400; font-style:normal;&quot;&gt;
+&lt;p style=&quot; margin-top:7px; margin-bottom:7px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;ED&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
         </property>
         <property name="overwriteMode">
          <bool>true</bool>
@@ -436,11 +441,6 @@ p, li { white-space: pre-wrap; }
         </property>
         <property name="textInteractionFlags">
          <set>Qt::TextEditorInteraction</set>
-        </property>
-        <property name="markdown" stdset="0">
-         <string>Exp Echo Detected
-
-</string>
         </property>
        </widget>
       </item>

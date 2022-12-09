@@ -717,7 +717,7 @@
          <double>0.500000000000000</double>
         </property>
         <property name="value">
-         <double>3445.000000000000000</double>
+         <double>3493.000000000000000</double>
         </property>
        </widget>
       </item>
@@ -1138,7 +1138,7 @@
          <number>1</number>
         </property>
         <property name="value">
-         <number>0</number>
+         <number>1000</number>
         </property>
        </widget>
       </item>
@@ -1163,7 +1163,7 @@
          <number>5</number>
         </property>
         <property name="value">
-         <number>200</number>
+         <number>2000</number>
         </property>
        </widget>
       </item>
@@ -1251,6 +1251,12 @@
         </property>
         <property name="text">
          <string/>
+        </property>
+        <property name="checked">
+         <bool>false</bool>
+        </property>
+        <property name="tristate">
+         <bool>false</bool>
         </property>
        </widget>
       </item>

@@ -9,27 +9,26 @@ import atomize.device_modules.Keysight_2000_Xseries as key
 import atomize.device_modules.Mikran_X_band_MW_bridge_v2 as mwBridge
 import atomize.device_modules.Lakeshore_335 as ls
 import atomize.device_modules.BH_15 as bh
-import atomize.general_modules.csv_opener_saver as openfile
+import atomize.general_modules.csv_opener_saver_tk_kinter as openfile
 
 ### Experimental parameters
-POINTS = 11
-STEP = 20                  # in NS;
-FIELD = 3435.5
-AVERAGES = 2
+POINTS = 1501
+STEP = 12                  # in NS;
+FIELD = 3493.0
+AVERAGES = 60
 SCANS = 1
 process = 'None'
 
 # PULSES
-REP_RATE = '5000 Hz'
-PULSE_1_LENGTH = '16 ns'
-PULSE_2_LENGTH = '32 ns'
+REP_RATE = '800 Hz'
+PULSE_1_LENGTH = '100 ns'
+PULSE_2_LENGTH = '200 ns'
 PULSE_1_START = '0 ns'
-PULSE_2_START = '400 ns'
-PULSE_SIGNAL_START = '800 ns'
+PULSE_2_START = '600 ns'
+PULSE_SIGNAL_START = '1200 ns'
 
 # NAMES
 EXP_NAME = 'T2 Echo'
-CURVE_NAME = 'exp1'
 
 # initialization of the devices
 file_handler = openfile.Saver_Opener()
@@ -77,7 +76,7 @@ a2012.oscilloscope_acquisition_type('Average')
 a2012.oscilloscope_number_of_averages(AVERAGES)
 #a2012.oscilloscope_stop()
 
-a2012.oscilloscope_record_length( 2500 )
+a2012.oscilloscope_record_length( 4000 )
 real_length = a2012.oscilloscope_record_length( )
 wind = a2012.oscilloscope_timebase() * 1000
 time_res = wind / real_length
@@ -111,8 +110,7 @@ for j in general.scans(SCANS):
 
             pb.pulser_next_phase()
             a2012.oscilloscope_start_acquisition()
-            cycle_data_x[k] = a2012.oscilloscope_area('CH1')
-            cycle_data_y[k] = a2012.oscilloscope_area('CH2')
+            cycle_data_x[k], cycle_data_y[k] = a2012.oscilloscope_get_curve('CH1'), a2012.oscilloscope_get_curve('CH2')
 
             #x_axis, cycle_data_x[k], cycle_data_y[k] = dig4450.digitizer_get_curve()
 
@@ -124,7 +122,7 @@ for j in general.scans(SCANS):
         data[0, :, i] = ( data[0, :, i] * (j - 1) + x ) / j
         data[1, :, i] = ( data[1, :, i] * (j - 1) + y ) / j
 
-        process = general.plot_2d(EXP_NAME, data, start_step = ( (0, round( time_res, 1 )), (0, STEP) ), xname = 'Time',\
+        process = general.plot_2d(EXP_NAME, data, start_step = ( (0, round( time_res, 2 )), (0, STEP) ), xname = 'Time',\
             xscale = 'ns', yname = 'Delay', yscale = 'ns', zname = 'Intensity', zscale = 'V', pr = process, \
             text = 'Scan / Time: ' + str(j) + ' / '+ str(i*STEP))
 

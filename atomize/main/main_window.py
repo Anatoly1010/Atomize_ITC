@@ -564,7 +564,7 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         A function to run an phasing for rect channel.
         """
-        self.process_ed.setArguments(['atomize/control_center/ed_preset.py'])
+        self.process_ed.setArguments(['atomize/control_center/echo_det_preset.py'])
         self.process_ed.start()
 
     def start_t1_preset(self):

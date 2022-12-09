@@ -326,11 +326,13 @@ class Worker(QWidget):
         bh15.magnet_setup(START_FIELD, FIELD_STEP)
 
         a2012.oscilloscope_trigger_channel('Ext')
-        a2012.oscilloscope_record_length(250)
+        a2012.oscilloscope_record_length(4000)
         a2012.oscilloscope_acquisition_type('Average')
         a2012.oscilloscope_number_of_averages(AVERAGES)
         a2012.oscilloscope_stop()
 
+        # read integration window
+        a2012.oscilloscope_read_settings()
         #dig4450.digitizer_read_settings()
         #dig4450.digitizer_number_of_averages(AVERAGES)
 
@@ -363,8 +365,8 @@ class Worker(QWidget):
 
                         #cycle_data_x[k], cycle_data_y[k] = dig4450.digitizer_get_curve( integral = True )
                         a2012.oscilloscope_start_acquisition()
-                        cycle_data_x[k] = a2012.oscilloscope_area('CH1')
-                        cycle_data_y[k] = a2012.oscilloscope_area('CH2')
+                        cycle_data_x[k], cycle_data_y[k] = a2012.oscilloscope_get_curve('CH1', integral = True), a2012.oscilloscope_get_curve('CH2', integral = True)
+                        #cycle_data_y[k] = a2012.oscilloscope_area('CH2')
 
                         k += 1
 
@@ -405,7 +407,7 @@ class Worker(QWidget):
 
         if self.command == 'exit':
             general.message('Script finished')
-            tb = t3034.oscilloscope_timebase()*1000
+            tb = a2012.oscilloscope_window()
 
             #tb = dig4450.digitizer_number_of_points() * int(  1000 / float( dig4450.digitizer_sample_rate().split(' ')[0] ) )
             #tb = dig4450.digitizer_window()

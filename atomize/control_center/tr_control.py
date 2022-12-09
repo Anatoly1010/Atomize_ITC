@@ -329,13 +329,13 @@ class Worker(QWidget):
         except ZeroDivisionError:
             general.message('Incorrect Trigger Channel')
 
-        t_res = round( a2012.oscilloscope_timebase() / real_length, 6 )    # in us
-        t_res_rough = round( t_res, 2 )
+        t_res = round( a2012.oscilloscope_timebase() / real_length, 7 )    # in us
+        t_res_rough = round( t_res, 3 )
         ##real_length = 4000
         if p9 > 1:
             a2012_2.oscilloscope_record_length( 4000 )
-            t_res_2 = round( a2012_2.oscilloscope_timebase() / real_length, 6 ) # in us
-            t_res_2_rough = round( t_res_2, 2 )
+            t_res_2 = round( a2012_2.oscilloscope_timebase() / real_length, 7 ) # in us
+            t_res_2_rough = round( t_res_2, 3 )
 
         # parameters for initial initialization
         field = 100

@@ -9,7 +9,7 @@ import atomize.device_modules.Keysight_2000_Xseries as key
 import atomize.device_modules.Mikran_X_band_MW_bridge_v2 as mwBridge
 import atomize.device_modules.BH_15 as bh
 import atomize.device_modules.Lakeshore_335 as ls
-import atomize.general_modules.csv_opener_saver as openfile
+import atomize.general_modules.csv_opener_saver_tk_kinter as openfile
 
 ### Experimental parameters
 START_FIELD = 3336
@@ -60,13 +60,13 @@ signal.signal(signal.SIGTERM, cleanup)
 bh15.magnet_setup(START_FIELD, FIELD_STEP)
 
 a2012.oscilloscope_trigger_channel('Ext')
-tb = a2012.oscilloscope_time_resolution()
-a2012.oscilloscope_record_length(250)
+a2012.oscilloscope_record_length(4000)
 a2012.oscilloscope_acquisition_type('Average')
 a2012.oscilloscope_number_of_averages(AVERAGES)
 ###a2012.oscilloscope_stop()
 
-
+# read integration window
+a2012.oscilloscope_read_settings()
 #dig4450.digitizer_read_settings()
 #dig4450.digitizer_number_of_averages(AVERAGES)
 #tb = dig4450.digitizer_number_of_points() * int(  1000 / float( dig4450.digitizer_sample_rate().split(' ')[0] ) )
@@ -80,13 +80,13 @@ pb.pulser_repetition_rate( REP_RATE )
 pb.pulser_update()
 
 # Data saving
-#tb
+tb = a2012.oscilloscope_window()
 header = 'Date: ' + str(datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")) + '\n' + 'Echo Detected Spectrum\n' + \
             'Start Field: ' + str(START_FIELD) + ' G \n' + 'End Field: ' + str(END_FIELD) + ' G \n' + \
             'Field Step: ' + str(FIELD_STEP) + ' G \n' + str(mw.mw_bridge_att_prm()) + '\n' + str(mw.mw_bridge_att1_prd()) + '\n' + \
             str(mw.mw_bridge_synthesizer()) + '\n' + \
            'Repetition Rate: ' + str(pb.pulser_repetition_rate()) + '\n' + 'Number of Scans: ' + str(SCANS) + '\n' +\
-           'Averages: ' + str(AVERAGES) + '\n' + 'Points: ' + str(points) + '\n' + 'Window: ' + str(str(t3034.oscilloscope_timebase()*1000)) + ' ns\n' + \
+           'Averages: ' + str(AVERAGES) + '\n' + 'Points: ' + str(points) + '\n' + 'Window: ' + str(tb) + ' ns\n' + \
            'Temperature: ' + str(ls335.tc_temperature('B')) + ' K\n' +\
            'Pulse List: ' + '\n' + str(pb.pulser_pulse_list()) + 'Field (G), X (V*s), Y (V*s) '
 
@@ -109,9 +109,9 @@ for j in general.scans(SCANS):
             pb.pulser_next_phase()
 
             #cycle_data_x[k], cycle_data_y[k] = dig4450.digitizer_get_curve( integral = True )
-            t3034.oscilloscope_start_acquisition()
-            cycle_data_x[k] = t3034.oscilloscope_area('CH1')
-            cycle_data_y[k] = t3034.oscilloscope_area('CH2')
+            a2012.oscilloscope_start_acquisition()
+            cycle_data_x[k], cycle_data_y[k] = a2012.oscilloscope_get_curve('CH1', integral = True), a2012.oscilloscope_get_curve('CH2', integral = True)
+            #cycle_data_y[k] = a2012.oscilloscope_area('CH2')
 
             k += 1
 

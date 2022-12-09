@@ -243,10 +243,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.Hor_offset.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); }")
 
         self.Win_left.valueChanged.connect(self.win_left)
-        self.cur_win_left = int( self.Win_left.value() ) * self.time_per_point
+        self.cur_win_left = int( self.Win_left.value() ) #* self.time_per_point
         self.Win_left.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); }")
         self.Win_right.valueChanged.connect(self.win_right)
-        self.cur_win_right = int( self.Win_right.value() ) * self.time_per_point
+        self.cur_win_right = int( self.Win_right.value() ) #* self.time_per_point
         self.Win_right.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); }")
 
         self.Acq_number.valueChanged.connect(self.acq_number)
@@ -257,7 +257,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.fft_box.setStyleSheet("QCheckBox { color : rgb(193, 202, 227); }")
         self.Quad_cor.setStyleSheet("QCheckBox { color : rgb(193, 202, 227); }")
 
-        self.shift_box.stateChanged.connect( self.simul_shift )
+        #self.shift_box.stateChanged.connect( self.simul_shift )
         self.fft_box.stateChanged.connect( self.fft_online )
         self.Quad_cor.stateChanged.connect( self.quad_online )
 
@@ -279,9 +279,9 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         Turn on/off Quadrature phase correction
         """
-        if self.Quad_cor.checkState() == 2: # checked
+        if self.Quad_cor.checkState().value == 2: # checked
             self.quad = 1
-        elif self.Quad_cor.checkState() == 0: # unchecked
+        elif self.Quad_cor.checkState().value == 0: # unchecked
             self.quad = 0
         
         try:
@@ -357,9 +357,9 @@ class MainWindow(QtWidgets.QMainWindow):
         Turn on/off FFT
         """
 
-        if self.fft_box.checkState() == 2: # checked
+        if self.fft_box.checkState().value == 2: # checked
             self.fft = 1
-        elif self.fft_box.checkState() == 0: # unchecked
+        elif self.fft_box.checkState().value == 0: # unchecked
             self.fft = 0
         
         try:
@@ -371,12 +371,12 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         Special function for simultaneous change of number of points and horizontal offset
         """
-        if self.shift_box.checkState() == 2: # checked
+        if self.shift_box.checkState().value == 2: # checked
             self.Timescale.valueChanged.disconnect()
             #self.Hor_offset.valueChanged.disconnect() 
             self.Timescale.valueChanged.connect(self.timescale_hor_offset)
             #self.Hor_offset.valueChanged.connect(self.timescale_hor_offset)
-        elif self.shift_box.checkState() == 0: # unchecked
+        elif self.shift_box.checkState().value == 0: # unchecked
             self.Timescale.valueChanged.disconnect()
             self.Timescale.valueChanged.connect(self.timescale)
             self.points = int( self.Timescale.value() )
@@ -469,10 +469,10 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         A function to change left integration window
         """
-        self.cur_win_left = int( self.Win_left.value() ) * self.time_per_point
-        if self.cur_win_left / self.time_per_point > self.points:
-            self.cur_win_left = self.points * self.time_per_point
-            self.Win_left.setValue( self.cur_win_left / self.time_per_point )
+        self.cur_win_left = int( self.Win_left.value() ) #* self.time_per_point
+        #if self.cur_win_left / self.time_per_point > self.points:
+        #    self.cur_win_left = self.points * self.time_per_point
+        #    self.Win_left.setValue( self.cur_win_left / self.time_per_point )
         
         if self.opened == 0:
             try:
@@ -481,10 +481,10 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.message('Digitizer is not running')
 
     def win_right(self):
-        self.cur_win_right = int( self.Win_right.value() ) * self.time_per_point
-        if self.cur_win_right / self.time_per_point > self.points:
-            self.cur_win_right = self.points * self.time_per_point
-            self.Win_right.setValue( self.cur_win_right / self.time_per_point )
+        self.cur_win_right = int( self.Win_right.value() ) #* self.time_per_point
+        #if self.cur_win_right / self.time_per_point > self.points:
+        #    self.cur_win_right = self.points * self.time_per_point
+        #    self.Win_right.setValue( self.cur_win_right / self.time_per_point )
 
         if self.opened == 0:
             try:
@@ -518,7 +518,7 @@ class MainWindow(QtWidgets.QMainWindow):
         A function to open a new window for choosing a pulse list
         """
         filedialog = QFileDialog(self, 'Open File', directory = self.path, filter = "Pulse Phase List (*.phase)",\
-            options = QtWidgets.QFileDialog.DontUseNativeDialog)
+            options = QtWidgets.QFileDialog.Option.DontUseNativeDialog)
         # use QFileDialog.DontUseNativeDialog to change directory
         filedialog.setStyleSheet("QWidget { background-color : rgb(42, 42, 64); color: rgb(211, 194, 78);}")
         filedialog.setFileMode(QtWidgets.QFileDialog.AnyFile)
@@ -530,11 +530,11 @@ class MainWindow(QtWidgets.QMainWindow):
         A function to open a new window for choosing a pulse list
         """
         filedialog = QFileDialog(self, 'Save File', directory = self.path, filter = "Pulse Phase List (*.phase)",\
-            options = QtWidgets.QFileDialog.DontUseNativeDialog)
-        filedialog.setAcceptMode(QFileDialog.AcceptSave)
+            options = QtWidgets.QFileDialog.Option.DontUseNativeDialog)
+        filedialog.setAcceptMode(QFileDialog.AcceptMode.AcceptSave)
         # use QFileDialog.DontUseNativeDialog to change directory
         filedialog.setStyleSheet("QWidget { background-color : rgb(42, 42, 64); color: rgb(211, 194, 78);}")
-        filedialog.setFileMode(QtWidgets.QFileDialog.AnyFile)
+        filedialog.setFileMode(QtWidgets.QFileDialog.FileMode.AnyFile)
         filedialog.fileSelected.connect(self.save_file)
         filedialog.show()
 
@@ -1144,10 +1144,10 @@ class MainWindow(QtWidgets.QMainWindow):
         if self.cur_win_right < self.cur_win_left:
             self.cur_win_left, self.cur_win_right = self.cur_win_right, self.cur_win_left
         if self.cur_win_right == self.cur_win_left:
-            self.cur_win_right += self.time_per_point
+            self.cur_win_right += 1 #self.time_per_point
 
-        file_to_read.write('Window Left: ' + str( int(self.cur_win_left / self.time_per_point) ) +'\n')
-        file_to_read.write('Window Right: ' + str( int(self.cur_win_right / self.time_per_point) ) +'\n')
+        file_to_read.write('Window Left: ' + str( int(self.cur_win_left) ) +'\n') #/ self.time_per_point
+        file_to_read.write('Window Right: ' + str( int(self.cur_win_right ) ) +'\n') #/ self.time_per_point
 
         file_to_read.close()
         self.errors.clear()
@@ -1260,7 +1260,7 @@ class Worker(QWidget):
         ##dig.digitizer_number_of_points( p1 )
         #posstrigger_value = p2
         ##dig.digitizer_posttrigger(      p2 )
-        #num_ave =           p3
+        num_ave =           p3
         ##dig.digitizer_number_of_averages( p3 )
 
         #p4 window left
@@ -1316,6 +1316,7 @@ class Worker(QWidget):
         pb.pulser_update()
 
         a2012.oscilloscope_trigger_channel('Ext')
+        a2012.oscilloscope_record_length(4000)
         a2012.oscilloscope_acquisition_type('Average')
         a2012.oscilloscope_stop()
 
@@ -1353,6 +1354,7 @@ class Worker(QWidget):
                 a2012.oscilloscope_start_acquisition()
 
                 y = a2012.oscilloscope_get_curve('CH1')
+                a2012.oscilloscope_number_of_averages(num_ave)
                 a2012.oscilloscope_stop()
 
             elif self.command[0:2] == 'HO':
@@ -1366,6 +1368,7 @@ class Worker(QWidget):
                 a2012.oscilloscope_start_acquisition()
 
                 y = a2012.oscilloscope_get_curve('CH1')
+                a2012.oscilloscope_number_of_averages(num_ave)
                 a2012.oscilloscope_stop()
 
             elif self.command[0:2] == 'NA':
@@ -1387,6 +1390,7 @@ class Worker(QWidget):
                 p15 = float( self.command[2:] )
                 bh15.magnet_field( p15 )
             elif self.command[0:2] == 'FF':
+                print(p16)
                 p16 = int( self.command[2:] )
             elif self.command[0:2] == 'QC':
                 p17 = int( self.command[2:] )
@@ -1400,7 +1404,7 @@ class Worker(QWidget):
                 p21 = int( self.command[2:] )
 
             real_length = a2012.oscilloscope_record_length( )
-            t_res = round( a2012.oscilloscope_timebase() / real_length, 5 )    # in us
+            t_res = round( a2012.oscilloscope_timebase() / real_length, 6 )    # in us
 
             cycle_data_x = np.zeros( (len(p6[3]), int(real_length)) )
             cycle_data_y = np.zeros( (len(p6[3]), int(real_length)) )
@@ -1408,6 +1412,11 @@ class Worker(QWidget):
             data_y = np.zeros( real_length ) #p1
             x_axis = np.linspace(0, real_length * t_res, num = real_length, endpoint = False)
 
+            # check integration window
+            if p4 > real_length:
+                p4 = real_length
+            if p5 > real_length:
+                p5 = real_length
 
             # phase cycle
             k = 0
@@ -1422,13 +1431,13 @@ class Worker(QWidget):
                 # acquisition cycle
                 data_x, data_y = pb.pulser_acquisition_cycle(cycle_data_x, cycle_data_y , acq_cycle = p6[3])
                 process = general.plot_1d('Digitizer', x_axis, ( data_x, data_y ), label = 'ch', xscale = 'us', yscale = 'V', \
-                                            vline = (p4 * 10**-9, p5 * 10**-9), pr = process )
+                                            vline = (p4 * t_res, p5 * t_res), pr = process )
 
             else:
                 # acquisition cycle
                 data_x, data_y = pb.pulser_acquisition_cycle(cycle_data_x, cycle_data_y , acq_cycle = p6[3])
                 process = general.plot_1d('Digitizer', x_axis, ( data_x, data_y ), label = 'ch', xscale = 'us', yscale = 'V', \
-                                    vline = (p4 * 10**-9, p5 * 10**-9), pr = process )
+                                    vline = (p4 * t_res, p5 * t_res), pr = process )
                 if p17 == 0:
                     freq_axis, abs_values = fft.fft(x_axis, data_x, data_y, t_res * 1000)
                     m_val = round( np.amax( abs_values ), 2 )
