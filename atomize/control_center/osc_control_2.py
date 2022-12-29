@@ -58,8 +58,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.label_3.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
         self.label_4.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
         self.label_5.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
+        self.label_6.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
         self.label_7.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
         self.label_9.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
+
 
         # Spinboxes
         self.Hor_offset.valueChanged.connect(self.hor_offset)

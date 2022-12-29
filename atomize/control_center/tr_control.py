@@ -488,30 +488,35 @@ class Worker(QWidget):
                     ##y = 1 + 10*np.exp(-axis_x/ch_time) + 50*np.random.normal(size = (4000))
                     data[0, :, 0] = ( data[0, :, 0] * (j - 1) + y ) / j
                     data[1, :, 0] = ( data[0, :, 0] - data[0, :, 0] )
+                    data[1, :, :] = ( data[1, :, :] - data[1, 0, :] )
                     
                 elif p9 == 2:
                     y = a2012.oscilloscope_get_curve('CH1')
                     ##y = 1 + 10*np.exp(-axis_x/ch_time) + 50*np.random.normal(size = (4000))
                     data[0, :, 0] = ( data[0, :, 0] * (j - 1) + y ) / j
                     data[1, :, 0] = ( data[0, :, 0] - data[0, :, 0] )
+                    data[1, :, :] = ( data[1, :, :] - data[1, 0, :] )
 
                     y2 = a2012_2.oscilloscope_get_curve('CH1')
                     ##y2 = 1 + 10*np.exp(-axis_x/ch_time) + 50*np.random.normal(size = (4000))
                     data[2, :, 0] = ( data[2, :, 0] * (j - 1) + y2 ) / j
                     data[3, :, 0] = ( data[2, :, 0] - data[2, :, 0] )
+                    data[3, :, :] = ( data[3, :, :] - data[3, 0, :] )
 
                 elif p9 == 3:
                     y = a2012.oscilloscope_get_curve('CH1')
                     ##y = 1 + 10*np.exp(-axis_x/ch_time) + 50*np.random.normal(size = (4000))
                     data[0, :, 0] = ( data[0, :, 0] * (j - 1) + y ) / j
                     data[1, :, 0] = ( data[0, :, 0] - data[0, :, 0] )
+                    data[1, :, :] = ( data[1, :, :] - data[1, 0, :] )
 
                     y2 = a2012_2.oscilloscope_get_curve('CH1')
                     ##y2 = 1 + 10*np.exp(-axis_x/ch_time) + 50*np.random.normal(size = (4000))
                     data[2, :, 0] = ( data[2, :, 0] * (j - 1) + y2 ) / j
                     data[3, :, 0] = ( data[2, :, 0] - data[2, :, 0] )
+                    data[3, :, :] = ( data[3, :, :] - data[3, 0, :] )
 
-                    y3 = a2012_2.oscilloscope_get_curve('CH2')
+                    y3 = a2012.oscilloscope_get_curve('CH2')
                     ##y3 = 1 + 10*np.exp(-axis_x/ch_time) + 50*np.random.normal(size = (4000))
                     data[4, :, 0] = ( data[4, :, 0] * (j - 1) + y3 ) / j
 
@@ -534,7 +539,7 @@ class Worker(QWidget):
                     if self.command == 'exit':
                         break
 
-                    #general.wait('2000 ms')
+                    general.wait('50 ms')
 
                     a2012.oscilloscope_start_acquisition()
                     if p9 > 1:
@@ -547,6 +552,7 @@ class Worker(QWidget):
                         
                         data[0, :, i+1] = ( data[0, :, i+1] * (j - 1) + y ) / j
                         data[1, :, i+1] = ( data[0, :, i+1] - data[0, :, 0] )
+                        data[1, :, :] = ( data[1, :, :] - data[1, 0, :] )
 
                     elif p9 == 2:
                         y = a2012.oscilloscope_get_curve('CH1')
@@ -557,20 +563,24 @@ class Worker(QWidget):
                         data[0, :, i+1] = ( data[0, :, i+1] * (j - 1) + y ) / j
                         data[2, :, i+1] = ( data[2, :, i+1] * (j - 1) + y2) / j
                         data[1, :, i+1] = ( data[0, :, i+1] - data[0, :, 0] )
+                        data[1, :, :] = ( data[1, :, :] - data[1, 0, :] )
                         data[3, :, i+1] = ( data[2, :, i+1] - data[2, :, 0] )
+                        data[3, :, :] = ( data[3, :, :] - data[3, 0, :] )
 
                     elif p9 == 3:
                         y = a2012.oscilloscope_get_curve('CH1')
                         ##y = 1 + 100*np.exp(-axis_x/ch_time) + 7*np.random.normal(size = (4000))
                         y2 = a2012_2.oscilloscope_get_curve('CH1')
                         ##y2 = 1 + 100*np.exp(-axis_x/ch_time) + 7*np.random.normal(size = (4000))
-                        y3 = a2012_2.oscilloscope_get_curve('CH2')
+                        y3 = a2012.oscilloscope_get_curve('CH2')
                         ##y3 = 1 + 100*np.exp(-axis_x/ch_time) + 50*np.random.normal(size = (4000))
 
                         data[0, :, i+1] = ( data[0, :, i+1] * (j - 1) + y ) / j
                         data[2, :, i+1] = ( data[2, :, i+1] * (j - 1) + y2) / j
                         data[1, :, i+1] = ( data[0, :, i+1] - data[0, :, 0] )
+                        data[1, :, :] = ( data[1, :, :] - data[1, 0, :] )
                         data[3, :, i+1] = ( data[2, :, i+1] - data[2, :, 0] )
+                        data[3, :, :] = ( data[3, :, :] - data[3, 0, :] )
                         data[4, :, i+1] = ( data[4, :, i+1] * (j - 1) + y3 ) / j
 
                     #start_time = time.time()

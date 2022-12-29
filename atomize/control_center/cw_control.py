@@ -275,7 +275,7 @@ class Worker(QWidget):
         bh15 = bh.BH_15()
 
         # parameters for initial initialization
-        field = 100
+        field = p4
         START_FIELD = p4
         END_FIELD = p3
         FIELD_STEP = p5

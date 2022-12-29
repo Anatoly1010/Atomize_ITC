@@ -64,7 +64,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Spinboxes
         self.Set_point.valueChanged.connect( self.set_point )
-        self.Set_point.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); }")
+        self.Set_point.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); }")
         self.point = float( self.Set_point.value() )
 
         self.combo_range.currentIndexChanged.connect(self.heater_range)
@@ -73,7 +73,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.start_flag = 0
 
-        self.ls335.tc_setpoint( self.point )
+        #self.ls335.tc_setpoint( self.point )
 
     def _on_destroyed(self):
         """
@@ -122,7 +122,7 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         A function to change a set point
         """
-        self.point = float( self.Set_point.value() )
+        self.point = round( float( self.Set_point.value() ), 3 )
         
         # preventing coincidences of the commands
         if self.start_flag == 1:
