@@ -960,15 +960,17 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         self.repetition_rate = str( self.Rep_rate.value() ) + ' Hz'
 
-        if self.laser_flag != 1:
-            self.pb.pulser_repetition_rate( self.repetition_rate )
-            ###self.update()
-        else:
-            self.repetition_rate = '10 Hz'
-            self.pb.pulser_repetition_rate( self.repetition_rate )
-            self.Rep_rate.setValue(10)
-            ###self.update()
-            self.errors.appendPlainText( '10 Hz is a maximum repetiton rate with LASER pulse' )
+        self.pb.pulser_repetition_rate( self.repetition_rate )
+
+        #if self.laser_flag != 1:
+        #    self.pb.pulser_repetition_rate( self.repetition_rate )
+        #    ###self.update()
+        #else:
+        #    self.repetition_rate = '10 Hz'
+        #    self.pb.pulser_repetition_rate( self.repetition_rate )
+        #    self.Rep_rate.setValue(10)
+        #    ###self.update()
+        #    self.errors.appendPlainText( '10 Hz is a maximum repetiton rate with LASER pulse' )
         
         try:
             self.parent_conn_dig.send( 'RR' + str( self.repetition_rate.split(' ')[0] ) )

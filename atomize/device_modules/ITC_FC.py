@@ -9,14 +9,14 @@ from pyvisa.constants import StopBits, Parity
 import atomize.device_modules.config.config_utils as cutil
 import atomize.general_modules.general_functions as general
 
-class ER_031M:
+class ITC_FC:
     #### Basic interaction functions
     def __init__(self):
 
         #### Inizialization
         # setting path to *.ini file
         self.path_current_directory = os.path.dirname(__file__)
-        self.path_config_file = os.path.join(self.path_current_directory, 'config','ER_031M_config.ini')
+        self.path_config_file = os.path.join(self.path_current_directory, 'config','ITC_FC_config.ini')
 
         # configuration data
         self.config = cutil.read_conf_util(self.path_config_file)
@@ -24,7 +24,7 @@ class ER_031M:
 
         # Ramges and limits
         self.min_field = -50
-        self.max_field = 6000
+        self.max_field = 9000
 
         # Test run parameters
         # These values are returned by the modules in the test run 
@@ -77,9 +77,9 @@ class ER_031M:
 
     def device_write(self, command):
         if self.status_flag == 1:
-            general.wait('900 ms') # very important to have timeout here
+            #general.wait('900 ms') # very important to have timeout here
             command = str(command)
-            self.device.write(command()) #.encode
+            self.device.write(command)
         else:
             self.status_flag = 0
             general.message("No Connection")
@@ -112,8 +112,7 @@ class ER_031M:
             if len(field) == 1:
                 field = field[0]
                 if field <= self.max_field and field >= self.min_field:
-                    #field_controller_write('cf'+str(field)+'\r')
-                    self.device_write('cf' + str(field))
+                    self.device_write('field ' + str(field))
                     self.field = field
                 else:
                     general.message('Incorrect field range')

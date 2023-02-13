@@ -55,6 +55,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.label_8.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
         self.label_9.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
         self.label_10.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
+        self.label_11.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
 
         # text edits
         self.text_edit_exp_name.setStyleSheet("QTextEdit { color : rgb(211, 194, 78) ; }") # rgb(193, 202, 227)
@@ -102,6 +103,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.cur_trig_ch = str( self.combo_trig_ch.currentText() )
         self.combo_trig_ch.currentIndexChanged.connect(self.trig_ch)
         
+        self.check_scan.setStyleSheet("QCheckBox { color : rgb(193, 202, 227); }")
+        self.check_scan.stateChanged.connect( self.save_each_scan )
+
+        self.save_scan = 0
+        
         """
         Create a process to interact with an experimental script that will run on a different thread.
         We need a different thread here, since PyQt GUI applications have a main thread of execution 
@@ -129,6 +135,15 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         self._on_destroyed()
         sys.exit()
+
+    def save_each_scan(self):
+        """
+        Turn on/off save each scan when using one oscilloscope
+        """
+        if self.check_scan.checkState().value == 2: # checked
+            self.save_scan = 1
+        elif self.check_scan.checkState().value == 0: # unchecked
+            self.save_scan = 0
 
     def exp_name(self):
         self.cur_exp_name = self.text_edit_exp_name.toPlainText()
@@ -251,7 +266,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # sending parameters for initial initialization
         self.exp_process = Process( target = self.worker.exp_on, args = ( self.child_conn, self.cur_offres_field, self.cur_exp_name, \
                                             self.cur_end_field, self.cur_start_field, self.cur_step, self.cur_ave_offres, self.cur_scan, \
-                                            self.cur_ave, self.cur_num_osc, self.cur_trig_ch, ) )
+                                            self.cur_ave, self.cur_num_osc, self.cur_trig_ch, self.save_scan, ) )
             
 
         self.exp_process.start()
@@ -277,14 +292,14 @@ class Worker(QWidget):
 
         self.command = 'start'
                    
-    def exp_on(self, conn, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10):
+    def exp_on(self, conn, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11):
         """
         function that contains experimental script
         """
         # [                  1,                 2,                  3,                    4, ]
         #self.cur_offres_field, self.cur_exp_name, self.cur_end_field, self.cur_start_field, 
-        # [          5,                   6,              7,           8,                9,               10   ]
-        #self.cur_step, self.cur_ave_offres, self.cur_scan, self.cur_ave, self.cur_num_osc, self.cur_trig_ch
+        # [          5,                   6,              7,           8,                9,               10,             11 ]
+        #self.cur_step, self.cur_ave_offres, self.cur_scan, self.cur_ave, self.cur_num_osc, self.cur_trig_ch, self.save_scan
 
         # should be inside dig_on() function;
         # freezing after digitizer restart otherwise
@@ -615,6 +630,10 @@ class Worker(QWidget):
                 field = OFFRES_FIELD
                 j += 1
 
+                if p9 == 1 and p11 == 1:
+                    file_save_j = file_save_1.split('.csv')[0] + f'_{j}_scans.csv'
+                    file_handler.save_data(file_save_j, np.transpose( data[0, :, :] ), header = header)
+
             # finish succesfully
             self.command = 'exit'
 
@@ -622,7 +641,7 @@ class Worker(QWidget):
             general.message('Script finished')
             
             temp_end = str( ls335.tc_temperature('B') )
-            if p9 == 1:
+            if p9 == 1 and p11 == 0:
                 ##t_res = 1
                 header = 'Date: ' + str(datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")) + '\n' + 'Time Resolved EPR Spectrum\n' + \
                             'Start Field: ' + str(START_FIELD) + ' G \n' + 'End Field: ' + str(END_FIELD) + ' G \n' + \

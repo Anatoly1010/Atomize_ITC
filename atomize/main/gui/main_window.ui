@@ -542,7 +542,7 @@ QTabBar::tab:selected {
            </font>
           </property>
           <property name="text">
-           <string>Created by Anatoly Melnikov; www.github.com/Anatoly1010; anatoly.melnikov@tomo.nsc.ru; 2021</string>
+           <string>Created by Anatoly Melnikov; www.github.com/Anatoly1010; anatoly.melnikov@tomo.nsc.ru; 31/01/2023</string>
           </property>
          </widget>
         </item>
@@ -564,68 +564,8 @@ QTabBar::tab:selected {
           <property name="horizontalSpacing">
            <number>15</number>
           </property>
-          <item row="2" column="0">
-           <widget class="QPushButton" name="button_tr">
-            <property name="minimumSize">
-             <size>
-              <width>140</width>
-              <height>40</height>
-             </size>
-            </property>
-            <property name="font">
-             <font>
-              <weight>75</weight>
-              <bold>true</bold>
-             </font>
-            </property>
-            <property name="styleSheet">
-             <string notr="true">background-color: rgb(136, 138, 133);</string>
-            </property>
-            <property name="text">
-             <string>TR EPR</string>
-            </property>
-           </widget>
-          </item>
-          <item row="0" column="0">
-           <spacer name="verticalSpacer_9">
-            <property name="orientation">
-             <enum>Qt::Vertical</enum>
-            </property>
-            <property name="sizeType">
-             <enum>QSizePolicy::Fixed</enum>
-            </property>
-            <property name="sizeHint" stdset="0">
-             <size>
-              <width>20</width>
-              <height>10</height>
-             </size>
-            </property>
-           </spacer>
-          </item>
-          <item row="6" column="0">
-           <widget class="QPushButton" name="button_temp">
-            <property name="minimumSize">
-             <size>
-              <width>140</width>
-              <height>40</height>
-             </size>
-            </property>
-            <property name="font">
-             <font>
-              <weight>75</weight>
-              <bold>true</bold>
-             </font>
-            </property>
-            <property name="styleSheet">
-             <string notr="true">background-color: rgb(136, 138, 133);</string>
-            </property>
-            <property name="text">
-             <string>Temperature</string>
-            </property>
-           </widget>
-          </item>
-          <item row="4" column="1">
-           <spacer name="horizontalSpacer_7">
+          <item row="4" column="3">
+           <spacer name="horizontalSpacer_8">
             <property name="orientation">
              <enum>Qt::Horizontal</enum>
             </property>
@@ -634,99 +574,11 @@ QTabBar::tab:selected {
             </property>
             <property name="sizeHint" stdset="0">
              <size>
-              <width>140</width>
+              <width>100</width>
               <height>20</height>
              </size>
             </property>
            </spacer>
-          </item>
-          <item row="4" column="0">
-           <widget class="QPushButton" name="button_osc2">
-            <property name="minimumSize">
-             <size>
-              <width>140</width>
-              <height>40</height>
-             </size>
-            </property>
-            <property name="font">
-             <font>
-              <weight>75</weight>
-              <bold>true</bold>
-             </font>
-            </property>
-            <property name="styleSheet">
-             <string notr="true">background-color: rgb(136, 138, 133);</string>
-            </property>
-            <property name="text">
-             <string>Oscilloscope 2</string>
-            </property>
-           </widget>
-          </item>
-          <item row="1" column="0">
-           <widget class="QPushButton" name="button_cw">
-            <property name="minimumSize">
-             <size>
-              <width>140</width>
-              <height>40</height>
-             </size>
-            </property>
-            <property name="font">
-             <font>
-              <weight>75</weight>
-              <bold>true</bold>
-             </font>
-            </property>
-            <property name="styleSheet">
-             <string notr="true">background-color: rgb(136, 138, 133);</string>
-            </property>
-            <property name="text">
-             <string>CW EPR</string>
-            </property>
-           </widget>
-          </item>
-          <item row="3" column="0">
-           <widget class="QPushButton" name="button_osc">
-            <property name="minimumSize">
-             <size>
-              <width>140</width>
-              <height>40</height>
-             </size>
-            </property>
-            <property name="font">
-             <font>
-              <weight>75</weight>
-              <bold>true</bold>
-             </font>
-            </property>
-            <property name="styleSheet">
-             <string notr="true">background-color: rgb(136, 138, 133);</string>
-            </property>
-            <property name="text">
-             <string>Oscilloscope 1</string>
-            </property>
-           </widget>
-          </item>
-          <item row="7" column="0">
-           <widget class="QPushButton" name="button_field">
-            <property name="minimumSize">
-             <size>
-              <width>0</width>
-              <height>40</height>
-             </size>
-            </property>
-            <property name="font">
-             <font>
-              <weight>75</weight>
-              <bold>true</bold>
-             </font>
-            </property>
-            <property name="styleSheet">
-             <string notr="true">background-color: rgb(136, 138, 133);</string>
-            </property>
-            <property name="text">
-             <string>Magnetic Field</string>
-            </property>
-           </widget>
           </item>
           <item row="1" column="1">
            <widget class="QPushButton" name="button_mw">
@@ -794,8 +646,8 @@ QTabBar::tab:selected {
             </property>
            </widget>
           </item>
-          <item row="2" column="2">
-           <widget class="QPushButton" name="button_t2">
+          <item row="7" column="0">
+           <widget class="QPushButton" name="button_field">
             <property name="minimumSize">
              <size>
               <width>0</width>
@@ -812,12 +664,72 @@ QTabBar::tab:selected {
              <string notr="true">background-color: rgb(136, 138, 133);</string>
             </property>
             <property name="text">
-             <string>T2 Measurement</string>
+             <string>Magnetic Field</string>
             </property>
            </widget>
           </item>
-          <item row="7" column="2">
-           <spacer name="horizontalSpacer_6">
+          <item row="0" column="0">
+           <spacer name="verticalSpacer_9">
+            <property name="orientation">
+             <enum>Qt::Vertical</enum>
+            </property>
+            <property name="sizeType">
+             <enum>QSizePolicy::Fixed</enum>
+            </property>
+            <property name="sizeHint" stdset="0">
+             <size>
+              <width>20</width>
+              <height>10</height>
+             </size>
+            </property>
+           </spacer>
+          </item>
+          <item row="6" column="0">
+           <widget class="QPushButton" name="button_temp">
+            <property name="minimumSize">
+             <size>
+              <width>140</width>
+              <height>40</height>
+             </size>
+            </property>
+            <property name="font">
+             <font>
+              <weight>75</weight>
+              <bold>true</bold>
+             </font>
+            </property>
+            <property name="styleSheet">
+             <string notr="true">background-color: rgb(136, 138, 133);</string>
+            </property>
+            <property name="text">
+             <string>Temperature</string>
+            </property>
+           </widget>
+          </item>
+          <item row="2" column="0">
+           <widget class="QPushButton" name="button_tr">
+            <property name="minimumSize">
+             <size>
+              <width>140</width>
+              <height>40</height>
+             </size>
+            </property>
+            <property name="font">
+             <font>
+              <weight>75</weight>
+              <bold>true</bold>
+             </font>
+            </property>
+            <property name="styleSheet">
+             <string notr="true">background-color: rgb(136, 138, 133);</string>
+            </property>
+            <property name="text">
+             <string>TR EPR</string>
+            </property>
+           </widget>
+          </item>
+          <item row="4" column="1">
+           <spacer name="horizontalSpacer_7">
             <property name="orientation">
              <enum>Qt::Horizontal</enum>
             </property>
@@ -831,6 +743,85 @@ QTabBar::tab:selected {
              </size>
             </property>
            </spacer>
+          </item>
+          <item row="1" column="0">
+           <widget class="QPushButton" name="button_cw">
+            <property name="minimumSize">
+             <size>
+              <width>140</width>
+              <height>40</height>
+             </size>
+            </property>
+            <property name="font">
+             <font>
+              <weight>75</weight>
+              <bold>true</bold>
+             </font>
+            </property>
+            <property name="styleSheet">
+             <string notr="true">background-color: rgb(136, 138, 133);</string>
+            </property>
+            <property name="text">
+             <string>CW EPR</string>
+            </property>
+           </widget>
+          </item>
+          <item row="3" column="0">
+           <widget class="QPushButton" name="button_osc">
+            <property name="minimumSize">
+             <size>
+              <width>140</width>
+              <height>40</height>
+             </size>
+            </property>
+            <property name="font">
+             <font>
+              <weight>75</weight>
+              <bold>true</bold>
+             </font>
+            </property>
+            <property name="styleSheet">
+             <string notr="true">background-color: rgb(136, 138, 133);</string>
+            </property>
+            <property name="text">
+             <string>Oscilloscope 1</string>
+            </property>
+           </widget>
+          </item>
+          <item row="4" column="0">
+           <widget class="QPushButton" name="button_osc2">
+            <property name="minimumSize">
+             <size>
+              <width>140</width>
+              <height>40</height>
+             </size>
+            </property>
+            <property name="font">
+             <font>
+              <weight>75</weight>
+              <bold>true</bold>
+             </font>
+            </property>
+            <property name="styleSheet">
+             <string notr="true">background-color: rgb(136, 138, 133);</string>
+            </property>
+            <property name="text">
+             <string>Oscilloscope 2</string>
+            </property>
+           </widget>
+          </item>
+          <item row="1" column="3">
+           <widget class="QLabel" name="label">
+            <property name="font">
+             <font>
+              <weight>75</weight>
+              <bold>true</bold>
+             </font>
+            </property>
+            <property name="text">
+             <string>Open Script:</string>
+            </property>
+           </widget>
           </item>
           <item row="4" column="2">
            <widget class="QPushButton" name="button_ed">
@@ -854,6 +845,28 @@ QTabBar::tab:selected {
             </property>
            </widget>
           </item>
+          <item row="2" column="2">
+           <widget class="QPushButton" name="button_t2">
+            <property name="minimumSize">
+             <size>
+              <width>0</width>
+              <height>40</height>
+             </size>
+            </property>
+            <property name="font">
+             <font>
+              <weight>75</weight>
+              <bold>true</bold>
+             </font>
+            </property>
+            <property name="styleSheet">
+             <string notr="true">background-color: rgb(136, 138, 133);</string>
+            </property>
+            <property name="text">
+             <string>T2 Measurement</string>
+            </property>
+           </widget>
+          </item>
           <item row="3" column="2">
            <widget class="QPushButton" name="button_t1">
             <property name="minimumSize">
@@ -873,6 +886,99 @@ QTabBar::tab:selected {
             </property>
             <property name="text">
              <string>T1 Measurement</string>
+            </property>
+           </widget>
+          </item>
+          <item row="7" column="2">
+           <spacer name="horizontalSpacer_6">
+            <property name="orientation">
+             <enum>Qt::Horizontal</enum>
+            </property>
+            <property name="sizeType">
+             <enum>QSizePolicy::Fixed</enum>
+            </property>
+            <property name="sizeHint" stdset="0">
+             <size>
+              <width>140</width>
+              <height>20</height>
+             </size>
+            </property>
+           </spacer>
+          </item>
+          <item row="1" column="4">
+           <widget class="QComboBox" name="script_chooser">
+            <property name="minimumSize">
+             <size>
+              <width>140</width>
+              <height>40</height>
+             </size>
+            </property>
+            <property name="font">
+             <font>
+              <weight>75</weight>
+              <bold>true</bold>
+             </font>
+            </property>
+            <item>
+             <property name="text">
+              <string> Tuning</string>
+             </property>
+            </item>
+            <item>
+             <property name="text">
+              <string> T2 Echo Shape</string>
+             </property>
+            </item>
+            <item>
+             <property name="text">
+              <string> ED Spectrum</string>
+             </property>
+            </item>
+            <item>
+             <property name="text">
+              <string> ESEEM Echo Shape</string>
+             </property>
+            </item>
+           </widget>
+          </item>
+          <item row="2" column="3">
+           <widget class="QCheckBox" name="checkTests">
+            <property name="font">
+             <font>
+              <weight>75</weight>
+              <bold>true</bold>
+             </font>
+            </property>
+            <property name="layoutDirection">
+             <enum>Qt::RightToLeft</enum>
+            </property>
+            <property name="text">
+             <string>Test Scripts    </string>
+            </property>
+            <property name="checked">
+             <bool>true</bool>
+            </property>
+           </widget>
+          </item>
+          <item row="6" column="2">
+           <widget class="QPushButton" name="button_eseem">
+            <property name="minimumSize">
+             <size>
+              <width>0</width>
+              <height>40</height>
+             </size>
+            </property>
+            <property name="font">
+             <font>
+              <weight>75</weight>
+              <bold>true</bold>
+             </font>
+            </property>
+            <property name="styleSheet">
+             <string notr="true">background-color: rgb(136, 138, 133);</string>
+            </property>
+            <property name="text">
+             <string>Three Pulse ESEEM</string>
             </property>
            </widget>
           </item>

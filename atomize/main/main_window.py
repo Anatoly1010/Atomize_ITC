@@ -100,6 +100,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.open_dir = str(config['DEFAULT']['open_dir'])
         self.script_dir = str(config['DEFAULT']['script_dir'])
         self.path = self.script_dir
+        self.test_timeout = int(config['DEFAULT']['test_timeout']) * 1000 # in ms
 
         # for running different processes using QProcess
         self.process = QtCore.QProcess(self)
@@ -117,6 +118,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.process_t2 = QtCore.QProcess(self)
         self.process_t1 = QtCore.QProcess(self)
         self.process_ed = QtCore.QProcess(self)
+        self.process_eseem = QtCore.QProcess(self)
 
         # check where we are
         self.system = platform.system()
@@ -136,6 +138,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.process_t2.setProgram('python.exe')
             self.process_t1.setProgram('python.exe')
             self.process_ed.setProgram('python.exe')
+            self.process_eseem.setProgram('python.exe')
         elif self.system == 'Linux':
             self.editor = str(config['DEFAULT']['editor'])
             if self.editor == 'nano' or self.editor == 'vi':
@@ -156,6 +159,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.process_t2.setProgram('python3')
             self.process_t1.setProgram('python3')
             self.process_ed.setProgram('python3')
+            self.process_eseem.setProgram('python3')
 
         self.process.finished.connect(self.on_finished_checking)
         self.process_python.finished.connect(self.on_finished_script)
@@ -494,8 +498,20 @@ class MainWindow(QtWidgets.QMainWindow):
         self.button_t1.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97);\
          border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }\
           QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
+        self.button_eseem.clicked.connect(self.start_eseem_preset)
+        self.button_eseem.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97);\
+         border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }\
+          QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
 
         self.label_creator.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
+        self.label.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
+        self.script_chooser.setStyleSheet("QComboBox { color : rgb(193, 202, 227); selection-color: rgb(211, 194, 78); font-weight: bold; }")
+        self.script_chooser.currentIndexChanged.connect(self.script_open_combo)
+        self.script = self.text_to_script_name( self.script_chooser.currentText() )
+        # preopen script
+        self.open_file( self.script )
+
+        self.checkTests.setStyleSheet("QCheckBox { color : rgb(193, 202, 227); font-weight: bold; }")
 
     def _on_destroyed(self):
         """
@@ -514,6 +530,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.process_t2.close()
         self.process_t1.close()
         self.process_ed.close()
+        self.process_eseem.close()
     
     def clear_errors(self):
         self.text_errors.clear()
@@ -535,6 +552,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.process_t2.terminate()
         self.process_t1.terminate()
         self.process_ed.terminate()
+        self.process_eseem.terminate()
         sys.exit()
         ####
         #### QProcess: Destroyed while process ("python3") is still running.
@@ -550,15 +568,28 @@ class MainWindow(QtWidgets.QMainWindow):
             self.text_errors.appendPlainText('No experimental script is opened')
             return
 
-        self.test()
-        exec_code = self.process.waitForFinished()
+        if self.checkTests.checkState().value == 2:
+            self.test()
+            exec_code = self.process.waitForFinished( msecs = self.test_timeout ) # timeout in msec
+        elif self.checkTests.checkState().value == 0:
+            self.test_flag = 0
+            exec_code = True
+            self.text_errors.appendPlainText("Testing of experimental scripts are disabled")
 
         if self.test_flag == 1:
-            self.text_errors.appendPlainText("Experiment cannot be started, since test is not passed")
+            self.text_errors.appendPlainText("Experiment cannot be started, since test is not passed. Test execution timeout is " +\
+                                str( self.test_timeout / 60000 ) + " minutes")
             return        # stop current function
         elif self.test_flag == 0 and exec_code == True:
             self.process_python.setArguments([self.script])
             self.process_python.start()
+    
+    def start_eseem_preset(self):
+        """
+        A function to run an phasing for rect channel.
+        """
+        self.process_eseem.setArguments(['atomize/control_center/eseem_preset.py'])
+        self.process_eseem.start()
 
     def start_ed_preset(self):
         """
@@ -643,6 +674,21 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         self.process_temp.setArguments(['atomize/control_center/temp_control.py'])
         self.process_temp.start()
+
+    def script_open_combo(self):
+        self.script = self.text_to_script_name( self.script_chooser.currentText() )
+        self.open_file( self.script )
+
+    def text_to_script_name(self, text_to_parse):
+
+        if text_to_parse == ' Tuning':
+            return os.path.join(self.path_to_main, 'atomize/tests/pulse_epr/01_resonator_tuning.py')
+        elif text_to_parse == ' T2 Echo Shape':
+            return os.path.join(self.path_to_main, 'atomize/tests/pulse_epr/keysight/02_t2_baseline_echo_shape.py')
+        elif text_to_parse == ' ED Spectrum':
+            return os.path.join(self.path_to_main, 'atomize/tests/pulse_epr/keysight/03_echo_detected_spectrum_baseline.py')
+        elif text_to_parse == ' ESEEM Echo Shape':
+            return os.path.join(self.path_to_main, 'atomize/tests/pulse_epr/keysight/07_eseem_phase_echo_shape.py')
 
     def message_box_clicked(self, btn):
         """
