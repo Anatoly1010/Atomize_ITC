@@ -451,10 +451,10 @@ class MainWindow(QtWidgets.QMainWindow):
         A function to initialize a bridge.
         """
 
-        MESSAGE = b'\x27' + b'\x01' + b'\x00'
+        #MESSAGE = b'\x27' + b'\x01' + b'\x00'
 
-        self.sock.sendto( MESSAGE, (self.UDP_IP, self.UDP_PORT) )
-        data_raw, addr = self.sock.recvfrom(3)
+        #self.sock.sendto( MESSAGE, (self.UDP_IP, self.UDP_PORT) )
+        #data_raw, addr = self.sock.recvfrom(3)
 
         # 300 MHz BW
         MESSAGE = b'\x1b' + b'\x01' + b'\x02'

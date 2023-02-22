@@ -11,6 +11,7 @@ from multiprocessing import Process, Pipe
 from PyQt6 import QtWidgets, uic #, QtCore, QtGui
 from PyQt6.QtWidgets import QWidget, QFileDialog
 from PyQt6.QtGui import QIcon
+from PyQt6.QtCore import Qt
 import atomize.general_modules.general_functions as general
 import atomize.device_modules.PB_ESR_500_pro as pb_pro
 ###import atomize.device_modules.BH_15 as bh
@@ -521,7 +522,7 @@ class MainWindow(QtWidgets.QMainWindow):
             options = QtWidgets.QFileDialog.Option.DontUseNativeDialog)
         # use QFileDialog.DontUseNativeDialog to change directory
         filedialog.setStyleSheet("QWidget { background-color : rgb(42, 42, 64); color: rgb(211, 194, 78);}")
-        filedialog.setFileMode(QtWidgets.QFileDialog.AnyFile)
+        filedialog.setFileMode(QtWidgets.QFileDialog.FileMode.AnyFile)
         filedialog.fileSelected.connect(self.open_file)
         filedialog.show()
 
@@ -557,9 +558,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.Rep_rate.setValue( int( lines[7].split(':  ')[1] ) )
         self.Field.setValue( float( lines[8].split(':  ')[1] ) )
 
-        self.shift_box.setCheckState(0)
-        self.fft_box.setCheckState(0)
-        self.Quad_cor.setCheckState(0)
+        self.shift_box.setCheckState(Qt.CheckState.Unchecked)
+        self.fft_box.setCheckState(Qt.CheckState.Unchecked)
+        self.Quad_cor.setCheckState(Qt.CheckState.Unchecked)
         self.Timescale.setValue( int( lines[9].split(':  ')[1] ) )
         self.Hor_offset.setValue( int( lines[10].split(':  ')[1] ) )
         self.Win_left.setValue( int( lines[11].split(':  ')[1] ) )
