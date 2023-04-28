@@ -6,7 +6,8 @@ import sys
 #from PyQt6.QtWidgets import QListView, QAction
 from PyQt6 import QtWidgets, uic #, QtCore, QtGui
 from PyQt6.QtGui import QIcon
-import atomize.device_modules.BH_15 as bh
+import atomize.device_modules.ITC_FC as itc
+import atomize.general_modules.general_functions as general
 
 class MainWindow(QtWidgets.QMainWindow):
     """
@@ -27,7 +28,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         uic.loadUi(gui_path, self)                        # Design file
 
-        self.bh15 = bh.BH_15()
+        self.itc_fc = itc.ITC_FC()
 
         # Connection of different action to different Menus and Buttons
         self.button_off.clicked.connect(self.turn_off)
@@ -53,7 +54,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.initialization_step = int( self.box_ini.value() )
 
         self.cur_field = 0
-        self.bh15.magnet_setup(100, 1)
+        self.itc_fc.magnet_setup(100, 1)
 
         #print('CF: ' + str(self.cur_field))
         #print('F: ' + str(self.field))
@@ -63,12 +64,13 @@ class MainWindow(QtWidgets.QMainWindow):
         A function to do some actions when the main window is closing.
         """
         while self.cur_field > ( self.initialization_step + 1 ):
-            self.cur_field = self.bh15.magnet_field( self.cur_field - self.initialization_step )
+            self.cur_field = self.itc_fc.magnet_field( self.cur_field - self.initialization_step )
+            general.wait('30 ms')
             #self.cur_field = self.cur_field - self.initialization_step
             #print('CF: ' + str(self.cur_field))
             #print('F: ' + str(self.field))
 
-        self.cur_field = self.bh15.magnet_field( 0 )
+        #self.cur_field = self.itc_fc.magnet_field( 0 )
         self.cur_field = 0
         self.field = 0
 
@@ -93,25 +95,28 @@ class MainWindow(QtWidgets.QMainWindow):
         A function to change set point
         """
         self.field = float( self.Set_point.value() )
+
         if self.cur_field < self.field:
             while self.cur_field < self.field:
-                self.cur_field = self.bh15.magnet_field( self.cur_field + self.initialization_step )
+                self.cur_field = self.itc_fc.magnet_field( self.cur_field + self.initialization_step )
+                general.wait('30 ms')
                 #self.cur_field = self.cur_field + self.initialization_step
                 #print('CF: ' + str(self.cur_field))
                 #print('F: ' + str(self.field))
 
-            self.cur_field = self.bh15.magnet_field( self.field )
+            self.cur_field = self.itc_fc.magnet_field( self.field )
             self.cur_field = self.field
             #print('CF: ' + str(self.cur_field))
             #print('F: ' + str(self.field))
         else:
             while self.cur_field > self.field:
-                self.cur_field = self.bh15.magnet_field( self.cur_field - self.initialization_step )
+                self.cur_field = self.itc_fc.magnet_field( self.cur_field - self.initialization_step )
+                general.wait('30 ms')
                 #self.cur_field = self.cur_field - self.initialization_step
                 #print('CF: ' + str(self.cur_field))
                 #print('F: ' + str(self.field))
 
-            self.cur_field = self.bh15.magnet_field( self.field )
+            self.cur_field = self.itc_fc.magnet_field( self.field )
             self.cur_field =  self.field 
             #print('CF: ' + str(self.cur_field))
             #print('F: ' + str(self.field))

@@ -115,6 +115,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.process_mw = QtCore.QProcess(self)
         self.process_tune_preset = QtCore.QProcess(self)
         self.process_phasing = QtCore.QProcess(self)
+        self.process_awg_phasing = QtCore.QProcess(self)
         self.process_t2 = QtCore.QProcess(self)
         self.process_t1 = QtCore.QProcess(self)
         self.process_ed = QtCore.QProcess(self)
@@ -135,6 +136,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.process_mw.setProgram('python.exe')
             self.process_tune_preset.setProgram('python.exe')
             self.process_phasing.setProgram('python.exe')
+            self.process_awg_phasing.setProgram('python.exe')
             self.process_t2.setProgram('python.exe')
             self.process_t1.setProgram('python.exe')
             self.process_ed.setProgram('python.exe')
@@ -156,6 +158,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.process_mw.setProgram('python3')
             self.process_tune_preset.setProgram('python3')
             self.process_phasing.setProgram('python3')
+            self.process_awg_phasing.setProgram('python3')
             self.process_t2.setProgram('python3')
             self.process_t1.setProgram('python3')
             self.process_ed.setProgram('python3')
@@ -482,6 +485,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.button_rect.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97);\
          border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }\
           QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
+        self.button_awg.clicked.connect(self.start_awg_phasing)
+        self.button_awg.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97);\
+         border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }\
+          QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
         self.button_tune_preset.clicked.connect(self.start_tune_preset)
         self.button_tune_preset.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97);\
          border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }\
@@ -527,6 +534,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.process_mw.close()
         self.process_tune_preset.close()
         self.process_phasing.close()
+        self.process_awg_phasing.close()
         self.process_t2.close()
         self.process_t1.close()
         self.process_ed.close()
@@ -549,6 +557,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.process_mw.terminate()
         self.process_tune_preset.terminate()
         self.process_phasing.terminate()
+        self.process_awg_phasing.terminate()
         self.process_t2.terminate()
         self.process_t1.terminate()
         self.process_ed.terminate()
@@ -618,6 +627,13 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         self.process_phasing.setArguments(['atomize/control_center/phasing.py'])
         self.process_phasing.start()
+
+    def start_awg_phasing(self):
+        """
+        A function to run an phasing for rect channel.
+        """
+        self.process_awg_phasing.setArguments(['atomize/control_center/awg_phasing.py'])
+        self.process_awg_phasing.start()
 
     def start_tune_preset(self):
         """
@@ -884,11 +900,13 @@ class MainWindow(QtWidgets.QMainWindow):
                 pb = pb_pro.PB_ESR_500_Pro()
                 pb.pulser_stop()
 
+                #self.process_python.terminate()
+
                 # AWG
-                #hCard1 = spcm_hOpen (create_string_buffer (b'/dev/spcm0'))
-                #spcm_dwSetParam_i32 (hCard1, SPC_M2CMD, M2CMD_CARD_STOP)
+                hCard1 = spcm_hOpen (create_string_buffer (b'/dev/spcm0'))
+                spcm_dwSetParam_i32 (hCard1, SPC_M2CMD, M2CMD_CARD_STOP)
                 # clean up
-                #spcm_vClose (hCard1)
+                spcm_vClose (hCard1)
 
                 #hCard2 = spcm_hOpen (create_string_buffer (b'/dev/spcm1'))
                 #spcm_dwSetParam_i32 (hCard2, SPC_M2CMD, M2CMD_CARD_STOP)

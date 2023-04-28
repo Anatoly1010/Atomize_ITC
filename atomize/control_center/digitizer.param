@@ -1,8 +1,8 @@
 Points: 2000
 Sample Rate: 500
-Posstriger: -1000
+Posstriger: 1000
 Range: 500
 CH0 Offset: 0
 CH1 Offset: 0
-Window Left: 150
-Window Right: 197
+Window Left: 0
+Window Right: 320

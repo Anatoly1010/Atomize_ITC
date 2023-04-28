@@ -304,7 +304,7 @@ class Keysight_4000_Xseries:
             answer = 1000000*float(self.device_query(":TIMebase:RANGe?"))/points
             return answer
         elif self.test_flag == 'test':
-            answer = 1000000*float(self.test_timebase.split(' ')[0])/self.test_record_length
+            answer = 1000000*float(self.test_timebase)/self.test_record_length
             return answer
 
     def oscilloscope_start_acquisition(self):
@@ -389,6 +389,10 @@ class Keysight_4000_Xseries:
                     elif integral == True:
                         integ = np.sum( array_y[self.win_left:self.win_right] ) * ( 10**(-6) * self.oscilloscope_time_resolution() )
                         return integ
+                    elif integral == 'Both':
+                        integ = np.sum( array_y[self.win_left:self.win_right] ) * ( 10**(-6) * self.oscilloscope_time_resolution() )
+                        xs = np.arange( len(array_y) ) * ( 10**(-6) * self.oscilloscope_time_resolution() )
+                        return xs, array_y, integ
 
                 else:
                     general.message("Invalid channel is given")
@@ -410,6 +414,10 @@ class Keysight_4000_Xseries:
                 elif integral == True:
                     integ = np.sum( array_y[self.win_left:self.win_right] ) * ( 10**(-6) * self.oscilloscope_time_resolution() )
                     return integ
+                elif integral == 'Both':
+                    integ = np.sum( array_y[self.win_left:self.win_right] ) * ( 10**(-6) * self.oscilloscope_time_resolution() )
+                    xs = np.arange( len(array_y) ) * ( 10**(-6) * self.oscilloscope_time_resolution() )
+                    return xs, array_y, integ
 
     def oscilloscope_sensitivity(self, *channel):
         if self.test_flag != 'test':

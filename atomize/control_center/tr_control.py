@@ -307,7 +307,8 @@ class Worker(QWidget):
         import atomize.general_modules.general_functions as general
         import atomize.device_modules.Keysight_2000_Xseries as key
         import atomize.device_modules.Keysight_2000_Xseries_2 as key2
-        import atomize.device_modules.BH_15 as bh
+        #import atomize.device_modules.BH_15 as bh
+        import atomize.device_modules.ITC_FC as itc
         import atomize.device_modules.Lakeshore_335 as ls
         import atomize.device_modules.Agilent_53131a as ag
         import atomize.general_modules.csv_opener_saver_tk_kinter as openfile
@@ -317,7 +318,7 @@ class Worker(QWidget):
         ag53131a = ag.Agilent_53131a()
         ls335 = ls.Lakeshore_335()
         a2012 = key.Keysight_2000_Xseries()
-        bh15 = bh.BH_15()
+        bh15 = itc.ITC_FC()
         
         ag53131a.freq_counter_digits(8)
         ag53131a.freq_counter_stop_mode('Digits')
@@ -334,7 +335,7 @@ class Worker(QWidget):
             a2012.oscilloscope_acquisition_type('Average')
             a2012.oscilloscope_run_stop()
 
-            a2012_2.oscilloscope_trigger_channel('CH2')
+            a2012_2.oscilloscope_trigger_channel('Ext')
             a2012_2.oscilloscope_acquisition_type('Average')
             a2012_2.oscilloscope_run_stop()
 
@@ -399,6 +400,7 @@ class Worker(QWidget):
             while field < OFFRES_FIELD:
                 field = bh15.magnet_field( field + initialization_step )
                 field = field + initialization_step
+                general.wait('30 ms')
 
             # Data saving
             j = 1
@@ -478,7 +480,7 @@ class Worker(QWidget):
 
                 file_handler.save_header(file_save_1, header = header, mode = 'w')
                 file_handler.save_header(file_save_2, header = header_2, mode = 'w')
-                file_handler.save_header(file_save_3, header = header_2, mode = 'w')
+                file_handler.save_header(file_save_3, header = header, mode = 'w')
 
             while j <= SCANS:
                 if self.command == 'exit':
@@ -487,7 +489,7 @@ class Worker(QWidget):
                 field = bh15.magnet_field( OFFRES_FIELD )
                 field = OFFRES_FIELD
 
-                general.wait('2000 ms')
+                general.wait('4000 ms')
 
                 a2012.oscilloscope_number_of_averages(p6)
                 if p9 > 1:
@@ -537,12 +539,13 @@ class Worker(QWidget):
 
                 while field < START_FIELD:
                     field = bh15.magnet_field( field + initialization_step )
+                    general.wait('30 ms')
                     field = field + initialization_step
 
                 field = bh15.magnet_field( START_FIELD )
                 field = START_FIELD
 
-                general.wait('2000 ms')
+                general.wait('4000 ms')
 
                 a2012.oscilloscope_number_of_averages(p8)
                 if p9 > 1:
@@ -625,14 +628,19 @@ class Worker(QWidget):
                 while field > OFFRES_FIELD:
                     field = bh15.magnet_field( field - initialization_step )
                     field = field - initialization_step
+                    general.wait('30 ms')
                 
                 field = bh15.magnet_field( OFFRES_FIELD )
                 field = OFFRES_FIELD
-                j += 1
-
+                
                 if p9 == 1 and p11 == 1:
-                    file_save_j = file_save_1.split('.csv')[0] + f'_{j}_scans.csv'
-                    file_handler.save_data(file_save_j, np.transpose( data[0, :, :] ), header = header)
+                    if j == 1:
+                        file_handler.save_data(file_save_1, np.transpose( data[0, :, :] ), header = header)
+                    else:
+                        file_save_j = file_save_1.split('.csv')[0] + f'_{j}_scans.csv'
+                        file_handler.save_data(file_save_j, np.transpose( data[0, :, :] ), header = header)
+
+                j += 1
 
             # finish succesfully
             self.command = 'exit'
@@ -712,7 +720,7 @@ class Worker(QWidget):
 
                 file_handler.save_data(file_save_1, np.transpose( data[0, :, :] ), header = header)
                 file_handler.save_data(file_save_2, np.transpose( data[2, :, :] ), header = header_2)
-                file_handler.save_data(file_save_3, np.transpose( data[4, :, :] ), header = header_2)
+                file_handler.save_data(file_save_3, np.transpose( data[4, :, :] ), header = header)
 
             while field > OFFRES_FIELD:
                 field = bh15.magnet_field( field - initialization_step )

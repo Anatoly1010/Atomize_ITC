@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>520</width>
-    <height>496</height>
+    <height>545</height>
    </rect>
   </property>
   <property name="sizePolicy">
@@ -19,13 +19,13 @@
   <property name="minimumSize">
    <size>
     <width>520</width>
-    <height>496</height>
+    <height>545</height>
    </size>
   </property>
   <property name="maximumSize">
    <size>
     <width>520</width>
-    <height>496</height>
+    <height>545</height>
    </size>
   </property>
   <property name="font">
@@ -50,16 +50,32 @@
    <property name="minimumSize">
     <size>
      <width>520</width>
-     <height>496</height>
+     <height>545</height>
     </size>
    </property>
    <property name="maximumSize">
     <size>
      <width>520</width>
-     <height>496</height>
+     <height>545</height>
     </size>
    </property>
    <layout class="QGridLayout" name="gridLayout_2">
+    <item row="0" column="3">
+     <spacer name="horizontalSpacer">
+      <property name="orientation">
+       <enum>Qt::Horizontal</enum>
+      </property>
+      <property name="sizeType">
+       <enum>QSizePolicy::Fixed</enum>
+      </property>
+      <property name="sizeHint" stdset="0">
+       <size>
+        <width>10</width>
+        <height>20</height>
+       </size>
+      </property>
+     </spacer>
+    </item>
     <item row="0" column="0">
      <layout class="QGridLayout" name="gridLayout">
       <property name="sizeConstraint">
@@ -83,8 +99,8 @@
       <property name="verticalSpacing">
        <number>4</number>
       </property>
-      <item row="14" column="1">
-       <widget class="QRadioButton" name="cutoff_3">
+      <item row="6" column="0">
+       <widget class="QLabel" name="label_4">
         <property name="font">
          <font>
           <weight>75</weight>
@@ -95,67 +111,17 @@
          <enum>Qt::NoContextMenu</enum>
         </property>
         <property name="text">
-         <string>105 MHz</string>
+         <string>Signal Phase (deg)</string>
         </property>
        </widget>
       </item>
-      <item row="13" column="1">
-       <widget class="QRadioButton" name="cutoff_2">
-        <property name="font">
-         <font>
-          <weight>75</weight>
-          <bold>true</bold>
-         </font>
+      <item row="7" column="0" colspan="2">
+       <widget class="Line" name="line_2">
+        <property name="lineWidth">
+         <number>2</number>
         </property>
-        <property name="contextMenuPolicy">
-         <enum>Qt::NoContextMenu</enum>
-        </property>
-        <property name="text">
-         <string>30 MHz</string>
-        </property>
-        <property name="checked">
-         <bool>false</bool>
-        </property>
-       </widget>
-      </item>
-      <item row="3" column="0">
-       <widget class="QLabel" name="label_2">
-        <property name="font">
-         <font>
-          <weight>75</weight>
-          <bold>true</bold>
-         </font>
-        </property>
-        <property name="contextMenuPolicy">
-         <enum>Qt::NoContextMenu</enum>
-        </property>
-        <property name="text">
-         <string>Attenuator AWG (dB)</string>
-        </property>
-       </widget>
-      </item>
-      <item row="6" column="1">
-       <widget class="QDoubleSpinBox" name="Fv_prm">
-        <property name="contextMenuPolicy">
-         <enum>Qt::NoContextMenu</enum>
-        </property>
-        <property name="buttonSymbols">
-         <enum>QAbstractSpinBox::PlusMinus</enum>
-        </property>
-        <property name="keyboardTracking">
-         <bool>false</bool>
-        </property>
-        <property name="decimals">
-         <number>3</number>
-        </property>
-        <property name="minimum">
-         <double>-5.625000000000000</double>
-        </property>
-        <property name="maximum">
-         <double>360.000000000000000</double>
-        </property>
-        <property name="singleStep">
-         <double>5.625000000000000</double>
+        <property name="orientation">
+         <enum>Qt::Horizontal</enum>
         </property>
        </widget>
       </item>
@@ -184,8 +150,43 @@
         </property>
        </widget>
       </item>
-      <item row="4" column="0" colspan="2">
-       <widget class="Line" name="line">
+      <item row="9" column="0">
+       <widget class="QLabel" name="label_6">
+        <property name="font">
+         <font>
+          <weight>75</weight>
+          <bold>true</bold>
+         </font>
+        </property>
+        <property name="contextMenuPolicy">
+         <enum>Qt::NoContextMenu</enum>
+        </property>
+        <property name="text">
+         <string>Video Attenuation 2 (dB)</string>
+        </property>
+       </widget>
+      </item>
+      <item row="13" column="1">
+       <widget class="QSpinBox" name="Synt2">
+        <property name="buttonSymbols">
+         <enum>QAbstractSpinBox::PlusMinus</enum>
+        </property>
+        <property name="keyboardTracking">
+         <bool>false</bool>
+        </property>
+        <property name="minimum">
+         <number>800</number>
+        </property>
+        <property name="maximum">
+         <number>12000</number>
+        </property>
+        <property name="value">
+         <number>1000</number>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="0" colspan="2">
+       <widget class="Line" name="line_6">
         <property name="lineWidth">
          <number>2</number>
         </property>
@@ -194,8 +195,8 @@
         </property>
        </widget>
       </item>
-      <item row="18" column="0">
-       <widget class="QPushButton" name="button_telemetry">
+      <item row="20" column="0">
+       <widget class="QPushButton" name="button_initialize">
         <property name="minimumSize">
          <size>
           <width>0</width>
@@ -211,165 +212,12 @@
         <property name="contextMenuPolicy">
          <enum>Qt::NoContextMenu</enum>
         </property>
-        <property name="layoutDirection">
-         <enum>Qt::LeftToRight</enum>
-        </property>
         <property name="text">
-         <string>Telemetry</string>
+         <string>Reset</string>
         </property>
        </widget>
       </item>
-      <item row="11" column="1">
-       <widget class="QSpinBox" name="Synt">
-        <property name="contextMenuPolicy">
-         <enum>Qt::NoContextMenu</enum>
-        </property>
-        <property name="buttonSymbols">
-         <enum>QAbstractSpinBox::PlusMinus</enum>
-        </property>
-        <property name="keyboardTracking">
-         <bool>false</bool>
-        </property>
-        <property name="minimum">
-         <number>8000</number>
-        </property>
-        <property name="maximum">
-         <number>12000</number>
-        </property>
-        <property name="value">
-         <number>9700</number>
-        </property>
-       </widget>
-      </item>
-      <item row="11" column="0">
-       <widget class="QLabel" name="label_7">
-        <property name="font">
-         <font>
-          <weight>75</weight>
-          <bold>true</bold>
-         </font>
-        </property>
-        <property name="contextMenuPolicy">
-         <enum>Qt::NoContextMenu</enum>
-        </property>
-        <property name="text">
-         <string>Frequency (MHz)</string>
-        </property>
-       </widget>
-      </item>
-      <item row="12" column="0" colspan="2">
-       <widget class="Line" name="line_4">
-        <property name="lineWidth">
-         <number>2</number>
-        </property>
-        <property name="orientation">
-         <enum>Qt::Horizontal</enum>
-        </property>
-       </widget>
-      </item>
-      <item row="2" column="1">
-       <widget class="QDoubleSpinBox" name="Att1_prd">
-        <property name="contextMenuPolicy">
-         <enum>Qt::NoContextMenu</enum>
-        </property>
-        <property name="readOnly">
-         <bool>false</bool>
-        </property>
-        <property name="buttonSymbols">
-         <enum>QAbstractSpinBox::PlusMinus</enum>
-        </property>
-        <property name="specialValueText">
-         <string notr="true"/>
-        </property>
-        <property name="keyboardTracking">
-         <bool>false</bool>
-        </property>
-        <property name="decimals">
-         <number>1</number>
-        </property>
-        <property name="maximum">
-         <double>31.500000000000000</double>
-        </property>
-        <property name="singleStep">
-         <double>0.500000000000000</double>
-        </property>
-        <property name="value">
-         <double>15.000000000000000</double>
-        </property>
-       </widget>
-      </item>
-      <item row="14" column="0">
-       <widget class="QLabel" name="label_5">
-        <property name="font">
-         <font>
-          <weight>75</weight>
-          <bold>true</bold>
-         </font>
-        </property>
-        <property name="contextMenuPolicy">
-         <enum>Qt::NoContextMenu</enum>
-        </property>
-        <property name="text">
-         <string>Cut-Off Frequency</string>
-        </property>
-       </widget>
-      </item>
-      <item row="8" column="1">
-       <widget class="QSpinBox" name="Att1_prm">
-        <property name="contextMenuPolicy">
-         <enum>Qt::NoContextMenu</enum>
-        </property>
-        <property name="buttonSymbols">
-         <enum>QAbstractSpinBox::PlusMinus</enum>
-        </property>
-        <property name="keyboardTracking">
-         <bool>false</bool>
-        </property>
-        <property name="maximum">
-         <number>30</number>
-        </property>
-        <property name="singleStep">
-         <number>2</number>
-        </property>
-        <property name="value">
-         <number>0</number>
-        </property>
-       </widget>
-      </item>
-      <item row="2" column="0">
-       <widget class="QLabel" name="label">
-        <property name="font">
-         <font>
-          <weight>75</weight>
-          <bold>true</bold>
-          <kerning>true</kerning>
-         </font>
-        </property>
-        <property name="contextMenuPolicy">
-         <enum>Qt::NoContextMenu</enum>
-        </property>
-        <property name="text">
-         <string>Attenuator RECT (dB)</string>
-        </property>
-       </widget>
-      </item>
-      <item row="5" column="0">
-       <widget class="QLabel" name="label_3">
-        <property name="font">
-         <font>
-          <weight>75</weight>
-          <bold>true</bold>
-         </font>
-        </property>
-        <property name="contextMenuPolicy">
-         <enum>Qt::NoContextMenu</enum>
-        </property>
-        <property name="text">
-         <string>Pulse Test Phase (deg)</string>
-        </property>
-       </widget>
-      </item>
-      <item row="19" column="0">
+      <item row="22" column="0">
        <widget class="QPushButton" name="button_off">
         <property name="minimumSize">
          <size>
@@ -412,7 +260,58 @@
          <double>0.500000000000000</double>
         </property>
         <property name="value">
-         <double>20.000000000000000</double>
+         <double>16.000000000000000</double>
+        </property>
+       </widget>
+      </item>
+      <item row="11" column="1">
+       <widget class="QSpinBox" name="Synt">
+        <property name="contextMenuPolicy">
+         <enum>Qt::NoContextMenu</enum>
+        </property>
+        <property name="buttonSymbols">
+         <enum>QAbstractSpinBox::PlusMinus</enum>
+        </property>
+        <property name="keyboardTracking">
+         <bool>false</bool>
+        </property>
+        <property name="minimum">
+         <number>8000</number>
+        </property>
+        <property name="maximum">
+         <number>12000</number>
+        </property>
+        <property name="value">
+         <number>9700</number>
+        </property>
+       </widget>
+      </item>
+      <item row="16" column="1">
+       <widget class="QSpinBox" name="Synt2_power">
+        <property name="buttonSymbols">
+         <enum>QAbstractSpinBox::PlusMinus</enum>
+        </property>
+        <property name="keyboardTracking">
+         <bool>false</bool>
+        </property>
+        <property name="maximum">
+         <number>15</number>
+        </property>
+        <property name="value">
+         <number>15</number>
+        </property>
+       </widget>
+      </item>
+      <item row="13" column="0">
+       <widget class="QLabel" name="label_11">
+        <property name="font">
+         <font>
+          <weight>75</weight>
+          <bold>true</bold>
+         </font>
+        </property>
+        <property name="text">
+         <string>Frequency 2 (MHz)</string>
         </property>
        </widget>
       </item>
@@ -438,8 +337,8 @@
         </property>
        </widget>
       </item>
-      <item row="8" column="0">
-       <widget class="QLabel" name="label_8">
+      <item row="5" column="0">
+       <widget class="QLabel" name="label_3">
         <property name="font">
          <font>
           <weight>75</weight>
@@ -450,31 +349,12 @@
          <enum>Qt::NoContextMenu</enum>
         </property>
         <property name="text">
-         <string>Video Attenuation 1 (dB)</string>
+         <string>Pulse Test Phase (deg)</string>
         </property>
        </widget>
       </item>
-      <item row="15" column="1">
-       <widget class="QRadioButton" name="cutoff_1">
-        <property name="font">
-         <font>
-          <weight>75</weight>
-          <bold>true</bold>
-         </font>
-        </property>
-        <property name="contextMenuPolicy">
-         <enum>Qt::NoContextMenu</enum>
-        </property>
-        <property name="text">
-         <string>300 MHz</string>
-        </property>
-        <property name="checked">
-         <bool>true</bool>
-        </property>
-       </widget>
-      </item>
-      <item row="16" column="0" colspan="2">
-       <widget class="Line" name="line_5">
+      <item row="4" column="0" colspan="2">
+       <widget class="Line" name="line">
         <property name="lineWidth">
          <number>2</number>
         </property>
@@ -483,91 +363,43 @@
         </property>
        </widget>
       </item>
-      <item row="7" column="0" colspan="2">
-       <widget class="Line" name="line_2">
-        <property name="lineWidth">
-         <number>2</number>
-        </property>
-        <property name="orientation">
-         <enum>Qt::Horizontal</enum>
-        </property>
-       </widget>
-      </item>
-      <item row="0" column="0">
-       <widget class="QLabel" name="label_9">
-        <property name="font">
-         <font>
-          <weight>75</weight>
-          <bold>true</bold>
-         </font>
-        </property>
-        <property name="text">
-         <string>Rotary Vane (dB)</string>
-        </property>
-       </widget>
-      </item>
-      <item row="9" column="0">
-       <widget class="QLabel" name="label_6">
-        <property name="font">
-         <font>
-          <weight>75</weight>
-          <bold>true</bold>
-         </font>
-        </property>
+      <item row="6" column="1">
+       <widget class="QDoubleSpinBox" name="Fv_prm">
         <property name="contextMenuPolicy">
          <enum>Qt::NoContextMenu</enum>
         </property>
-        <property name="text">
-         <string>Video Attenuation 2 (dB)</string>
+        <property name="buttonSymbols">
+         <enum>QAbstractSpinBox::PlusMinus</enum>
+        </property>
+        <property name="keyboardTracking">
+         <bool>false</bool>
+        </property>
+        <property name="decimals">
+         <number>3</number>
+        </property>
+        <property name="minimum">
+         <double>-5.625000000000000</double>
+        </property>
+        <property name="maximum">
+         <double>360.000000000000000</double>
+        </property>
+        <property name="singleStep">
+         <double>5.625000000000000</double>
         </property>
        </widget>
       </item>
-      <item row="10" column="0" colspan="2">
-       <widget class="Line" name="line_3">
-        <property name="lineWidth">
-         <number>2</number>
-        </property>
-        <property name="orientation">
-         <enum>Qt::Horizontal</enum>
-        </property>
-       </widget>
-      </item>
-      <item row="17" column="0">
-       <widget class="QPushButton" name="button_initialize">
-        <property name="minimumSize">
-         <size>
-          <width>0</width>
-          <height>40</height>
-         </size>
-        </property>
-        <property name="font">
-         <font>
-          <weight>75</weight>
-          <bold>true</bold>
-         </font>
-        </property>
-        <property name="contextMenuPolicy">
-         <enum>Qt::NoContextMenu</enum>
-        </property>
-        <property name="text">
-         <string>Reset</string>
-        </property>
-       </widget>
-      </item>
-      <item row="6" column="0">
-       <widget class="QLabel" name="label_4">
-        <property name="font">
-         <font>
-          <weight>75</weight>
-          <bold>true</bold>
-         </font>
-        </property>
-        <property name="contextMenuPolicy">
-         <enum>Qt::NoContextMenu</enum>
-        </property>
-        <property name="text">
-         <string>Signal Phase (deg)</string>
-        </property>
+      <item row="14" column="1">
+       <widget class="QComboBox" name="Synt2_state">
+        <item>
+         <property name="text">
+          <string>Off</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>On</string>
+         </property>
+        </item>
        </widget>
       </item>
       <item row="0" column="1">
@@ -595,8 +427,261 @@
         </property>
        </widget>
       </item>
-      <item row="1" column="0" colspan="2">
-       <widget class="Line" name="line_6">
+      <item row="21" column="0">
+       <widget class="QPushButton" name="button_telemetry">
+        <property name="minimumSize">
+         <size>
+          <width>0</width>
+          <height>40</height>
+         </size>
+        </property>
+        <property name="font">
+         <font>
+          <weight>75</weight>
+          <bold>true</bold>
+         </font>
+        </property>
+        <property name="contextMenuPolicy">
+         <enum>Qt::NoContextMenu</enum>
+        </property>
+        <property name="layoutDirection">
+         <enum>Qt::LeftToRight</enum>
+        </property>
+        <property name="text">
+         <string>Telemetry</string>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="0">
+       <widget class="QLabel" name="label_9">
+        <property name="font">
+         <font>
+          <weight>75</weight>
+          <bold>true</bold>
+         </font>
+        </property>
+        <property name="text">
+         <string>Rotary Vane (dB)</string>
+        </property>
+       </widget>
+      </item>
+      <item row="12" column="0" colspan="2">
+       <widget class="Line" name="line_7">
+        <property name="lineWidth">
+         <number>2</number>
+        </property>
+        <property name="orientation">
+         <enum>Qt::Horizontal</enum>
+        </property>
+       </widget>
+      </item>
+      <item row="10" column="0" colspan="2">
+       <widget class="Line" name="line_3">
+        <property name="lineWidth">
+         <number>2</number>
+        </property>
+        <property name="orientation">
+         <enum>Qt::Horizontal</enum>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="0">
+       <widget class="QLabel" name="label">
+        <property name="font">
+         <font>
+          <weight>75</weight>
+          <bold>true</bold>
+          <kerning>true</kerning>
+         </font>
+        </property>
+        <property name="contextMenuPolicy">
+         <enum>Qt::NoContextMenu</enum>
+        </property>
+        <property name="text">
+         <string>Attenuator RECT (dB)</string>
+        </property>
+       </widget>
+      </item>
+      <item row="14" column="0">
+       <widget class="QLabel" name="label_10">
+        <property name="font">
+         <font>
+          <weight>75</weight>
+          <bold>true</bold>
+         </font>
+        </property>
+        <property name="text">
+         <string>State</string>
+        </property>
+       </widget>
+      </item>
+      <item row="8" column="1">
+       <widget class="QSpinBox" name="Att1_prm">
+        <property name="contextMenuPolicy">
+         <enum>Qt::NoContextMenu</enum>
+        </property>
+        <property name="buttonSymbols">
+         <enum>QAbstractSpinBox::PlusMinus</enum>
+        </property>
+        <property name="keyboardTracking">
+         <bool>false</bool>
+        </property>
+        <property name="maximum">
+         <number>30</number>
+        </property>
+        <property name="singleStep">
+         <number>2</number>
+        </property>
+        <property name="value">
+         <number>0</number>
+        </property>
+       </widget>
+      </item>
+      <item row="18" column="0">
+       <widget class="QLabel" name="label_5">
+        <property name="font">
+         <font>
+          <weight>75</weight>
+          <bold>true</bold>
+         </font>
+        </property>
+        <property name="contextMenuPolicy">
+         <enum>Qt::NoContextMenu</enum>
+        </property>
+        <property name="text">
+         <string>Cut-Off Frequency</string>
+        </property>
+       </widget>
+      </item>
+      <item row="18" column="1">
+       <widget class="QComboBox" name="Cuttoff_box">
+        <property name="currentText">
+         <string>300 MHz</string>
+        </property>
+        <property name="currentIndex">
+         <number>2</number>
+        </property>
+        <item>
+         <property name="text">
+          <string>30 MHz</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>105 MHz</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>300 MHz</string>
+         </property>
+        </item>
+       </widget>
+      </item>
+      <item row="3" column="0">
+       <widget class="QLabel" name="label_2">
+        <property name="font">
+         <font>
+          <weight>75</weight>
+          <bold>true</bold>
+         </font>
+        </property>
+        <property name="contextMenuPolicy">
+         <enum>Qt::NoContextMenu</enum>
+        </property>
+        <property name="text">
+         <string>Attenuator AWG (dB)</string>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="1">
+       <widget class="QDoubleSpinBox" name="Att1_prd">
+        <property name="contextMenuPolicy">
+         <enum>Qt::NoContextMenu</enum>
+        </property>
+        <property name="readOnly">
+         <bool>false</bool>
+        </property>
+        <property name="buttonSymbols">
+         <enum>QAbstractSpinBox::PlusMinus</enum>
+        </property>
+        <property name="specialValueText">
+         <string notr="true"/>
+        </property>
+        <property name="keyboardTracking">
+         <bool>false</bool>
+        </property>
+        <property name="decimals">
+         <number>1</number>
+        </property>
+        <property name="maximum">
+         <double>31.500000000000000</double>
+        </property>
+        <property name="singleStep">
+         <double>0.500000000000000</double>
+        </property>
+        <property name="value">
+         <double>16.000000000000000</double>
+        </property>
+       </widget>
+      </item>
+      <item row="11" column="0">
+       <widget class="QLabel" name="label_7">
+        <property name="font">
+         <font>
+          <weight>75</weight>
+          <bold>true</bold>
+         </font>
+        </property>
+        <property name="contextMenuPolicy">
+         <enum>Qt::NoContextMenu</enum>
+        </property>
+        <property name="text">
+         <string>Frequency (MHz)</string>
+        </property>
+       </widget>
+      </item>
+      <item row="17" column="0" colspan="2">
+       <widget class="Line" name="line_4">
+        <property name="lineWidth">
+         <number>2</number>
+        </property>
+        <property name="orientation">
+         <enum>Qt::Horizontal</enum>
+        </property>
+       </widget>
+      </item>
+      <item row="8" column="0">
+       <widget class="QLabel" name="label_8">
+        <property name="font">
+         <font>
+          <weight>75</weight>
+          <bold>true</bold>
+         </font>
+        </property>
+        <property name="contextMenuPolicy">
+         <enum>Qt::NoContextMenu</enum>
+        </property>
+        <property name="text">
+         <string>Video Attenuation 1 (dB)</string>
+        </property>
+       </widget>
+      </item>
+      <item row="16" column="0">
+       <widget class="QLabel" name="label_12">
+        <property name="font">
+         <font>
+          <weight>75</weight>
+          <bold>true</bold>
+         </font>
+        </property>
+        <property name="text">
+         <string>Power (arb. u.)</string>
+        </property>
+       </widget>
+      </item>
+      <item row="19" column="0" colspan="2">
+       <widget class="Line" name="line_5">
         <property name="lineWidth">
          <number>2</number>
         </property>
@@ -607,7 +692,7 @@
       </item>
      </layout>
     </item>
-    <item row="0" column="1">
+    <item row="0" column="2">
      <widget class="QPlainTextEdit" name="telemetry_text">
       <property name="enabled">
        <bool>true</bool>
@@ -621,13 +706,13 @@
       <property name="minimumSize">
        <size>
         <width>100</width>
-        <height>481</height>
+        <height>526</height>
        </size>
       </property>
       <property name="maximumSize">
        <size>
         <width>400</width>
-        <height>481</height>
+        <height>526</height>
        </size>
       </property>
       <property name="font">
@@ -649,22 +734,6 @@
        <set>Qt::NoTextInteraction</set>
       </property>
      </widget>
-    </item>
-    <item row="0" column="2">
-     <spacer name="horizontalSpacer">
-      <property name="orientation">
-       <enum>Qt::Horizontal</enum>
-      </property>
-      <property name="sizeType">
-       <enum>QSizePolicy::Fixed</enum>
-      </property>
-      <property name="sizeHint" stdset="0">
-       <size>
-        <width>10</width>
-        <height>20</height>
-       </size>
-      </property>
-     </spacer>
     </item>
    </layout>
   </widget>

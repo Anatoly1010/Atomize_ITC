@@ -296,14 +296,14 @@ class Worker(QWidget):
         import atomize.device_modules.Mikran_X_band_MW_bridge_v2 as mwBridge
         #import atomize.device_modules.Spectrum_M4I_4450_X8 as spectrum
         import atomize.device_modules.Lakeshore_335 as ls
-        import atomize.device_modules.BH_15 as bh
+        import atomize.device_modules.ITC_FC as itc
         import atomize.general_modules.csv_opener_saver_tk_kinter as openfile
 
         file_handler = openfile.Saver_Opener()
         ls335 = ls.Lakeshore_335()
         mw = mwBridge.Mikran_X_band_MW_bridge_v2()
         pb = pb_pro.PB_ESR_500_Pro()
-        bh15 = bh.BH_15()
+        bh15 = itc.ITC_FC()
         a2012 = key.Keysight_2000_Xseries()
         #dig4450 = spectrum.Spectrum_M4I_4450_X8()
 
@@ -334,6 +334,7 @@ class Worker(QWidget):
 
         bh15.magnet_setup(FIELD, 1)
         bh15.magnet_field(FIELD)
+        general.wait('4000 ms')
 
         # Setting oscilloscope
         a2012.oscilloscope_trigger_channel('Ext')

@@ -327,6 +327,7 @@ class Worker(QWidget):
                 i = 0
                 freq = START_FREQ
                 mw.mw_bridge_synthesizer( freq )
+                general.wait('300 ms')
                 
                 a2012.oscilloscope_start_acquisition()
                 a2012.oscilloscope_get_curve('CH2')

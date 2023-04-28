@@ -9,7 +9,7 @@ import atomize.device_modules.Keysight_2000_Xseries as key
 import atomize.device_modules.Mikran_X_band_MW_bridge_v2 as mwBridge
 import atomize.device_modules.BH_15 as bh
 import atomize.device_modules.Lakeshore_335 as ls
-import atomize.general_modules.csv_opener_saver as openfile
+import atomize.general_modules.csv_opener_saver_tk_kinter as openfile
 
 ### Experimental parameters
 POINTS = 301
@@ -80,6 +80,9 @@ cycle_data_y = np.zeros( PHASES )
 data_x = np.zeros(POINTS)
 data_y = np.zeros(POINTS)
 x_axis = np.linspace(0, (POINTS - 1)*STEP, num = POINTS)
+
+# read integration window
+a2012.oscilloscope_read_settings()
 
 #dig4450.digitizer_read_settings()
 #dig4450.digitizer_number_of_averages(AVERAGES)

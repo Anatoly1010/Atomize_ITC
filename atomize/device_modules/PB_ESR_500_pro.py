@@ -47,6 +47,7 @@ class PB_ESR_500_Pro:
         self.ch6 = self.specific_parameters['ch6'] # TRIGGER_AWG
         self.ch7 = self.specific_parameters['ch7'] # AWG
         self.ch8 = self.specific_parameters['ch8'] # LASER
+        self.ch9 = self.specific_parameters['ch9'] # SYNT2
 
         # AWG pulse will be substitued by a shifted RECT_AWG pulse and AMP_ON pulse
         # TRIGGER_AWG is used to trigger AWG card
@@ -55,7 +56,7 @@ class PB_ESR_500_Pro:
         # -Y for Mikran bridge is simutaneously turned on -X; +Y
         # that is why there is no -Y channel instead we add both -X and +Y pulses
         self.channel_dict = {self.ch0: 0, self.ch1: 1, self.ch2: 2, self.ch3: 3, self.ch4: 4, self.ch5: 5, \
-                        self.ch6: 6, self.ch7: 7, self.ch8: 8, 'CH9': 9, 'CH10': 10, 'CH11': 11,\
+                        self.ch6: 6, self.ch7: 7, self.ch8: 8, self.ch9: 9, 'CH10': 10, 'CH11': 11,\
                         'CH12': 12, 'CH13': 13, 'CH14': 14, 'CH15': 15, 'CH16': 16, 'CH17': 17,\
                         'CH18': 18, 'CH19': 19, 'CH20': 20, 'CH21': 21, }
 
@@ -73,7 +74,7 @@ class PB_ESR_500_Pro:
 
         # a constant that use to overcome short instruction for our diagonal amp_on and mw pulses
         # see also add_amp_on_pulses() function; looking for pulses with +-overlap_amp_lna_mw overlap
-        self.overlap_amp_lna_mw = 5 # in clock ### it was 6; 06.10.2021
+        self.overlap_amp_lna_mw = 5 # in clock ### it was 5; 06.03.2023
 
         # after all manupulations with diagonal amp_on pulses there is a variant
         # when we use several mw pulses with app. 40 ns distance and with the phase different from
@@ -133,6 +134,8 @@ class PB_ESR_500_Pro:
             self.phase_pulses = 0
             self.instr_from_file = 0
             self.iterator_of_updates = 0
+            # Default synt for AWG channel
+            self.synt_number = 2
 
         elif self.test_flag == 'test':
             open('instructions.out', 'w').close()
@@ -151,6 +154,8 @@ class PB_ESR_500_Pro:
             self.awg_pulses = 0
             self.phase_pulses = 0
             self.instr_from_file = 0
+            # Default synt for AWG channel
+            self.synt_number = 2
 
     # Module functions
     def pulser_name(self):
@@ -680,7 +685,7 @@ class PB_ESR_500_Pro:
                     f.close()
 
                 for element in to_spinapi:
-                    if element[2] < 10:  # it was 12; 06.10.2021
+                    if element[2] < 12:  # it was 12; 06.10.2021
                         assert( 1 == 2 ), 'Incorrect instruction are found. Probably Trigger pulses are overlap with other'
 
                 self.reset_count = 1
@@ -1306,6 +1311,15 @@ class PB_ESR_500_Pro:
                 self.instr_from_file = 1
             elif flag == 0:
                 self.instr_from_file = 0
+
+    def pulser_default_synt(self, num):
+        """
+        Function to change synthetizer for AWG channel of the ITC microwave bridge
+        """
+        if self.test_flag != 'test':
+            self.synt_number = num
+        elif self.test_flag == 'test':
+            assert(num == 1 or num == 2), 'Incorrect synthetizer number'
 
     # Auxilary functions
     def convertion_to_numpy(self, p_array):
@@ -2134,6 +2148,7 @@ class PB_ESR_500_Pro:
 
             bit_array = np.zeros( max_pulse - min_pulse, dtype = np.int64 )
 
+
             i = 0
             while i < len(pulses):
                 # convert each pulse in an array of 0 and 1,
@@ -2144,6 +2159,15 @@ class PB_ESR_500_Pro:
                 
                 # summing arrays for each pulse into the finalbit_array
                 bit_array = bit_array + translation_array
+
+                # ITC bridge with two syntetizer
+                # AWG channel uses synt2 as default
+                # we need to add a pulse
+                # RECT/AWG pulse: pulses[i, 0] == 2**7
+                if self.synt_number == 1 and pulses[i, 0] == 2**7:
+                    bit_array = bit_array + 2**self.channel_dict[self.ch9]*np.concatenate( (np.zeros( pulses[i, 1] - min_pulse, dtype = np.int64), \
+                        np.ones(pulses[i, 2] - pulses[i, 1], dtype = np.int64), \
+                        np.zeros(max_pulse - pulses[i, 2], dtype = np.int64)), axis = None)
 
                 i += 1
 
@@ -2168,6 +2192,15 @@ class PB_ESR_500_Pro:
                 
                 # summing arrays for each pulse into the finalbit_array
                 bit_array = bit_array + translation_array
+
+                # ITC bridge with two syntetizer
+                # AWG channel uses synt2 as default
+                # we need to add a pulse
+                # RECT/AWG pulse: pulses[i, 0] == 2**7
+                if self.synt_number == 1 and pulses[i, 0] == 2**7:
+                    bit_array = bit_array + 2**self.channel_dict[self.ch9]*np.concatenate( (np.zeros( pulses[i, 1] - min_pulse, dtype = np.int64), \
+                        np.ones(pulses[i, 2] - pulses[i, 1], dtype = np.int64), \
+                        np.zeros(max_pulse - pulses[i, 2], dtype = np.int64)), axis = None)
 
                 i += 1
 
@@ -2210,6 +2243,17 @@ class PB_ESR_500_Pro:
                     # appending each pulses individually
                     bit_array_pulses.append(translation_array)
 
+                    # ITC bridge with two syntetizer
+                    # AWG channel uses synt2 as default
+                    # we need to add a pulse
+                    # RECT/AWG pulse: pulses[i, 0] == 2**7
+                    if self.synt_number == 1 and pulses[i, 0] == 2**7:
+
+                        translation_array = 2**self.channel_dict[self.ch9]*np.concatenate( (np.zeros( 2*(pulses[i, 1] - min_pulse), dtype = np.int64), \
+                            np.ones(2*(pulses[i, 2] - pulses[i, 1]), dtype = np.int64), \
+                            np.zeros(2*(max_pulse - pulses[i, 2]), dtype = np.int64)), axis = None)
+                        bit_array_pulses.append(translation_array)
+
                 i += 1
 
             return bit_array_pulses
@@ -2235,8 +2279,19 @@ class PB_ESR_500_Pro:
                         np.ones(pulses[i, 2] - pulses[i, 1], dtype = np.int64), \
                         np.zeros(max_pulse - pulses[i, 2], dtype = np.int64)), axis = None)
                 
-                # summing arrays for each pulse into the finalbit_array
+                    # summing arrays for each pulse into the finalbit_array
                     bit_array_pulses.append(translation_array)
+
+                    # ITC bridge with two syntetizer
+                    # AWG channel uses synt2 as default
+                    # we need to add a pulse
+                    # RECT/AWG pulse: pulses[i, 0] == 2**7
+                    if self.synt_number == 1 and pulses[i, 0] == 2**7:
+                        
+                        translation_array = 2**self.channel_dict[self.ch9]*np.concatenate( (np.zeros( 2*(pulses[i, 1] - min_pulse), dtype = np.int64), \
+                            np.ones(2*(pulses[i, 2] - pulses[i, 1]), dtype = np.int64), \
+                            np.zeros(2*(max_pulse - pulses[i, 2]), dtype = np.int64)), axis = None)
+                        bit_array_pulses.append(translation_array)
 
                 i += 1
 

@@ -542,7 +542,7 @@ QTabBar::tab:selected {
            </font>
           </property>
           <property name="text">
-           <string>Created by Anatoly Melnikov; www.github.com/Anatoly1010; anatoly.melnikov@tomo.nsc.ru; 31/01/2023</string>
+           <string>Created by Anatoly Melnikov; www.github.com/Anatoly1010; anatoly.melnikov@tomo.nsc.ru; 27/02/2023</string>
           </property>
          </widget>
         </item>
@@ -727,22 +727,6 @@ QTabBar::tab:selected {
              <string>TR EPR</string>
             </property>
            </widget>
-          </item>
-          <item row="4" column="1">
-           <spacer name="horizontalSpacer_7">
-            <property name="orientation">
-             <enum>Qt::Horizontal</enum>
-            </property>
-            <property name="sizeType">
-             <enum>QSizePolicy::Fixed</enum>
-            </property>
-            <property name="sizeHint" stdset="0">
-             <size>
-              <width>140</width>
-              <height>20</height>
-             </size>
-            </property>
-           </spacer>
           </item>
           <item row="1" column="0">
            <widget class="QPushButton" name="button_cw">
@@ -979,6 +963,44 @@ QTabBar::tab:selected {
             </property>
             <property name="text">
              <string>Three Pulse ESEEM</string>
+            </property>
+           </widget>
+          </item>
+          <item row="6" column="1">
+           <spacer name="horizontalSpacer_7">
+            <property name="orientation">
+             <enum>Qt::Horizontal</enum>
+            </property>
+            <property name="sizeType">
+             <enum>QSizePolicy::Fixed</enum>
+            </property>
+            <property name="sizeHint" stdset="0">
+             <size>
+              <width>140</width>
+              <height>20</height>
+             </size>
+            </property>
+           </spacer>
+          </item>
+          <item row="4" column="1">
+           <widget class="QPushButton" name="button_awg">
+            <property name="minimumSize">
+             <size>
+              <width>0</width>
+              <height>40</height>
+             </size>
+            </property>
+            <property name="font">
+             <font>
+              <weight>75</weight>
+              <bold>true</bold>
+             </font>
+            </property>
+            <property name="styleSheet">
+             <string notr="true">background-color: rgb(136, 138, 133);</string>
+            </property>
+            <property name="text">
+             <string>AWG Channel</string>
             </property>
            </widget>
           </item>

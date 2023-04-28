@@ -12,26 +12,26 @@ import atomize.device_modules.Lakeshore_335 as ls
 import atomize.general_modules.csv_opener_saver_tk_kinter as openfile
 
 ### Experimental parameters
-POINTS = 401
-STEP = 10                  # in NS; delta_start = str(STEP) + ' ns' -> delta_start = '10 ns'
-FIELD = 3389
-AVERAGES = 50
+POINTS = 50
+STEP = 2                  # in NS; length incremen = str(STEP) + ' ns' -> length incremen = '2 ns'
+FIELD = 3473
+AVERAGES = 100
 SCANS = 1
 process = 'None'
 
 # PULSES
-REP_RATE = '1000 Hz'
-PULSE_1_LENGTH = '16 ns'
-PULSE_2_LENGTH = '16 ns'
-PULSE_3_LENGTH = '16 ns'
+REP_RATE = '500 Hz'
+PULSE_1_LENGTH = '10 ns'
+PULSE_2_LENGTH = '50 ns'
+PULSE_3_LENGTH = '100 ns'
 PULSE_1_START = '0 ns'
-PULSE_2_START = '300 ns'
-PULSE_3_START = '356 ns'
-PULSE_SIGNAL_START = '656 ns'
+PULSE_2_START = '250 ns'
+PULSE_3_START = '750 ns'
+PULSE_SIGNAL_START = '1250 ns'
 PHASES = 4
 
 # NAMES
-EXP_NAME = 'ESEEM'
+EXP_NAME = 'Nutation'
 CURVE_NAME = 'exp1'
 
 # initialization of the devices
@@ -55,12 +55,10 @@ signal.signal(signal.SIGTERM, cleanup)
 bh15.magnet_setup(FIELD, 1)
 bh15.magnet_field(FIELD)
 
-pb.pulser_pulse(name = 'P0', channel = 'MW', start = PULSE_1_START, length = PULSE_1_LENGTH, phase_list = ['+x', '-x', '+x', '-x'])
-# 208 ns between P0 and P1 is set according to modulation deep in ESEEM. Can be adjust using different delays;
-# thin acquisition window
-pb.pulser_pulse(name = 'P1', channel = 'MW', start = PULSE_2_START, length = PULSE_2_LENGTH, phase_list = ['+x', '+x', '-x', '-x'])
-pb.pulser_pulse(name = 'P2', channel = 'MW', start = PULSE_3_START, length = PULSE_3_LENGTH, delta_start = str(STEP) + ' ns', phase_list = ['+x', '+x', '+x', '+x'])
-pb.pulser_pulse(name = 'P3', channel = 'TRIGGER', start = PULSE_SIGNAL_START, length = '100 ns', delta_start = str(STEP) + ' ns')
+pb.pulser_pulse(name = 'P0', channel = 'MW', start = PULSE_1_START, length = PULSE_1_LENGTH, phase_list = ['+x','+x','-x','-x'], length_increment = str(STEP) + ' ns')
+pb.pulser_pulse(name = 'P1', channel = 'MW', start = PULSE_2_START, length = PULSE_2_LENGTH, phase_list = ['+x','-x','+x','-x'])
+pb.pulser_pulse(name = 'P2', channel = 'MW', start = PULSE_3_START, length = PULSE_3_LENGTH, phase_list = ['+x','+x','+x','+x'])
+pb.pulser_pulse(name = 'P3', channel = 'TRIGGER', start = PULSE_SIGNAL_START, length = '100 ns')
 
 pb.pulser_repetition_rate( REP_RATE )
 pb.pulser_update()
@@ -97,17 +95,16 @@ a2012.oscilloscope_read_settings()
 #x_axis = np.linspace(0, (POINTS - 1)*STEP, num = POINTS) 
 
 # Data saving
-header = 'Date: ' + str(datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")) + '\n' + 'ESEEM\n' + \
+header = 'Date: ' + str(datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")) + '\n' + 'Nutation\n' + \
             'Field: ' + str(FIELD) + ' G \n' + str(mw.mw_bridge_att_prm()) + '\n' + str(mw.mw_bridge_att1_prd()) + '\n' + \
             str(mw.mw_bridge_synthesizer()) + '\n' + \
            'Repetition Rate: ' + str(pb.pulser_repetition_rate()) + '\n' + 'Number of Scans: ' + str(SCANS) + '\n' +\
            'Averages: ' + str(AVERAGES) + '\n' + 'Points: ' + str(POINTS) + '\n' + 'Window: ' + str(wind) + ' ns\n' + \
            'Horizontal Resolution: ' + str(STEP) + ' ns\n' + 'Temperature: ' + str(ls335.tc_temperature('B')) + ' K\n' +\
-           'Pulse List: ' + '\n' + str(pb.pulser_pulse_list()) + 'Time (trig. delta_start), X (V*s), Y (V*s) '
+           'Pulse List: ' + '\n' + str(pb.pulser_pulse_list()) + 'Time (pulse length_increment), X (V*s), Y (V*s) '
 
 file_data, file_param = file_handler.create_file_parameters('.param')
 file_handler.save_header(file_param, header = header, mode = 'w')
-
 
 for j in general.scans(SCANS):
 
@@ -124,17 +121,17 @@ for j in general.scans(SCANS):
             cycle_data_x[k], cycle_data_y[k] = a2012.oscilloscope_get_curve('CH1', integral = True), a2012.oscilloscope_get_curve('CH2', integral = True)
 
             k += 1
-        
-        # acquisition cycle [+, -, -, +]
-        x, y = pb.pulser_acquisition_cycle(cycle_data_x, cycle_data_y, acq_cycle = ['+', '-', '-', '+'])
+
+        # acquisition cycle
+        x, y = pb.pulser_acquisition_cycle(cycle_data_x, cycle_data_y, acq_cycle = ['+', '-', '+', '-'])
         data_x[i] = ( data_x[i] * (j - 1) + x ) / j
         data_y[i] = ( data_y[i] * (j - 1) + y ) / j
 
         process = general.plot_1d(EXP_NAME, x_axis, ( data_x, data_y ), xname = 'Delay',\
-            xscale = 'ns', yname = 'Area', yscale = 'V*s', timeaxis = 'False', label = CURVE_NAME, \
-            pr = process, text = 'Scan / Time: ' + str(j) + ' / '+ str(i*STEP) )
+            xscale = 'ns', yname = 'Area', yscale = 'V*s', label = CURVE_NAME, pr = process, \
+            text = 'Scan / Time: ' + str(j) + ' / '+ str(i*STEP))
 
-        pb.pulser_shift()
+        pb.pulser_increment()
 
     pb.pulser_pulse_reset()
 

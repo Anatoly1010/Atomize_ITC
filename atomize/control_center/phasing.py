@@ -7,7 +7,6 @@ import time
 import socket
 import numpy as np
 from multiprocessing import Process, Pipe
-#from PyQt5.QtWidgets import QListView, QAction, QWidget
 from PyQt6 import QtWidgets, uic #, QtCore, QtGui
 from PyQt6.QtWidgets import QWidget, QFileDialog
 from PyQt6.QtGui import QIcon
@@ -87,6 +86,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.label_16.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
         self.label_17.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
         self.label_18.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
+        self.label_19.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
 
         # Spinboxes
         self.P1_st.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); }")
@@ -97,7 +97,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.P5_st.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); }")
         self.P6_st.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); }")
         self.P7_st.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); }")
-        self.Rep_rate.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); }")
+        self.Rep_rate.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); }")
         self.Field.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); }")
         self.P1_len.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); }")
         self.P2_len.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); }")
@@ -193,7 +193,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.p7_typ = str( self.P7_type.currentText() )
 
         self.laser_flag = 0
-        self.laser_q_switch_delay = 165000 # in ns
+        self.laser_q_switch_delay = 141000 # in ns
 
         self.Phase_1.textChanged.connect(self.phase_1)
         self.ph_1 = self.Phase_1.toPlainText()[1:(len(self.Phase_1.toPlainText())-1)].split(',')
@@ -226,6 +226,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.second_order = float( self.Second_order.value() )
         if self.second_order != 0.0:
             self.second_order = self.sec_order_coef / ( float( self.Second_order.value() ) * 1000 )
+
+        self.Combo_laser.setStyleSheet("QComboBox { color : rgb(193, 202, 227); selection-color: rgb(211, 194, 78); }")
+        self.Combo_laser.currentIndexChanged.connect(self.combo_laser_fun)
+        self.combo_laser_fun()
 
         self.dig_part()
 
@@ -275,6 +279,16 @@ class MainWindow(QtWidgets.QMainWindow):
         the application
         """
         self.worker = Worker()
+
+    def combo_laser_fun(self):
+        """
+        A function to set a default laser
+        """
+        txt = str( self.Combo_laser.currentText() )
+        if txt == 'Nd:YaG':
+            self.combo_laser_num = 1
+        elif txt == 'NovoFEL':
+            self.combo_laser_num = 2
 
     def quad_online(self):
         """
@@ -961,18 +975,20 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         self.repetition_rate = str( self.Rep_rate.value() ) + ' Hz'
 
-        self.pb.pulser_repetition_rate( self.repetition_rate )
+        #self.pb.pulser_repetition_rate( self.repetition_rate )
 
-        #if self.laser_flag != 1:
-        #    self.pb.pulser_repetition_rate( self.repetition_rate )
+        if self.laser_flag != 1:
+            self.pb.pulser_repetition_rate( self.repetition_rate )
         #    ###self.update()
-        #else:
-        #    self.repetition_rate = '10 Hz'
-        #    self.pb.pulser_repetition_rate( self.repetition_rate )
-        #    self.Rep_rate.setValue(10)
+        elif self.laser_flag == 1 and self.combo_laser_num == 1:
+            self.repetition_rate = '9.9 Hz'
+            self.pb.pulser_repetition_rate( self.repetition_rate )
+            self.Rep_rate.setValue(9.9)
         #    ###self.update()
-        #    self.errors.appendPlainText( '10 Hz is a maximum repetiton rate with LASER pulse' )
-        
+            self.errors.appendPlainText( '9.9 Hz is a maximum repetiton rate with LASER pulse' )
+        elif self.laser_flag == 1 and self.combo_laser_num == 2:
+            self.pb.pulser_repetition_rate( self.repetition_rate )
+
         try:
             self.parent_conn_dig.send( 'RR' + str( self.repetition_rate.split(' ')[0] ) )
         except AttributeError:
@@ -1021,41 +1037,44 @@ class MainWindow(QtWidgets.QMainWindow):
                                         phase_list = self.ph_7  )
 
         else:
-            self.pb.pulser_repetition_rate( '10 Hz' )
-            self.Rep_rate.setValue(10)
+            if self.combo_laser_num == 1:
+                self.pb.pulser_repetition_rate( '9.9 Hz' )
+                self.Rep_rate.setValue(9.9)
+            else:
+                pass
 
             # add q_switch_delay
-            self.p1_start = self.add_ns( int( self.remove_ns( self.p1_start ) ) + self.laser_q_switch_delay )
-            self.p3_start = self.add_ns( int( self.remove_ns( self.p3_start ) ) + self.laser_q_switch_delay )
-            self.p4_start = self.add_ns( int( self.remove_ns( self.p4_start ) ) + self.laser_q_switch_delay )
-            self.p5_start = self.add_ns( int( self.remove_ns( self.p5_start ) ) + self.laser_q_switch_delay )
-            self.p6_start = self.add_ns( int( self.remove_ns( self.p6_start ) ) + self.laser_q_switch_delay )
-            self.p7_start = self.add_ns( int( self.remove_ns( self.p7_start ) ) + self.laser_q_switch_delay )
+            self.p1_start_sh = self.add_ns( int( self.remove_ns( self.p1_start ) ) + self.laser_q_switch_delay )
+            self.p3_start_sh = self.add_ns( int( self.remove_ns( self.p3_start ) ) + self.laser_q_switch_delay )
+            self.p4_start_sh = self.add_ns( int( self.remove_ns( self.p4_start ) ) + self.laser_q_switch_delay )
+            self.p5_start_sh = self.add_ns( int( self.remove_ns( self.p5_start ) ) + self.laser_q_switch_delay )
+            self.p6_start_sh = self.add_ns( int( self.remove_ns( self.p6_start ) ) + self.laser_q_switch_delay )
+            self.p7_start_sh = self.add_ns( int( self.remove_ns( self.p7_start ) ) + self.laser_q_switch_delay )
 
             if int( self.p1_length.split(' ')[0] ) != 0:
-                self.pb.pulser_pulse( name = 'P0', channel = self.p1_typ, start = self.p1_start, length = self.p1_length)
+                self.pb.pulser_pulse( name = 'P0', channel = self.p1_typ, start = self.p1_start_sh, length = self.p1_length)
                 # 2022-10-05
                 #, \phase_list = self.ph_1
             if int( self.p2_length.split(' ')[0] ) != 0:
                 self.pb.pulser_pulse( name = 'P1', channel = self.p2_typ, start = self.p2_start, length = self.p2_length, \
                                         phase_list = self.ph_2 )
             if int( self.p3_length.split(' ')[0] ) != 0:
-                self.pb.pulser_pulse( name = 'P2', channel = self.p3_typ, start = self.p3_start, length = self.p3_length, \
+                self.pb.pulser_pulse( name = 'P2', channel = self.p3_typ, start = self.p3_start_sh, length = self.p3_length, \
                                         phase_list = self.ph_3 )
             if int( self.p4_length.split(' ')[0] ) != 0:
-                self.pb.pulser_pulse( name = 'P3', channel = self.p4_typ, start = self.p4_start, length = self.p4_length, \
+                self.pb.pulser_pulse( name = 'P3', channel = self.p4_typ, start = self.p4_start_sh, length = self.p4_length, \
                                         phase_list = self.ph_4 )
             if int( self.p5_length.split(' ')[0] ) != 0:
-                self.pb.pulser_pulse( name = 'P4', channel = self.p5_typ, start = self.p5_start, length = self.p5_length, \
+                self.pb.pulser_pulse( name = 'P4', channel = self.p5_typ, start = self.p5_start_sh, length = self.p5_length, \
                                         phase_list = self.ph_5 )
             if int( self.p6_length.split(' ')[0] ) != 0:
-                self.pb.pulser_pulse( name = 'P5', channel = self.p6_typ, start = self.p6_start, length = self.p6_length, \
+                self.pb.pulser_pulse( name = 'P5', channel = self.p6_typ, start = self.p6_start_sh, length = self.p6_length, \
                                         phase_list = self.ph_6 )
             if int( self.p7_length.split(' ')[0] ) != 0:
-                self.pb.pulser_pulse( name = 'P6', channel = self.p7_typ, start = self.p7_start, length = self.p7_length, \
+                self.pb.pulser_pulse( name = 'P6', channel = self.p7_typ, start = self.p7_start_sh, length = self.p7_length, \
                                         phase_list = self.ph_7 )
 
-            self.errors.appendPlainText( '165 us is added to all the pulses except the LASER pulse' )
+            self.errors.appendPlainText( '140 us is added to all the pulses except the LASER pulse' )
 
         self.errors.appendPlainText( self.pb.pulser_pulse_list() )
 
@@ -1102,9 +1121,10 @@ class MainWindow(QtWidgets.QMainWindow):
             self.test_process.join()
             #14-03-2021
             #self.pb.pulser_stop()
+            self.errors.clear()
             self.errors.appendPlainText( 'Incorrect pulse setting. Check that your pulses:\n' + \
                                         '1. Not overlapped\n' + \
-                                        '2. Distance between MW pulses is more than 40 ns\n' + \
+                                        '2. Distance between MW pulses is more than 42 ns\n' + \
                                         '3. Pulses are longer or equal to 12 ns\n' + \
                                         '4. Field Controller is stucked\n' + \
                                         '5. LASER pulse should not be in 208-232; 152-182; 102-126; <76 ns from first MW\n' + \
@@ -1163,13 +1183,22 @@ class MainWindow(QtWidgets.QMainWindow):
         self.param_i are used as parameters for script function
         """
 
-        p1_list = [ self.p1_typ, self.p1_start, self.p1_length, self.ph_1 ]
-        p2_list = [ self.p2_typ, self.p2_start, self.p2_length, self.ph_2 ]
-        p3_list = [ self.p3_typ, self.p3_start, self.p3_length, self.ph_3 ]
-        p4_list = [ self.p4_typ, self.p4_start, self.p4_length, self.ph_4 ]
-        p5_list = [ self.p5_typ, self.p5_start, self.p5_length, self.ph_5 ]
-        p6_list = [ self.p6_typ, self.p6_start, self.p6_length, self.ph_6 ]
-        p7_list = [ self.p7_typ, self.p7_start, self.p7_length, self.ph_7 ]
+        if self.laser_flag != 1:
+            p1_list = [ self.p1_typ, self.p1_start, self.p1_length, self.ph_1 ]
+            p2_list = [ self.p2_typ, self.p2_start, self.p2_length, self.ph_2 ]
+            p3_list = [ self.p3_typ, self.p3_start, self.p3_length, self.ph_3 ]
+            p4_list = [ self.p4_typ, self.p4_start, self.p4_length, self.ph_4 ]
+            p5_list = [ self.p5_typ, self.p5_start, self.p5_length, self.ph_5 ]
+            p6_list = [ self.p6_typ, self.p6_start, self.p6_length, self.ph_6 ]
+            p7_list = [ self.p7_typ, self.p7_start, self.p7_length, self.ph_7 ]
+        else: 
+            p1_list = [ self.p1_typ, self.p1_start_sh, self.p1_length, self.ph_1 ]
+            p2_list = [ self.p2_typ, self.p2_start, self.p2_length, self.ph_2 ]
+            p3_list = [ self.p3_typ, self.p3_start_sh, self.p3_length, self.ph_3 ]
+            p4_list = [ self.p4_typ, self.p4_start_sh, self.p4_length, self.ph_4 ]
+            p5_list = [ self.p5_typ, self.p5_start_sh, self.p5_length, self.ph_5 ]
+            p6_list = [ self.p6_typ, self.p6_start_sh, self.p6_length, self.ph_6 ]
+            p7_list = [ self.p7_typ, self.p7_start_sh, self.p7_length, self.ph_7 ]
 
         # prevent running two processes
         try:
@@ -1184,7 +1213,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.digitizer_process = Process( target = self.worker.dig_on, args = ( self.child_conn_dig, self.points, self.posttrigger, self.number_averages, \
                                             self.cur_win_left, self.cur_win_right, p1_list, p2_list, p3_list, p4_list, p5_list, p6_list, p7_list, \
                                             self.laser_flag, self.repetition_rate.split(' ')[0], self.mag_field, self.fft, self.quad, self.zero_order, self.first_order, \
-                                            self.second_order, self.p_to_drop, ) )
+                                            self.second_order, self.p_to_drop, self.combo_laser_num, ) )
                
         self.digitizer_process.start()
         # send a command in a different thread about the current state
@@ -1235,7 +1264,7 @@ class Worker(QWidget):
 
         self.command = 'start'
     
-    def dig_on(self, conn, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11, p12, p13, p14, p15, p16, p17, p18, p19, p20, p21):
+    def dig_on(self, conn, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11, p12, p13, p14, p15, p16, p17, p18, p19, p20, p21, p22):
         """
         function that contains updating of the digitizer
         """
@@ -1248,12 +1277,12 @@ class Worker(QWidget):
         import atomize.device_modules.Keysight_2000_Xseries as key
         import atomize.device_modules.PB_ESR_500_pro as pb_pro
         import atomize.math_modules.fft as fft_module
-        import atomize.device_modules.BH_15 as bh
+        import atomize.device_modules.ITC_FC as itc
 
         pb = pb_pro.PB_ESR_500_Pro()
         fft = fft_module.Fast_Fourier()
-        bh15 = bh.BH_15()
-        bh15.magnet_setup( p15, 0.5 )
+        bh15 = itc.ITC_FC()
+        bh15.magnet_setup( p15, 1 )
 
         process = 'None'
         ##dig = spectrum.Spectrum_M4I_4450_X8()
@@ -1289,16 +1318,19 @@ class Worker(QWidget):
                 pb.pulser_pulse( name = 'P6', channel = p12[0], start = p12[1], length = p12[2], phase_list = p12[3] )
 
         else:
-            pb.pulser_repetition_rate( '10 Hz' )
+            if p22 == 1:
+                pb.pulser_repetition_rate( '9.9 Hz' )
+            else:
+                pass
 
-            # add q_switch_delay 165000 ns
-            p6[1] = str( int( p6[1].split(' ')[0] ) + 165000 ) + ' ns'
+            # add q_switch_delay 141000 ns
+            p6[1] = str( int( p6[1].split(' ')[0] ) + 141000 ) + ' ns'
             # p7 is a laser pulser
-            p8[1] = str( int( p8[1].split(' ')[0] ) + 165000 ) + ' ns'
-            p9[1] = str( int( p9[1].split(' ')[0] ) + 165000 ) + ' ns'
-            p10[1] = str( int( p10[1].split(' ')[0] ) + 165000 ) + ' ns'
-            p11[1] = str( int( p11[1].split(' ')[0] ) + 165000 ) + ' ns'
-            p12[1] = str( int( p12[1].split(' ')[0] ) + 165000 ) + ' ns'
+            p8[1] = str( int( p8[1].split(' ')[0] ) + 141000 ) + ' ns'
+            p9[1] = str( int( p9[1].split(' ')[0] ) + 141000 ) + ' ns'
+            p10[1] = str( int( p10[1].split(' ')[0] ) + 141000 ) + ' ns'
+            p11[1] = str( int( p11[1].split(' ')[0] ) + 141000 ) + ' ns'
+            p12[1] = str( int( p12[1].split(' ')[0] ) + 141000 ) + ' ns'
 
             if int( p6[2].split(' ')[0] ) != 0:
                 pb.pulser_pulse( name = 'P0', channel = p6[0], start = p6[1], length = p6[2] )
@@ -1387,13 +1419,12 @@ class Worker(QWidget):
             elif self.command[0:2] == 'WR':
                 p5 = int( self.command[2:] )
             elif self.command[0:2] == 'RR':
-                p14 = int( self.command[2:] )
+                p14 = float( self.command[2:] )
                 pb.pulser_repetition_rate( str(p14) + ' Hz' )
             elif self.command[0:2] == 'FI':
                 p15 = float( self.command[2:] )
                 bh15.magnet_field( p15 )
             elif self.command[0:2] == 'FF':
-                print(p16)
                 p16 = int( self.command[2:] )
             elif self.command[0:2] == 'QC':
                 p17 = int( self.command[2:] )

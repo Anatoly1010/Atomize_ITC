@@ -263,7 +263,7 @@ class Worker(QWidget):
         # freezing after digitizer restart otherwise
         import atomize.general_modules.general_functions as general
         import atomize.device_modules.SR_860 as sr
-        import atomize.device_modules.BH_15 as bh
+        import atomize.device_modules.ITC_FC as itc
         import atomize.device_modules.Lakeshore_335 as ls
         import atomize.device_modules.Agilent_53131a as ag
         import atomize.general_modules.csv_opener_saver_tk_kinter as openfile
@@ -272,7 +272,7 @@ class Worker(QWidget):
         ag53131a = ag.Agilent_53131a()
         ls335 = ls.Lakeshore_335()
         sr860 = sr.SR_860()
-        bh15 = bh.BH_15()
+        itc_fc = itc.ITC_FC()
 
         # parameters for initial initialization
         field = p4
@@ -283,11 +283,16 @@ class Worker(QWidget):
         SCANS = p7
         process = 'None'
 
+        tc_wait = 0
+        raw = p8.split(" ")
+        if int( raw[0] ) > 100 or raw[1] == 's':
+            tc_wait = 1
+
         points = int( (END_FIELD - START_FIELD) / FIELD_STEP ) + 1
         data = np.zeros(points)
         x_axis = np.linspace(START_FIELD, END_FIELD, num = points) 
 
-        bh15.magnet_setup(field, p5)
+        itc_fc.magnet_setup(field, p5)
         sr860.lock_in_time_constant( p8 )
         sr860.lock_in_sensitivity( '1 V' )
         sr860.lock_in_ref_amplitude( p6 )
@@ -299,6 +304,7 @@ class Worker(QWidget):
         ag53131a.freq_counter_digits(8)
         ag53131a.freq_counter_stop_mode('Digits')
         
+        #START_FIELD = 3460.2
         # the idea of automatic and dynamic changing is
         # sending a new value of repetition rate via self.command
         # in each cycle we will check the current value of self.command
@@ -307,10 +313,13 @@ class Worker(QWidget):
             # Start of experiment
             while field < START_FIELD:
                 
-                field = bh15.magnet_field( field + initialization_step )
-                #field = field + initialization_step
+                field = itc_fc.magnet_field( field + initialization_step )
+                ##field = START_FIELD
+                general.wait('1000 ms')
 
-            field = bh15.magnet_field( START_FIELD )
+            field = itc_fc.magnet_field( START_FIELD )
+            general.wait('4000 ms')
+
             sr860.lock_in_sensitivity( p9 )
 
             j = 1
@@ -320,18 +329,18 @@ class Worker(QWidget):
                 field = START_FIELD
                 while field <= END_FIELD:
                     
+                    #if tc_wait == 1:
                     general.wait( p8 )
-                    #general.wait('10 ms')
+                        #general.wait('10 ms')
 
                     data[i] = ( data[i] * (j - 1) + sr860.lock_in_get_data() ) / j
-                    #data[i] = ( data[i] * (j - 1) + random.random() ) / j
 
                     process = general.plot_1d( p2, x_axis, data, xname = 'Field',\
                         xscale = 'G', yname = 'Intensity', yscale = 'V', label = p1, pr = process, \
                         text = 'Scan / Field: ' + str(j) + ' / ' + str(field) )
 
                     field = round( (FIELD_STEP + field), 3 )
-                    bh15.magnet_field(field)
+                    itc_fc.magnet_field(field)
 
                     # check our polling data
                     if self.command[0:2] == 'SC':
@@ -346,8 +355,8 @@ class Worker(QWidget):
                     i += 1
 
                 while field > START_FIELD:
-                    field = bh15.magnet_field( field - initialization_step )
-                    #field = field - initialization_step
+                    field = itc_fc.magnet_field( field - initialization_step )
+                    field = field - initialization_step
 
                 j += 1
 
@@ -358,8 +367,8 @@ class Worker(QWidget):
             general.message('Script finished')
             sr860.lock_in_sensitivity( '1 V' )
             while field >= START_FIELD:
-                field = bh15.magnet_field( field - initialization_step )
-                #field = field - initialization_step 
+                field = itc_fc.magnet_field( field - initialization_step )
+                field = field - initialization_step 
 
             # Data saving
             header = 'Date: ' + str(datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")) + '\n' + 'Continious Wave EPR Spectrum\n' + \

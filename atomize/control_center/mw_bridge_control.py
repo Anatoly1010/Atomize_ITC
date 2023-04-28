@@ -16,6 +16,7 @@ from PyQt6 import QtWidgets, uic #, QtCore, QtGui
 from PyQt6.QtWidgets import QWidget 
 from PyQt6.QtGui import QIcon
 import atomize.general_modules.general_functions as general
+import atomize.device_modules.ECC_15K as ecc
 
 class MainWindow(QtWidgets.QMainWindow):
     """
@@ -42,6 +43,8 @@ class MainWindow(QtWidgets.QMainWindow):
         path_config_file = os.path.join(path_to_main,'mw_config.ini')
         config = configparser.ConfigParser()
         config.read(path_config_file)
+
+        self.ecc15k = ecc.ECC_15K()
 
         self.UDP_IP = str(config['DEFAULT']['UDP_IP'])
         self.UDP_PORT = int(config['DEFAULT']['UDP_PORT'])
@@ -70,6 +73,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.label_7.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
         self.label_8.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
         self.label_9.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
+        self.label_10.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
+        self.label_11.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
+        self.label_12.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
 
         self.telemetry_text.setStyleSheet("QPlainTextEdit { color : rgb(211, 194, 78); }") # rgb(193, 202, 227)
         
@@ -95,17 +101,27 @@ class MainWindow(QtWidgets.QMainWindow):
         self.Synt.valueChanged.connect(self.synt)
         self.Synt.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); }")
 
+        self.Synt2.valueChanged.connect(self.synt2)
+        self.Synt2.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); }")
+        # even in 'Off' state there is some power from SYNT
+        # it is better to turn on very off-resonance frequency
+        freq2 = int( self.Synt2.value() )
+        self.ecc15k.synthetizer_frequency(freq2)
+
+        self.Synt2_power.valueChanged.connect(self.synt2_power)
+        self.Synt2_power.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); }")
+        power2 = int( self.Synt2_power.value() )
+        self.ecc15k.synthetizer_power(power2)
+
+        self.Synt2_state.setStyleSheet("QComboBox { color : rgb(193, 202, 227); selection-color: rgb(211, 194, 78); }")
+        self.Synt2_state.currentIndexChanged.connect(self.synt2_state)
+
         self.Rot_vane.valueChanged.connect(self.rot_vane)
         #self.Rot_vane.lineEdit().setReadOnly( True )
         self.Rot_vane.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); }")
 
-        # Radio Buttons
-        self.cutoff_1.clicked.connect(self.cutoff_changed_1)
-        self.cutoff_1.setStyleSheet("QRadioButton { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.cutoff_2.clicked.connect(self.cutoff_changed_2)
-        self.cutoff_2.setStyleSheet("QRadioButton { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.cutoff_3.clicked.connect(self.cutoff_changed_3)
-        self.cutoff_3.setStyleSheet("QRadioButton { color : rgb(193, 202, 227); font-weight: bold; }")
+        self.Cuttoff_box.setStyleSheet("QComboBox { color : rgb(193, 202, 227); selection-color: rgb(211, 194, 78); }")
+        self.Cuttoff_box.currentIndexChanged.connect(self.cutoff_changed)
 
         self.curr_dB = 60
         self.prev_dB = 60
@@ -114,6 +130,21 @@ class MainWindow(QtWidgets.QMainWindow):
         #self.synt()
         self.initialize()
         self.telemetry()
+
+    def synt2(self):
+        freq2 = int( self.Synt2.value() )
+        self.ecc15k.synthetizer_frequency(freq2)
+        self.telemetry_text.appendPlainText( f'Synt2 Freq: {self.ecc15k.synthetizer_frequency().split(" ")[0]}')
+    
+    def synt2_power(self):
+        power2 = int( self.Synt2_power.value() )
+        self.ecc15k.synthetizer_power(power2)
+        self.telemetry_text.appendPlainText( f'Synt2 Power Level: {self.ecc15k.synthetizer_power()}')
+
+    def synt2_state(self):
+        txt = str( self.Synt2_state.currentText() )
+        self.ecc15k.synthetizer_state(txt)
+        self.telemetry_text.appendPlainText( f'Synt2 State: {self.ecc15k.synthetizer_state()}')
 
     def _on_destroyed(self):
         """
@@ -296,80 +327,74 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.telemetry_text.appendPlainText( 'Video Att. 2: ' + str(data_raw[2]/2) + ' dB')
 
-    def cutoff_changed_2(self):
+    def cutoff_changed(self):
         """
-        A function to change the amplification coefficient in the PRM channel
+        A function to change the bandwidth of the video amplifier
         """
+        txt = str( self.Cuttoff_box.currentText() )
 
-        MESSAGE = b'\x1b' + b'\x01' + b'\x00'
+        if txt == '300 MHz':
+            MESSAGE = b'\x1b' + b'\x01' + b'\x02'
 
-        self.sock.sendto( MESSAGE, (self.UDP_IP, self.UDP_PORT) )
-        data_raw, addr = self.sock.recvfrom(3)
+            self.sock.sendto( MESSAGE, (self.UDP_IP, self.UDP_PORT) )
+            data_raw, addr = self.sock.recvfrom(3)
 
-        # get cutt-off
-        MESSAGE = b'\x25' + b'\x01' + b'\x00'
+            # get cutt-off
+            MESSAGE = b'\x25' + b'\x01' + b'\x00'
 
-        self.sock.sendto( MESSAGE, (self.UDP_IP, self.UDP_PORT) )
-        data_raw, addr = self.sock.recvfrom(3)
+            self.sock.sendto( MESSAGE, (self.UDP_IP, self.UDP_PORT) )
+            data_raw, addr = self.sock.recvfrom(3)
 
-        if data_raw[2] == 0:
-            freq = '30'
-        elif data_raw[2] == 1:
-            freq = '105'
-        elif data_raw[2] == 2:
-            freq = '300'
+            if data_raw[2] == 0:
+                freq = 30
+            elif data_raw[2] == 1:
+                freq = 105
+            elif data_raw[2] == 2:
+                freq = 300
 
-        self.telemetry_text.appendPlainText( 'Cut-off: ' + freq + ' MHz')
+            self.telemetry_text.appendPlainText( f'Cut-off: {freq} MHz')
+        
+        elif txt == '105 MHz':
+            MESSAGE = b'\x1b' + b'\x01' + b'\x01'
 
-    def cutoff_changed_3(self):
-        """
-        A function to change the amplification coefficient in the PRM channel
-        """
+            self.sock.sendto( MESSAGE, (self.UDP_IP, self.UDP_PORT) )
+            data_raw, addr = self.sock.recvfrom(3)
 
-        MESSAGE = b'\x1b' + b'\x01' + b'\x01'
+            # get cutt-off
+            MESSAGE = b'\x25' + b'\x01' + b'\x00'
 
-        self.sock.sendto( MESSAGE, (self.UDP_IP, self.UDP_PORT) )
-        data_raw, addr = self.sock.recvfrom(3)
+            self.sock.sendto( MESSAGE, (self.UDP_IP, self.UDP_PORT) )
+            data_raw, addr = self.sock.recvfrom(3)
 
-        # get cutt-off
-        MESSAGE = b'\x25' + b'\x01' + b'\x00'
+            if data_raw[2] == 0:
+                freq = 30
+            elif data_raw[2] == 1:
+                freq = 105
+            elif data_raw[2] == 2:
+                freq = 300
 
-        self.sock.sendto( MESSAGE, (self.UDP_IP, self.UDP_PORT) )
-        data_raw, addr = self.sock.recvfrom(3)
+            self.telemetry_text.appendPlainText( f'Cut-off: {freq} MHz')
+        
+        elif txt == '30 MHz':
+            MESSAGE = b'\x1b' + b'\x01' + b'\x00'
 
-        if data_raw[2] == 0:
-            freq = '30'
-        elif data_raw[2] == 1:
-            freq = '105'
-        elif data_raw[2] == 2:
-            freq = '300'
+            self.sock.sendto( MESSAGE, (self.UDP_IP, self.UDP_PORT) )
+            data_raw, addr = self.sock.recvfrom(3)
 
-        self.telemetry_text.appendPlainText( 'Cut-off: ' + freq + ' MHz')
+            # get cutt-off
+            MESSAGE = b'\x25' + b'\x01' + b'\x00'
 
-    def cutoff_changed_1(self):
-        """
-        A function to change the amplification coefficient in the PRM channel
-        """
+            self.sock.sendto( MESSAGE, (self.UDP_IP, self.UDP_PORT) )
+            data_raw, addr = self.sock.recvfrom(3)
 
-        MESSAGE = b'\x1b' + b'\x01' + b'\x02'
+            if data_raw[2] == 0:
+                freq = 30
+            elif data_raw[2] == 1:
+                freq = 105
+            elif data_raw[2] == 2:
+                freq = 300
 
-        self.sock.sendto( MESSAGE, (self.UDP_IP, self.UDP_PORT) )
-        data_raw, addr = self.sock.recvfrom(3)
-
-        # get cutt-off
-        MESSAGE = b'\x25' + b'\x01' + b'\x00'
-
-        self.sock.sendto( MESSAGE, (self.UDP_IP, self.UDP_PORT) )
-        data_raw, addr = self.sock.recvfrom(3)
-
-        if data_raw[2] == 0:
-            freq = '30'
-        elif data_raw[2] == 1:
-            freq = '105'
-        elif data_raw[2] == 2:
-            freq = '300'
-
-        self.telemetry_text.appendPlainText( 'Cut-off: ' + freq + ' MHz')
+            self.telemetry_text.appendPlainText(f'Cut-off: {freq} MHz')
 
     def synt(self):
         """
@@ -406,8 +431,7 @@ class MainWindow(QtWidgets.QMainWindow):
             freq = chr(data_raw[5]) + chr(data_raw[6]) + chr(data_raw[7])\
                 + chr(data_raw[8]) + chr(data_raw[9])
 
-        self.telemetry_text.appendPlainText( 'Power: ' + state + '\n' \
-            + 'Frequency: ' + freq )
+        self.telemetry_text.appendPlainText( 'Frequency: ' + freq )
 
     def pause_and_label(self, time):
         self.label_9.setStyleSheet("QLabel { color : rgb(255, 0, 0); font-weight: bold; }")
@@ -456,6 +480,8 @@ class MainWindow(QtWidgets.QMainWindow):
         #self.sock.sendto( MESSAGE, (self.UDP_IP, self.UDP_PORT) )
         #data_raw, addr = self.sock.recvfrom(3)
 
+        self.synt()
+
         # 300 MHz BW
         MESSAGE = b'\x1b' + b'\x01' + b'\x02'
         self.sock.sendto( MESSAGE, (self.UDP_IP, self.UDP_PORT) )
@@ -490,6 +516,9 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         A function to initialize a bridge.
         """
+
+        self.ecc15k.synthetizer_state('Off')
+        
         # Rotary vane to 60 dB
         step = int( self.calibration( 60 ) ) - int( self.calibration( self.prev_dB ) )
         

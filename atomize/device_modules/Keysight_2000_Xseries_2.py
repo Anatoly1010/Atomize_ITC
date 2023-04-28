@@ -299,14 +299,14 @@ class Keysight_2000_Xseries:
             answer = 1000000*float(self.device_query(":TIMebase:RANGe?"))/points
             return answer
         elif self.test_flag == 'test':
-            answer = 1000000*float(self.test_timebase.split(' ')[0])/self.test_record_length
+            answer = 1000000*float(self.test_timebase)/self.test_record_length
             return answer
 
     def oscilloscope_start_acquisition(self):
         if self.test_flag != 'test':
             #start_time = datetime.now()
             self.device_write(':WAVeform:FORMat WORD')
-            self.device_query('*ESR?;:DIGitize;*OPC?') # return 1, if everything is ok;
+            self.device_write('*ESR?;:DIGitize;*OPC?') # return 1, if everything is ok; #;*OPC?
             # the whole sequence is the following 1-binary format; 2-clearing; 3-digitizing; 4-checking of the completness
             #end_time=datetime.now()
             #general.message('Acquisition completed')
@@ -384,7 +384,10 @@ class Keysight_2000_Xseries:
                     elif integral == True:
                         integ = np.sum( array_y[self.win_left:self.win_right] ) * ( 10**(-6) * self.oscilloscope_time_resolution() )
                         return integ
-
+                    elif integral == 'Both':
+                        integ = np.sum( array_y[self.win_left:self.win_right] ) * ( 10**(-6) * self.oscilloscope_time_resolution() )
+                        xs = np.arange( len(array_y) ) * ( 10**(-6) * self.oscilloscope_time_resolution() )
+                        return xs, array_y, integ
                 else:
                     general.message("Invalid channel is given")
                     sys.exit()
@@ -405,7 +408,11 @@ class Keysight_2000_Xseries:
                 elif integral == True:
                     integ = np.sum( array_y[self.win_left:self.win_right] ) * ( 10**(-6) * self.oscilloscope_time_resolution() )
                     return integ
-
+                elif integral == 'Both':
+                    integ = np.sum( array_y[self.win_left:self.win_right] ) * ( 10**(-6) * self.oscilloscope_time_resolution() )
+                    xs = np.arange( len(array_y) ) * ( 10**(-6) * self.oscilloscope_time_resolution() )
+                    return xs, array_y, integ
+    
     def oscilloscope_sensitivity(self, *channel):
         if self.test_flag != 'test':
             if len(channel) == 2:
