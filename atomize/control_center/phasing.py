@@ -287,8 +287,10 @@ class MainWindow(QtWidgets.QMainWindow):
         txt = str( self.Combo_laser.currentText() )
         if txt == 'Nd:YaG':
             self.combo_laser_num = 1
+            self.laser_q_switch_delay = 141000
         elif txt == 'NovoFEL':
             self.combo_laser_num = 2
+            self.laser_q_switch_delay = 22000
 
     def quad_online(self):
         """
@@ -562,6 +564,15 @@ class MainWindow(QtWidgets.QMainWindow):
         text = open(filename).read()
         lines = text.split('\n')
 
+        try:
+            self.P_to_drop.setValue( int( lines[14].split(':  ')[1] ) )
+            self.Zero_order.setValue( float( lines[15].split(':  ')[1] ) )
+            self.First_order.setValue( float( lines[16].split(':  ')[1] ) )
+            self.Second_order.setValue( float( lines[17].split(':  ')[1] ) )
+            self.Combo_laser.setCurrentText( str( lines[18].split(':  ')[1] ) )
+
+        except IndexError:
+            pass
         self.setter(text, 0, self.P1_type, self.P1_st, self.P1_len, self.Phase_1)
         self.setter(text, 1, self.P2_type, self.P2_st, self.P2_len, self.Phase_2)
         self.setter(text, 2, self.P3_type, self.P3_st, self.P3_len, self.Phase_3)
@@ -569,7 +580,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.setter(text, 4, self.P5_type, self.P5_st, self.P5_len, self.Phase_5)
         self.setter(text, 5, self.P6_type, self.P6_st, self.P6_len, self.Phase_6)
         self.setter(text, 6, self.P7_type, self.P7_st, self.P7_len, self.Phase_7)
-        self.Rep_rate.setValue( int( lines[7].split(':  ')[1] ) )
+        self.Rep_rate.setValue( float( lines[7].split(':  ')[1] ) )
         self.Field.setValue( float( lines[8].split(':  ')[1] ) )
 
         self.shift_box.setCheckState(Qt.CheckState.Unchecked)
@@ -580,14 +591,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.Win_left.setValue( int( lines[11].split(':  ')[1] ) )
         self.Win_right.setValue( int( lines[12].split(':  ')[1] ) )
         self.Acq_number.setValue( int( lines[13].split(':  ')[1] ) )
-
-        try:
-            self.P_to_drop.setValue( int( lines[14].split(':  ')[1] ) )
-            self.Zero_order.setValue( float( lines[15].split(':  ')[1] ) )
-            self.First_order.setValue( float( lines[16].split(':  ')[1] ) )
-            self.Second_order.setValue( float( lines[17].split(':  ')[1] ) )
-        except IndexError:
-            pass
 
         self.dig_stop()
 
@@ -632,6 +635,7 @@ class MainWindow(QtWidgets.QMainWindow):
             file.write( 'Zero order:  ' + str(self.Zero_order.value()) + '\n' )
             file.write( 'First order:  ' + str(self.First_order.value()) + '\n' )
             file.write( 'Second order:  ' + str(self.Second_order.value()) + '\n' )
+            file.write( 'Laser:  ' + str( self.Combo_laser.currentText() ) + '\n' )
 
     def phase_converted(self, ph_str):
         if ph_str == '+x':
@@ -1040,8 +1044,8 @@ class MainWindow(QtWidgets.QMainWindow):
             if self.combo_laser_num == 1:
                 self.pb.pulser_repetition_rate( '9.9 Hz' )
                 self.Rep_rate.setValue(9.9)
-            else:
-                pass
+            elif self.combo_laser_num == 2:
+                self.pb.pulser_repetition_rate( self.repetition_rate )
 
             # add q_switch_delay
             self.p1_start_sh = self.add_ns( int( self.remove_ns( self.p1_start ) ) + self.laser_q_switch_delay )
@@ -1074,7 +1078,10 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.pb.pulser_pulse( name = 'P6', channel = self.p7_typ, start = self.p7_start_sh, length = self.p7_length, \
                                         phase_list = self.ph_7 )
 
-            self.errors.appendPlainText( '140 us is added to all the pulses except the LASER pulse' )
+            if self.combo_laser_num == 1:
+                self.errors.appendPlainText( str(self.laser_q_switch_delay / 1000) + ' us is added to all the pulses except the LASER pulse' )
+            elif self.combo_laser_num == 2:
+                self.errors.appendPlainText( str(self.laser_q_switch_delay / 1000) + ' us is added to all the pulses except the LASER pulse' )
 
         self.errors.appendPlainText( self.pb.pulser_pulse_list() )
 
@@ -1321,16 +1328,21 @@ class Worker(QWidget):
             if p22 == 1:
                 pb.pulser_repetition_rate( '9.9 Hz' )
             else:
-                pass
+                pb.pulser_repetition_rate( str(p14) + ' Hz' )
 
-            # add q_switch_delay 141000 ns
-            p6[1] = str( int( p6[1].split(' ')[0] ) + 141000 ) + ' ns'
+            if p22 == 1:
+                # add q_switch_delay 141000 ns
+                q_delay = 0
+            elif p22 == 2 :
+                q_delay = 0
+
+            p6[1] = str( int( p6[1].split(' ')[0] ) + q_delay ) + ' ns'
             # p7 is a laser pulser
-            p8[1] = str( int( p8[1].split(' ')[0] ) + 141000 ) + ' ns'
-            p9[1] = str( int( p9[1].split(' ')[0] ) + 141000 ) + ' ns'
-            p10[1] = str( int( p10[1].split(' ')[0] ) + 141000 ) + ' ns'
-            p11[1] = str( int( p11[1].split(' ')[0] ) + 141000 ) + ' ns'
-            p12[1] = str( int( p12[1].split(' ')[0] ) + 141000 ) + ' ns'
+            p8[1] = str( int( p8[1].split(' ')[0] ) + q_delay ) + ' ns'
+            p9[1] = str( int( p9[1].split(' ')[0] ) + q_delay ) + ' ns'
+            p10[1] = str( int( p10[1].split(' ')[0] ) + q_delay ) + ' ns'
+            p11[1] = str( int( p11[1].split(' ')[0] ) + q_delay ) + ' ns'
+            p12[1] = str( int( p12[1].split(' ')[0] ) + q_delay ) + ' ns'
 
             if int( p6[2].split(' ')[0] ) != 0:
                 pb.pulser_pulse( name = 'P0', channel = p6[0], start = p6[1], length = p6[2] )

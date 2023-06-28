@@ -103,6 +103,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.label_28.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
         self.label_29.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
         self.label_30.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
+        self.label_31.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
 
         # Spinboxes
         self.P1_st.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); }")
@@ -400,6 +401,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.Combo_synt.setStyleSheet("QComboBox { color : rgb(193, 202, 227); selection-color: rgb(211, 194, 78); }")
         self.Combo_synt.currentIndexChanged.connect(self.combo_synt_fun)
         self.combo_synt_fun()
+
+        self.Combo_osc.setStyleSheet("QComboBox { color : rgb(193, 202, 227); selection-color: rgb(211, 194, 78); }")
+        self.Combo_osc.currentIndexChanged.connect(self.combo_osc_fun)
+        self.combo_osc_fun()
         
         self.dig_part()
 
@@ -449,6 +454,15 @@ class MainWindow(QtWidgets.QMainWindow):
         the application
         """
         self.worker = Worker()
+
+    def combo_osc_fun(self):
+        """
+        A function to set a default oscilloscope
+        """
+        if str( self.Combo_osc.currentText() ) == '2012a':
+            self.combo_osc = 0
+        elif str( self.Combo_osc.currentText() ) == '3034t':
+            self.combo_osc = 1
 
     def combo_synt_fun(self):
         """
@@ -746,7 +760,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.setter(text, 5, self.P6_type, self.P6_st, self.P6_len, self.P6_sig, self.freq_6, self.Wurst_sweep_6, self.coef_6, self.Phase_6)
         self.setter(text, 6, self.P7_type, self.P7_st, self.P7_len, self.P7_sig, self.freq_7, self.Wurst_sweep_7, self.coef_7, self.Phase_7)
 
-        self.Rep_rate.setValue( int( lines[7].split(':  ')[1] ) )
+        self.Rep_rate.setValue( float( lines[7].split(':  ')[1] ) )
         self.Field.setValue( float( lines[8].split(':  ')[1] ) )
         self.Delay.setValue( float( lines[9].split(':  ')[1] ) )
         self.Ampl_1.setValue( int( lines[10].split(':  ')[1] ) )
@@ -769,6 +783,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.Zero_order.setValue( float( lines[21].split(':  ')[1] ) )
             self.First_order.setValue( float( lines[22].split(':  ')[1] ) )
             self.Second_order.setValue( float( lines[23].split(':  ')[1] ) )
+            self.Combo_osc.setCurrentText( str( lines[24].split(':  ')[1] ) )
         except IndexError:
             pass
 
@@ -846,6 +861,7 @@ class MainWindow(QtWidgets.QMainWindow):
             file.write( 'Zero order:  ' + str(self.Zero_order.value()) + '\n' )
             file.write( 'First order:  ' + str(self.First_order.value()) + '\n' )
             file.write( 'Second order:  ' + str(self.Second_order.value()) + '\n' )
+            file.write( 'Oscilloscope:  ' + str(self.Combo_osc.currentText()) + '\n' )
 
     def add_ns(self, string1):
         """
@@ -1736,7 +1752,7 @@ class MainWindow(QtWidgets.QMainWindow):
                                             self.n_wurst_cur, self.repetition_rate.split(' ')[0], self.mag_field, self.fft, self.cur_phase, \
                                             self.ch0_ampl, self.ch1_ampl, self.cur_delay, p2_awg_list, p3_awg_list, p4_awg_list, p5_awg_list, \
                                             p6_awg_list, p7_awg_list, self.quad, self.zero_order, self.first_order, self.second_order, self.p_to_drop, \
-                                            self.b_sech_cur, self.combo_cor, self.combo_synt, ) )
+                                            self.b_sech_cur, self.combo_cor, self.combo_synt, self.combo_osc, ) )
                
         self.digitizer_process.start()
         # send a command in a different thread about the current state
@@ -1776,7 +1792,7 @@ class Worker(QWidget):
         self.command = 'start'
         
     def dig_on(self, conn, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11, p12, p13, p14, p15, p16, \
-                           p17, p18, p19, p20, p21, p22, p23, p24, p25, p26, p27, p28, p29, p30, p31, p32, p33, p34):
+                           p17, p18, p19, p20, p21, p22, p23, p24, p25, p26, p27, p28, p29, p30, p31, p32, p33, p34, p35):
         """
         function that contains updating of the digitizer
         """
@@ -1786,7 +1802,10 @@ class Worker(QWidget):
         import numpy as np
         import atomize.general_modules.general_functions as general
         #import atomize.device_modules.Spectrum_M4I_4450_X8 as spectrum
-        import atomize.device_modules.Keysight_2000_Xseries as key
+        if p35 == 0:
+            import atomize.device_modules.Keysight_2000_Xseries as key
+        elif p35 == 1:
+            import atomize.device_modules.Keysight_3000_Xseries as key
         import atomize.device_modules.Spectrum_M4I_6631_X8 as spectrum_awg
         import atomize.device_modules.PB_ESR_500_pro as pb_pro
         import atomize.math_modules.fft as fft_module
@@ -1799,7 +1818,10 @@ class Worker(QWidget):
 
         process = 'None'
         ##dig = spectrum.Spectrum_M4I_4450_X8()
-        a2012 = key.Keysight_2000_Xseries()
+        if p35 == 0:
+            a2012 = key.Keysight_2000_Xseries()
+        elif p35 == 1:
+            a2012 = key.Keysight_3000_Xseries()
         awg = spectrum_awg.Spectrum_M4I_6631_X8()
         
         # parameters for initial initialization

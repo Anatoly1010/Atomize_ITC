@@ -156,7 +156,7 @@ class Spectrum_M4I_6631_X8:
             self.test_loop = 0
             self.test_delay = 0
             self.test_channel = 'CH0'
-            self.test_amplitude = '600 mV'
+            self.test_amplitude = '300 mV'
             self.test_num_segments = 1
             
             # Collect all parameters for AWG settings

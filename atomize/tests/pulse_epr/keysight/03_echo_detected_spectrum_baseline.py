@@ -34,7 +34,7 @@ CURVE_NAME = 'exp1'
 #
 #cycle_data_x = np.zeros( 2 )
 #cycle_data_y = np.zeros( 2 )
-#points = int( (END_FIELD - START_FIELD) / FIELD_STEP ) + 1
+points = int( (END_FIELD - START_FIELD) / FIELD_STEP ) + 1
 #data_x = np.zeros(points)
 #data_y = np.zeros(points)
 x_axis = np.linspace(START_FIELD, END_FIELD, num = points) 
@@ -83,7 +83,7 @@ pb.pulser_update()
 tb = a2012.oscilloscope_window()
 header = 'Date: ' + str(datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")) + '\n' + 'Echo Detected Spectrum\n' + \
             'Start Field: ' + str(START_FIELD) + ' G \n' + 'End Field: ' + str(END_FIELD) + ' G \n' + \
-            'Field Step: ' + str(FIELD_STEP) + ' G \n' + str(mw.mw_bridge_att_prm()) + '\n' + str(mw.mw_bridge_att1_prd()) + '\n' + \
+            'Field Step: ' + str(FIELD_STEP) + ' G \n' + str(mw.mw_bridge_att_prm()) + '\n' + str(mw.mw_bridge_att2_prm()) + '\n' + str(mw.mw_bridge_att1_prd()) + '\n' + \
             str(mw.mw_bridge_synthesizer()) + '\n' + \
            'Repetition Rate: ' + str(pb.pulser_repetition_rate()) + '\n' + 'Number of Scans: ' + str(SCANS) + '\n' +\
            'Averages: ' + str(AVERAGES) + '\n' + 'Points: ' + str(points) + '\n' + 'Window: ' + str(tb) + ' ns\n' + \

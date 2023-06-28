@@ -201,7 +201,7 @@
          <bool>false</bool>
         </property>
         <property name="maximum">
-         <number>4000000</number>
+         <number>10000000</number>
         </property>
         <property name="singleStep">
          <number>2</number>
@@ -220,7 +220,7 @@
          <bool>false</bool>
         </property>
         <property name="maximum">
-         <number>4000000</number>
+         <number>10000000</number>
         </property>
         <property name="singleStep">
          <number>2</number>
@@ -416,7 +416,7 @@
          <bool>false</bool>
         </property>
         <property name="maximum">
-         <number>4000000</number>
+         <number>10000000</number>
         </property>
         <property name="singleStep">
          <number>2</number>
@@ -516,7 +516,7 @@
          <number>0</number>
         </property>
         <property name="maximum">
-         <number>4000000</number>
+         <number>10000000</number>
         </property>
         <property name="singleStep">
          <number>2</number>
@@ -769,7 +769,7 @@
          <bool>false</bool>
         </property>
         <property name="maximum">
-         <number>4000000</number>
+         <number>10000000</number>
         </property>
         <property name="singleStep">
          <number>2</number>
@@ -788,7 +788,7 @@
          <bool>false</bool>
         </property>
         <property name="maximum">
-         <number>4000000</number>
+         <number>10000000</number>
         </property>
         <property name="singleStep">
          <number>2</number>
@@ -824,7 +824,7 @@
          <bool>false</bool>
         </property>
         <property name="maximum">
-         <number>4000000</number>
+         <number>10000000</number>
         </property>
         <property name="singleStep">
          <number>2</number>

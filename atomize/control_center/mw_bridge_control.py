@@ -103,8 +103,6 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.Synt2.valueChanged.connect(self.synt2)
         self.Synt2.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); }")
-        # even in 'Off' state there is some power from SYNT
-        # it is better to turn on very off-resonance frequency
         freq2 = int( self.Synt2.value() )
         self.ecc15k.synthetizer_frequency(freq2)
 
@@ -495,6 +493,19 @@ class MainWindow(QtWidgets.QMainWindow):
 
         temp = 2*self.Att2_prd.value()
         MESSAGE = b'\x16' + b'\x01' + struct.pack(">B", int(temp))
+        self.sock.sendto( MESSAGE, (self.UDP_IP, self.UDP_PORT) )
+        data_raw, addr = self.sock.recvfrom(3)
+
+        #0.0 dB video2
+        temp = 2*self.Att2_prm.value()
+        MESSAGE = b'\x1a' + b'\x01' + struct.pack(">B", int(temp))
+        
+        self.sock.sendto( MESSAGE, (self.UDP_IP, self.UDP_PORT) )
+        data_raw, addr = self.sock.recvfrom(3)
+
+        # get amplification
+        MESSAGE = b'\x24' + b'\x01' + b'\x00'
+
         self.sock.sendto( MESSAGE, (self.UDP_IP, self.UDP_PORT) )
         data_raw, addr = self.sock.recvfrom(3)
 
