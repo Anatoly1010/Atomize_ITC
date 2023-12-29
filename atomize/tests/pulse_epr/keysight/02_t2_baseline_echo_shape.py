@@ -8,24 +8,24 @@ import atomize.device_modules.PB_ESR_500_pro as pb_pro
 import atomize.device_modules.Keysight_2000_Xseries as key
 import atomize.device_modules.Mikran_X_band_MW_bridge_v2 as mwBridge
 import atomize.device_modules.Lakeshore_335 as ls
-import atomize.device_modules.BH_15 as bh
+import atomize.device_modules.ITC_FC as itc
 import atomize.general_modules.csv_opener_saver_tk_kinter as openfile
 
 ### Experimental parameters
-POINTS = 1501
-STEP = 12                  # in NS;
-FIELD = 3493.0
-AVERAGES = 60
-SCANS = 1
+POINTS = 501
+STEP = 40                  # in NS;
+FIELD = 4000.0
+AVERAGES = 25
+SCANS = 2
 process = 'None'
 
 # PULSES
-REP_RATE = '800 Hz'
+REP_RATE = '200 Hz'
 PULSE_1_LENGTH = '100 ns'
 PULSE_2_LENGTH = '200 ns'
 PULSE_1_START = '0 ns'
-PULSE_2_START = '600 ns'
-PULSE_SIGNAL_START = '1200 ns'
+PULSE_2_START = '300 ns'
+PULSE_SIGNAL_START = '600 ns'
 PHASES = 2
 
 # NAMES
@@ -35,18 +35,18 @@ EXP_NAME = 'T2 Echo'
 file_handler = openfile.Saver_Opener()
 
 def cleanup(*args):
-    #dig4450.digitizer_stop()
-    #dig4450.digitizer_close()
-    pb.pulser_stop()
+
     file_handler.save_data(file_data, data, header = header, mode = 'w')
     sys.exit(0)
+    #pb.pulser_stop()
+
 
 signal.signal(signal.SIGTERM, cleanup)
 
 ls335 = ls.Lakeshore_335()
 mw = mwBridge.Mikran_X_band_MW_bridge_v2()
 pb = pb_pro.PB_ESR_500_Pro()
-bh15 = bh.BH_15()
+bh15 = itc.ITC_FC()
 a2012 = key.Keysight_2000_Xseries()
 #dig4450 = spectrum.Spectrum_M4I_4450_X8()
 

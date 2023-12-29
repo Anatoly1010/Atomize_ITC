@@ -296,7 +296,7 @@ class Worker(QWidget):
         sr860.lock_in_time_constant( p8 )
         sr860.lock_in_sensitivity( '1 V' )
         sr860.lock_in_ref_amplitude( p6 )
-        sr860.lock_in_phase( 159.6 )
+        sr860.lock_in_phase( 159.6 ) #159.6
         sr860.lock_in_ref_frequency( 100000 )
 
         t_start = str( ls335.tc_temperature('B') )

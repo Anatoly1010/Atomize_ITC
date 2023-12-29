@@ -254,13 +254,13 @@ class Worker(QWidget):
         import numpy as np
         import atomize.general_modules.general_functions as general
         import atomize.device_modules.Keysight_2000_Xseries as a2012
-        import atomize.device_modules.Mikran_X_band_MW_bridge_v2 as mwBridge
+        import atomize.device_modules.Micran_X_band_MW_bridge_v2 as mwBridge
         ###import atomize.device_modules.Spectrum_M4I_4450_X8 as spectrum
         import atomize.device_modules.PB_ESR_500_pro as pb_pro
 
         a2012 = a2012.Keysight_2000_Xseries()
         pb = pb_pro.PB_ESR_500_Pro()
-        mw = mwBridge.Mikran_X_band_MW_bridge_v2()
+        mw = mwBridge.Micran_X_band_MW_bridge_v2()
         ###dig4450 = spectrum.Spectrum_M4I_4450_X8()
 
         ### Experimental parameters

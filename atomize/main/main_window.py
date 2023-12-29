@@ -895,8 +895,12 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.process_python.close()
             else:
                 # check on windows?!
-                import atomize.device_modules.PB_ESR_500_pro as pb_pro
                 
+                self.process_python.terminate()
+                time.sleep(10)
+
+                # keysight check?!
+                import atomize.device_modules.PB_ESR_500_pro as pb_pro
                 pb = pb_pro.PB_ESR_500_Pro()
                 pb.pulser_stop()
 
@@ -915,7 +919,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
                 ###
 
-                self.process_python.close()
+                #self.process_python.close()
+                
 
 class NameList(QDockWidget):
     def __init__(self, window):

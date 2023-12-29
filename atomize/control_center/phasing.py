@@ -1394,29 +1394,30 @@ class Worker(QWidget):
                 points_value = int( self.command[2:] )
                 a2012.oscilloscope_stop()
                 a2012.oscilloscope_timebase( str(points_value) + ' ns' )
-                a2012.oscilloscope_run()
+                a2012.oscilloscope_run_stop()
 
                 # Oscilloscopes bug
-                a2012.oscilloscope_number_of_averages(2)
-                a2012.oscilloscope_start_acquisition()
+                #a2012.oscilloscope_number_of_averages(2)
+                #a2012.oscilloscope_start_acquisition()
 
-                y = a2012.oscilloscope_get_curve('CH1')
-                a2012.oscilloscope_number_of_averages(num_ave)
-                a2012.oscilloscope_stop()
+                #y = a2012.oscilloscope_get_curve('CH1')
+                #a2012.oscilloscope_number_of_averages(num_ave)
+                #a2012.oscilloscope_stop()
 
             elif self.command[0:2] == 'HO':
                 posstrigger_value = int( self.command[2:] )
                 a2012.oscilloscope_stop()
                 a2012.oscilloscope_horizontal_offset( str(posstrigger_value) + ' ns' )
-                a2012.oscilloscope_run()
+                a2012.oscilloscope_run_stop()
 
                 # Oscilloscopes bug
-                a2012.oscilloscope_number_of_averages(2)
-                a2012.oscilloscope_start_acquisition()
+                #a2012.oscilloscope_number_of_averages(2)
+                #a2012.oscilloscope_start_acquisition()
 
-                y = a2012.oscilloscope_get_curve('CH1')
-                a2012.oscilloscope_number_of_averages(num_ave)
-                a2012.oscilloscope_stop()
+                #y = a2012.oscilloscope_get_curve('CH1')
+
+                #a2012.oscilloscope_number_of_averages(num_ave)
+                #a2012.oscilloscope_stop()
 
             elif self.command[0:2] == 'NA':
                 num_ave = int( self.command[2:] )
