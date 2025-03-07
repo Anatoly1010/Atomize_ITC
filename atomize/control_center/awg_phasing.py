@@ -1814,7 +1814,7 @@ class Worker(QWidget):
         pb = pb_pro.PB_ESR_500_Pro()
         fft = fft_module.Fast_Fourier()
         bh15 = itc.ITC_FC()
-        bh15.magnet_setup( p15, 0.5 )
+        #bh15.magnet_setup( p15, 0.5 )
 
         process = 'None'
         ##dig = spectrum.Spectrum_M4I_4450_X8()
@@ -1964,7 +1964,7 @@ class Worker(QWidget):
         pb.pulser_update()
 
         a2012.oscilloscope_trigger_channel('Ext')
-        a2012.oscilloscope_record_length(4000)
+        a2012.oscilloscope_record_length(8000)
         a2012.oscilloscope_acquisition_type('Average')
         a2012.oscilloscope_stop()
 
@@ -2033,7 +2033,7 @@ class Worker(QWidget):
                 pb.pulser_repetition_rate( str(p14) + ' Hz' )
             elif self.command[0:2] == 'FI':
                 p15 = float( self.command[2:] )
-                bh15.magnet_field( p15 )
+                bh15.magnet_field( p15, calibration = 'True' )
             elif self.command[0:2] == 'FF':
                 p16 = int( self.command[2:] )
             elif self.command[0:2] == 'QC':

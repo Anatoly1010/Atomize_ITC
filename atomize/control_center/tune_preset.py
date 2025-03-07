@@ -254,13 +254,13 @@ class Worker(QWidget):
         import numpy as np
         import atomize.general_modules.general_functions as general
         import atomize.device_modules.Keysight_2000_Xseries as a2012
-        import atomize.device_modules.Micran_X_band_MW_bridge_v2 as mwBridge
+        import atomize.device_modules.Mikran_X_band_MW_bridge_v2 as mwBridge
         ###import atomize.device_modules.Spectrum_M4I_4450_X8 as spectrum
         import atomize.device_modules.PB_ESR_500_pro as pb_pro
 
         a2012 = a2012.Keysight_2000_Xseries()
         pb = pb_pro.PB_ESR_500_Pro()
-        mw = mwBridge.Micran_X_band_MW_bridge_v2()
+        mw = mwBridge.Mikran_X_band_MW_bridge_v2()
         ###dig4450 = spectrum.Spectrum_M4I_4450_X8()
 
         ### Experimental parameters
@@ -337,7 +337,7 @@ class Worker(QWidget):
                     mw.mw_bridge_synthesizer( freq )
 
                     a2012.oscilloscope_start_acquisition()
-                    y = a2012.oscilloscope_get_curve('CH2')
+                    y = -a2012.oscilloscope_get_curve('CH2')
                     general.wait('300 ms')
                     ###x, y, z = dig4450.digitizer_get_curve( )
                     ##y = np.random.normal(3, 2.5, size = (real_length)) 

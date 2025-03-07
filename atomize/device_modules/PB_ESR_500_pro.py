@@ -601,7 +601,9 @@ class PB_ESR_500_Pro:
                 ##        self.pulser_stop()
 
                 #general.message( to_spinapi )
-                #self.pulser_stop()
+                self.pulser_stop()
+                general.wait( str(round(rep_time*10**(-6), 0)) + ' ms' )
+
                 # initialization
                 #pb_init()
                 #pb.core_clock(self.clock)
@@ -662,6 +664,7 @@ class PB_ESR_500_Pro:
 
         elif self.test_flag == 'test':
             # get repetition rate
+
             rep_rate = self.rep_rate[0]
             if rep_rate[-3:] == ' Hz':
                 rep_time = int(1000000000/float(rep_rate[:-3]))
@@ -671,6 +674,9 @@ class PB_ESR_500_Pro:
                 rep_time = int(1000/float(rep_rate[:-4]))
             else:
                 assert(1 == 2), "Incorrect repetition rate dimension (Hz, kHz, MHz)"
+
+            self.pulser_stop()
+            general.wait( str(round(rep_time*10**(-6), 0)) + ' ms' )
 
             if self.reset_count == 0 or self.shift_count == 1 or self.increment_count == 1:
                 # using a special functions for convertion to instructions
@@ -992,6 +998,9 @@ class PB_ESR_500_Pro:
             elif rep_rate[-3:] == 'MHz':
                 rep_time = int(1000/float(rep_rate[:-4]))
 
+            self.pulser_stop()
+            general.wait( str(round(rep_time*10**(-6), 0)) + ' ms' )
+
             # reset the pulses; deepcopy helps to create a TRULY NEW array
             self.pulse_array = deepcopy( self.pulse_array_init )
             # using a special functions for convertion to instructions
@@ -1071,6 +1080,10 @@ class PB_ESR_500_Pro:
                 rep_time = int(1000/float(rep_rate[:-4]))
             else:
                 assert( 1 == 2 ), 'Incorrect dimension of repetition rate (Hz, kHz, MHz)'
+
+
+            self.pulser_stop()
+            general.wait( str(round(rep_time*10**(-6), 0)) + ' ms' )
 
             # reset the pulses; deepcopy helps to create a TRULY NEW array
             self.pulse_array = deepcopy( self.pulse_array_init )

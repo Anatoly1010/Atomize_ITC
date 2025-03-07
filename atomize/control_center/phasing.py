@@ -262,7 +262,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.fft_box.setStyleSheet("QCheckBox { color : rgb(193, 202, 227); }")
         self.Quad_cor.setStyleSheet("QCheckBox { color : rgb(193, 202, 227); }")
 
-        #self.shift_box.stateChanged.connect( self.simul_shift )
+        self.shift_box.stateChanged.connect( self.simul_shift )
+        self.shift_box.setCheckState( Qt.CheckState.Checked )
+
         self.fft_box.stateChanged.connect( self.fft_online )
         self.Quad_cor.stateChanged.connect( self.quad_online )
 
@@ -270,6 +272,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.opened = 0
         self.fft = 0
         self.quad = 0
+        self.double_change = 0
 
         """
         Create a process to interact with an experimental script that will run on a different thread.
@@ -361,7 +364,7 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         A function to change the number of points to drop
         """
-        self.p_to_drop = float( self.P_to_drop.value() )
+        self.p_to_drop = int( self.P_to_drop.value() )
 
         if self.opened == 0:
             try:
@@ -405,11 +408,12 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         A function to simultaneously change a number of points and horizontal offset of the digitizer
         """
-        dif = self.points - self.posttrigger 
+        dif = self.points - self.posttrigger
         points_temp = self.points
+        self.points = int( self.Timescale.value() )
 
         # number of points can be lower than posttrigger since we firstly adjust them
-        if dif > 0 and dif <= 176:  
+        if dif > 0 and dif <= 160 and self.points < 8000 and abs( self.points - points_temp ) < 8000:
             self.opened = 1
             self.timescale()
             self.opened = 0
@@ -423,9 +427,14 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.timescale()
                 self.Hor_offset.setValue( self.posttrigger )
         else:
+            
+            self.posttrigger = self.round_to_closest( self.points - abs( dif ), 32 )
+            #print(f'POINTS {self.points}; POST {self.posttrigger}; DIF {dif}')
+            self.double_change = 1
+
             self.timescale()
-            self.posttrigger = self.points - abs( dif )
             self.Hor_offset.setValue( self.posttrigger )
+            self.double_change = 0
 
     def timescale(self):
         """
@@ -433,24 +442,29 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         self.points = int( self.Timescale.value() )
         
-        """
-        if self.points % 16 != 0:
-            self.points = self.round_to_closest( self.points, 16 )
+
+        if self.points % 32 != 0:
+            self.points = self.round_to_closest( self.points, 32 )
             self.Timescale.setValue( self.points )
 
-        if self.shift_box.checkState() == 0:
-            if self.points - self.posttrigger < 16:
-                self.points = self.points + 16
+        if self.shift_box.checkState().value == 0:
+            if self.points - self.posttrigger < 32:
+                self.points = self.points + 32
                 self.Timescale.setValue( self.points )
-
+        
         if self.points - self.posttrigger > 8000:
             self.points = self.posttrigger + 8000
             self.Timescale.setValue( self.points )
-        """
 
-        if self.opened == 0:
+        if self.opened == 0 and self.double_change == 0:
             try:
                 self.parent_conn_dig.send( 'PO' + str( self.points ) )
+            except AttributeError:
+                self.message('Digitizer is not running')
+
+        if self.opened == 0 and self.double_change == 1:
+            try:
+                self.parent_conn_dig.send( 'PH:' + str( self.points ) + ':' + str( self.posttrigger ))
             except AttributeError:
                 self.message('Digitizer is not running')
 
@@ -461,35 +475,33 @@ class MainWindow(QtWidgets.QMainWindow):
         A function to change horizontal offset (posttrigger)
         """
         self.posttrigger = int( self.Hor_offset.value() )
-
-        """
-        if self.posttrigger % 16 != 0:
-            self.posttrigger = self.round_to_closest( self.posttrigger, 16 )
+        if self.posttrigger % 32 != 0:
+            self.posttrigger = self.round_to_closest( self.posttrigger, 32 )
             self.Hor_offset.setValue( self.posttrigger )
 
-        if self.points - self.posttrigger <= 16:
-            self.posttrigger = self.points - 16
+        if self.points - self.posttrigger <= 32:
+            self.posttrigger = self.points - 32
             self.Hor_offset.setValue( self.posttrigger )
-
+        
         if self.points - self.posttrigger > 8000:
             self.posttrigger = self.points - 8000
             self.Hor_offset.setValue( self.posttrigger )
-        """
 
-        if self.opened == 0:
+        if self.opened == 0 and self.double_change == 0:
             try:
                 self.parent_conn_dig.send( 'HO' + str( self.posttrigger ) )
             except AttributeError:
                 self.message('Digitizer is not running')
+
 
     def win_left(self):
         """
         A function to change left integration window
         """
         self.cur_win_left = int( self.Win_left.value() ) #* self.time_per_point
-        #if self.cur_win_left / self.time_per_point > self.points:
-        #    self.cur_win_left = self.points * self.time_per_point
-        #    self.Win_left.setValue( self.cur_win_left / self.time_per_point )
+        ##if self.cur_win_left / self.time_per_point > self.points:
+        ##    self.cur_win_left = self.points * self.time_per_point
+        ##    self.Win_left.setValue( self.cur_win_left / self.time_per_point )
         
         if self.opened == 0:
             try:
@@ -499,9 +511,9 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def win_right(self):
         self.cur_win_right = int( self.Win_right.value() ) #* self.time_per_point
-        #if self.cur_win_right / self.time_per_point > self.points:
-        #    self.cur_win_right = self.points * self.time_per_point
-        #    self.Win_right.setValue( self.cur_win_right / self.time_per_point )
+        ##if self.cur_win_right / self.time_per_point > self.points:
+        ##    self.cur_win_right = self.points * self.time_per_point
+        ##    self.Win_right.setValue( self.cur_win_right / self.time_per_point )
 
         if self.opened == 0:
             try:
@@ -583,7 +595,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.Rep_rate.setValue( float( lines[7].split(':  ')[1] ) )
         self.Field.setValue( float( lines[8].split(':  ')[1] ) )
 
-        self.shift_box.setCheckState(Qt.CheckState.Unchecked)
+        self.shift_box.setCheckState(Qt.CheckState.Checked)
         self.fft_box.setCheckState(Qt.CheckState.Unchecked)
         self.Quad_cor.setCheckState(Qt.CheckState.Unchecked)
         self.Timescale.setValue( int( lines[9].split(':  ')[1] ) )
@@ -1165,9 +1177,9 @@ class MainWindow(QtWidgets.QMainWindow):
 
         file_to_read = open(path_file, 'w')
         file_to_read.write('Points: ' + str( self.points ) +'\n')
-        file_to_read.write('Sample Rate: ' + str( 500 ) +'\n')
+        file_to_read.write('Sample Rate: ' + str( 1250 ) +'\n')
         file_to_read.write('Posstriger: ' + str( self.posttrigger ) +'\n')
-        file_to_read.write('Range: ' + str( 500 ) +'\n')
+        file_to_read.write('Range: ' + str( 200 ) +'\n')
         file_to_read.write('CH0 Offset: ' + str( 0 ) +'\n')
         file_to_read.write('CH1 Offset: ' + str( 0 ) +'\n')
         
@@ -1280,31 +1292,38 @@ class Worker(QWidget):
         #import time
         import numpy as np
         import atomize.general_modules.general_functions as general
-        ##import atomize.device_modules.Spectrum_M4I_4450_X8 as spectrum
-        import atomize.device_modules.Keysight_2000_Xseries as key
+        import atomize.device_modules.Spectrum_M4I_2211_X8 as spectrum
+        ###import atomize.device_modules.Keysight_2000_Xseries as key
         import atomize.device_modules.PB_ESR_500_pro as pb_pro
         import atomize.math_modules.fft as fft_module
-        import atomize.device_modules.ITC_FC as itc
+        import atomize.device_modules.BH_15 as itc
 
         pb = pb_pro.PB_ESR_500_Pro()
         fft = fft_module.Fast_Fourier()
-        bh15 = itc.ITC_FC()
-        bh15.magnet_setup( p15, 1 )
+        bh15 = itc.BH_15()
+        
+        bh15.magnet_setup( p15, 0.5 )
+
+        bh15.magnet_field( p15 )
 
         process = 'None'
-        ##dig = spectrum.Spectrum_M4I_4450_X8()
-        a2012 = key.Keysight_2000_Xseries()
-        # parameters for initial initialization
-        #points_value =      p1
-        ##dig.digitizer_number_of_points( p1 )
-        #posstrigger_value = p2
-        ##dig.digitizer_posttrigger(      p2 )
+        dig = spectrum.Spectrum_M4I_2211_X8()
+        dig.digitizer_card_mode('Average')
+        dig.digitizer_clock_mode('External')
+        dig.digitizer_reference_clock(100)
+
+        ###a2012 = key.Keysight_2000_Xseries()
+        #parameters for initial initialization
+        points_value =      p1
+        dig.digitizer_number_of_points( p1 )
+        posstrigger_value = p2
+        dig.digitizer_posttrigger(      p2 )
         num_ave =           p3
-        ##dig.digitizer_number_of_averages( p3 )
+        dig.digitizer_number_of_averages( p3 )
 
         #p4 window left
         #p5 window right
-        ##dig.digitizer_setup()
+        dig.digitizer_setup()
 
         if p13 != 1:
             pb.pulser_repetition_rate( str(p14) + ' Hz' )
@@ -1362,26 +1381,26 @@ class Worker(QWidget):
 
         pb.pulser_update()
 
-        a2012.oscilloscope_trigger_channel('Ext')
-        a2012.oscilloscope_record_length(4000)
-        a2012.oscilloscope_acquisition_type('Average')
-        a2012.oscilloscope_stop()
+        ###a2012.oscilloscope_trigger_channel('Ext')
+        ###a2012.oscilloscope_record_length(4000)
+        ###a2012.oscilloscope_acquisition_type('Average')
+        ###a2012.oscilloscope_stop()
 
         # Oscilloscopes bug
-        a2012.oscilloscope_number_of_averages(2)
-        a2012.oscilloscope_start_acquisition()
+        ###a2012.oscilloscope_number_of_averages(2)
+        ###a2012.oscilloscope_start_acquisition()
 
-        y = a2012.oscilloscope_get_curve('CH1')
+        ###y = a2012.oscilloscope_get_curve('CH1')
 
-        real_length = a2012.oscilloscope_record_length( )
-        t_res = round( a2012.oscilloscope_timebase() / real_length, 5 )    # in us
+        ###real_length = a2012.oscilloscope_record_length( )
+        t_res = float( 1000 / int(dig.digitizer_sample_rate().split(' ')[0]) / 1000000000 )
 
-        a2012.oscilloscope_number_of_averages(p3)
+        ###a2012.oscilloscope_number_of_averages(p3)
 
-        cycle_data_x = np.zeros( (len(p6[3]), int(real_length)) )
-        cycle_data_y = np.zeros( (len(p6[3]), int(real_length)) )
-        data_x = np.zeros( real_length ) #p1
-        data_y = np.zeros( real_length ) #p1
+        cycle_data_x = np.zeros( (len(p6[3]), int(p1)) )
+        cycle_data_y = np.zeros( (len(p6[3]), int(p1)) )
+        data_x = np.zeros( p1 ) #p1
+        data_y = np.zeros( p1 ) #p1
 
         # the idea of automatic and dynamic changing is
         # sending a new value of repetition rate via self.command
@@ -1392,9 +1411,17 @@ class Worker(QWidget):
 
             if self.command[0:2] == 'PO':            
                 points_value = int( self.command[2:] )
-                a2012.oscilloscope_stop()
-                a2012.oscilloscope_timebase( str(points_value) + ' ns' )
-                a2012.oscilloscope_run_stop()
+                dig.digitizer_stop()
+                dig.digitizer_number_of_points( points_value )             
+
+                cycle_data_x = np.zeros( (len(p6[3]), int(points_value)) )
+                cycle_data_y = np.zeros( (len(p6[3]), int(points_value)) )
+                data_x = np.zeros( points_value )
+                data_y = np.zeros( points_value )
+
+                ###a2012.oscilloscope_stop()
+                ###a2012.oscilloscope_timebase( str(points_value) + ' ns' )
+                ###a2012.oscilloscope_run_stop()
 
                 # Oscilloscopes bug
                 #a2012.oscilloscope_number_of_averages(2)
@@ -1406,9 +1433,12 @@ class Worker(QWidget):
 
             elif self.command[0:2] == 'HO':
                 posstrigger_value = int( self.command[2:] )
-                a2012.oscilloscope_stop()
-                a2012.oscilloscope_horizontal_offset( str(posstrigger_value) + ' ns' )
-                a2012.oscilloscope_run_stop()
+                dig.digitizer_stop()
+                dig.digitizer_posttrigger( posstrigger_value )
+
+                ###a2012.oscilloscope_stop()
+                ###a2012.oscilloscope_horizontal_offset( str(posstrigger_value) + ' ns' )
+                ###a2012.oscilloscope_run_stop()
 
                 # Oscilloscopes bug
                 #a2012.oscilloscope_number_of_averages(2)
@@ -1418,12 +1448,28 @@ class Worker(QWidget):
 
                 #a2012.oscilloscope_number_of_averages(num_ave)
                 #a2012.oscilloscope_stop()
+            elif self.command[0:2] == 'PH':
+                ar = self.command.split(':')
+                points_value = int( ar[1] )
+                posstrigger_value = int( ar[2] )
+                dig.digitizer_stop()
+                dig.digitizer_number_of_points( points_value )
+                dig.digitizer_posttrigger( posstrigger_value )
 
+                cycle_data_x = np.zeros( (len(p6[3]), int(points_value)) )
+                cycle_data_y = np.zeros( (len(p6[3]), int(points_value)) )
+                data_x = np.zeros( points_value )
+                data_y = np.zeros( points_value )
+
+                #dig.digitizer_setup()
             elif self.command[0:2] == 'NA':
                 num_ave = int( self.command[2:] )
-                a2012.oscilloscope_stop()
-                a2012.oscilloscope_number_of_averages(num_ave)
-                a2012.oscilloscope_run()
+                dig.digitizer_stop()
+                dig.digitizer_number_of_averages( num_ave )
+
+                ###a2012.oscilloscope_stop()
+                ###a2012.oscilloscope_number_of_averages(num_ave)
+                ###a2012.oscilloscope_run()
                 #dig.digitizer_stop()
                 #dig.digitizer_number_of_averages( num_ave )
                 #dig.digitizer_setup()
@@ -1450,43 +1496,51 @@ class Worker(QWidget):
             elif self.command[0:2] == 'PD':
                 p21 = int( self.command[2:] )
 
-            real_length = a2012.oscilloscope_record_length( )
-            t_res = round( a2012.oscilloscope_timebase() / real_length, 6 )    # in us
+            ###real_length = a2012.oscilloscope_record_length( )
+            ###t_res = round( a2012.oscilloscope_timebase() / real_length, 6 )    # in us
 
-            cycle_data_x = np.zeros( (len(p6[3]), int(real_length)) )
-            cycle_data_y = np.zeros( (len(p6[3]), int(real_length)) )
-            data_x = np.zeros( real_length ) #p1
-            data_y = np.zeros( real_length ) #p1
-            x_axis = np.linspace(0, real_length * t_res, num = real_length, endpoint = False)
+            ###cycle_data_x = np.zeros( (len(p6[3]), int(real_length)) )
+            ###cycle_data_y = np.zeros( (len(p6[3]), int(real_length)) )
+            ###data_x = np.zeros( real_length ) #p1
+            ###data_y = np.zeros( real_length ) #p1
+            ###x_axis = np.linspace(0, real_length * t_res, num = real_length, endpoint = False)
 
             # check integration window
-            if p4 > real_length:
-                p4 = real_length
-            if p5 > real_length:
-                p5 = real_length
+            if p4 > points_value:
+                p4 = points_value
+            if p5 > points_value:
+                p5 = points_value
 
             # phase cycle
             k = 0
             while k < len( p6[3] ):
 
                 pb.pulser_next_phase()
-                a2012.oscilloscope_start_acquisition()
-                cycle_data_x[k], cycle_data_y[k] = a2012.oscilloscope_get_curve('CH1'), a2012.oscilloscope_get_curve('CH2')
+                x_axis, cycle_data_x[k], cycle_data_y[k] = dig.digitizer_get_curve()
+                ###a2012.oscilloscope_start_acquisition()
+                ###cycle_data_x[k], cycle_data_y[k] = a2012.oscilloscope_get_curve('CH1'), a2012.oscilloscope_get_curve('CH2')
                 k += 1
 
             if p16 == 0:
                 # acquisition cycle
                 data_x, data_y = pb.pulser_acquisition_cycle(cycle_data_x, cycle_data_y , acq_cycle = p6[3])
-                process = general.plot_1d('Digitizer', x_axis, ( data_x, data_y ), label = 'ch', xscale = 'us', yscale = 'V', \
-                                            vline = (p4 * t_res, p5 * t_res), pr = process )
+                int_x = round( np.sum( data_x[p4:p5] ) * ( 10**(10) * t_res ) , 1 )
+                int_y = round( np.sum( data_y[p4:p5] ) * ( 10**(10) * t_res ) , 1 )
+
+                #general.plot_1d('Digitizer', x_axis, ( data_x, data_y ), label = 'ch', xscale = 's', yscale = 'V', \
+                #                            vline = (p4 * t_res, p5 * t_res), text = 'I / Q: ' + str(int_x) + ' / ' + str(int_y))
+
+
+                process = general.plot_1d('Dig', x_axis, ( data_x, data_y ), label = 'ch', xscale = 'ns', yscale = 'V', \
+                                            vline = (p4 * t_res, p5 * t_res), text = 'I/Q ' + str(int_x) + '/' + str(int_y), pr = process )
 
             else:
                 # acquisition cycle
                 data_x, data_y = pb.pulser_acquisition_cycle(cycle_data_x, cycle_data_y , acq_cycle = p6[3])
-                process = general.plot_1d('Digitizer', x_axis, ( data_x, data_y ), label = 'ch', xscale = 'us', yscale = 'V', \
-                                    vline = (p4 * t_res, p5 * t_res), pr = process )
+                process = general.plot_1d('Dig', x_axis, ( data_x, data_y ), label = 'ch', xscale = 'us', yscale = 'V', \
+                                    vline = (p4 * t_res, p5 * t_res ), pr = process )
                 if p17 == 0:
-                    freq_axis, abs_values = fft.fft(x_axis, data_x, data_y, t_res * 1000)
+                    freq_axis, abs_values = fft.fft(x_axis, data_x, data_y, t_res * 1000000000)
                     m_val = round( np.amax( abs_values ), 2 )
                     process = general.plot_1d('FFT', freq_axis, abs_values, xname = 'Freq Offset', label = 'FFT', xscale = 'MHz', \
                                               yscale = 'Arb. U.', text = 'Max ' + str(m_val), pr = process)
@@ -1495,7 +1549,7 @@ class Worker(QWidget):
                         p21 = len( data_x ) - 4
                         general.message('Maximum length of the data achieved. A number of drop points was corrected.')
                     # fixed resolution of digitizer; 2 ns
-                    freq, fft_x, fft_y = fft.fft( x_axis[p21:], data_x[p21:], data_y[p21:], t_res * 1000, re = 'True' )
+                    freq, fft_x, fft_y = fft.fft( x_axis[p21:], data_x[p21:], data_y[p21:], t_res * 1000000000, re = 'True' )
                     data = fft.ph_correction( freq, fft_x, fft_y, p18, p19, p20 )
                     process = general.plot_1d('FFT', freq, ( data[0], data[1] ), xname = 'Freq Offset', xscale = 'MHz', \
                                               yscale = 'Arb. U.', label = 'FFT', pr = process)
@@ -1512,11 +1566,11 @@ class Worker(QWidget):
 
         if self.command == 'exit':
 
-            #dig.digitizer_stop()
-            #dig.digitizer_close()
+            dig.digitizer_stop()
+            dig.digitizer_close()
             # ?
             #pb.pulser_clear()
-            a2012.oscilloscope_stop()
+            ###a2012.oscilloscope_stop()
             pb.pulser_stop()
             pb.pulser_pulse_reset()
 

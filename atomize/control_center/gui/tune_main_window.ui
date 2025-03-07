@@ -177,7 +177,7 @@
          <number>9000</number>
         </property>
         <property name="maximum">
-         <number>10000</number>
+         <number>12000</number>
         </property>
         <property name="value">
          <number>9750</number>
@@ -266,7 +266,7 @@
          <number>9000</number>
         </property>
         <property name="maximum">
-         <number>10000</number>
+         <number>12000</number>
         </property>
         <property name="value">
          <number>9250</number>

@@ -339,7 +339,7 @@ class Worker(QWidget):
             a2012_2.oscilloscope_acquisition_type('Average')
             a2012_2.oscilloscope_run_stop()
 
-        a2012.oscilloscope_record_length( 4000 )
+        a2012.oscilloscope_record_length( 5000 )
         try:
             real_length = a2012.oscilloscope_record_length( )
         except ZeroDivisionError:
@@ -349,7 +349,8 @@ class Worker(QWidget):
         t_res_rough = round( t_res, 3 )
         ##real_length = 4000
         if p9 > 1:
-            a2012_2.oscilloscope_record_length( 4000 )
+            a2012_2.oscilloscope_record_length( 5000 )
+            #print(a2012_2.oscilloscope_record_length( ))
             t_res_2 = round( a2012_2.oscilloscope_timebase() / real_length, 7 ) # in us
             t_res_2_rough = round( t_res_2, 3 )
 
@@ -372,7 +373,6 @@ class Worker(QWidget):
         
         ##axis_x = np.arange(4000)
         
-        bh15.magnet_setup(field, p5)
         temp_start = str( ls335.tc_temperature('B') )
 
         # Oscilloscopes bugs
@@ -398,7 +398,7 @@ class Worker(QWidget):
         while self.command != 'exit':
             # Start of experiment
             while field < OFFRES_FIELD:
-                field = bh15.magnet_field( field + initialization_step )
+                field = bh15.magnet_field( field + initialization_step)
                 field = field + initialization_step
                 general.wait('30 ms')
 
@@ -527,18 +527,18 @@ class Worker(QWidget):
                     data[1, :, 0] = ( data[0, :, 0] - data[0, :, 0] )
                     data[1, :, :] = ( data[1, :, :] - data[1, 0, :] )
 
+                    y3 = a2012.oscilloscope_get_curve('CH2')
+                    ##y3 = 1 + 10*np.exp(-axis_x/ch_time) + 50*np.random.normal(size = (4000))
+                    data[4, :, 0] = ( data[4, :, 0] * (j - 1) + y3 ) / j
+
                     y2 = a2012_2.oscilloscope_get_curve('CH1')
                     ##y2 = 1 + 10*np.exp(-axis_x/ch_time) + 50*np.random.normal(size = (4000))
                     data[2, :, 0] = ( data[2, :, 0] * (j - 1) + y2 ) / j
                     data[3, :, 0] = ( data[2, :, 0] - data[2, :, 0] )
                     data[3, :, :] = ( data[3, :, :] - data[3, 0, :] )
 
-                    y3 = a2012.oscilloscope_get_curve('CH2')
-                    ##y3 = 1 + 10*np.exp(-axis_x/ch_time) + 50*np.random.normal(size = (4000))
-                    data[4, :, 0] = ( data[4, :, 0] * (j - 1) + y3 ) / j
-
                 while field < START_FIELD:
-                    field = bh15.magnet_field( field + initialization_step )
+                    field = bh15.magnet_field( field + initialization_step)
                     general.wait('30 ms')
                     field = field + initialization_step
 
@@ -626,7 +626,7 @@ class Worker(QWidget):
                     i += 1
 
                 while field > OFFRES_FIELD:
-                    field = bh15.magnet_field( field - initialization_step )
+                    field = bh15.magnet_field( field - initialization_step)
                     field = field - initialization_step
                     general.wait('30 ms')
                 
@@ -723,7 +723,7 @@ class Worker(QWidget):
                 file_handler.save_data(file_save_3, np.transpose( data[4, :, :] ), header = header)
 
             while field > OFFRES_FIELD:
-                field = bh15.magnet_field( field - initialization_step )
+                field = bh15.magnet_field( field - initialization_step)
                 field = field - initialization_step
             field = bh15.magnet_field( OFFRES_FIELD )
             field = OFFRES_FIELD

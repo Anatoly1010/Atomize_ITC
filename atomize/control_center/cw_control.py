@@ -264,6 +264,7 @@ class Worker(QWidget):
         import atomize.general_modules.general_functions as general
         import atomize.device_modules.SR_860 as sr
         import atomize.device_modules.ITC_FC as itc
+        #import atomize.device_modules.BH_15 as itc
         import atomize.device_modules.Lakeshore_335 as ls
         import atomize.device_modules.Agilent_53131a as ag
         import atomize.general_modules.csv_opener_saver_tk_kinter as openfile
@@ -273,6 +274,7 @@ class Worker(QWidget):
         ls335 = ls.Lakeshore_335()
         sr860 = sr.SR_860()
         itc_fc = itc.ITC_FC()
+        #itc_fc = itc.BH_15()
 
         # parameters for initial initialization
         field = p4
@@ -283,6 +285,8 @@ class Worker(QWidget):
         SCANS = p7
         process = 'None'
 
+        #itc_fc.magnet_setup( 100, FIELD_STEP)
+
         tc_wait = 0
         raw = p8.split(" ")
         if int( raw[0] ) > 100 or raw[1] == 's':
@@ -292,11 +296,10 @@ class Worker(QWidget):
         data = np.zeros(points)
         x_axis = np.linspace(START_FIELD, END_FIELD, num = points) 
 
-        itc_fc.magnet_setup(field, p5)
         sr860.lock_in_time_constant( p8 )
         sr860.lock_in_sensitivity( '1 V' )
         sr860.lock_in_ref_amplitude( p6 )
-        sr860.lock_in_phase( 159.6 ) #159.6
+        sr860.lock_in_phase( 159.6 - 180 ) #159.6
         sr860.lock_in_ref_frequency( 100000 )
 
         t_start = str( ls335.tc_temperature('B') )
@@ -313,11 +316,11 @@ class Worker(QWidget):
             # Start of experiment
             while field < START_FIELD:
                 
-                field = itc_fc.magnet_field( field + initialization_step )
+                field = itc_fc.magnet_field( field + initialization_step)
                 ##field = START_FIELD
                 general.wait('1000 ms')
 
-            field = itc_fc.magnet_field( START_FIELD )
+            field = itc_fc.magnet_field( START_FIELD, calibration = 'True' )
             general.wait('4000 ms')
 
             sr860.lock_in_sensitivity( p9 )
@@ -327,6 +330,11 @@ class Worker(QWidget):
 
                 i = 0
                 field = START_FIELD
+                general.wait('2000 ms')
+
+                if self.command == 'exit':
+                    break
+
                 while field <= END_FIELD:
                     
                     #if tc_wait == 1:
@@ -340,7 +348,7 @@ class Worker(QWidget):
                         text = 'Scan / Field: ' + str(j) + ' / ' + str(field) )
 
                     field = round( (FIELD_STEP + field), 3 )
-                    itc_fc.magnet_field(field)
+                    itc_fc.magnet_field(field, calibration = 'True')
 
                     # check our polling data
                     if self.command[0:2] == 'SC':
@@ -355,7 +363,7 @@ class Worker(QWidget):
                     i += 1
 
                 while field > START_FIELD:
-                    field = itc_fc.magnet_field( field - initialization_step )
+                    field = itc_fc.magnet_field( field - initialization_step)
                     field = field - initialization_step
 
                 j += 1

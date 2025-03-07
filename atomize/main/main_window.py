@@ -27,11 +27,6 @@ from PyQt6 import QtWidgets, uic, QtCore, QtGui
 #from PyQt6.QtCore import Qt
 from pyqtgraph.dockarea import DockArea
 import atomize.main.messenger_socket_server as socket_server
-###AWG
-sys.path.append('/home/fel/sources/AWG/Examples/python')
-
-from pyspcm import *
-from spcm_tools import *
 
 class MainWindow(QtWidgets.QMainWindow):
     """
@@ -43,14 +38,15 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         super(MainWindow, self).__init__(*args, **kwargs)
         # absolute path to icon:
-        self.path_to_main = os.path.abspath(os.getcwd())
-        self.icon_path = os.path.join(self.path_to_main,'atomize/main','Icon.png')
+        self.path_to_main = os.path.join(os.path.abspath(os.getcwd()), 'libs')
+        os.chdir(self.path_to_main)
+        self.icon_path = os.path.join(self.path_to_main ,'..', 'atomize/main','Icon.png')
         self.setWindowIcon(QIcon(self.icon_path))
 
-        #self.destroyed.connect(MainWindow._on_destroyed)         # connect some actions to exit
+        #self.destroyed.connect(MainWindow._on_destroyed)          # connect some actions to exit
         self.destroyed.connect(lambda: self._on_destroyed())       # connect some actions to exit
         # Load the UI Page
-        uic.loadUi('atomize/main/gui/main_window.ui', self)        # Design file
+        uic.loadUi( os.path.join(self.path_to_main ,'..', 'atomize/main/gui/main_window.ui'), self)        # Design file
 
         # important attribures
         if len(sys.argv) > 1 and sys.argv[1] != '':  # for bash option
@@ -60,7 +56,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.script = '' # for not opened script
         self.test_flag = 0 # flag for not running script if test is failed
         self.flag_opened_script_changed = 0 # flag for saving changes in the opened script
-        self.path = os.path.join(self.path_to_main,'atomize/tests')
+        self.path = os.path.join(self.path_to_main,'..','atomize/tests')
         
         # Liveplot tab setting
         self.dockarea = DockArea()
@@ -93,7 +89,7 @@ class MainWindow(QtWidgets.QMainWindow):
         signal.signal(signal.SIGINT, self.close)
 
         # configuration data
-        path_config_file = os.path.join(self.path_to_main,'atomize/config.ini')
+        path_config_file = os.path.join(self.path_to_main,'..', 'atomize/config.ini')
         config = configparser.ConfigParser()
         config.read(path_config_file)
         # directories
@@ -597,98 +593,98 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         A function to run an phasing for rect channel.
         """
-        self.process_eseem.setArguments(['atomize/control_center/eseem_preset.py'])
+        self.process_eseem.setArguments([os.path.join('..','atomize/control_center/eseem_preset.py')])
         self.process_eseem.start()
 
     def start_ed_preset(self):
         """
         A function to run an phasing for rect channel.
         """
-        self.process_ed.setArguments(['atomize/control_center/echo_det_preset.py'])
+        self.process_ed.setArguments([os.path.join('..','atomize/control_center/echo_det_preset.py')])
         self.process_ed.start()
 
     def start_t1_preset(self):
         """
         A function to run an phasing for rect channel.
         """
-        self.process_t1.setArguments(['atomize/control_center/t1_preset.py'])
+        self.process_t1.setArguments([os.path.join('..','atomize/control_center/t1_preset.py')])
         self.process_t1.start()
 
     def start_t2_preset(self):
         """
         A function to run an phasing for rect channel.
         """
-        self.process_t2.setArguments(['atomize/control_center/t2_preset.py'])
+        self.process_t2.setArguments([os.path.join('..','atomize/control_center/t2_preset.py')])
         self.process_t2.start()
 
     def start_rect_phasing(self):
         """
         A function to run an phasing for rect channel.
         """
-        self.process_phasing.setArguments(['atomize/control_center/phasing.py'])
+        self.process_phasing.setArguments([os.path.join('..','atomize/control_center/phasing.py')])
         self.process_phasing.start()
 
     def start_awg_phasing(self):
         """
         A function to run an phasing for rect channel.
         """
-        self.process_awg_phasing.setArguments(['atomize/control_center/awg_phasing.py'])
+        self.process_awg_phasing.setArguments([os.path.join('..','atomize/control_center/awg_phasing.py')])
         self.process_awg_phasing.start()
 
     def start_tune_preset(self):
         """
         A function to run tuning.
         """
-        self.process_tune_preset.setArguments(['atomize/control_center/tune_preset.py'])
+        self.process_tune_preset.setArguments([os.path.join('..','atomize/control_center/tune_preset.py')])
         self.process_tune_preset.start()
 
     def start_mw_control(self):
         """
         A function to run an pulse_creator.
         """
-        self.process_mw.setArguments(['atomize/control_center/mw_bridge_control.py'])
+        self.process_mw.setArguments([os.path.join('..','atomize/control_center/mw_bridge_control.py')])
         self.process_mw.start()
 
     def start_tr_control(self):
         """
         A function to run an pulse_creator.
         """
-        self.process_tr.setArguments(['atomize/control_center/tr_control.py'])
+        self.process_tr.setArguments([os.path.join('..','atomize/control_center/tr_control.py')])
         self.process_tr.start()
     
     def start_osc_control(self):
         """
         A function to run an Keysight control.
         """
-        self.process_osc.setArguments(['atomize/control_center/osc_control.py'])
+        self.process_osc.setArguments([os.path.join('..','atomize/control_center/osc_control.py')])
         self.process_osc.start()
 
     def start_field_control(self):
         """
         A function to run an Field control.
         """
-        self.process_field.setArguments(['atomize/control_center/field_control.py'])
+        self.process_field.setArguments([os.path.join('..','atomize/control_center/field_control.py')])
         self.process_field.start()
 
     def start_osc_control_2(self):
         """
         A function to run an Keysight control.
         """
-        self.process_osc2.setArguments(['atomize/control_center/osc_control_2.py'])
+        self.process_osc2.setArguments([os.path.join('..','atomize/control_center/osc_control_2.py')])
         self.process_osc2.start()
 
     def start_cw(self):
         """
         A function to run an Keysight control.
         """
-        self.process_cw.setArguments(['atomize/control_center/cw_control.py'])
+        self.process_cw.setArguments([os.path.join('..','atomize/control_center/cw_control.py')])
         self.process_cw.start()
 
     def start_temp_control(self):
         """
         A function to run an Keysight control.
         """
-        self.process_temp.setArguments(['atomize/control_center/temp_control.py'])
+        self.process_temp.setArguments([os.path.join('..','atomize/control_center/temp_control.py')])
         self.process_temp.start()
 
     def script_open_combo(self):
@@ -698,13 +694,13 @@ class MainWindow(QtWidgets.QMainWindow):
     def text_to_script_name(self, text_to_parse):
 
         if text_to_parse == ' Tuning':
-            return os.path.join(self.path_to_main, 'atomize/tests/pulse_epr/01_resonator_tuning.py')
+            return os.path.join(self.path_to_main, '..', 'atomize/tests/pulse_epr/01_resonator_tuning.py')
         elif text_to_parse == ' T2 Echo Shape':
-            return os.path.join(self.path_to_main, 'atomize/tests/pulse_epr/keysight/02_t2_baseline_echo_shape.py')
+            return os.path.join(self.path_to_main, '..', 'atomize/tests/pulse_epr/keysight/02_t2_baseline_echo_shape.py')
         elif text_to_parse == ' ED Spectrum':
-            return os.path.join(self.path_to_main, 'atomize/tests/pulse_epr/keysight/03_echo_detected_spectrum_baseline.py')
+            return os.path.join(self.path_to_main, '..', 'atomize/tests/pulse_epr/keysight/03_echo_detected_spectrum_baseline.py')
         elif text_to_parse == ' ESEEM Echo Shape':
-            return os.path.join(self.path_to_main, 'atomize/tests/pulse_epr/keysight/07_eseem_phase_echo_shape.py')
+            return os.path.join(self.path_to_main, '..', 'atomize/tests/pulse_epr/keysight/07_eseem_phase_echo_shape.py')
 
     def message_box_clicked(self, btn):
         """
@@ -887,40 +883,35 @@ class MainWindow(QtWidgets.QMainWindow):
 
         if data == 'Script stopped':
 
+            self.process_python.terminate()
+            time.sleep(4)
+            self.process_python.close()
+
             #path_to_main = os.path.abspath(os.getcwd())
-            lib_path = os.path.join(self.path_to_main, 'atomize/general_modules', 'libspinapi.so')
-            lib_path2 = os.path.join(self.path_to_main, 'atomize/general_modules', 'spinapi64.dll')
+            #lib_path = os.path.join(self.path_to_main, 'atomize/general_modules', 'libspinapi.so')
+            #lib_path2 = os.path.join(self.path_to_main, 'atomize/general_modules', 'spinapi64.dll')
 
-            if os.path.exists(lib_path) == False and os.path.exists(lib_path2) == False:
-                self.process_python.close()
-            else:
-                # check on windows?!
-                
-                self.process_python.terminate()
-                time.sleep(10)
-
-                # keysight check?!
-                import atomize.device_modules.PB_ESR_500_pro as pb_pro
-                pb = pb_pro.PB_ESR_500_Pro()
-                pb.pulser_stop()
-
-                #self.process_python.terminate()
-
-                # AWG
-                hCard1 = spcm_hOpen (create_string_buffer (b'/dev/spcm0'))
-                spcm_dwSetParam_i32 (hCard1, SPC_M2CMD, M2CMD_CARD_STOP)
-                # clean up
-                spcm_vClose (hCard1)
-
-                #hCard2 = spcm_hOpen (create_string_buffer (b'/dev/spcm1'))
-                #spcm_dwSetParam_i32 (hCard2, SPC_M2CMD, M2CMD_CARD_STOP)
-                # clean up
-                #spcm_vClose (hCard2)
-
-                ###
-
-                #self.process_python.close()
-                
+            #if os.path.exists(lib_path) == False and os.path.exists(lib_path2) == False:
+            #    self.process_python.close()
+            #else:
+            #    
+            #    ### keysight lines
+            #    self.process_python.terminate()
+            #    time.sleep(10)
+            #
+            #    import atomize.device_modules.PB_ESR_500_pro as pb_pro
+            #    pb = pb_pro.PB_ESR_500_Pro()
+            #    pb.pulser_stop()
+            # 
+            #    ### comment next lines for keysight:
+            #    self.process_python.terminate()
+            #
+            #    # AWG
+            #    hCard1 = spcm_hOpen (create_string_buffer (b'/dev/spcm0'))
+            #    spcm_dwSetParam_i32 (hCard1, SPC_M2CMD, M2CMD_CARD_STOP)
+            #    # clean up
+            #    spcm_vClose (hCard1)
+            
 
 class NameList(QDockWidget):
     def __init__(self, window):
@@ -928,9 +919,9 @@ class NameList(QDockWidget):
         self.setFeatures(QDockWidget.DockWidgetFeature.NoDockWidgetFeatures)
         
         #directories
-        self.path_to_main = os.path.abspath( os.getcwd() )
+        self.path_to_main = os.path.join(os.path.abspath(os.getcwd()))
         # configuration data
-        path_config_file = os.path.join(self.path_to_main, 'atomize/config.ini')
+        path_config_file = os.path.join(self.path_to_main, '..', 'atomize/config.ini')
         config = configparser.ConfigParser()
         config.read(path_config_file)
         # directories

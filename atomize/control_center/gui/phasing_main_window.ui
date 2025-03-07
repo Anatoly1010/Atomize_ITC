@@ -1053,7 +1053,7 @@
          <enum>Qt::NoContextMenu</enum>
         </property>
         <property name="text">
-         <string>Horizontal Offset (ns)</string>
+         <string>Horizontal Offset</string>
         </property>
        </widget>
       </item>
@@ -1069,10 +1069,13 @@
          <bool>false</bool>
         </property>
         <property name="minimum">
-         <number>2</number>
+         <number>1</number>
         </property>
         <property name="maximum">
-         <number>5000</number>
+         <number>10000</number>
+        </property>
+        <property name="value">
+         <number>1</number>
         </property>
        </widget>
       </item>
@@ -1088,7 +1091,7 @@
          <enum>Qt::NoContextMenu</enum>
         </property>
         <property name="text">
-         <string>Timebase (ns)</string>
+         <string>Timebase</string>
         </property>
        </widget>
       </item>
@@ -1104,16 +1107,16 @@
          <bool>false</bool>
         </property>
         <property name="minimum">
-         <number>-10000</number>
+         <number>-20000</number>
         </property>
         <property name="maximum">
-         <number>10000</number>
+         <number>20000</number>
         </property>
         <property name="singleStep">
-         <number>1</number>
+         <number>32</number>
         </property>
         <property name="value">
-         <number>1000</number>
+         <number>1024</number>
         </property>
        </widget>
       </item>
@@ -1135,10 +1138,10 @@
          <number>20000</number>
         </property>
         <property name="singleStep">
-         <number>5</number>
+         <number>32</number>
         </property>
         <property name="value">
-         <number>2000</number>
+         <number>2016</number>
         </property>
        </widget>
       </item>

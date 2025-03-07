@@ -313,7 +313,7 @@ class Worker(QWidget):
         import atomize.general_modules.general_functions as general
         import atomize.device_modules.PB_ESR_500_pro as pb_pro
         import atomize.device_modules.Keysight_2000_Xseries as key
-        import atomize.device_modules.Micran_X_band_MW_bridge_v2 as mwBridge
+        import atomize.device_modules.Mikran_X_band_MW_bridge_v2 as mwBridge
         #import atomize.device_modules.Spectrum_M4I_4450_X8 as spectrum
         import atomize.device_modules.ITC_FC as itc
         import atomize.device_modules.Lakeshore_335 as ls
@@ -321,7 +321,7 @@ class Worker(QWidget):
 
         file_handler = openfile.Saver_Opener()
         ls335 = ls.Lakeshore_335()
-        mw = mwBridge.Micran_X_band_MW_bridge_v2()
+        mw = mwBridge.Mikran_X_band_MW_bridge_v2()
         pb = pb_pro.PB_ESR_500_Pro()
         a2012 = key.Keysight_2000_Xseries()
         bh15 = itc.ITC_FC()
@@ -394,6 +394,9 @@ class Worker(QWidget):
                 j = 1
                 while j <= SCANS:
 
+                    if self.command == 'exit':
+                        break
+
                     for i in range(POINTS):
 
                         k = 0
@@ -436,6 +439,9 @@ class Worker(QWidget):
             elif p13 == 1:
                 j = 1
                 while j <= SCANS:
+
+                    if self.command == 'exit':
+                        break
 
                     for i in range(POINTS):
 

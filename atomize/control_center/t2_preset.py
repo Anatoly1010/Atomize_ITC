@@ -292,20 +292,20 @@ class Worker(QWidget):
         import numpy as np
         import atomize.general_modules.general_functions as general
         import atomize.device_modules.PB_ESR_500_pro as pb_pro
-        import atomize.device_modules.Keysight_2000_Xseries as key
-        import atomize.device_modules.Micran_X_band_MW_bridge_v2 as mwBridge
-        #import atomize.device_modules.Spectrum_M4I_4450_X8 as spectrum
+        ###import atomize.device_modules.Keysight_2000_Xseries as key
+        import atomize.device_modules.Mikran_X_band_MW_bridge_v2 as mwBridge
+        import atomize.device_modules.Spectrum_M4I_2211_X8 as spectrum
         import atomize.device_modules.Lakeshore_335 as ls
         import atomize.device_modules.ITC_FC as itc
         import atomize.general_modules.csv_opener_saver_tk_kinter as openfile
 
         file_handler = openfile.Saver_Opener()
         ls335 = ls.Lakeshore_335()
-        mw = mwBridge.Micran_X_band_MW_bridge_v2()
+        mw = mwBridge.Mikran_X_band_MW_bridge_v2()
         pb = pb_pro.PB_ESR_500_Pro()
         bh15 = itc.ITC_FC()
-        a2012 = key.Keysight_2000_Xseries()
-        #dig4450 = spectrum.Spectrum_M4I_4450_X8()
+        ###a2012 = key.Keysight_2000_Xseries()
+        dig4450 = spectrum.Spectrum_M4I_2211_X8()
 
         # parameters for initial initialization
         POINTS = p9
@@ -332,21 +332,20 @@ class Worker(QWidget):
         x_axis = np.linspace(0, (POINTS - 1)*STEP, num = POINTS) 
         ###
 
-        bh15.magnet_setup(FIELD, 1)
-        bh15.magnet_field(FIELD)
+        bh15.magnet_field(FIELD, calibration = 'True')
         general.wait('4000 ms')
 
         # Setting oscilloscope
-        a2012.oscilloscope_trigger_channel('Ext')
-        a2012.oscilloscope_record_length(4000)
-        a2012.oscilloscope_acquisition_type('Average')
-        a2012.oscilloscope_number_of_averages(AVERAGES)
-        a2012.oscilloscope_stop()
+        ###a2012.oscilloscope_trigger_channel('Ext')
+        ###a2012.oscilloscope_record_length(4000)
+        ###a2012.oscilloscope_acquisition_type('Average')
+        ###a2012.oscilloscope_number_of_averages(AVERAGES)
+        ###a2012.oscilloscope_stop()
 
         # read integration window
-        a2012.oscilloscope_read_settings()
-        #dig4450.digitizer_read_settings()
-        #dig4450.digitizer_number_of_averages(AVERAGES)
+        ###a2012.oscilloscope_read_settings()
+        dig4450.digitizer_read_settings()
+        dig4450.digitizer_number_of_averages(AVERAGES)
 
         # Setting pulses
         pb.pulser_pulse(name = 'P0', channel = 'MW', start = PULSE_1_START, length = PULSE_1_LENGTH, phase_list = ['+x', '-x'])
@@ -365,6 +364,9 @@ class Worker(QWidget):
             j = 1
             while j <= SCANS:
 
+                if self.command == 'exit':
+                    break
+
                 for i in range(POINTS):
                     # phase cycle
                     k = 0
@@ -372,9 +374,9 @@ class Worker(QWidget):
 
                         pb.pulser_next_phase()
                         
-                        #cycle_data_x[k], cycle_data_y[k] = dig4450.digitizer_get_curve( integral = True )
-                        a2012.oscilloscope_start_acquisition()
-                        cycle_data_x[k], cycle_data_y[k] = a2012.oscilloscope_get_curve('CH1', integral = True), a2012.oscilloscope_get_curve('CH2', integral = True)
+                        cycle_data_x[k], cycle_data_y[k] = dig4450.digitizer_get_curve( integral = True )
+                        ###a2012.oscilloscope_start_acquisition()
+                        ###cycle_data_x[k], cycle_data_y[k] = a2012.oscilloscope_get_curve('CH1', integral = True), a2012.oscilloscope_get_curve('CH2', integral = True)
                         #cycle_data_y[k] = a2012.oscilloscope_area('CH2')
 
                         k += 1
@@ -408,12 +410,12 @@ class Worker(QWidget):
 
         if self.command == 'exit':
             general.message('Script finished')
-            tb = a2012.oscilloscope_window()
+            ###tb = a2012.oscilloscope_window()
             
             #tb = dig4450.digitizer_number_of_points() * int(  1000 / float( dig4450.digitizer_sample_rate().split(' ')[0] ) )
-            #tb = dig4450.digitizer_window()
-            #dig4450.digitizer_stop()
-            #dig4450.digitizer_close()
+            tb = dig4450.digitizer_window()
+            dig4450.digitizer_stop()
+            dig4450.digitizer_close()
             pb.pulser_stop()
 
             # Data saving

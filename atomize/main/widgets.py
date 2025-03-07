@@ -131,7 +131,7 @@ class CrosshairDock(CloseableDock):
         # open directory
         path_to_main = os.path.abspath(os.getcwd())
         # configuration data
-        path_config_file = os.path.join(path_to_main,'atomize/config.ini')
+        path_config_file = os.path.join(path_to_main, '..', 'atomize/config.ini')
         config = configparser.ConfigParser()
         config.read(path_config_file)
         # directories

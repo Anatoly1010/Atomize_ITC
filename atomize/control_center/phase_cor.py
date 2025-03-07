@@ -5,9 +5,9 @@ import os
 import sys
 import datetime
 import numpy as np
-from PyQt5.QtWidgets import QWidget, QFileDialog
-from PyQt5 import QtWidgets, uic
-from PyQt5.QtGui import QIcon        
+from PyQt6.QtWidgets import QWidget, QFileDialog
+from PyQt6 import QtWidgets, uic
+from PyQt6.QtGui import QIcon        
 import atomize.general_modules.general_functions as general
 import atomize.general_modules.csv_opener_saver as openfile
 import atomize.math_modules.fft as fft_module
@@ -92,10 +92,10 @@ class MainWindow(QtWidgets.QMainWindow):
         A function to open file with experimental data
         """
         filedialog = QFileDialog(self, 'Open File', directory = self.path, filter = "Data (*.csv)",\
-            options = QtWidgets.QFileDialog.DontUseNativeDialog)
+            options = QtWidgets.QFileDialog.Option.DontUseNativeDialog)
         # use QFileDialog.DontUseNativeDialog to change directory
         filedialog.setStyleSheet("QWidget { background-color : rgb(42, 42, 64); color: rgb(211, 194, 78);}")
-        filedialog.setFileMode(QtWidgets.QFileDialog.AnyFile)
+        filedialog.setFileMode(QtWidgets.QFileDialog.FileMode.AnyFile)
         filedialog.fileSelected.connect(self.open_file)
         filedialog.show()
 
@@ -104,10 +104,10 @@ class MainWindow(QtWidgets.QMainWindow):
         A function to open file with experimental 1D data
         """
         filedialog = QFileDialog(self, 'Open File', directory = self.path, filter = "Data (*.csv)",\
-            options = QtWidgets.QFileDialog.DontUseNativeDialog)
+            options = QtWidgets.QFileDialog.Option.DontUseNativeDialog)
         # use QFileDialog.DontUseNativeDialog to change directory
         filedialog.setStyleSheet("QWidget { background-color : rgb(42, 42, 64); color: rgb(211, 194, 78);}")
-        filedialog.setFileMode(QtWidgets.QFileDialog.AnyFile)
+        filedialog.setFileMode(QtWidgets.QFileDialog.FileMode.AnyFile)
         filedialog.fileSelected.connect(self.open_file_1d)
         filedialog.show()
 
@@ -138,11 +138,11 @@ class MainWindow(QtWidgets.QMainWindow):
         A function to open a new window for choosing parameters
         """
         filedialog = QFileDialog(self, 'Save File', directory = self.path, filter = "Data (*.csv)",\
-            options = QtWidgets.QFileDialog.DontUseNativeDialog)
+            options = QtWidgets.QFileDialog.Option.DontUseNativeDialog)
         filedialog.setAcceptMode(QFileDialog.AcceptSave)
         # use QFileDialog.DontUseNativeDialog to change directory
         filedialog.setStyleSheet("QWidget { background-color : rgb(42, 42, 64); color: rgb(211, 194, 78);}")
-        filedialog.setFileMode(QtWidgets.QFileDialog.AnyFile)
+        filedialog.setFileMode(QtWidgets.QFileDialog.FileMode.AnyFile)
         filedialog.fileSelected.connect(self.save_file)
         filedialog.show()
 
@@ -151,11 +151,11 @@ class MainWindow(QtWidgets.QMainWindow):
         A function to open a new window for choosing parameters
         """
         filedialog = QFileDialog(self, 'Save File', directory = self.path, filter = "Data (*.csv)",\
-            options = QtWidgets.QFileDialog.DontUseNativeDialog)
+            options = QtWidgets.QFileDialog.Option.DontUseNativeDialog)
         filedialog.setAcceptMode(QFileDialog.AcceptSave)
         # use QFileDialog.DontUseNativeDialog to change directory
         filedialog.setStyleSheet("QWidget { background-color : rgb(42, 42, 64); color: rgb(211, 194, 78);}")
-        filedialog.setFileMode(QtWidgets.QFileDialog.AnyFile)
+        filedialog.setFileMode(QtWidgets.QFileDialog.FileMode.AnyFile)
         filedialog.fileSelected.connect(self.save_file_1d)
         filedialog.show()
 
@@ -166,9 +166,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.opened_file = filename
         filename_param = filename.split(".csv")[0] + ".param"
         self.points = int( open(filename_param).read().split("Points: ")[1].split("\n")[0] )
-        self.h_res = int( open(filename_param).read().split("Horizontal Resolution: ")[1].split(" ns")[0] )
+        self.h_res = float( open(filename_param).read().split("Horizontal Resolution: ")[1].split(" ns")[0] )
         try:
-            self.v_res = int( open(filename_param).read().split("Vertical Resolution: ")[1].split(" ns")[0] )
+            self.v_res = float( open(filename_param).read().split("Vertical Resolution: ")[1].split(" ns")[0] )
             self.echo_det_spectrum = 0
         except ValueError:
             # Echo Detected Spectrum
@@ -176,7 +176,7 @@ class MainWindow(QtWidgets.QMainWindow):
             # Start Field: 3394.7 G
             self.st_field = round( float(open(filename_param).read().split("Start Field: ")[1].split(" G")[0]), 3 )
             self.echo_det_spectrum = 1
-        self.wind = int( open(filename_param).read().split("Window: ")[1].split(" ns")[0] )
+        self.wind = float( open(filename_param).read().split("Window: ")[1].split(" ns")[0] )
 
         filename2 = filename.split(".csv")[0] + "_1.csv"
         self.data_i = np.genfromtxt(filename, dtype = float, delimiter = ',')
@@ -353,7 +353,7 @@ def main():
     app = QtWidgets.QApplication(sys.argv)
     main = MainWindow()
     main.show()
-    sys.exit(app.exec_())
+    sys.exit(app.exec())
 
 if __name__ == '__main__':
     main()
