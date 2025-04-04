@@ -64,30 +64,30 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Spinboxes
         self.box_end_field.valueChanged.connect(self.end_field)
-        self.box_end_field.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); }")
+        self.box_end_field.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
         self.cur_end_field = float( self.box_end_field.value() )
         self.box_st_field.valueChanged.connect(self.st_field)
-        self.box_st_field.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); }")
+        self.box_st_field.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
         self.cur_start_field = float( self.box_st_field.value() )
         self.box_step_field.valueChanged.connect(self.step_field)
-        self.box_step_field.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); }")
+        self.box_step_field.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
         self.cur_step = float( self.box_step_field.value() )
         
         self.box_off_res_field.valueChanged.connect(self.offres_field)
-        self.box_off_res_field.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); }")
+        self.box_off_res_field.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
         self.cur_offres_field = float( self.box_off_res_field.value() )
         
-        self.box_scan.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); }")
+        self.box_scan.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
         self.box_scan.valueChanged.connect(self.scan)
         #self.box_scan.lineEdit().setReadOnly( True )
         self.cur_scan = int( self.box_scan.value() )
         
-        self.box_ave.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); }")
+        self.box_ave.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
         self.box_ave.valueChanged.connect(self.ave)
         #self.box_ave.lineEdit().setReadOnly( True )
         self.cur_ave = int( self.box_ave.value() )
         
-        self.box_ave_offres.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); }")
+        self.box_ave_offres.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
         self.box_ave_offres.valueChanged.connect(self.ave_offres)
         #self.box_ave_offres.lineEdit().setReadOnly( True )
         self.cur_ave_offres = int( self.box_ave_offres.value() )
@@ -307,8 +307,8 @@ class Worker(QWidget):
         import atomize.general_modules.general_functions as general
         import atomize.device_modules.Keysight_2000_Xseries as key
         import atomize.device_modules.Keysight_2000_Xseries_2 as key2
-        #import atomize.device_modules.BH_15 as bh
-        import atomize.device_modules.ITC_FC as itc
+        import atomize.device_modules.BH_15 as itc
+        #import atomize.device_modules.ITC_FC as itc
         import atomize.device_modules.Lakeshore_335 as ls
         import atomize.device_modules.Agilent_53131a as ag
         import atomize.general_modules.csv_opener_saver_tk_kinter as openfile
@@ -318,7 +318,8 @@ class Worker(QWidget):
         ag53131a = ag.Agilent_53131a()
         ls335 = ls.Lakeshore_335()
         a2012 = key.Keysight_2000_Xseries()
-        bh15 = itc.ITC_FC()
+        #bh15 = itc.ITC_FC()
+        bh15 = itc.BH_15()
         
         ag53131a.freq_counter_digits(8)
         ag53131a.freq_counter_stop_mode('Digits')
@@ -363,6 +364,8 @@ class Worker(QWidget):
         initialization_step = 10
         SCANS = p7
         points = int( (END_FIELD - START_FIELD) / FIELD_STEP ) + 1
+
+        bh15.magnet_setup( 100, FIELD_STEP)
 
         if p9 == 1:
             data = np.zeros( (2, real_length, points + 1) )

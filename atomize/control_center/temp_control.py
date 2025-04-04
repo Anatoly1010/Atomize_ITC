@@ -64,7 +64,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Spinboxes
         self.Set_point.valueChanged.connect( self.set_point )
-        self.Set_point.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); }")
+        self.Set_point.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
         self.point = float( self.Set_point.value() )
 
         self.combo_range.currentIndexChanged.connect(self.heater_range)

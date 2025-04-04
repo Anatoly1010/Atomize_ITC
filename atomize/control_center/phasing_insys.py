@@ -32,7 +32,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.path = os.path.join(path_to_main, '..', '..', '..', '..', 'experimental_data')
 
         #####
-        path_to_main2 = os.path.join(os.path.abspath(os.getcwd()), '..', '..', 'libs')  #, '..', '..', 'libs'
+        path_to_main2 = os.path.join(os.path.abspath(os.getcwd()), '..', 'libs')  #, '..', '..', 'libs'
         os.chdir(path_to_main2)
         #####
 
@@ -1300,6 +1300,8 @@ class Worker(QWidget):
             # phase cycle
             PHASES = len( p6[3] )
 
+            #pb.pulser_visualize()
+
             for i in range( PHASES ):
                 pb.pulser_next_phase()
                 if p2 == 0:
@@ -1328,8 +1330,9 @@ class Worker(QWidget):
                     if p17 == 0:
                         freq_axis, abs_values = fft.fft(x_axis, data_x, data_y, t_res * 1)
                         m_val = round( np.amax( abs_values ), 2 )
+                        i_max = abs(round( freq_axis[ np.argmax( abs_values ) ], 2))
                         process = general.plot_1d('FFT', freq_axis, abs_values, xname = 'Offset', label = 'FFT', xscale = 'MHz', \
-                                                  yscale = 'A.U.', text = 'Max ' + str(m_val), pr = process)
+                                                  yscale = 'A.U.', text = 'Max ' + str(i_max), pr = process) #str(m_val)
                     else:
                         if p21 > len( data_x ) - 0.4 * p1:
                             p21 = len( data_x ) - 0.8 * p1

@@ -68,9 +68,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.gridLayout_tab_liveplot.setAlignment(self.namelist, QtCore.Qt.AlignmentFlag.AlignLeft)
         self.gridLayout_tab_liveplot.addWidget(self.dockarea, 0, 1)
         #self.gridLayout_tab_liveplot.setAlignment(self.dockarea, QtConst.AlignRight)
-        self.namelist.setStyleSheet("background-color: rgb(42, 42, 64); color: rgb(211, 194, 78); border: 2px solid rgb(40, 30, 45)")
-        self.namelist.namelist_view.setStyleSheet("QListView::item:selected:active {background-color: rgb(63, 63, 97);\
-            color: rgb(211, 194, 78); } QListView::item:hover {background-color: rgb(48, 48, 75); }")
+        self.namelist.setStyleSheet("QNameList {background-color: rgb(42, 42, 64); color: rgb(211, 194, 78); border: 4px solid rgb(40, 30, 45); }")
+        self.namelist.setStyleSheet("QListView {background-color: rgb(42, 42, 64); selection-color: rgb(63, 63, 97);\
+            color: rgb(211, 194, 78); selection-background-color: rgb(211, 194, 78); } ")
+
         self.namelist.namelist_view.setStyleSheet("QMenu::item:selected {background-color: rgb(48, 48, 75);  }")
 
         self.design_setting()
@@ -621,14 +622,14 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         A function to run an phasing for rect channel.
         """
-        self.process_phasing.setArguments([os.path.join('..','atomize/control_center/phasing.py')])
+        self.process_phasing.setArguments([os.path.join('..','atomize/control_center/phasing_insys.py')])
         self.process_phasing.start()
 
     def start_awg_phasing(self):
         """
         A function to run an phasing for rect channel.
         """
-        self.process_awg_phasing.setArguments([os.path.join('..','atomize/control_center/awg_phasing.py')])
+        self.process_awg_phasing.setArguments([os.path.join('..','atomize/control_center/awg_phasing_insys.py')])
         self.process_awg_phasing.start()
 
     def start_tune_preset(self):
@@ -689,7 +690,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def script_open_combo(self):
         self.script = self.text_to_script_name( self.script_chooser.currentText() )
-        self.open_file( self.script )
+        self.open_file(  os.path.join(self.script, '..', 'atomize/tests/') )
 
     def text_to_script_name(self, text_to_parse):
 

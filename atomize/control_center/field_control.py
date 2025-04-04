@@ -46,11 +46,11 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Spinboxes
         self.Set_point.valueChanged.connect( self.set_field )
-        self.Set_point.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); }")
+        self.Set_point.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
         self.field = float( self.Set_point.value() )
 
         self.box_ini.valueChanged.connect( self.set_ini )
-        self.box_ini.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); }")
+        self.box_ini.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
         self.initialization_step = int( self.box_ini.value() )
 
         self.cur_field = 0

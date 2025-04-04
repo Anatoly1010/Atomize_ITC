@@ -66,18 +66,18 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Spinboxes
         self.box_end_field.valueChanged.connect(self.end_field)
-        self.box_end_field.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); }")
+        self.box_end_field.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
         self.cur_end_field = float( self.box_end_field.value() )
         self.box_st_field.valueChanged.connect(self.st_field)
-        self.box_st_field.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); }")
+        self.box_st_field.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
         self.cur_start_field = float( self.box_st_field.value() )
         self.box_step_field.valueChanged.connect(self.step_field)
-        self.box_step_field.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); }")
+        self.box_step_field.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
         self.cur_step = float( self.box_step_field.value() )
         self.box_lock_ampl.valueChanged.connect(self.lock_ampl)
-        self.box_lock_ampl.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); }")
+        self.box_lock_ampl.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
         self.cur_lock_ampl = float( self.box_lock_ampl.value() )
-        self.box_scan.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); }")
+        self.box_scan.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
         self.box_scan.valueChanged.connect(self.scan)
         #self.box_scan.lineEdit().setReadOnly( True )
         self.cur_scan = int( self.box_scan.value() )
@@ -263,8 +263,8 @@ class Worker(QWidget):
         # freezing after digitizer restart otherwise
         import atomize.general_modules.general_functions as general
         import atomize.device_modules.SR_860 as sr
-        import atomize.device_modules.ITC_FC as itc
-        #import atomize.device_modules.BH_15 as itc
+        #import atomize.device_modules.ITC_FC as itc
+        import atomize.device_modules.BH_15 as itc
         import atomize.device_modules.Lakeshore_335 as ls
         import atomize.device_modules.Agilent_53131a as ag
         import atomize.general_modules.csv_opener_saver_tk_kinter as openfile
@@ -273,8 +273,8 @@ class Worker(QWidget):
         ag53131a = ag.Agilent_53131a()
         ls335 = ls.Lakeshore_335()
         sr860 = sr.SR_860()
-        itc_fc = itc.ITC_FC()
-        #itc_fc = itc.BH_15()
+        #itc_fc = itc.ITC_FC()
+        itc_fc = itc.BH_15()
 
         # parameters for initial initialization
         field = p4
@@ -285,7 +285,7 @@ class Worker(QWidget):
         SCANS = p7
         process = 'None'
 
-        #itc_fc.magnet_setup( 100, FIELD_STEP)
+        itc_fc.magnet_setup( 100, FIELD_STEP)
 
         tc_wait = 0
         raw = p8.split(" ")
@@ -320,7 +320,7 @@ class Worker(QWidget):
                 ##field = START_FIELD
                 general.wait('1000 ms')
 
-            field = itc_fc.magnet_field( START_FIELD, calibration = 'True' )
+            field = itc_fc.magnet_field( START_FIELD )#, calibration = 'True' )
             general.wait('4000 ms')
 
             sr860.lock_in_sensitivity( p9 )
@@ -348,7 +348,7 @@ class Worker(QWidget):
                         text = 'Scan / Field: ' + str(j) + ' / ' + str(field) )
 
                     field = round( (FIELD_STEP + field), 3 )
-                    itc_fc.magnet_field(field, calibration = 'True')
+                    itc_fc.magnet_field(field) #, calibration = 'True')
 
                     # check our polling data
                     if self.command[0:2] == 'SC':

@@ -1716,6 +1716,7 @@ class Worker(QWidget):
         pb.digitizer_number_of_averages(p3)
         PHASES = len( p6[3] )
         
+        pb.pulser_visualize()
         pb.pulser_open()
 
         # the idea of automatic and dynamic changing is
