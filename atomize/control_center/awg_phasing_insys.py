@@ -29,11 +29,11 @@ class MainWindow(QtWidgets.QMainWindow):
         gui_path = os.path.join(path_to_main,'gui/awg_phasing_main_window_insys.ui')
         icon_path = os.path.join(path_to_main, 'gui/icon_pulse.png')
         self.setWindowIcon( QIcon(icon_path) )
-
-        self.path = os.path.join(path_to_main, '..', '..', '..', '..', 'Experimental_Data')
+        
+        self.path = os.path.join(path_to_main, '..', '..', '..', '..', 'experimental_data')
 
         #####
-        path_to_main2 = os.path.join(os.path.abspath(os.getcwd()), '..', '..', 'libs')
+        path_to_main2 = os.path.join(os.path.abspath(os.getcwd()), '..', 'libs')  #, '..', '..', 'libs'
         os.chdir(path_to_main2)
         #####
 
@@ -1374,6 +1374,9 @@ class MainWindow(QtWidgets.QMainWindow):
         #self.bh15.magnet_field( self.mag_field )
         #self.pb.pb_close()
 
+        self.pb.pulser_open()
+        self.pb.pulser_close()
+
     def update(self):
         """
         A function to run pulses
@@ -1419,8 +1422,7 @@ class MainWindow(QtWidgets.QMainWindow):
                                         '1. Not overlapped\n' + \
                                         '2. Distance between pulses is more than 44.8 ns\n' + \
                                         '3. Pulse length should be longer or equal to sigma\n' + \
-                                        '4. Phase sequence does not have equal length for all pulses with nonzero length\n' + \
-                                        '\nPulser and AWG card are stopped' )
+                                        '\nIs the pulser running in another application?' )
 
             # no need in stop and close, since AWG is not opened
             #self.awg.awg_stop()
@@ -1461,7 +1463,7 @@ class MainWindow(QtWidgets.QMainWindow):
         file_to_read = open(path_file, 'w')
         file_to_read.write('Points: ' + str( self.p1_length ) +'\n')
         file_to_read.write('Sample Rate: ' + str( 2500 ) +'\n')
-        file_to_read.write('Posstriger: ' + str( 1024) +'\n')
+        file_to_read.write('Posstriger: ' + str( 1024 ) +'\n')
         file_to_read.write('Range: ' + str( 200 ) +'\n')
         file_to_read.write('CH0 Offset: ' + str( 0 ) +'\n')
         file_to_read.write('CH1 Offset: ' + str( 0 ) +'\n')
@@ -1573,13 +1575,13 @@ class Worker(QWidget):
         import atomize.general_modules.general_functions as general
         import atomize.device_modules.Insys_FPGA as pb_pro
         import atomize.math_modules.fft as fft_module
-        ##import atomize.device_modules.ITC_FC as itc
+        import atomize.device_modules.ITC_FC as itc
 
         pb = pb_pro.Insys_FPGA()
         fft = fft_module.Fast_Fourier()
-        ##bh15 = itc.ITC_FC()
-        #bh15.magnet_setup( p15, 0.5 )
-        ##bh15.magnet_field( p15, calibration = 'True' )
+        bh15 = itc.ITC_FC()
+        bh15.magnet_setup( p15, 0.5 )
+        bh15.magnet_field( p15 ) #, calibration = 'True' )
 
         process = 'None'
         num_ave =           p3
@@ -1716,7 +1718,7 @@ class Worker(QWidget):
         pb.digitizer_number_of_averages(p3)
         PHASES = len( p6[3] )
         
-        pb.pulser_visualize()
+        #pb.pulser_visualize()
         pb.pulser_open()
 
         # the idea of automatic and dynamic changing is
@@ -1758,7 +1760,7 @@ class Worker(QWidget):
                     general.message('For REPETITION RATE lower then 50 Hz, please, press UPDATE')
             elif self.command[0:2] == 'FI':
                 p15 = float( self.command[2:] )
-                bh15.magnet_field( p15, calibration = 'True' )
+                bh15.magnet_field( p15 )#, calibration = 'True' )
             elif self.command[0:2] == 'FF':
                 p16 = int( self.command[2:] )
             elif self.command[0:2] == 'QC':

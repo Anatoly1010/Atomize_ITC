@@ -36,7 +36,6 @@ class MainWindow(QtWidgets.QMainWindow):
         os.chdir(path_to_main2)
         #####
 
-
         self.destroyed.connect(lambda: self._on_destroyed())                # connect some actions to exit
         # Load the UI Page
         uic.loadUi(gui_path, self)                                          # Design file
@@ -959,6 +958,9 @@ class MainWindow(QtWidgets.QMainWindow):
         for i in range( len( self.ph_1 ) ):
             self.pb.pulser_next_phase()
 
+        self.pb.pulser_open()
+        self.pb.pulser_close()
+
     def update(self):
         """
         A function to run pulses
@@ -1002,8 +1004,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.errors.appendPlainText( 'Incorrect pulse setting. Check that your pulses:\n' + \
                                         '1. Not overlapped\n' + \
                                         '2. Distance between MW pulses is more than 44.8 ns\n' + \
-                                        '3. Phase sequence does not have equal length for all pulses with nonzero length\n' + \
-                                        '\nPulser is stopped')
+                                        '\nIs the pulser running in another application?')
 
     def pulser_test(self, conn, flag):
         """
@@ -1145,15 +1146,15 @@ class Worker(QWidget):
         import atomize.general_modules.general_functions as general
         import atomize.device_modules.Insys_FPGA as pb_pro
         import atomize.math_modules.fft as fft_module
-        ##import atomize.device_modules.BH_15 as itc
+        import atomize.device_modules.BH_15 as itc
 
         pb = pb_pro.Insys_FPGA()
         
         fft = fft_module.Fast_Fourier()
-        ##bh15 = itc.BH_15()
+        bh15 = itc.BH_15()
         
-        #bh15.magnet_setup( p15, 0.5 )
-        ##bh15.magnet_field( p15 ) #, calibration = 'True'
+        bh15.magnet_setup( p15, 0.5 )
+        bh15.magnet_field( p15 ) #, calibration = 'True'
 
         process = 'None'
         
@@ -1277,7 +1278,7 @@ class Worker(QWidget):
                 
             elif self.command[0:2] == 'FI':
                 p15 = float( self.command[2:] )
-                ##bh15.magnet_field( p15 ) #, calibration = 'True' 
+                bh15.magnet_field( p15 ) #, calibration = 'True' 
             elif self.command[0:2] == 'FF':
                 p16 = int( self.command[2:] )
             elif self.command[0:2] == 'QC':
