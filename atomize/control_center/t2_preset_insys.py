@@ -32,7 +32,7 @@ class MainWindow(QtWidgets.QMainWindow):
         uic.loadUi(gui_path, self)                        # Design file
 
         #####
-        path_to_main2 = os.path.join(os.path.abspath(os.getcwd()), '..', '..', 'libs')
+        path_to_main2 = os.path.join(os.path.abspath(os.getcwd()), '..', 'libs') #'..',
         os.chdir(path_to_main2)
         #####
 
@@ -301,14 +301,14 @@ class Worker(QWidget):
         import atomize.device_modules.Insys_FPGA as pb_pro
         import atomize.device_modules.Mikran_X_band_MW_bridge_v2 as mwBridge
         import atomize.device_modules.Lakeshore_335 as ls
-        import atomize.device_modules.ITC_FC as itc
+        import atomize.device_modules.BH_15 as itc
         import atomize.general_modules.csv_opener_saver_tk_kinter as openfile
 
         file_handler = openfile.Saver_Opener()
         ls335 = ls.Lakeshore_335()
         mw = mwBridge.Mikran_X_band_MW_bridge_v2()
         pb = pb_pro.Insys_FPGA()
-        bh15 = itc.ITC_FC()
+        bh15 = itc.BH_15()
 
         # parameters for initial initialization
         #POINTS = p9
@@ -334,7 +334,8 @@ class Worker(QWidget):
         x_axis = np.linspace(0, (POINTS - 1)*STEP, num = POINTS) 
         ###
 
-        bh15.magnet_field(FIELD, calibration = 'True')
+        bh15.magnet_setup( FIELD, 0.5 )
+        bh15.magnet_field(FIELD) #, calibration = 'True')
         general.wait('4000 ms')
 
         adc_wind = pb.digitizer_read_settings()
@@ -342,7 +343,7 @@ class Worker(QWidget):
         # Setting pulses
         pb.pulser_pulse(name = 'P0', channel = 'MW', start = PULSE_1_START, length = PULSE_1_LENGTH, phase_list = ['+x', '-x'])
         pb.pulser_pulse(name = 'P1', channel = 'MW', start = PULSE_2_START, length = PULSE_2_LENGTH, delta_start = str(round(float(STEP / 2), 1)) + ' ns', phase_list = ['+x', '+x'])
-        pb.pulser_pulse(name = 'P2', channel = 'TRIGGER', start = '0 ns', length = adc_wind, delta_start = str(STEP) + ' ns') #, phase_list = ['+x', '-x']
+        pb.pulser_pulse(name = 'P2', channel = 'TRIGGER', start = PULSE_SIGNAL_START, length = adc_wind, delta_start = str(STEP) + ' ns') #, phase_list = ['+x', '-x']
 
         pb.pulser_repetition_rate( REP_RATE )
         # read integration window

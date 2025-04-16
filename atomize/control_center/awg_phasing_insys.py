@@ -1575,11 +1575,11 @@ class Worker(QWidget):
         import atomize.general_modules.general_functions as general
         import atomize.device_modules.Insys_FPGA as pb_pro
         import atomize.math_modules.fft as fft_module
-        import atomize.device_modules.ITC_FC as itc
+        import atomize.device_modules.BH_15 as itc
 
         pb = pb_pro.Insys_FPGA()
         fft = fft_module.Fast_Fourier()
-        bh15 = itc.ITC_FC()
+        bh15 = itc.BH_15()
         bh15.magnet_setup( p15, 0.5 )
         bh15.magnet_field( p15 ) #, calibration = 'True' )
 

@@ -615,7 +615,7 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         A function to run an phasing for rect channel.
         """
-        self.process_t2.setArguments([os.path.join('..','atomize/control_center/t2_preset.py')])
+        self.process_t2.setArguments([os.path.join('..','atomize/control_center/t2_preset_insys.py')])
         self.process_t2.start()
 
     def start_rect_phasing(self):
@@ -772,6 +772,11 @@ class MainWindow(QtWidgets.QMainWindow):
         elif text_errors_script != '':
             self.test_flag = 1
             self.text_errors.appendPlainText(text_errors_script)
+            path_status_file = os.path.join(self.path_to_main, 'status')
+            file_to_read = open(path_status_file, 'w')
+            file_to_read.write('Status:  Off' + '\n')
+            file_to_read.close()
+
             #self.text_errors.verticalScrollBar().setValue(self.text_errors.verticalScrollBar().maximum())
 
     def on_finished_script(self):
