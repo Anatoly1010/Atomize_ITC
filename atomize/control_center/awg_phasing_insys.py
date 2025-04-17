@@ -650,14 +650,14 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.Rep_rate.setValue( float( lines[7].split(':  ')[1] ) )
         self.Field.setValue( float( lines[8].split(':  ')[1] ) )
-        self.Delay.setValue( float( lines[9].split(':  ')[1] ) )
+        #self.Delay.setValue( float( lines[9].split(':  ')[1] ) )
         self.Ampl_1.setValue( int( lines[10].split(':  ')[1] ) )
         self.Ampl_2.setValue( int( lines[11].split(':  ')[1] ) )
         self.Phase.setValue( float( lines[12].split(':  ')[1] ) )
         self.N_wurst.setValue( int( lines[13].split(':  ')[1] ) )
         self.B_sech.setValue( float( lines[14].split(':  ')[1] ) )
 
-        self.live_mode.setCheckState(Qt.CheckState.Unchecked)
+        #self.live_mode.setCheckState(Qt.CheckState.Unchecked)
         self.fft_box.setCheckState(Qt.CheckState.Unchecked)
         self.Quad_cor.setCheckState(Qt.CheckState.Unchecked)
         self.Win_left.setValue( round(float( lines[17].split(':  ')[1] ), 1) )
@@ -670,7 +670,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.Zero_order.setValue( float( lines[21].split(':  ')[1] ) )
             self.First_order.setValue( float( lines[22].split(':  ')[1] ) )
             self.Second_order.setValue( float( lines[23].split(':  ')[1] ) )
-            self.Combo_osc.setCurrentText( str( lines[24].split(':  ')[1] ) )
+            #self.Combo_osc.setCurrentText( str( lines[24].split(':  ')[1] ) )
         except IndexError:
             pass
 
@@ -692,9 +692,9 @@ class MainWindow(QtWidgets.QMainWindow):
             leng.setValue( float( array[2] ) )
             sig.setValue( float( array[3] ) )
         else:
-            st.setValue( int( array[1] ) )
-            leng.setValue( int( array[2] ) )
-            sig.setValue( int( array[3] ) )
+            st.setValue( float( array[1] ) )
+            leng.setValue( float( array[2] ) )
+            sig.setValue( float( array[3] ) )
 
         freq.setValue( int( array[4] ) )
         w_sweep.setValue( int( array[5] ) )
