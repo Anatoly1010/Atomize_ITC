@@ -1816,8 +1816,8 @@ class Worker(QWidget):
                     if p27 == 0:
                         freq_axis, abs_values = fft.fft(x_axis, data_x, data_y, t_res * 1)
                         m_val = round( np.amax( abs_values ), 2 )
-                        process = general.plot_1d('FFT', freq_axis, abs_values, xname = 'Offset', label = 'FFT', \
-                                                  xscale = 'MHz', yscale = 'A.U.', text = 'Max ' + str(m_val), pr = process)
+                        general.plot_1d('FFT', freq_axis, abs_values, xname = 'Offset', label = 'FFT', \
+                                                  xscale = 'MHz', yscale = 'A.U.', text = 'Max ' + str(m_val))
                     else:
                         if p31 > len( data_x ) - 0.4 * p1:
                             p31 = len( data_x ) - 0.8 * p1
@@ -1825,8 +1825,8 @@ class Worker(QWidget):
                         # fixed resolution of digitizer; 2 ns
                         freq, fft_x, fft_y = fft.fft( x_axis[p31:], data_x[p31:], data_y[p31:], t_res * 1, re = 'True' )
                         data_fft = fft.ph_correction( freq, fft_x, fft_y, p28, p29, p30 )
-                        process = general.plot_1d('FFT', freq, ( data_fft[0], data_fft[1] ), xname = 'Offset', xscale = 'MHz', \
-                                                   yscale = 'A.U.', label = 'FFT', pr = process)
+                        general.plot_1d('FFT', freq, ( data_fft[0], data_fft[1] ), xname = 'Offset', xscale = 'MHz', \
+                                                   yscale = 'A.U.', label = 'FFT')
 
             self.command = 'start'
             if PHASES != 1:

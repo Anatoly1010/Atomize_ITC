@@ -31,6 +31,11 @@ class MainWindow(QtWidgets.QMainWindow):
 
         uic.loadUi(gui_path, self)                        # Design file
 
+        #####
+        path_to_main2 = os.path.join(os.path.abspath(os.getcwd()), '..', 'libs') #'..',
+        os.chdir(path_to_main2)
+        #####
+
         self.design()
 
         """
@@ -75,9 +80,9 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Spinboxes        
         self.box_length.valueChanged.connect(self.pulse_length)
-        self.box_length.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); }")
-        self.cur_length = int( self.box_length.value() )
-        self.box_length.lineEdit().setReadOnly( True )
+        self.box_length.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); }")
+        self.cur_length = round(float( self.box_length.value() ), 1)
+        #self.box_length.lineEdit().setReadOnly( True )
 
         self.box_rep_rate.valueChanged.connect(self.rep_rate)
         self.box_rep_rate.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); }")
@@ -97,12 +102,27 @@ class MainWindow(QtWidgets.QMainWindow):
         
         self.box_scan.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); }")
         self.box_scan.valueChanged.connect(self.scan)
-        self.box_scan.lineEdit().setReadOnly( True )
+        #self.box_scan.lineEdit().setReadOnly( True )
         self.cur_scan = int( self.box_scan.value() )
         
         self.box_averag.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); }")
         self.box_averag.valueChanged.connect(self.averages)
         self.cur_averages = int( self.box_averag.value() )
+
+    def round_to_closest(self, x, y):
+        """
+        A function to round x to divisible by y
+        """
+        return round(( y * ( ( x // y ) + (round(x % y, 2) > 0) ) ), 1)
+
+    def round_and_change(self, doubleBox, y):
+        """
+        """
+        raw = doubleBox.value()
+        current = self.round_to_closest( raw, y )
+        if current != raw:
+            doubleBox.setValue( current )
+        return doubleBox.value()
 
     def _on_destroyed(self):
         """
@@ -132,7 +152,9 @@ class MainWindow(QtWidgets.QMainWindow):
         #print(self.cur_end_field)
 
     def pulse_length(self):
-        self.cur_length = int( self.box_length.value() )
+        #self.cur_length = int( self.box_length.value() )
+        self.cur_length = self.round_and_change(self.box_length, 3.2)
+
         #print(self.cur_start_field)
 
     def rep_rate(self):
@@ -255,13 +277,14 @@ class Worker(QWidget):
         import atomize.general_modules.general_functions as general
         import atomize.device_modules.Keysight_2000_Xseries as a2012
         import atomize.device_modules.Mikran_X_band_MW_bridge_v2 as mwBridge
-        ###import atomize.device_modules.Spectrum_M4I_4450_X8 as spectrum
-        import atomize.device_modules.PB_ESR_500_pro as pb_pro
+        import atomize.device_modules.Insys_FPGA as pb_pro
+        import atomize.general_modules.csv_opener_saver_tk_kinter as openfile
 
+
+        file_handler = openfile.Saver_Opener()
         a2012 = a2012.Keysight_2000_Xseries()
-        pb = pb_pro.PB_ESR_500_Pro()
+        pb = pb_pro.Insys_FPGA()
         mw = mwBridge.Mikran_X_band_MW_bridge_v2()
-        ###dig4450 = spectrum.Spectrum_M4I_4450_X8()
 
         ### Experimental parameters
         START_FREQ = p5
@@ -269,6 +292,7 @@ class Worker(QWidget):
         STEP = p9
         SCANS = p7
         AVERAGES = p10
+        PHASES = 2
         process = 'None'
 
         # PULSES
@@ -277,11 +301,19 @@ class Worker(QWidget):
         PULSE_1_START = '0 ns'
 
         # setting pulses:
-        pb.pulser_pulse(name ='P0', channel = 'TRIGGER', start = PULSE_1_START, length = PULSE_1_LENGTH)
-        pb.pulser_pulse(name ='P1', channel = 'MW', start = PULSE_1_START, length = PULSE_1_LENGTH)
+        pb.pulser_pulse(name ='P0', channel = 'TRIGGER', start = PULSE_1_START, length = '640 ns')
+        pb.pulser_pulse(name ='P1', channel = 'MW', start = PULSE_1_START, length = PULSE_1_LENGTH, phase_list = ['+x', '+x'])
+        pb.pulser_pulse(name ='P2', channel = 'LASER', start = PULSE_1_START, length = PULSE_1_LENGTH)
+
 
         pb.pulser_repetition_rate( REP_RATE )
-        pb.pulser_update()
+        pb.digitizer_number_of_averages(2)
+
+        pb.pulser_open()
+
+        for i in range( PHASES ):
+            pb.pulser_next_phase()
+            general.wait('200 ms')
 
         a2012.oscilloscope_acquisition_type('Average')
         a2012.oscilloscope_trigger_channel('Ext')
@@ -295,12 +327,7 @@ class Worker(QWidget):
         y = a2012.oscilloscope_get_curve('CH1')
         a2012.oscilloscope_stop()
 
-        #
-        ###dig4450.digitizer_read_settings()
-        ###dig4450.digitizer_number_of_averages(AVERAGES)
-        ###real_length = int (dig4450.digitizer_number_of_points( ) )
-
-        a2012.oscilloscope_record_length( 1000 )
+        a2012.oscilloscope_record_length( 2000 )
         real_length = a2012.oscilloscope_record_length( )
 
         points = int( (END_FREQ - START_FREQ) / STEP ) + 1
@@ -339,14 +366,12 @@ class Worker(QWidget):
                     a2012.oscilloscope_start_acquisition()
                     y = -a2012.oscilloscope_get_curve('CH2')
                     general.wait('300 ms')
-                    ###x, y, z = dig4450.digitizer_get_curve( )
-                    ##y = np.random.normal(3, 2.5, size = (real_length)) 
                     
                     data[i] = ( data[i] * (j - 1) + y ) / j
 
-                    process = general.plot_2d(p2, np.transpose( data ), start_step = ( (0, 1), (START_FREQ*1000000, STEP*1000000) ),\
-                                     xname = 'Time', xscale = 's', yname = 'Frequency', yscale = 'Hz', zname = 'Intensity', zscale = 'V', \
-                                     pr = process, text = 'Scan / Frequency: ' + str(j) + ' / ' + str(freq))
+                    general.plot_2d(p2, np.transpose( data ), start_step = ( (0, 1), (START_FREQ*1000000, STEP*1000000) ),\
+                                 xname = 'Time', xscale = 's', yname = 'Frequency', yscale = 'Hz', zname = 'Intensity', zscale = 'V', \
+                                 text = 'Scan / Frequency: ' + str(j) + ' / ' + str(freq))
                     
                     freq = round( (STEP + freq), 3 )
                     
@@ -374,9 +399,21 @@ class Worker(QWidget):
         if self.command == 'exit':
             general.message('Script finished')
             mw.mw_bridge_synthesizer( freq_before )
-            ###dig4450.digitizer_stop()
-            ###dig4450.digitizer_close()
-            pb.pulser_stop()
+            general.wait('300 ms')
+
+            pb.pulser_close()
+
+            # Data saving
+            header = 'Date: ' + str(datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")) + '\n' + \
+                     'Tune\n' + 'START FREQUENCY: ' + str(START_FREQ) + ' MHz\n' + \
+                     'END FREQUENCY: ' + str(END_FREQ) + ' MHz\n' + \
+                     'STEP: ' + str(STEP) + ' MHz\n' + '2D Data:'
+
+            file_data, file_param = file_handler.create_file_parameters('.param')
+            file_handler.save_header(file_param, header = header, mode = 'w')
+
+            file_handler.save_data(file_data, np.transpose( data ), header = header, mode = 'w')
+
 
 def main():
     """

@@ -493,7 +493,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.Rep_rate.setValue( float( lines[7].split(':  ')[1] ) )
         self.Field.setValue( float( lines[8].split(':  ')[1] ) )
 
-        self.live_mode.setCheckState(Qt.CheckState.Unchecked)
+        #self.live_mode.setCheckState(Qt.CheckState.Unchecked)
         self.fft_box.setCheckState(Qt.CheckState.Unchecked)
         self.Quad_cor.setCheckState(Qt.CheckState.Unchecked)
         self.Win_left.setValue( round(float( lines[11].split(':  ')[1] ), 1) )
@@ -514,8 +514,8 @@ class MainWindow(QtWidgets.QMainWindow):
         array = text.split('\n')[index].split(':  ')[1].split(',  ')
 
         typ.setCurrentText( array[0] )
-        st.setValue( int( array[1] ) )
-        leng.setValue( int( array[2] ) )
+        st.setValue( float( array[1] ) )
+        leng.setValue( float( array[2] ) )
         phase.setPlainText( str( array[3] ) )
 
     def save_file(self, filename):
@@ -1326,14 +1326,14 @@ class Worker(QWidget):
                 else:
                     # acquisition cycle
                     general.plot_1d('Dig', x_axis, ( data_x, data_y ), \
-                            xscale = 'ns', yscale = 'mV', label = 'ch', vline = (p4 * t_res, p5 * t_res), text = 'I/Q ' + str(int_x) + '/' + str(int_y))
+                            xscale = 'ns', yscale = 'mV', label = 'ch', vline = (p4 * t_res, p5 * t_res))
 
                     if p17 == 0:
                         freq_axis, abs_values = fft.fft(x_axis, data_x, data_y, t_res * 1)
                         m_val = round( np.amax( abs_values ), 2 )
                         i_max = abs(round( freq_axis[ np.argmax( abs_values ) ], 2))
-                        process = general.plot_1d('FFT', freq_axis, abs_values, xname = 'Offset', label = 'FFT', xscale = 'MHz', \
-                                                  yscale = 'A.U.', text = 'Max ' + str(i_max), pr = process) #str(m_val)
+                        general.plot_1d('FFT', freq_axis, abs_values, xname = 'Offset', label = 'FFT', xscale = 'MHz', \
+                                                  yscale = 'A.U.', text = 'Max ' + str(m_val)) #str(m_val)
                     else:
                         if p21 > len( data_x ) - 0.4 * p1:
                             p21 = len( data_x ) - 0.8 * p1
@@ -1341,8 +1341,8 @@ class Worker(QWidget):
                         # fixed resolution of digitizer; 0.4 ns
                         freq, fft_x, fft_y = fft.fft( x_axis[p21:], data_x[p21:], data_y[p21:], t_res * 1, re = 'True' )
                         data_fft = fft.ph_correction( freq, fft_x, fft_y, p18, p19, p20 )
-                        process = general.plot_1d('FFT', freq, ( data_fft[0], data_fft[1] ), xname = 'Offset', xscale = 'MHz', \
-                                                  yscale = 'A.U.', label = 'FFT', pr = process)
+                        general.plot_1d('FFT', freq, ( data_fft[0], data_fft[1] ), xname = 'Offset', xscale = 'MHz', \
+                                                  yscale = 'A.U.', label = 'FFT')
 
             self.command = 'start'
             

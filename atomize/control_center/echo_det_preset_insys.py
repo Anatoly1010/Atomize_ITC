@@ -32,7 +32,7 @@ class MainWindow(QtWidgets.QMainWindow):
         uic.loadUi(gui_path, self)                        # Design file
 
         #####
-        path_to_main2 = os.path.join(os.path.abspath(os.getcwd()), '..', '..', 'libs')
+        path_to_main2 = os.path.join(os.path.abspath(os.getcwd()), '..', 'libs') #'..', 
         os.chdir(path_to_main2)
         #####
 
@@ -295,7 +295,7 @@ class Worker(QWidget):
         import atomize.general_modules.general_functions as general
         import atomize.device_modules.Insys_FPGA as pb_pro
         import atomize.device_modules.Mikran_X_band_MW_bridge_v2 as mwBridge
-        import atomize.device_modules.ITC_FC as itc
+        import atomize.device_modules.BH_15 as itc
         import atomize.device_modules.Lakeshore_335 as ls
         import atomize.general_modules.csv_opener_saver_tk_kinter as openfile
 
@@ -303,7 +303,7 @@ class Worker(QWidget):
         ls335 = ls.Lakeshore_335()
         mw = mwBridge.Mikran_X_band_MW_bridge_v2()
         pb = pb_pro.Insys_FPGA()
-        bh15 = itc.ITC_FC()
+        bh15 = itc.BH_15()
 
         ### Experimental parameters
         START_FIELD = p5
@@ -328,8 +328,10 @@ class Worker(QWidget):
         x_axis = np.linspace(START_FIELD, END_FIELD, num = POINTS)
         ###
 
-        bh15.magnet_field(START_FIELD, calibration = 'True')
+        bh15.magnet_setup( START_FIELD, 0.5 )
+        bh15.magnet_field(START_FIELD) #, calibration = 'True')
         general.wait('4000 ms')
+
 
         adc_wind = pb.digitizer_read_settings()
 
@@ -367,7 +369,7 @@ class Worker(QWidget):
                                 xscale = 'G', yname = 'Area', yscale = 'A.U.', label = p1, \
                                 text = 'Scan / Field: ' + str(j) + ' / ' + str(field))
 
-                    bh15.magnet_field(field, calibration = 'True')
+                    bh15.magnet_field(field)#, calibration = 'True')
                     
                     field = round( (FIELD_STEP + field), 3 )
                     
@@ -381,9 +383,11 @@ class Worker(QWidget):
                     if conn.poll() == True:
                         self.command = conn.recv()
 
-                    pb.pulser_pulse_reset()
+                    pb.pulser_shift()
 
-                bh15.magnet_field(START_FIELD, calibration = 'True')
+                pb.pulser_pulse_reset()
+
+                bh15.magnet_field(START_FIELD)#, calibration = 'True')
                 general.wait('4000 ms')
 
                 j += 1
@@ -402,7 +406,7 @@ class Worker(QWidget):
                         'Field Step: ' + str(FIELD_STEP) + ' G \n' + str(mw.mw_bridge_att_prm()) + '\n' + str(mw.mw_bridge_att2_prm()) + '\n' +\
                         str(mw.mw_bridge_att1_prd()) + '\n' + str(mw.mw_bridge_synthesizer()) + '\n' + \
                        'Repetition Rate: ' + str(pb.pulser_repetition_rate()) + '\n' + 'Number of Scans: ' + str(SCANS) + '\n' +\
-                       'Averages: ' + str(AVERAGES) + '\n' + 'Points: ' + str(points) + '\n' + 'Window: ' + str(tb) + ' ns\n' + \
+                       'Averages: ' + str(AVERAGES) + '\n' + 'Window: ' + str(tb) + ' ns\n' + \
                        'Temperature: ' + str(ls335.tc_temperature('B')) + ' K\n' +\
                        'Pulse List: ' + '\n' + str(pb.pulser_pulse_list()) + 'Field (G), I (A.U.), Q (A.U.) '
 
