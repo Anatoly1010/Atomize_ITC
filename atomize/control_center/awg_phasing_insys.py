@@ -1365,7 +1365,7 @@ class MainWindow(QtWidgets.QMainWindow):
         ############# DO NOT WORK:
         self.errors.appendPlainText( self.pb.awg_pulse_list() )
         #############
-
+        
         for i in range( len( self.ph_1 ) ):
             self.pb.awg_next_phase()
             self.pb.pulser_update()
