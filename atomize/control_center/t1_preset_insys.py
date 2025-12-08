@@ -32,7 +32,7 @@ class MainWindow(QtWidgets.QMainWindow):
         uic.loadUi(gui_path, self)                        # Design file
 
         #####
-        path_to_main2 = os.path.join(os.path.abspath(os.getcwd()), '..', '..', 'libs')
+        path_to_main2 = os.path.join(os.path.abspath(os.getcwd()), '..', 'libs')
         os.chdir(path_to_main2)
         #####
 
@@ -358,7 +358,7 @@ class Worker(QWidget):
         pb.pulser_pulse(name = 'P0', channel = 'MW', start = PULSE_1_START, length = PULSE_1_LENGTH, phase_list = ['+x', '-x', '+x', '-x'])
         pb.pulser_pulse(name = 'P1', channel = 'MW', start = PULSE_2_START, length = PULSE_2_LENGTH, delta_start = str(STEP) + ' ns', phase_list = ['+x', '+x','-x', '-x'])
         pb.pulser_pulse(name = 'P2', channel = 'MW', start = PULSE_3_START, length = PULSE_3_LENGTH, delta_start = str(STEP) + ' ns', phase_list = ['+x', '+x', '+x', '+x'])
-        pb.pulser_pulse(name = 'P3', channel = 'TRIGGER', start = PULSE_SIGNAL_START, length = adc_wind, delta_start = str(STEP) + ' ns') #, phase_list = ['+x', '+x', '-x', '-x']
+        pb.pulser_pulse(name = 'P3', channel = 'DETECTION', start = PULSE_SIGNAL_START, length = adc_wind, delta_start = str(STEP) + ' ns', phase_list = ['+x', '+x', '-x', '-x'])
 
         pb.pulser_repetition_rate( REP_RATE )
         # read integration window
@@ -384,7 +384,7 @@ class Worker(QWidget):
                     for k in range(PHASES):
 
                         pb.pulser_next_phase()
-                        data[0], data[1] = pb.digitizer_get_curve( POINTS, PHASES, acq_cycle = ['+x', '+x', '-x', '-x'], integral = True )
+                        data[0], data[1] = pb.digitizer_get_curve( POINTS, PHASES, integral = True )
                         general.plot_1d(p2, x_axis, ( data[0], data[1] ), xname = 'T',\
                                 xscale = 'ns', yname = 'Area', yscale = 'A.U.', label = p1, \
                                 text = 'Scan / Time: ' + str(j) + ' / ' + str(round(i*STEP, 1)))

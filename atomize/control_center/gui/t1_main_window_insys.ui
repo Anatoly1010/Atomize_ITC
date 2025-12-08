@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>360</width>
-    <height>495</height>
+    <height>500</height>
    </rect>
   </property>
   <property name="sizePolicy">
@@ -19,13 +19,13 @@
   <property name="minimumSize">
    <size>
     <width>360</width>
-    <height>495</height>
+    <height>500</height>
    </size>
   </property>
   <property name="maximumSize">
    <size>
     <width>360</width>
-    <height>495</height>
+    <height>515</height>
    </size>
   </property>
   <property name="font">
@@ -50,13 +50,13 @@
    <property name="minimumSize">
     <size>
      <width>360</width>
-     <height>495</height>
+     <height>500</height>
     </size>
    </property>
    <property name="maximumSize">
     <size>
      <width>360</width>
-     <height>495</height>
+     <height>500</height>
     </size>
    </property>
    <layout class="QGridLayout" name="gridLayout_2">

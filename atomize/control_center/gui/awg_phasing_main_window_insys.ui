@@ -437,7 +437,7 @@
         </item>
         <item>
          <property name="text">
-          <string>TRIGGER</string>
+          <string>DETECTION</string>
          </property>
         </item>
        </widget>
@@ -523,7 +523,7 @@
         </item>
         <item>
          <property name="text">
-          <string>TRIGGER</string>
+          <string>DETECTION</string>
          </property>
         </item>
        </widget>
@@ -763,7 +763,7 @@
         </item>
         <item>
          <property name="text">
-          <string>TRIGGER</string>
+          <string>DETECTION</string>
          </property>
         </item>
        </widget>
@@ -1114,7 +1114,7 @@
         </item>
         <item>
          <property name="text">
-          <string>TRIGGER</string>
+          <string>DETECTION</string>
          </property>
         </item>
        </widget>
@@ -1623,7 +1623,7 @@
         </item>
         <item>
          <property name="text">
-          <string>TRIGGER</string>
+          <string>DETECTION</string>
          </property>
         </item>
        </widget>
@@ -1751,7 +1751,7 @@
         </property>
         <item>
          <property name="text">
-          <string>TRIGGER</string>
+          <string>DETECTION</string>
          </property>
         </item>
        </widget>
@@ -2472,7 +2472,7 @@
         </item>
         <item>
          <property name="text">
-          <string>TRIGGER</string>
+          <string>DETECTION</string>
          </property>
         </item>
        </widget>

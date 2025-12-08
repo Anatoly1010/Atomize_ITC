@@ -190,7 +190,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.p7_typ = str( self.P7_type.currentText() )
 
         self.laser_flag = 0
-        self.laser_q_switch_delay = 141000 # in ns
+        self.laser_q_switch_delay = 141008 # in ns
 
         self.Phase_1.textChanged.connect(self.phase_1)
         self.ph_1 = self.Phase_1.toPlainText()[1:(len(self.Phase_1.toPlainText())-1)].split(',')
@@ -280,10 +280,10 @@ class MainWindow(QtWidgets.QMainWindow):
         txt = str( self.Combo_laser.currentText() )
         if txt == 'Nd:YaG':
             self.combo_laser_num = 1
-            self.laser_q_switch_delay = 141000
+            self.laser_q_switch_delay = 141008
         elif txt == 'NovoFEL':
             self.combo_laser_num = 2
-            self.laser_q_switch_delay = 22000
+            self.laser_q_switch_delay = 3.2
 
     def quad_online(self):
         """
@@ -885,9 +885,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self.pb.pulser_repetition_rate( self.repetition_rate )
             
             if int(float( self.p1_length.split(' ')[0] )) != 0:
-                self.pb.pulser_pulse( name = 'P0', channel = self.p1_typ, start = self.p1_start, length = self.p1_length)
-                # 2022-10-05
-                #, \phase_list = self.ph_1
+                self.pb.pulser_pulse( name = 'P0', channel = self.p1_typ, start = self.p1_start, length = self.p1_length, \
+                                        phase_list = self.ph_1)
             if int(float( self.p2_length.split(' ')[0] )) != 0:
                 self.pb.pulser_pulse( name = 'P1', channel = self.p2_typ, start = self.p2_start, length = self.p2_length, \
                                         phase_list = self.ph_2 )
@@ -915,40 +914,39 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.pb.pulser_repetition_rate( self.repetition_rate )
 
             # add q_switch_delay
-            self.p1_start_sh = self.add_ns( int( self.remove_ns( self.p1_start ) ) + self.laser_q_switch_delay )
-            self.p3_start_sh = self.add_ns( int( self.remove_ns( self.p3_start ) ) + self.laser_q_switch_delay )
-            self.p4_start_sh = self.add_ns( int( self.remove_ns( self.p4_start ) ) + self.laser_q_switch_delay )
-            self.p5_start_sh = self.add_ns( int( self.remove_ns( self.p5_start ) ) + self.laser_q_switch_delay )
-            self.p6_start_sh = self.add_ns( int( self.remove_ns( self.p6_start ) ) + self.laser_q_switch_delay )
-            self.p7_start_sh = self.add_ns( int( self.remove_ns( self.p7_start ) ) + self.laser_q_switch_delay )
+            self.p1_start_sh = self.add_ns( self.round_to_closest( float(self.remove_ns( self.p1_start )) + self.laser_q_switch_delay, 3.2) )
+            self.p3_start_sh = self.add_ns( self.round_to_closest( float(self.remove_ns( self.p3_start )) + self.laser_q_switch_delay, 3.2)  )
+            self.p4_start_sh = self.add_ns( self.round_to_closest( float(self.remove_ns( self.p4_start )) + self.laser_q_switch_delay, 3.2)  )
+            self.p5_start_sh = self.add_ns( self.round_to_closest( float(self.remove_ns( self.p5_start )) + self.laser_q_switch_delay, 3.2)  )
+            self.p6_start_sh = self.add_ns( self.round_to_closest( float(self.remove_ns( self.p6_start )) + self.laser_q_switch_delay, 3.2)  )
+            self.p7_start_sh = self.add_ns( self.round_to_closest( float(self.remove_ns( self.p7_start )) + self.laser_q_switch_delay, 3.2)  )
 
-            if int( self.p1_length.split(' ')[0] ) != 0:
-                self.pb.pulser_pulse( name = 'P0', channel = self.p1_typ, start = self.p1_start_sh, length = self.p1_length)
-                # 2022-10-05
-                #, \phase_list = self.ph_1
-            if int( self.p2_length.split(' ')[0] ) != 0:
+            if int(float( self.p1_length.split(' ')[0] )) != 0:
+                self.pb.pulser_pulse( name = 'P0', channel = self.p1_typ, start = self.p1_start_sh, length = self.p1_length, \
+                                        phase_list = self.ph_1)
+            if int(float( self.p2_length.split(' ')[0] )) != 0:
                 self.pb.pulser_pulse( name = 'P1', channel = self.p2_typ, start = self.p2_start, length = self.p2_length, \
                                         phase_list = self.ph_2 )
-            if int( self.p3_length.split(' ')[0] ) != 0:
+            if int(float( self.p3_length.split(' ')[0] )) != 0:
                 self.pb.pulser_pulse( name = 'P2', channel = self.p3_typ, start = self.p3_start_sh, length = self.p3_length, \
                                         phase_list = self.ph_3 )
-            if int( self.p4_length.split(' ')[0] ) != 0:
+            if int(float( self.p4_length.split(' ')[0] )) != 0:
                 self.pb.pulser_pulse( name = 'P3', channel = self.p4_typ, start = self.p4_start_sh, length = self.p4_length, \
                                         phase_list = self.ph_4 )
-            if int( self.p5_length.split(' ')[0] ) != 0:
+            if int(float( self.p5_length.split(' ')[0] )) != 0:
                 self.pb.pulser_pulse( name = 'P4', channel = self.p5_typ, start = self.p5_start_sh, length = self.p5_length, \
                                         phase_list = self.ph_5 )
-            if int( self.p6_length.split(' ')[0] ) != 0:
+            if int(float( self.p6_length.split(' ')[0] )) != 0:
                 self.pb.pulser_pulse( name = 'P5', channel = self.p6_typ, start = self.p6_start_sh, length = self.p6_length, \
                                         phase_list = self.ph_6 )
-            if int( self.p7_length.split(' ')[0] ) != 0:
+            if int(float( self.p7_length.split(' ')[0] )) != 0:
                 self.pb.pulser_pulse( name = 'P6', channel = self.p7_typ, start = self.p7_start_sh, length = self.p7_length, \
                                         phase_list = self.ph_7 )
 
             if self.combo_laser_num == 1:
-                self.errors.appendPlainText( str(self.laser_q_switch_delay / 1000) + ' us is added to all the pulses except the LASER pulse' )
+                self.errors.appendPlainText( str(self.laser_q_switch_delay ) + ' ns is added to all the pulses except the LASER pulse' )
             elif self.combo_laser_num == 2:
-                self.errors.appendPlainText( str(self.laser_q_switch_delay / 1000) + ' us is added to all the pulses except the LASER pulse' )
+                self.errors.appendPlainText( str(self.laser_q_switch_delay ) + ' ns is added to all the pulses except the LASER pulse' )
 
         self.errors.appendPlainText( self.pb.pulser_pulse_list() )
 
@@ -1090,7 +1088,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.digitizer_process = Process( target = self.worker.dig_on, args = ( self.child_conn_dig, self.decimation, self.l_mode, self.number_averages, \
                                             self.cur_win_left, self.cur_win_right, p1_list, p2_list, p3_list, p4_list, p5_list, p6_list, p7_list, \
                                             self.laser_flag, self.repetition_rate.split(' ')[0], self.mag_field, self.fft, self.quad, self.zero_order, self.first_order, \
-                                            self.second_order, self.p_to_drop, self.combo_laser_num, ) )
+                                            self.second_order, self.p_to_drop, self.combo_laser_num, self.laser_q_switch_delay, ) )
                
         self.digitizer_process.start()
         # send a command in a different thread about the current state
@@ -1135,7 +1133,7 @@ class Worker(QWidget):
 
         self.command = 'start'
     
-    def dig_on(self, conn, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11, p12, p13, p14, p15, p16, p17, p18, p19, p20, p21, p22):
+    def dig_on(self, conn, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11, p12, p13, p14, p15, p16, p17, p18, p19, p20, p21, p22, p23):
         """
         function that contains updating of the digitizer
         """
@@ -1170,7 +1168,7 @@ class Worker(QWidget):
             pb.pulser_repetition_rate( str(p14) + ' Hz' )
             
             if int(float( p6[2].split(' ')[0] )) != 0:
-                pb.pulser_pulse( name = 'P0', channel = p6[0], start = p6[1], length = p6[2] ) #, phase_list = p6[3]
+                pb.pulser_pulse( name = 'P0', channel = p6[0], start = p6[1], length = p6[2], phase_list = p6[3] )
             if int(float( p7[2].split(' ')[0] )) != 0:
                 pb.pulser_pulse( name = 'P1', channel = p7[0], start = p7[1], length = p7[2], phase_list = p7[3] )
             if int(float( p8[2].split(' ')[0] )) != 0:
@@ -1192,20 +1190,20 @@ class Worker(QWidget):
 
             if p22 == 1:
                 # add q_switch_delay 141000 ns
-                q_delay = 0
+                q_delay = p23
             elif p22 == 2 :
-                q_delay = 0
+                q_delay = p23
 
-            p6[1] = str( int( p6[1].split(' ')[0] ) + q_delay ) + ' ns'
+            p6[1] = str( self.round_to_closest( float(p6[1].split(' ')[0]) + q_delay, 3.2) ) + ' ns'
             # p7 is a laser pulser
-            p8[1] = str( int( p8[1].split(' ')[0] ) + q_delay ) + ' ns'
-            p9[1] = str( int( p9[1].split(' ')[0] ) + q_delay ) + ' ns'
-            p10[1] = str( int( p10[1].split(' ')[0] ) + q_delay ) + ' ns'
-            p11[1] = str( int( p11[1].split(' ')[0] ) + q_delay ) + ' ns'
-            p12[1] = str( int( p12[1].split(' ')[0] ) + q_delay ) + ' ns'
+            p8[1] = str( self.round_to_closest( float(p8[1].split(' ')[0]) + q_delay, 3.2) ) + ' ns'
+            p9[1] = str( self.round_to_closest( float(p9[1].split(' ')[0]) + q_delay, 3.2) ) + ' ns'
+            p10[1] = str( self.round_to_closest( float(p10[1].split(' ')[0]) + q_delay, 3.2) ) + ' ns'
+            p11[1] = str( self.round_to_closest( float(p11[1].split(' ')[0]) + q_delay, 3.2) ) + ' ns'
+            p12[1] = str( self.round_to_closest( float(p12[1].split(' ')[0]) + q_delay, 3.2) ) + ' ns'
 
             if int(float( p6[2].split(' ')[0] )) != 0:
-                pb.pulser_pulse( name = 'P0', channel = p6[0], start = p6[1], length = p6[2] ) #, phase_list = p6[3]
+                pb.pulser_pulse( name = 'P0', channel = p6[0], start = p6[1], length = p6[2], phase_list = p6[3] )
             if int(float( p7[2].split(' ')[0] )) != 0:
                 # p7 is a laser pulser
                 pb.pulser_pulse( name = 'P1', channel = p7[0], start = p7[1], length = p7[2] ) #, phase_list = p7[3]
@@ -1306,9 +1304,9 @@ class Worker(QWidget):
             for i in range( PHASES ):
                 pb.pulser_next_phase()
                 if p2 == 0:
-                    data[0], data[1] = pb.digitizer_get_curve(POINTS, PHASES, acq_cycle = p6[3], live_mode = 1)
+                    data[0], data[1] = pb.digitizer_get_curve(POINTS, PHASES, live_mode = 1)
                 elif p2 == 1:
-                    data[0], data[1] = pb.digitizer_get_curve(POINTS, PHASES, acq_cycle = p6[3], live_mode = 0)
+                    data[0], data[1] = pb.digitizer_get_curve(POINTS, PHASES, live_mode = 0)
                 ##general.wait('100 ms')
                 ##data = np.random.random( ( 2, WIN_ADC, 1 ) )
 
@@ -1360,6 +1358,12 @@ class Worker(QWidget):
         if self.command == 'exit':
             #print('exit')
             pb.pulser_close()
+
+    def round_to_closest(self, x, y):
+        """
+        A function to round x to divisible by y
+        """
+        return round(( y * ( ( x // y ) + (round(x % y, 2) > 0) ) ), 1)
 
 def main():
     """

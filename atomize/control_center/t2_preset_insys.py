@@ -343,7 +343,7 @@ class Worker(QWidget):
         # Setting pulses
         pb.pulser_pulse(name = 'P0', channel = 'MW', start = PULSE_1_START, length = PULSE_1_LENGTH, phase_list = ['+x', '-x'])
         pb.pulser_pulse(name = 'P1', channel = 'MW', start = PULSE_2_START, length = PULSE_2_LENGTH, delta_start = str(round(float(STEP / 2), 1)) + ' ns', phase_list = ['+x', '+x'])
-        pb.pulser_pulse(name = 'P2', channel = 'TRIGGER', start = PULSE_SIGNAL_START, length = adc_wind, delta_start = str(STEP) + ' ns') #, phase_list = ['+x', '-x']
+        pb.pulser_pulse(name = 'P2', channel = 'DETECTION', start = PULSE_SIGNAL_START, length = adc_wind, delta_start = str(STEP) + ' ns', phase_list = ['+x', '-x'])
 
         pb.pulser_repetition_rate( REP_RATE )
         # read integration window
@@ -369,7 +369,7 @@ class Worker(QWidget):
                     for k in range(PHASES):
 
                         pb.pulser_next_phase()
-                        data[0], data[1] = pb.digitizer_get_curve( POINTS, PHASES, acq_cycle = ['+x', '-x'], integral = True )
+                        data[0], data[1] = pb.digitizer_get_curve( POINTS, PHASES, integral = True )
                         ##general.wait('100 ms')
                         ##data = np.random.random( ( 2, POINTS ) )
                         general.plot_1d(p2, x_axis, ( data[0], data[1] ), xname = '2*Tau',\

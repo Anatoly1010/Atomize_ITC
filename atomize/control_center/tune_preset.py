@@ -80,32 +80,32 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Spinboxes        
         self.box_length.valueChanged.connect(self.pulse_length)
-        self.box_length.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); }")
+        self.box_length.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
         self.cur_length = round(float( self.box_length.value() ), 1)
         #self.box_length.lineEdit().setReadOnly( True )
 
         self.box_rep_rate.valueChanged.connect(self.rep_rate)
-        self.box_rep_rate.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); }")
+        self.box_rep_rate.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
         self.cur_rep_rate = int( self.box_rep_rate.value() )
         
         self.box_st_freq.valueChanged.connect(self.start_freq)
-        self.box_st_freq.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); }")
+        self.box_st_freq.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
         self.cur_st_freq = int( self.box_st_freq.value() )
 
         self.box_end_freq.valueChanged.connect(self.end_freq)
-        self.box_end_freq.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); }")
+        self.box_end_freq.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
         self.cur_end_freq = int( self.box_end_freq.value() )
 
         self.box_step_freq.valueChanged.connect(self.step_freq)
-        self.box_step_freq.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); }")
+        self.box_step_freq.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
         self.cur_step_freq = int( self.box_step_freq.value() )
         
-        self.box_scan.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); }")
+        self.box_scan.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
         self.box_scan.valueChanged.connect(self.scan)
         #self.box_scan.lineEdit().setReadOnly( True )
         self.cur_scan = int( self.box_scan.value() )
         
-        self.box_averag.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); }")
+        self.box_averag.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
         self.box_averag.valueChanged.connect(self.averages)
         self.cur_averages = int( self.box_averag.value() )
 
@@ -301,7 +301,7 @@ class Worker(QWidget):
         PULSE_1_START = '0 ns'
 
         # setting pulses:
-        pb.pulser_pulse(name ='P0', channel = 'TRIGGER', start = PULSE_1_START, length = '640 ns')
+        pb.pulser_pulse(name ='P0', channel = 'TRIGGER', start = PULSE_1_START, length = '640 ns', phase_list = ['+x', '+x'])
         pb.pulser_pulse(name ='P1', channel = 'MW', start = PULSE_1_START, length = PULSE_1_LENGTH, phase_list = ['+x', '+x'])
         pb.pulser_pulse(name ='P2', channel = 'LASER', start = PULSE_1_START, length = PULSE_1_LENGTH)
 
@@ -326,7 +326,8 @@ class Worker(QWidget):
 
         y = a2012.oscilloscope_get_curve('CH1')
         a2012.oscilloscope_stop()
-
+        a2012.oscilloscope_number_of_averages(AVERAGES)
+        
         a2012.oscilloscope_record_length( 2000 )
         real_length = a2012.oscilloscope_record_length( )
 

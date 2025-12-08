@@ -337,7 +337,7 @@ class Worker(QWidget):
 
         pb.pulser_pulse(name ='P0', channel = 'MW', start = PULSE_1_START, length = PULSE_1_LENGTH, phase_list = ['+x', '-x'])
         pb.pulser_pulse(name ='P1', channel = 'MW', start = PULSE_2_START, length = PULSE_2_LENGTH, phase_list = ['+x', '+x'])
-        pb.pulser_pulse(name ='P2', channel = 'TRIGGER', start = PULSE_SIGNAL_START, length = adc_wind) #, phase_list = ['+x', '-x']
+        pb.pulser_pulse(name ='P2', channel = 'DETECTION', start = PULSE_SIGNAL_START, length = adc_wind, phase_list = ['+x', '-x'])
 
         pb.pulser_repetition_rate( REP_RATE )
         # read integration window
@@ -364,7 +364,7 @@ class Worker(QWidget):
                     # phase cycle
                     for i in range(PHASES):
                         pb.pulser_next_phase()
-                        data[0], data[1] = pb.digitizer_get_curve( POINTS, PHASES, acq_cycle = ['+x', '-x'], integral = True )
+                        data[0], data[1] = pb.digitizer_get_curve( POINTS, PHASES, integral = True )
                         general.plot_1d(p2, x_axis, ( data[0], data[1] ), xname = 'Field',\
                                 xscale = 'G', yname = 'Area', yscale = 'A.U.', label = p1, \
                                 text = 'Scan / Field: ' + str(j) + ' / ' + str(field))

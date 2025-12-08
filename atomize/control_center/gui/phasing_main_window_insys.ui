@@ -198,7 +198,7 @@
         </item>
         <item>
          <property name="text">
-          <string>TRIGGER</string>
+          <string>DETECTION</string>
          </property>
         </item>
        </widget>
@@ -329,7 +329,7 @@
         </item>
         <item>
          <property name="text">
-          <string>TRIGGER</string>
+          <string>DETECTION</string>
          </property>
         </item>
        </widget>
@@ -442,14 +442,14 @@
          <enum>Qt::NoContextMenu</enum>
         </property>
         <property name="currentText">
-         <string>TRIGGER</string>
+         <string>DETECTION</string>
         </property>
         <property name="currentIndex">
          <number>0</number>
         </property>
         <item>
          <property name="text">
-          <string>TRIGGER</string>
+          <string>DETECTION</string>
          </property>
         </item>
        </widget>
@@ -539,7 +539,7 @@
         </item>
         <item>
          <property name="text">
-          <string>TRIGGER</string>
+          <string>DETECTION</string>
          </property>
         </item>
        </widget>
@@ -585,7 +585,7 @@
         </item>
         <item>
          <property name="text">
-          <string>TRIGGER</string>
+          <string>DETECTION</string>
          </property>
         </item>
        </widget>
@@ -624,7 +624,7 @@
         </item>
         <item>
          <property name="text">
-          <string>TRIGGER</string>
+          <string>DETECTION</string>
          </property>
         </item>
        </widget>
@@ -705,7 +705,7 @@
         </item>
         <item>
          <property name="text">
-          <string>TRIGGER</string>
+          <string>DETECTION</string>
          </property>
         </item>
        </widget>

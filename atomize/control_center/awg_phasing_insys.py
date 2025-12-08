@@ -1283,7 +1283,7 @@ class MainWindow(QtWidgets.QMainWindow):
         #self.pb.pulser_pulse(name = 'P0', channel = 'TRIGGER_AWG', start = '0 ns', length = '30 ns')
 
         if int(float( self.p1_length.split(' ')[0] )) != 0:
-            self.pb.pulser_pulse(name = 'P1', channel = self.p1_typ, start = self.p1_start, length = self.p1_length ) #, phase_list = self.ph_1
+            self.pb.pulser_pulse(name = 'P1', channel = self.p1_typ, start = self.p1_start, length = self.p1_length, phase_list = self.ph_1 )
 
         if int(float( self.p2_length.split(' ')[0] )) != 0:
             # self.p2_length ROUND TO CLOSEST 2
@@ -1634,7 +1634,7 @@ class Worker(QWidget):
         #pb.pulser_pulse(name = 'P0', channel = 'TRIGGER_AWG', start = '0 ns', length = '30 ns')
 
         if int(float( p6[2].split(' ')[0] )) != 0:
-            pb.pulser_pulse(name = 'P1', channel = p6[0], start = p6[1], length = p6[2]) #, phase_list = p6[3] 
+            pb.pulser_pulse(name = 'P1', channel = p6[0], start = p6[1], length = p6[2], phase_list = p6[3])
         
         if int(float( p7[1].split(' ')[0] )) != 0:
             if p21[0] != 'WURST' and p21[0] != 'SECH/TANH':
@@ -1795,9 +1795,9 @@ class Worker(QWidget):
                 pb.pulser_update()
                 
                 if p2 == 0:
-                    data[0], data[1] = pb.digitizer_get_curve(POINTS, PHASES, acq_cycle = p6[3], live_mode = 1)
+                    data[0], data[1] = pb.digitizer_get_curve(POINTS, PHASES, live_mode = 1)
                 elif p2 == 1:
-                    data[0], data[1] = pb.digitizer_get_curve(POINTS, PHASES, acq_cycle = p6[3], live_mode = 0)
+                    data[0], data[1] = pb.digitizer_get_curve(POINTS, PHASES, live_mode = 0)
                 ##general.wait('100 ms')
                 ##data = np.random.random( ( 2, WIN_ADC, 1 ) )
 

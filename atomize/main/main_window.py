@@ -594,7 +594,7 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         A function to run an phasing for rect channel.
         """
-        self.process_eseem.setArguments([os.path.join('..','atomize/control_center/eseem_preset.py')])
+        self.process_eseem.setArguments([os.path.join('..','atomize/control_center/eseem_preset_insys.py')])
         self.process_eseem.start()
 
     def start_ed_preset(self):
@@ -608,7 +608,7 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         A function to run an phasing for rect channel.
         """
-        self.process_t1.setArguments([os.path.join('..','atomize/control_center/t1_preset.py')])
+        self.process_t1.setArguments([os.path.join('..','atomize/control_center/t1_preset_insys.py')])
         self.process_t1.start()
 
     def start_t2_preset(self):
