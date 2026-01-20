@@ -261,7 +261,7 @@ p, li { white-space: pre-wrap; }
          <number>1</number>
         </property>
         <property name="maximum">
-         <double>9000.000000000000000</double>
+         <double>15000.000000000000000</double>
         </property>
         <property name="singleStep">
          <double>1.000000000000000</double>

@@ -6,15 +6,13 @@ import sys
 import gc
 import random
 ###AWG
-#sys.path.append('/home/pulseepr/Sources/AWG/Examples/python')
-###sys.path.append('/home/anatoly/AWG/spcm_examples/python')
-#sys.path.append('/home/anatoly/awg_files/python')
+sys.path.append('/home/pulseepr/Sources/AWG/Examples/python')
 #sys.path.append('C:/Users/User/Desktop/Examples/python')
-sys.path.append('/home/fel/sources/AWG/Examples/python')
 from math import sin, pi, exp, log2
 from itertools import groupby, chain
 from copy import deepcopy
 import numpy as np
+import atomize.main.local_config as lconf
 import atomize.device_modules.config.config_utils as cutil
 import atomize.general_modules.general_functions as general
 
@@ -26,8 +24,8 @@ class Spectrum_M4I_6631_X8:
 
         #### Inizialization
         # setting path to *.ini file
-        self.path_current_directory = os.path.dirname(__file__)
-        self.path_config_file = os.path.join(self.path_current_directory, 'config','Spectrum_M4I_6631_X8_config.ini')
+        self.path_current_directory = lconf.load_config_device()
+        self.path_config_file = os.path.join(self.path_current_directory, 'Spectrum_M4I_6631_X8_config.ini')
 
         # configuration data
         #config = cutil.read_conf_util(self.path_config_file)
@@ -88,8 +86,8 @@ class Spectrum_M4I_6631_X8:
             self.channel = 3 # 1 is CH0; 2 is CH1; 3 is CH0 + CH1
             self.enable_out_0 = 1 # 1 means ON; 0 means OFF
             self.enable_out_1 = 1 # 1 means ON; 0 means OFF
-            self.amplitude_0 = 300 # amlitude for CH0 in mV
-            self.amplitude_1 = 300 # amlitude for CH0 in mV; 533
+            self.amplitude_0 = 600 # amlitude for CH0 in mV
+            self.amplitude_1 = 610 # amlitude for CH0 in mV; 533
             self.num_segments = 1 # number of segments for 'Multi mode'
             self.memsize = 64 # full card memory
             self.buffer_size = 2*self.memsize # two bytes per sample
@@ -130,22 +128,6 @@ class Spectrum_M4I_6631_X8:
             self.update_counter = 0
             self.visualize_counter = 0
 
-            # correction
-            self.bl = 1
-            self.a1 = 0
-            self.x1 = 0
-            self.w1 = 1
-            self.a2 = 0
-            self.x2 = 0
-            self.w2 = 1
-            self.a3 = 0
-            self.x3 = 0
-            self.w3 = 1
-            self.pi2flag = 1
-            # in MHz
-            self.low_level = 16
-            self.limit = 23
-
         elif self.test_flag == 'test':
             self.test_sample_rate = '1250 MHz'
             self.test_clock_mode = 'Internal'
@@ -156,7 +138,7 @@ class Spectrum_M4I_6631_X8:
             self.test_loop = 0
             self.test_delay = 0
             self.test_channel = 'CH0'
-            self.test_amplitude = '300 mV'
+            self.test_amplitude = '600 mV'
             self.test_num_segments = 1
             
             # Collect all parameters for AWG settings
@@ -171,8 +153,8 @@ class Spectrum_M4I_6631_X8:
             self.channel = 3
             self.enable_out_0 = 1
             self.enable_out_1 = 1
-            self.amplitude_0 = 300
-            self.amplitude_1 = 300
+            self.amplitude_0 = 600
+            self.amplitude_1 = 533
             self.num_segments = 1
             self.memsize = 64 # full card memory
             self.buffer_size = 2*self.memsize # two bytes per sample
@@ -212,23 +194,6 @@ class Spectrum_M4I_6631_X8:
             # update and visualize counters
             self.update_counter = 0
             self.visualize_counter = 0
-            
-            # correction
-            self.bl = 1
-            self.a1 = 0
-            self.x1 = 0
-            self.w1 = 1
-            self.a2 = 0
-            self.x2 = 0
-            self.w2 = 1
-            self.a3 = 0
-            self.x3 = 0
-            self.w3 = 1
-            self.pi2flag = 1
-
-            # in MHz
-            self.low_level = 16
-            self.limit = 23
 
     # Module functions
     def awg_name(self):
@@ -3054,33 +3019,6 @@ class Spectrum_M4I_6631_X8:
             # overlapping check
             # It will be done by pulse_programmer RECT_AWG pulses
 
-    def awg_correction(self, only_pi_half = 'True', coef_array = [1, 0, 0, 1, 0, 0, 1, 0, 0, 1], low_level = 16, limit = 23):
-        """
-        Funtion for amplitude correction taking into account the resonator frequency profile
-        """
-        self.bl = coef_array[0]
-        self.a1 = coef_array[1]
-        self.x1 = coef_array[2]
-        self.w1 = coef_array[3]
-        self.a2 = coef_array[4]
-        self.x2 = coef_array[5]
-        self.w2 = coef_array[6]
-        self.a3 = coef_array[7]
-        self.x3 = coef_array[8]
-        self.w3 = coef_array[9]
-
-        if only_pi_half == 'True':
-            self.pi2flag = 1
-        else:
-            self.pi2flag = 0
-
-        # in MHz
-        # limit minimum B1
-        # 16 MHz is the value for MD3 at +-150 MHz around the center
-        # 23 MHz is an arbitrary limit; around 210 MHz width        
-        self.low_level = low_level
-        self.limit = limit
-
     # Auxilary functions
     def awg_update_test(self):
         """
@@ -4254,9 +4192,6 @@ class Spectrum_M4I_6631_X8:
                                             pulse_length_smp[index]) ) ) - mid_point)**2)*(1/(2*pulse_sigma_smp[index]**2)))*\
                                                     np.sin(2*np.pi*(( ( np.arange(0, 0 + \
                                             pulse_length_smp[index]) )  ))*pulse_frequency[index] / self.sample_rate + pulse_phase_np[index] )).astype(int64)
-
-
-                                        
                         self.pnBuffer[2*pulse_start_smp[index]:2*(pulse_start_smp[index] + pulse_length_smp[index])][1::2] = \
                                         (self.maxCAD / pulse_amp[index] * np.exp(-((( ( np.arange(pulse_start_smp[index], pulse_start_smp[index] + \
                                             pulse_length_smp[index]) )  ) - mid_point)**2)*(1/(2*pulse_sigma_smp[index]**2)))*\
@@ -4344,82 +4279,57 @@ class Spectrum_M4I_6631_X8:
  
                     # always zero phase in Sine: np.arange(0, 0 + pulse_length_smp[index]) )
                     # one phase in Sine: np.arange(pulse_start_smp[index], pulse_start_smp[index] + pulse_length_smp[index]) )
+
                     # at = A*( 1 - abs( sin(pi*(t-tp/2)/tp) )^n )
                     # ph = 2*pi*(Fstr*t + 0.5*( Ffin - Fstr )*t^2/tp )
                     # WURST = at*sin(ph + phase_0)
 
-                    ###############################################
                     # resonator profile correction test
-                    freq_sweep = pulse_frequency[index][1] - pulse_frequency[index][0]
-                    m_p = ( mid_point - pulse_start_smp[index] )
-                    
-                    ###LO - RF; high frequency first; flip order
-                    t_axis = np.flip( np.arange(0, 0 + pulse_length_smp[index] ) - m_p )
+                    if pulse_frequency[index][1] > 0:
+                        ###m_p = ( mid_point - pulse_start_smp[index] )
+                        
+                        ###LO - RF; high frequency first; flip order
+                        ###t_axis = np.flip( np.arange(0, 0 + pulse_length_smp[index] ) - m_p )
+                        
+                        ###c = 1 / self.triple_gauss(t_axis * 300 / pulse_length_smp[index], 0.570786, 0.383363, 12.2448, 1241.89, \
+                        ###                                                                            0.191815, -43.478, 1913.96, \
+                        ###                                                                            0.06655,  77.3173, 614.985)
+                        ###c = c / c[0]
+                        
+                        ###general.plot_1d( 'C', np.arange(0, 0 + pulse_length_smp[index] ), c )
+                        
+                        #phase and amplitude from ideal resonator with f0 and Q
+                        Q = 78
+                        f0 = 9700
 
-                    # 300 is wurst sweep
-                    # md4
-                    #c = 1 / self.triple_gauss(t_axis * 300 / pulse_length_smp[index], 0.570786, 0.383363, 12.2448, 1241.89, \
-                    #                                                                            0.191815, -43.478, 1913.96, \
-                    #                                                                            0.06655,  77.3173, 614.985)
+                        length = pulse_length_smp[index]
+                        end_freq = pulse_frequency[index][1]
+                        st_freq = pulse_frequency[index][0]
+                        sweep = end_freq - st_freq
 
-                    # md3
-                    #c = 1 / self.triple_lorentzian(t_axis * 300 / pulse_length_smp[index], 5.92087, 412.868, -124.647, 62.0069, \
-                    #                                                                            420.717, -35.8879, 34.4214, \
-                    #                                                                            9893.97,  12.4056, 150.304)
-                    
-                    c = 1 / self.triple_lorentzian(t_axis * freq_sweep / pulse_length_smp[index], self.bl, self.a1, self.x1, self.w1, \
-                                                                                                  self.a2, self.x2, self.w2, \
-                                                                                                  self.a3, self.x3, self.w3)
+                        #LO - RF; high frequency first; flip order
+                        t_axis = np.flip( np.arange( st_freq + f0, end_freq + f0, sweep / length ) )
 
-                    c = c / c[0]
-                    # limit minimum B1
-                    # 16 MHz is the value for MD3 at +-150 MHz around the center
-                    # 23 MHz is an arbitrary limit; around 210 MHz width
-                    c[c > self.low_level/self.limit] = self.low_level/self.limit
-                    
-                    c = c / c[0]
-                    ph_cor = 0
-
-                    if freq_sweep >= 0:
-                        pass
-                    else:
-                        np.flip( c )
-
-                    # only pi/2 correction
-                    if self.pi2flag == 1:
+                        ideal_res = 1 / ( 1 + 1j * Q * ( t_axis / f0 - f0 / t_axis ) )
+                        ph_cor = np.arctan2( ideal_res.imag, ideal_res.real ) 
+                        # only pi/2 correction
                         if int( pulse_amp[index] ) > 1:
-                            pass
+                            amp_cor = 1 / np.abs( ideal_res )
+                            c = amp_cor / amp_cor[0]
                         else:
                             c = 1
 
-                    #general.plot_1d( 'C', np.arange(0, 0 + pulse_length_smp[index] ), c )
-                    
-                    #phase and amplitude from ideal resonator with f0 and Q
-                    ##Q = 88
-                    ##f0 = 9700
+                        #general.plot_1d( 'C', np.arange(0, 0 + pulse_length_smp[index] ), ph_cor * 180 / np.pi )
+                        #general.plot_1d( 'C', np.arange(0, 0 + pulse_length_smp[index] ), c )
+                        #ph_cor = 0
+                        #c = 1
 
-                    ##length = pulse_length_smp[index]
-                    ##end_freq = pulse_frequency[index][1]
-                    ##st_freq = pulse_frequency[index][0]
-                    ##sweep = end_freq - st_freq
+                    else:
+                        c = 1
+                        # No flip here;
 
-                    #LO - RF; high frequency first; flip order
-                    ##t_axis = np.flip( np.arange( st_freq + f0, end_freq + f0, sweep / length ) )
+                        #c = 0.5 * np.flip(1 + np.arange(0, 0 + pulse_length_smp[index] ) * 1.005 - np.arange(0, 0 + pulse_length_smp[index] ) )
 
-                    ##ideal_res = 1 / ( 1 + 1j * Q * ( t_axis / f0 - f0 / t_axis ) )
-                    ##ph_cor = np.arctan2( ideal_res.imag, ideal_res.real ) 
-                    # only pi/2 correction
-                    ##if int( pulse_amp[index] ) > 1:
-                    ##    amp_cor = 1 / np.abs( ideal_res )
-                    ##    c = amp_cor / amp_cor[0]
-                    ##else:
-                    ##    c = 1
-
-                    #general.plot_1d( 'C', np.arange(0, 0 + pulse_length_smp[index] ), ph_cor * 180 / np.pi )
-                    #general.plot_1d( 'C', np.arange(0, 0 + pulse_length_smp[index] ), c )
-
-                    ###############################################
-                    
                     if pulse_phase_np[index] != 1000:
                         self.pnBuffer[2*pulse_start_smp[index]:2*(pulse_start_smp[index] + pulse_length_smp[index])][0::2] = \
                                         (self.maxCAD * c / pulse_amp[index] * ( 1 - np.abs( np.sin( np.pi * ( np.arange(pulse_start_smp[index], pulse_start_smp[index] + \
@@ -4460,43 +4370,7 @@ class Spectrum_M4I_6631_X8:
                 elif element == 5: # 'SECH/TANH'
                     # mid_point for GAUSS, SINC, and WURST, and SECH/TANH
                     mid_point = int( pulse_start_smp[index] + (pulse_length_smp[index])/2 )
-                    
-                    #########################################################
-                    # resonator profile correction test
-                    m_p = ( mid_point - pulse_start_smp[index] )
-                    freq_sweep = pulse_frequency[index][1] - pulse_frequency[index][0]
-
-                    ###LO - RF; high frequency first; flip order
-                    t_axis = np.flip( np.arange(0, 0 + pulse_length_smp[index] ) - m_p )
-                    
-                    # 300 is wurst sweep
-                    c = 1 / self.triple_lorentzian(t_axis * freq_sweep / pulse_length_smp[index], self.bl, self.a1, self.x1, self.w1, \
-                                                                                                  self.a2, self.x2, self.w2, \
-                                                                                                  self.a3, self.x3, self.w3)
-
-                    c = c / c[0]
-                    # limit minimum B1
-                    # 16 MHz is the value for MD3 at +-150 MHz around the center
-                    # 23 MHz is an arbitrary limit; around 210 MHz width
-                    c[c > self.low_level/self.limit] = self.low_level/self.limit
-                    
-                    c = c / c[0]
-                    ph_cor = 0
-
-                    if freq_sweep >= 0:
-                        pass
-                    else:
-                        np.flip( c )
-
-                    # only pi/2 correction
-                    if self.pi2flag == 1:
-                        if int( pulse_amp[index] ) > 1:
-                            pass
-                        else:
-                            c = 1
-
-                    #general.plot_1d( 'C', np.arange(0, 0 + pulse_length_smp[index] ), c )
-                    
+ 
                     # always zero phase in Sine: np.arange(0, 0 + pulse_length_smp[index]) )
                     # one phase in Sine: np.arange(pulse_start_smp[index], pulse_start_smp[index] + pulse_length_smp[index]) )
 
@@ -4504,6 +4378,8 @@ class Spectrum_M4I_6631_X8:
                     # ph = 2*Pi*bw/b*Log[Cosh[b*(t - tp/2)]]/2/Tanh[b*tp/2]
                     # SECH = at*sin(ph + phase_0)
                     freq_cen = ( pulse_frequency[index][1] + pulse_frequency[index][0] ) / 2
+                    c = 1
+                    ph_cor = 0
 
                     self.pnBuffer[2*pulse_start_smp[index]:2*(pulse_start_smp[index] + pulse_length_smp[index])][0::2] = \
                                     (self.maxCAD * c / pulse_amp[index] * ( 1 / np.cosh( pulse_b_sech[index] * pulse_length_smp[index] * 2 ** (pulse_n_wurst[index] - 1)  * \
@@ -4625,9 +4501,6 @@ class Spectrum_M4I_6631_X8:
 
     def triple_gauss(self, x, bl, a1, x1, w1, a2, x2, w2, a3, x3, w3):
         return bl + a1 * np.exp( -(x - x1)**2 / w1  ) + a2 * np.exp( -(x - x2)**2 / w2  ) + a3 * np.exp( -(x - x3)**2 / w3  )
-
-    def triple_lorentzian(self, x, bl, a1, x1, w1, a2, x2, w2, a3, x3, w3):
-            return bl + a1 * 0.5 * w1 / np.pi / ( (x - x1)**2 + (0.5 * w1)**2  ) + a2 * 0.5 * w2 / np.pi / ( (x - x2)**2 + (0.5 * w2)**2  ) + a3 * 0.5 * w3 / np.pi / ( (x - x3)**2 + (0.5 * w3)**2  )
 
     def round_to_closest(self, x, y):
         """

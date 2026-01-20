@@ -200,6 +200,12 @@ class MainWindow(QtWidgets.QMainWindow):
             self.exp_process.join()
         except AttributeError:
             self.message('Experimental script is not running')
+        
+        if self.parent_conn.poll() == True:
+            msg_type, data = self.parent_conn.recv()
+            self.message(data)
+        else:
+            pass
    
     def start(self):
         """
@@ -214,6 +220,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 return
         except AttributeError:
             pass
+
+
 
         if self.cur_start_field >= self.cur_end_field:
             self.cur_start_field, self.cur_end_field = self.cur_end_field, self.cur_start_field
@@ -261,134 +269,143 @@ class Worker(QWidget):
 
         # should be inside dig_on() function;
         # freezing after digitizer restart otherwise
-        import atomize.general_modules.general_functions as general
-        import atomize.device_modules.SR_860 as sr
-        #import atomize.device_modules.ITC_FC as itc
-        import atomize.device_modules.BH_15 as itc
-        import atomize.device_modules.Lakeshore_335 as ls
-        import atomize.device_modules.Agilent_53131a as ag
-        import atomize.general_modules.csv_opener_saver_tk_kinter as openfile
+        import traceback
 
-        file_handler = openfile.Saver_Opener()
-        ag53131a = ag.Agilent_53131a()
-        ls335 = ls.Lakeshore_335()
-        sr860 = sr.SR_860()
-        #itc_fc = itc.ITC_FC()
-        itc_fc = itc.BH_15()
+        try:
+            import atomize.general_modules.general_functions as general
+            import atomize.device_modules.SR_860 as sr
+            #import atomize.device_modules.ITC_FC as itc
+            import atomize.device_modules.BH_15 as itc
+            import atomize.device_modules.Lakeshore_335 as ls
+            import atomize.device_modules.Agilent_53131a as ag
+            import atomize.general_modules.csv_opener_saver_tk_kinter as openfile
 
-        # parameters for initial initialization
-        field = p4
-        START_FIELD = p4
-        END_FIELD = p3
-        FIELD_STEP = p5
-        initialization_step = 10
-        SCANS = p7
-        process = 'None'
+            file_handler = openfile.Saver_Opener()
+            ag53131a = ag.Agilent_53131a()
+            ls335 = ls.Lakeshore_335()
+            sr860 = sr.SR_860()
+            #itc_fc = itc.ITC_FC()
+            itc_fc = itc.BH_15()
 
-        itc_fc.magnet_setup( 100, FIELD_STEP)
+            # parameters for initial initialization
+            field = p4
+            START_FIELD = p4
+            END_FIELD = p3
+            FIELD_STEP = p5
+            initialization_step = 10
+            SCANS = p7
+            process = 'None'
 
-        tc_wait = 0
-        raw = p8.split(" ")
-        if int( raw[0] ) > 100 or raw[1] == 's':
-            tc_wait = 1
+            itc_fc.magnet_setup( 100, FIELD_STEP)
 
-        points = int( (END_FIELD - START_FIELD) / FIELD_STEP ) + 1
-        data = np.zeros(points)
-        x_axis = np.linspace(START_FIELD, END_FIELD, num = points) 
+            tc_wait = 0
+            raw = p8.split(" ")
+            if int( raw[0] ) > 100 or raw[1] == 's':
+                tc_wait = 1
 
-        sr860.lock_in_time_constant( p8 )
-        sr860.lock_in_sensitivity( '1 V' )
-        sr860.lock_in_ref_amplitude( p6 )
-        sr860.lock_in_phase( 159.6 - 180 ) #159.6
-        sr860.lock_in_ref_frequency( 100000 )
+            points = int( (END_FIELD - START_FIELD) / FIELD_STEP ) + 1
+            data = np.zeros(points)
+            x_axis = np.linspace(START_FIELD, END_FIELD, num = points) 
 
-        t_start = str( ls335.tc_temperature('B') )
-        
-        ag53131a.freq_counter_digits(8)
-        ag53131a.freq_counter_stop_mode('Digits')
-        
-        #START_FIELD = 3460.2
-        # the idea of automatic and dynamic changing is
-        # sending a new value of repetition rate via self.command
-        # in each cycle we will check the current value of self.command
-        # self.command = 'exit' will stop the digitizer
-        while self.command != 'exit':
-            # Start of experiment
-            while field < START_FIELD:
-                
-                field = itc_fc.magnet_field( field + initialization_step)
-                ##field = START_FIELD
-                general.wait('1000 ms')
-
-            field = itc_fc.magnet_field( START_FIELD )#, calibration = 'True' )
-            general.wait('4000 ms')
-
-            sr860.lock_in_sensitivity( p9 )
-
-            j = 1
-            while j <= SCANS:
-
-                i = 0
-                field = START_FIELD
-                general.wait('2000 ms')
-
-                if self.command == 'exit':
-                    break
-
-                while field <= END_FIELD:
-                    
-                    #if tc_wait == 1:
-                    general.wait( p8 )
-                        #general.wait('10 ms')
-
-                    data[i] = ( data[i] * (j - 1) + sr860.lock_in_get_data() ) / j
-
-                    process = general.plot_1d( p2, x_axis, data, xname = 'Field',\
-                        xscale = 'G', yname = 'Intensity', yscale = 'V', label = p1, pr = process, \
-                        text = 'Scan / Field: ' + str(j) + ' / ' + str(field) )
-
-                    field = round( (FIELD_STEP + field), 3 )
-                    itc_fc.magnet_field(field) #, calibration = 'True')
-
-                    # check our polling data
-                    if self.command[0:2] == 'SC':
-                        SCANS = int( self.command[2:] )
-                        self.command = 'start'
-                    elif self.command == 'exit':
-                        break
-                    
-                    if conn.poll() == True:
-                        self.command = conn.recv()
-
-                    i += 1
-
-                while field > START_FIELD:
-                    field = itc_fc.magnet_field( field - initialization_step)
-                    field = field - initialization_step
-
-                j += 1
-
-            # finish succesfully
-            self.command = 'exit'
-
-        if self.command == 'exit':
-            general.message('Script finished')
+            sr860.lock_in_time_constant( p8 )
             sr860.lock_in_sensitivity( '1 V' )
-            while field >= START_FIELD:
-                field = itc_fc.magnet_field( field - initialization_step )
-                field = field - initialization_step 
+            sr860.lock_in_ref_amplitude( f'{p6} V' )
+            sr860.lock_in_phase( 159.6 - 0 ) #159.6
+            sr860.lock_in_ref_frequency( '100 kHz' )
 
-            # Data saving
-            header = 'Date: ' + str(datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")) + '\n' + 'Continious Wave EPR Spectrum\n' + \
-                        'Start Field: ' + str(START_FIELD) + ' G \n' + 'End Field: ' + str(END_FIELD) + ' G \n' + \
-                        'Field Step: ' + str(FIELD_STEP) + ' G \n' + 'Number of Scans: ' + str(SCANS) + '\n' + \
-                        'Temperature Start Exp: ' + str( t_start ) + ' K\n' +\
-                        'Temperature End Exp: ' + str( ls335.tc_temperature('B') ) + ' K\n' +\
-                        'Time Constant: ' + str(p8) + '\n' + 'Modulation Amplitude: ' + str(p6) + ' V\n' + \
-                        'Frequency: ' + str( round( ag53131a.freq_counter_frequency('CH3') / 1000000, 6) ) + ' GHz\n' + 'Field (G), X (V)'
+            t_start = str( ls335.tc_temperature('A') )
+            
+            ag53131a.freq_counter_digits(8)
+            ag53131a.freq_counter_stop_mode('Digits')
+            
+            #START_FIELD = 3460.2
+            # the idea of automatic and dynamic changing is
+            # sending a new value of repetition rate via self.command
+            # in each cycle we will check the current value of self.command
+            # self.command = 'exit' will stop the digitizer
+            while self.command != 'exit':
+                # Start of experiment
+                while field < START_FIELD:
+                    
+                    field = itc_fc.magnet_field( field + initialization_step)
+                    ##field = START_FIELD
+                    general.wait('1000 ms')
 
-            file_data, file_param = file_handler.create_file_parameters('.param')
-            file_handler.save_data(file_data, np.c_[x_axis, data], header = header, mode = 'w')
+                field = itc_fc.magnet_field( START_FIELD )#, calibration = 'True' )
+                general.wait('4000 ms')
+
+                sr860.lock_in_sensitivity( p9 )
+
+                j = 1
+                while j <= SCANS:
+
+                    i = 0
+                    field = START_FIELD
+                    general.wait('2000 ms')
+
+                    if self.command == 'exit':
+                        break
+
+                    while field <= END_FIELD:
+                        
+                        #if tc_wait == 1:
+                        general.wait( p8 )
+                            #general.wait('10 ms')
+
+                        data[i] = ( data[i] * (j - 1) + sr860.lock_in_get_data() ) / j
+
+                        process = general.plot_1d( p2, x_axis, data, xname = 'Field',\
+                            xscale = 'G', yname = 'Intensity', yscale = 'V', label = p1, pr = process, \
+                            text = 'Scan / Field: ' + str(j) + ' / ' + str(field) )
+
+                        field = round( (FIELD_STEP + field), 3 )
+                        itc_fc.magnet_field(field) #, calibration = 'True')
+
+                        # check our polling data
+                        if self.command[0:2] == 'SC':
+                            SCANS = int( self.command[2:] )
+                            self.command = 'start'
+                        elif self.command == 'exit':
+                            break
+                        
+                        if conn.poll() == True:
+                            self.command = conn.recv()
+
+                        i += 1
+
+                    while field > START_FIELD:
+                        field = itc_fc.magnet_field( field - initialization_step)
+                        field = field - initialization_step
+
+                    j += 1
+
+                # finish succesfully
+                self.command = 'exit'
+
+            if self.command == 'exit':
+                general.message('Script finished')
+                sr860.lock_in_sensitivity( '1 V' )
+                while field >= START_FIELD:
+                    field = itc_fc.magnet_field( field - initialization_step )
+                    field = field - initialization_step 
+
+                # Data saving
+                header = 'Date: ' + str(datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")) + '\n' + 'Continious Wave EPR Spectrum\n' + \
+                            'Start Field: ' + str(START_FIELD) + ' G \n' + 'End Field: ' + str(END_FIELD) + ' G \n' + \
+                            'Field Step: ' + str(FIELD_STEP) + ' G \n' + 'Number of Scans: ' + str(SCANS) + '\n' + \
+                            'Temperature Start Exp: ' + str( t_start ) + ' K\n' +\
+                            'Temperature End Exp: ' + str( ls335.tc_temperature('A') ) + ' K\n' +\
+                            'Temperature Cernox: ' + str( ls335.tc_temperature('B') ) + ' K\n' +\
+                            'Time Constant: ' + str(p8) + '\n' + 'Modulation Amplitude: ' + str(p6) + ' V\n' + \
+                            'Frequency: ' + str( ag53131a.freq_counter_frequency('CH3')) + '\n' + 'Field (G), X (V)'
+
+                file_data, file_param = file_handler.create_file_parameters('.param')
+                file_handler.save_data(file_data, np.c_[x_axis, data], header = header, mode = 'w')
+
+        except BaseException as e:
+            exc_info = (type(e), str(e), traceback.format_exc() )
+            conn.send( ('Error', exc_info) )
+
 
 def main():
     """

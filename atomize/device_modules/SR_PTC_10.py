@@ -5,6 +5,7 @@ import os
 import sys
 import struct
 import socket
+import atomize.main.local_config as lconf
 import atomize.device_modules.config.config_utils as cutil
 import atomize.general_modules.general_functions as general
 
@@ -14,8 +15,8 @@ class SR_PTC_10:
 
         #### Inizialization
         # setting path to *.ini file
-        self.path_current_directory = os.path.dirname(__file__)
-        self.path_config_file = os.path.join(self.path_current_directory, 'config','SR_PTC_10_config.ini')
+        self.path_current_directory = lconf.load_config_device()
+        self.path_config_file = os.path.join(self.path_current_directory, 'SR_PTC_10_config.ini')
 
         # configuration data
         #config = cutil.read_conf_util(self.path_config_file)
@@ -67,7 +68,7 @@ class SR_PTC_10:
             self.sock.close()
 
         except socket.error:
-            general.message("No Connection")
+            general.message(f"No connection {self.__class__.__name__}")
             sys.exit()
 
     def device_query(self, command, bytes_to_recieve):
@@ -86,7 +87,7 @@ class SR_PTC_10:
 
             return data_raw
         except socket.error:
-            general.message("No Connection")
+            general.message(f"No connection {self.__class__.__name__}")
             sys.exit()
 
     #### device specific functions
@@ -108,7 +109,7 @@ class SR_PTC_10:
                 answer = float(self.device_query(ch, 50))
                 return answer
             except ValueError:
-                general.message('Incorrect channel name. Please, check')
+                general.message('Incorrect channel name. Please, check the name on the device')
 
         elif self.test_flag == 'test':
             #assert(channel == 'A' or channel == 'B'), "Incorrect channel"
@@ -126,25 +127,23 @@ class SR_PTC_10:
                     # turn on PID on channel 2A
                     self.device_write(chan1)
                     self.device_write(chan2)
-                else:
-                    general.message("Incorrect set point temperature")
-                    sys.exit()
             elif len(temperature) == 1:
                 ch = str(temperature[0])
                 chan1 = str(ch) + '.PID.Setpoint?'
                 # terminator
                 # bytes?
-                answer = float(self.device_query(chan1, 50))
-                return answer   
-            else:
-                general.message("Invalid argument")
-                sys.exit()
-           
+                try:
+                    answer = float(self.device_query(chan1, 50))
+                except ValueError:
+                    general.message('Incorrect channel name. Please, check the name on the device')
+                return answer
+        
         elif self.test_flag == 'test':
             if len(temperature) == 2:
                 ch = str(temperature[0])
                 temp = float(temperature[1])
-                assert(temp <= self.temperature_max and temp >= self.temperature_min), 'Incorrect set point temperature is reached'
+                assert(temp <= self.temperature_max and temp >= self.temperature_min),\
+                    f'Incorrect set point temperature is reached. The available range is from {self.temperature_min} to {self.temperature_max}'
             elif len(temperature) == 1:
                 ch = str(temperature[0])
                 answer = self.test_set_point
@@ -157,8 +156,7 @@ class SR_PTC_10:
                 raw_answer = float(self.device_query(ch, 50))
                 return str(raw_answer) + ' W'
             except ValueError:
-                general.message('Incorrect output channel name. Please, check')
-
+                general.message('Incorrect channel name. Please, check the name on the device')
 
         elif self.test_flag == 'test':
             answer = self.test_heater

@@ -10,6 +10,8 @@ import logging
 import signal
 import socket
 import threading
+import webbrowser
+import subprocess
 import configparser
 import platform
 #from tkinter import filedialog#, ttk
@@ -26,6 +28,7 @@ from PyQt6.QtNetwork import QLocalServer
 from PyQt6 import QtWidgets, uic, QtCore, QtGui
 #from PyQt6.QtCore import Qt
 from pyqtgraph.dockarea import DockArea
+import atomize.main.local_config as lconf
 import atomize.main.messenger_socket_server as socket_server
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -57,22 +60,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.test_flag = 0 # flag for not running script if test is failed
         self.flag_opened_script_changed = 0 # flag for saving changes in the opened script
         self.path = os.path.join(self.path_to_main,'..','atomize/tests')
-        
-        # Liveplot tab setting
-        self.dockarea = DockArea()
-        self.namelist = NameList(self)
-        self.tab_liveplot.setStyleSheet("background-color: rgb(42, 42, 64); color: rgb(211, 194, 78); ")
-        self.gridLayout_tab_liveplot.setColumnMinimumWidth(0, 200)
-        self.gridLayout_tab_liveplot.setColumnStretch(1, 2000)
-        self.gridLayout_tab_liveplot.addWidget(self.namelist, 0, 0)
-        self.gridLayout_tab_liveplot.setAlignment(self.namelist, QtCore.Qt.AlignmentFlag.AlignLeft)
-        self.gridLayout_tab_liveplot.addWidget(self.dockarea, 0, 1)
-        #self.gridLayout_tab_liveplot.setAlignment(self.dockarea, QtConst.AlignRight)
-        self.namelist.setStyleSheet("QNameList {background-color: rgb(42, 42, 64); color: rgb(211, 194, 78); border: 4px solid rgb(40, 30, 45); }")
-        self.namelist.setStyleSheet("QListView {background-color: rgb(42, 42, 64); selection-color: rgb(63, 63, 97);\
-            color: rgb(211, 194, 78); selection-background-color: rgb(211, 194, 78); } ")
-
-        self.namelist.namelist_view.setStyleSheet("QMenu::item:selected {background-color: rgb(48, 48, 75);  }")
+        path_to_main = os.path.join(self.path_to_main,'..','atomize/tests')
 
         self.design_setting()
 
@@ -90,12 +78,30 @@ class MainWindow(QtWidgets.QMainWindow):
         signal.signal(signal.SIGINT, self.close)
 
         # configuration data
-        path_config_file = os.path.join(self.path_to_main,'..', 'atomize/config.ini')
+        path_config_file = os.path.join(path_to_main, '..', 'config.ini')
+        path_config_file_device = os.path.join(path_to_main, '..', 'device_modules/config')
+        path_config_file, self.path_config2 = lconf.copy_config(path_config_file, path_config_file_device)
+
         config = configparser.ConfigParser()
         config.read(path_config_file)
         # directories
         self.open_dir = str(config['DEFAULT']['open_dir'])
+        if self.open_dir == '':
+            self.open_dir = lconf.load_scripts(os.path.join(path_to_main, '..', 'tests'))
+
         self.script_dir = str(config['DEFAULT']['script_dir'])
+        if self.script_dir == '':
+            self.script_dir = lconf.load_scripts(os.path.join(path_to_main, '..', 'tests'))
+
+        # check where we are
+        self.system = platform.system()
+        
+        print( f'SYSTEM: {self.system}' )
+        print( f'DATA DIRECTORY: {self.open_dir}' )
+        print( f'SCRIPTS DIRECTORY: {self.script_dir}' )
+        print( f'MAIN CONFIG PATH: {path_config_file}' )
+        print( f'DEVICE CONFIG DIRECTORY: {self.path_config2}' )
+
         self.path = self.script_dir
         self.test_timeout = int(config['DEFAULT']['test_timeout']) * 1000 # in ms
 
@@ -117,11 +123,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.process_t1 = QtCore.QProcess(self)
         self.process_ed = QtCore.QProcess(self)
         self.process_eseem = QtCore.QProcess(self)
+        self.pid = 0
 
-        # check where we are
-        self.system = platform.system()
+
         if self.system == 'Windows':
             self.process_text_editor.setProgram(str(config['DEFAULT']['editorW']))
+            print('EDITOR: ' + str(config['DEFAULT']['editorW']))
             self.process.setProgram('python.exe')
             self.process_python.setProgram('python.exe')
             self.process_tr.setProgram('python.exe')
@@ -142,8 +149,10 @@ class MainWindow(QtWidgets.QMainWindow):
             self.editor = str(config['DEFAULT']['editor'])
             if self.editor == 'nano' or self.editor == 'vi':
                 self.process_text_editor.setProgram('xterm')
+                print(f'EDITOR: nano / vi')
             else:
                 self.process_text_editor.setProgram(str(config['DEFAULT']['editor']))
+                print('EDITOR: ' + str(config['DEFAULT']['editor']))
             self.process.setProgram('python3')
             self.process_python.setProgram('python3')
             self.process_tr.setProgram('python3')
@@ -195,7 +204,7 @@ class MainWindow(QtWidgets.QMainWindow):
     # noinspection PyNoneFunctionAssignment
     def read_from(self, conn, memory):
         logging.debug('reading data')
-        self.meta = json.loads(conn.read(300).decode())
+        self.meta = json.loads(conn.read(320).decode())
         if self.meta['arrsize'] != 0:
             memory.lock()
             raw_data = memory.data()
@@ -443,10 +452,19 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.text_errors.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.ActionsContextMenu)
         self.text_errors.setStyleSheet("QPlainTextEdit {background-color: rgb(42, 42, 64); color: rgb(211, 194, 78); } \
-                                    QMenu::item { color: rgb(211, 194, 78); } QMenu::item:selected {color: rgb(193, 202, 227); }")
+                                    QMenu::item { color: rgb(211, 194, 78); } QMenu::item:selected {background-color: rgb(48, 48, 75);  }\
+                                    QMenu::item:selected:active {background-color: rgb(63, 63, 97); } ")
         clear_action = QAction('Clear', self.text_errors)
         clear_action.triggered.connect(self.clear_errors)
         self.text_errors.addAction(clear_action)
+
+        conf_dir_action = QAction('Open Config Directory', self.text_errors)
+        conf_dir_action.triggered.connect(self.conf_dir_action)
+        self.text_errors.addAction(conf_dir_action)
+
+        list_resources_action = QAction('List Resources', self.text_errors)
+        list_resources_action.triggered.connect(self.list_resources_action)
+        self.text_errors.addAction(list_resources_action)
 
         # Control Window tab setting
         self.tab_control.setStyleSheet("background-color: rgb(42, 42, 64); color: rgb(211, 194, 78); ")
@@ -517,6 +535,34 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.checkTests.setStyleSheet("QCheckBox { color : rgb(193, 202, 227); font-weight: bold; }")
 
+        self.dockarea2 = DockArea()
+        self.dockarea3 = DockArea()
+
+        self.dock_editor = self.dockarea2.addDock(name="Script Editor")
+        self.dock_editor.addWidget(widget = self.textEdit )
+        self.gridLayout_tab.addWidget(self.dockarea2, 1, 2, 10, 1)
+        
+        self.dock_errors = self.dockarea3.addDock(name="Output", position='top')
+        self.dock_errors.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Expanding)
+        self.dock_errors.addWidget(widget = self.text_errors )
+        self.gridLayout_tab.addWidget(self.dockarea3, 11, 0, 1, 3)
+
+        # Liveplot tab setting
+        self.dockarea = DockArea()
+        self.namelist = NameList(self)
+        self.tab_liveplot.setStyleSheet("background-color: rgb(42, 42, 64); color: rgb(211, 194, 78); ")
+        self.gridLayout_tab_liveplot.setColumnMinimumWidth(0, 200)
+        self.gridLayout_tab_liveplot.setColumnStretch(1, 2000)
+        self.gridLayout_tab_liveplot.addWidget(self.namelist, 0, 0)
+        self.gridLayout_tab_liveplot.setAlignment(self.namelist, QtCore.Qt.AlignmentFlag.AlignLeft)
+        self.gridLayout_tab_liveplot.addWidget(self.dockarea, 0, 1)
+        #self.gridLayout_tab_liveplot.setAlignment(self.dockarea, QtConst.AlignRight)
+        self.namelist.setStyleSheet("QNameList {background-color: rgb(42, 42, 64); color: rgb(211, 194, 78); border: 4px solid rgb(40, 30, 45); }")
+        self.namelist.setStyleSheet("QListView {background-color: rgb(42, 42, 64); selection-color: rgb(63, 63, 97);\
+            color: rgb(211, 194, 78); selection-background-color: rgb(211, 194, 78); } ")
+
+        self.namelist.namelist_view.setStyleSheet("QMenu::item:selected {background-color: rgb(48, 48, 75);  }")
+
     def _on_destroyed(self):
         """
         A function to do some actions when the main window is closing.
@@ -539,6 +585,15 @@ class MainWindow(QtWidgets.QMainWindow):
     
     def clear_errors(self):
         self.text_errors.clear()
+
+    def conf_dir_action(self):
+        self.open_directory(self.path_config2)
+
+    def list_resources_action(self):
+        import pyvisa
+
+        rm = pyvisa.ResourceManager()
+        print(f"AVAILABLE INSTRUMENTS: {rm.list_resources()}")
 
     def quit(self):
         """
@@ -589,7 +644,9 @@ class MainWindow(QtWidgets.QMainWindow):
         elif self.test_flag == 0 and exec_code == True:
             self.process_python.setArguments([self.script])
             self.process_python.start()
-    
+            self.pid = self.process_python.processId()
+            print(f'SCRIPT PROCESS ID: {self.pid}')
+
     def start_eseem_preset(self):
         """
         A function to run an phasing for rect channel.
@@ -746,9 +803,12 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         A function to reload an experimental script.
         """
-        self.cached_stamp = os.stat(self.script).st_mtime
-        text = open(self.script).read()
-        self.textEdit.setPlainText(text)
+        try:
+            self.cached_stamp = os.stat(self.script).st_mtime
+            text = open(self.script).read()
+            self.textEdit.setPlainText(text)
+        except FileNotFoundError:
+            pass
 
     def on_finished_checking(self):
         """
@@ -787,9 +847,9 @@ class MainWindow(QtWidgets.QMainWindow):
         text_errors_script = self.process_python.readAllStandardError().data().decode()
         if text_errors_script == '':
         #if text == '' and text_errors_script == '':
-            self.text_errors.appendPlainText("Script done!")
+            self.text_errors.appendPlainText(f"The script PID {self.pid} was executed normally")
         elif text_errors_script != '':
-            self.text_errors.appendPlainText("Script done!")
+            self.text_errors.appendPlainText(f"The script PID {self.pid} was executed with errors")
             self.text_errors.appendPlainText(text_errors_script)
             #self.text_errors.verticalScrollBar().setValue(self.text_errors.verticalScrollBar().maximum())
 
@@ -797,7 +857,7 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         A function to open a documentation
         """
-        pass
+        webbrowser.open("https://anatoly1010.github.io/atomize_docs/functions/", new = 0, autoraise = True)
 
     def edit_file(self):
         """
@@ -917,7 +977,14 @@ class MainWindow(QtWidgets.QMainWindow):
             #    spcm_dwSetParam_i32 (hCard1, SPC_M2CMD, M2CMD_CARD_STOP)
             #    # clean up
             #    spcm_vClose (hCard1)
-            
+
+    def open_directory(self, path):
+        if os.name == 'nt':
+            os.startfile(path)
+        elif os.name == 'posix': 
+            subprocess.Popen(['open', path]) 
+        else:
+            print(f"Unsupported operating system: {os.name}")
 
 class NameList(QDockWidget):
     def __init__(self, window):
@@ -926,13 +993,19 @@ class NameList(QDockWidget):
         
         #directories
         self.path_to_main = os.path.join(os.path.abspath(os.getcwd()))
-        # configuration data
-        path_config_file = os.path.join(self.path_to_main, '..', 'atomize/config.ini')
+        path_to_main = os.path.join(self.path_to_main,'..','atomize/tests')
+
+        path_config_file = os.path.join(path_to_main, '..', 'config.ini')
+        path_config_file_device = os.path.join(path_to_main, '..', 'device_modules/config')
+        path_config_file, path_config2 = lconf.copy_config(path_config_file, path_config_file_device)
+
         config = configparser.ConfigParser()
         config.read(path_config_file)
         # directories
         self.open_dir = str(config['DEFAULT']['open_dir'])
-
+        if self.open_dir == '':
+            self.open_dir = lconf.load_scripts(os.path.join(path_to_main, '..', 'tests'))
+        
         self.namelist_model = QStandardItemModel()
         self.namelist_view = QListView()
         self.namelist_view.setModel(self.namelist_model)

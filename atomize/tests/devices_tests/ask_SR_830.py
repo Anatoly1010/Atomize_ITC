@@ -10,8 +10,8 @@ sr830 = sr.SR_830()
 
 #general.message(sr830.lock_in_sensitivity())
 general.message(sr830.lock_in_sensitivity())
-#general.message(sr830.lock_in_get_data())
-#sr860.lock_in_time_constant('1000 ms')
+general.message(sr830.lock_in_get_data())
+#sr830.lock_in_time_constant('1 ms')
 #i = 0
 
 #while i < 6:

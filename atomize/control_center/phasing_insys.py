@@ -1025,7 +1025,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.parent_conn_dig.send('exit')
                 self.digitizer_process.join()
             except AttributeError:
-                self.message('Digitizer is not running')
+                pass
+                #self.message('Digitizer is not running')
 
         #self.opened = 0
 

@@ -16,34 +16,34 @@ pb = pb_pro.Insys_FPGA()
 
 POINTS = 1
 PHASES = 1
-DETECTION_WINDOW = 1635.2 * 1
+DETECTION_WINDOW = 1635.2 * 32
 
 TR_ADC = round(3.2 / 8, 1)
 
 WIN_ADC = int( (DETECTION_WINDOW / TR_ADC) )
 CURVE_NAME = 'LIVE'
 
-pb.pulser_pulse(name = 'P1', channel = 'MW' , start = '320 ns'  , length = '32 ns', phase_list =  ['+x']) #, phase_list =  ['+x', '-x']
-pb.pulser_pulse(name = 'P2', channel = 'MW' , start = '448 ns', length = '32 ns', phase_list =  ['+x']) # , delta_start='3.2 ns', phase_list =  ['+x', '+x']
-pb.pulser_pulse(name = 'P4', channel = 'TRIGGER' , start = '0 ns', length = str( DETECTION_WINDOW ) + ' ns') #, delta_start='6.4 ns'
+pb.pulser_pulse(name = 'P1', channel = 'MW' , start = '320 ns'  , length = '32 ns', phase_list = ['+x']) #, phase_list =  ['+x', '-x']
+#pb.pulser_pulse(name = 'P2', channel = 'MW' , start = '448 ns', length = '32 ns', phase_list =  ['+x']) # , delta_start='3.2 ns', phase_list =  ['+x', '+x']
+pb.pulser_pulse(name = 'P0', channel = 'TRIGGER' , start = '0 ns', length = str( DETECTION_WINDOW ) + ' ns') #, delta_start='6.4 ns'
 
 data = np.zeros( ( 2, WIN_ADC, POINTS ) )
 x_axis = np.linspace(0, ( DETECTION_WINDOW - TR_ADC), num = WIN_ADC) 
 
-pb.pulser_repetition_rate('500 Hz')
+pb.pulser_repetition_rate('200 Hz')
 pb.pulser_open()
 
-pb.digitizer_number_of_averages(10)
+pb.digitizer_number_of_averages(1)
 
 for j in general.to_infinity():
 
     for i in range(PHASES):
 
         pb.pulser_next_phase()
-        data[0], data[1] = pb.digitizer_get_curve( POINTS, PHASES, acq_cycle = ['-y'], live_mode = 1 )
+        data[0], data[1] = pb.digitizer_get_curve( POINTS, PHASES, acq_cycle = ['+x'], live_mode = 1 )
 
-        general.plot_1d('1D', x_axis, ( data[0].ravel(), data[1].ravel() ), xname = 'Time',\
-                    xscale = 'ns', yname = 'Intensity', yscale = 'mV', label = CURVE_NAME )
+        general.plot_1d('1D', x_axis, ( data[0].ravel(), data[1].ravel() ), xname = 'Frequency',\
+                    xscale = 'GHz', yname = 'Intensity', yscale = 'A.U.', label = CURVE_NAME )
 
     #pb.pulser_pulse_reset()
 

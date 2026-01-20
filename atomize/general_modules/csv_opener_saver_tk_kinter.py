@@ -7,6 +7,8 @@ import configparser
 import numpy as np
 from tkinter import filedialog
 import tkinter
+import atomize.main.local_config as lconf
+import atomize.general_modules.general_functions as general
 
 class Saver_Opener:
     def __init__(self):
@@ -19,23 +21,38 @@ class Saver_Opener:
 
         # for open directory specified in the config file
         #path_to_main = os.path.abspath(os.getcwd())
-        self.path_to_main = os.path.abspath(os.path.join(os.path.dirname( __file__ ), '..'))
+        path_to_main = os.path.abspath(os.path.join(os.path.dirname( __file__ ), '..'))
         #os.path.abspath(os.path.join(os.path.dirname( __file__ ), '..', 'templates'))
         # configuration data
         #path_config_file = os.path.join(path_to_main,'atomize/config.ini')
-        path_config_file = os.path.join(self.path_to_main,'config.ini')
+        path_config_file, path_config2 = lconf.load_config()
+        self.path_to_main = path_config2
+
         config = configparser.ConfigParser()
         config.read(path_config_file)
         # directories
         self.open_dir = str(config['DEFAULT']['open_dir'])
-        self.script_dir = str(config['DEFAULT']['script_dir'])
+        if self.open_dir == '':
+            self.open_dir = lconf.load_scripts(os.path.join(path_to_main, '..', 'tests'))
 
+        self.script_dir = str(config['DEFAULT']['script_dir'])
+        if self.script_dir == '':
+            self.script_dir = lconf.load_scripts(os.path.join(path_to_main, '..', 'tests'))
+        
         if self.test_flag == 'test':
             self.test_header_array = np.array(['header1', 'header2'])
             self.test_data = np.arange(1000, 2)
             self.test_data_2d = np.meshgrid(self.test_data, self.test_data)
-            self.test_file_path = os.path.join(os.path.abspath(os.getcwd()), 'test')
-            self.test_file_param_path = os.path.join(os.path.abspath(os.getcwd()), 'test.param')
+            self.test_file_path = os.path.join(self.path_to_main, 'test')
+            self.test_file_param_path = os.path.join(self.path_to_main, 'test.param')
+            try:
+                os.remove( self.test_file_path )
+            except FileNotFoundError:
+                pass
+            try:
+                os.remove( self.test_file_param_path )
+            except FileNotFoundError:
+                pass
 
     def open_1D(self, path, header = 0):
         if self.test_flag != 'test':
@@ -79,8 +96,11 @@ class Saver_Opener:
         if self.test_flag != 'test':
             file_path = self.file_dialog(directory = directory, mode = 'Save')
 
-            np.savetxt(file_path, np.transpose(data), fmt = '%.6e', delimiter = ',',\
-                newline = '\n', header = header, footer = '', comments = '# ', encoding = None)
+            try:
+                np.savetxt(file_path, np.transpose(data), fmt = '%.6e', delimiter = ',',\
+                    newline = '\n', header = header, footer = '', comments = '# ', encoding = None)
+            except (ValueError, FileNotFoundError):
+                pass
 
         elif self.test_flag == 'test':
             pass
@@ -161,9 +181,13 @@ class Saver_Opener:
     def save_2D_dialog(self, data, directory = '', header = ''):
         if self.test_flag != 'test':
             file_path = self.file_dialog(directory = directory, mode = 'Save')
-            np.savetxt(file_path, data, fmt = '%.6e', delimiter = ',', newline = '\n', \
-                header = header, footer = '', comments = '#', encoding = None)
-
+            
+            try:    
+                np.savetxt(file_path, data, fmt = '%.6e', delimiter = ',', newline = '\n', \
+                    header = header, footer = '', comments = '# ', encoding = None)
+            except (ValueError, FileNotFoundError):
+                pass
+        
         elif self.test_flag == 'test':
             pass
 
@@ -181,12 +205,8 @@ class Saver_Opener:
             try:
                 file_name = self.create_file_dialog()
                 file_save_param = file_name.split('.csv')[0] + str(add_name)
-            # pressed cancel Tk_kinter
-            except TypeError:
-                file_name = os.path.join(self.path_to_main, 'temp.csv')
-                file_save_param = file_name.split('.csv')[0] + str(add_name)
-            # pressed cancel PyQt
-            except FileNotFoundError:
+
+            except (TypeError, FileNotFoundError):
                 file_name = os.path.join(self.path_to_main, 'temp.csv')
                 file_save_param = file_name.split('.csv')[0] + str(add_name)
 
@@ -201,9 +221,11 @@ class Saver_Opener:
             np.savetxt(file_for_save, [], fmt='%.6e', delimiter=',', \
                                         newline='\n', header=header, footer='', comments='# ', encoding=None)
             file_for_save.close()
+
         elif self.test_flag == 'test':
             file_for_save = open(filename, mode)
             file_for_save.close()
+            os.remove( filename )
 
     def save_data(self, filename, data, header = '', mode = 'w'):
         if self.test_flag != 'test':
@@ -228,10 +250,19 @@ class Saver_Opener:
                                                     newline='\n', header=header, footer='', comments='# ', encoding=None)
                         file_for_save.close()
 
+            try:
+                os.remove( os.path.join(self.path_to_main, 'temp.csv') )
+            except (TypeError, FileNotFoundError):
+                pass
+            try:
+                os.remove( os.path.join(self.path_to_main, 'temp.param') )
+            except (TypeError, FileNotFoundError):
+                pass
+
         elif self.test_flag == 'test':
             file_for_save = open(filename, mode)
             file_for_save.close()
-            os.remove(filename) 
+            os.remove( filename )
 
     def file_dialog(self, directory = '', mode = 'Open'):
         root = tkinter.Tk()

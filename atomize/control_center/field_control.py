@@ -6,7 +6,8 @@ import sys
 #from PyQt6.QtWidgets import QListView, QAction
 from PyQt6 import QtWidgets, uic #, QtCore, QtGui
 from PyQt6.QtGui import QIcon
-import atomize.device_modules.ITC_FC as itc
+#import atomize.device_modules.ITC_FC as itc
+import atomize.device_modules.BH_15 as itc
 import atomize.general_modules.general_functions as general
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -28,7 +29,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         uic.loadUi(gui_path, self)                        # Design file
 
-        self.itc_fc = itc.ITC_FC()
+        #self.itc_fc = itc.ITC_FC()
+        self.itc_fc = itc.BH_15()
 
         # Connection of different action to different Menus and Buttons
         self.button_off.clicked.connect(self.turn_off)

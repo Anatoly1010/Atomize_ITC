@@ -66,6 +66,7 @@ pb.pulser_pulse(name = 'P1', channel = 'AWG', start = PULSE_1_START, length = PU
 pb.pulser_pulse(name = 'P2', channel = 'AWG', start = PULSE_2_START, length = PULSE_2_LENGTH, delta_start = str(int(STEP/2)) + ' ns')
 
 pb.pulser_pulse(name = 'P3', channel = 'TRIGGER', start = PULSE_SIGNAL_START, length = '100 ns', delta_start = str(STEP) + ' ns')
+
 awg.awg_pulse(name = 'P4', channel = 'CH0', func = SHAPE, frequency = FREQ, phase = 0, \
             length = PULSE_1_LENGTH, sigma = PULSE_1_LENGTH, start = PULSE_AWG_1_START, phase_list = ['+x', '-x'])
 awg.awg_pulse(name = 'P5', channel = 'CH0', func = SHAPE, frequency = FREQ, phase = 0, \

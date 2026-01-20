@@ -14,6 +14,7 @@ from operator import iconcat
 from functools import reduce
 from itertools import groupby, chain
 import numpy as np
+import atomize.main.local_config as lconf
 import atomize.device_modules.config.config_utils as cutil
 import atomize.general_modules.general_functions as general
 
@@ -22,15 +23,15 @@ class PB_Micran:
 
         #### Inizialization
         # setting path to *.ini file
-        self.path_current_directory = os.path.dirname(__file__)
-        self.path_config_file = os.path.join(self.path_current_directory, 'config','PB_Micran_config.ini')
+        self.path_current_directory = lconf.load_config_device()
+        self.path_config_file = os.path.join(self.path_current_directory, 'PB_Micran_config.ini')
 
         # configuration data
         #config = cutil.read_conf_util(self.path_config_file)
         self.specific_parameters = cutil.read_specific_parameters(self.path_config_file)
 
         # Channel assignments
-        self.ch1 = self.specific_parameters['ch1'] # TRIGGER
+        self.ch1 = self.specific_parameters['ch1'] # DETECTION
         self.ch2 = self.specific_parameters['ch2'] # AMP_ON
         self.ch3 = self.specific_parameters['ch3'] # LNA_PROTECT
         self.ch4 = self.specific_parameters['ch4'] # MW
@@ -51,7 +52,7 @@ class PB_Micran:
         # that is why there is no -Y channel instead we add both -X and +Y pulses
         self.channel_dict = {self.ch1: 1, self.ch2: 2, self.ch3: 3, self.ch4: 4, self.ch5: 5, self.ch6: 6, \
                         self.ch7: 7, self.ch8: 8, self.ch9: 9, self.ch10: 10, self.ch11: 11, self.ch12: 12,\
-                        'CH12': 12, 'CH13': 13, 'CH14': 14, 'CH15': 15, 'CH16': 16, 'CH17': 17,\
+                        'CH13': 13, 'CH14': 14, 'CH15': 15, 'CH16': 16, 'CH17': 17,\
                         'CH18': 18, 'CH19': 19, 'CH20': 20, 'CH21': 21, }
 
         # Limits and Ranges (depends on the exact model):
@@ -174,7 +175,7 @@ class PB_Micran:
         answer = 'PB Micran'
         return answer
 
-    def pulser_pulse(self, name = 'P0', channel = 'TRIGGER', start = '0 ns', length = '100 ns', \
+    def pulser_pulse(self, name = 'P0', channel = 'DETECTION', start = '0 ns', length = '100 ns', \
         delta_start = '0 ns', length_increment = '0 ns', phase_list = []):
         """
         A function that added a new pulse at specified channel. The possible arguments:
@@ -202,8 +203,8 @@ class PB_Micran:
             # phase_list's length
             if channel == 'MW':
                 self.phase_array_length.append(len(list(phase_list)))
-            elif channel == 'TRIGGER':
-                assert( len(list(phase_list)) ) == 0, 'TRIGGER pulse should not have phase'
+            elif channel == 'DETECTION':
+                assert( len(list(phase_list)) ) == 0, 'DETECTION pulse should not have phase'
 
             # Checks
             # two equal names
@@ -304,7 +305,7 @@ class PB_Micran:
                     if temp_start[1] in self.timebase_dict:
                         coef = self.timebase_dict[temp_start[1]]
                         p_start = coef*float(temp_start[0])
-                        assert(p_start % 2 == 0), 'Pulse start should be divisible by 2'
+                        assert(p_start % 4 == 0), 'Pulse start should be divisible by 4'
                         assert(p_start >= 0), 'Pulse start is a negative number'
                     else:
                         assert( 1 == 2 ), 'Incorrect time dimension (s, ms, us, ns)'
@@ -349,7 +350,7 @@ class PB_Micran:
                     if temp_delta_start[1] in self.timebase_dict:
                         coef = self.timebase_dict[temp_delta_start[1]]
                         p_delta_start = coef*float(temp_delta_start[0])
-                        assert(p_delta_start % 2 == 0), 'Pulse delta start should be divisible by 2'
+                        assert(p_delta_start % 4 == 0), 'Pulse delta start should be divisible by 4'
                         assert(p_delta_start >= 0), 'Pulse delta start is a negative number'
                     else:
                         assert( 1 == 2 ), 'Incorrect time dimension (s, ms, us, ns)'
@@ -394,7 +395,7 @@ class PB_Micran:
                     if temp_length_increment[1] in self.timebase_dict:
                         coef = self.timebase_dict[temp_length_increment[1]]
                         p_length_increment = coef*float(temp_length_increment[0])
-                        assert(p_length_increment % 2 == 0), 'Pulse length increment should be divisible by 2'
+                        assert(p_length_increment % 4 == 0), 'Pulse length increment should be divisible by 4'
                         assert (p_length_increment >= 0 and p_length_increment < self.max_pulse_length), \
                         'Pulse length increment is longer than maximum available length or negative'
                     else:
@@ -434,7 +435,7 @@ class PB_Micran:
             self.phase_pulses = 0
             # adding phase switch pulses
             for index, element in enumerate(self.pulse_array):
-                if len(list(element['phase_list'])) != 0:
+                if (len(list(element['phase_list'])) != 0) and (element['channel'] != 'DETECTION'):
                     if element['phase_list'][self.current_phase_index] == '+x':
                         #pass
                         # 21-08-2021; Correction of non updating case for ['-x', '+x']
@@ -509,7 +510,7 @@ class PB_Micran:
 
             self.phase_pulses = 0
             for index, element in enumerate(self.pulse_array):
-                if len(list(element['phase_list'])) != 0:
+                if (len(list(element['phase_list'])) != 0) and (element['channel'] != 'DETECTION'):
                     if element['phase_list'][self.current_phase_index] == '+x':
                         #pass
                         # 21-08-2021; Correction of non updating case for ['-x', '+x']
@@ -648,9 +649,9 @@ class PB_Micran:
                 self.pulse_write_stop(16, 0, 0, self.i_y , self.i_y_prev)
 
                 for element in to_spinapi:
-                    if element[0] == self.channel_dict['TRIGGER']:
+                    if element[0] == self.channel_dict['DETECTION']:
                         self.i_trigger = self.i_trigger + 1
-                        assert( self.i_trigger <= 1 ), 'Only 1 TRIGGER pulse allowed' 
+                        assert( self.i_trigger <= 1 ), 'Only 1 DETECTION pulse allowed' 
 
                         self.pulse_write(320, element[1], element[2], self.i_trigger , self.i_trigger_prev)
 
@@ -829,9 +830,9 @@ class PB_Micran:
                 self.i_laser_2 = 0
                 
                 for element in to_spinapi:
-                    if element[0] == self.channel_dict['TRIGGER']:
+                    if element[0] == self.channel_dict['DETECTION']:
                         self.i_trigger = self.i_trigger + 1
-                        assert( self.i_trigger <= 1 ), 'Only 1 TRIGGER pulse allowed' 
+                        assert( self.i_trigger <= 1 ), 'Only 1 DETECTION pulse allowed' 
 
                         #self.pulse_write(320, element[1], element[2], self.i_trigger , self.i_trigger_prev)
 
@@ -1278,9 +1279,9 @@ class PB_Micran:
             self.pulse_write_stop(16, 0, 0, self.i_y , self.i_y_prev)
 
             for element in to_spinapi:
-                if element[0] == self.channel_dict['TRIGGER']:
+                if element[0] == self.channel_dict['DETECTION']:
                     self.i_trigger = self.i_trigger + 1
-                    assert( self.i_trigger <= 1 ), 'Only 1 TRIGGER pulse allowed' 
+                    assert( self.i_trigger <= 1 ), 'Only 1 DETECTION pulse allowed' 
 
                     self.pulse_write(320, element[1], element[2], self.i_trigger , self.i_trigger_prev)
 
@@ -1443,9 +1444,9 @@ class PB_Micran:
             self.i_laser_2 = 0
     
             for element in to_spinapi:
-                if element[0] == self.channel_dict['TRIGGER']:
+                if element[0] == self.channel_dict['DETECTION']:
                     self.i_trigger = self.i_trigger + 1
-                    assert( self.i_trigger <= 1 ), 'Only 1 TRIGGER pulse allowed' 
+                    assert( self.i_trigger <= 1 ), 'Only 1 DETECTION pulse allowed' 
 
                     #self.pulse_write(320, element[1], element[2], self.i_trigger , self.i_trigger_prev)
 
@@ -1679,9 +1680,9 @@ class PB_Micran:
             self.pulse_write_stop(16, 0, 0, self.i_y , self.i_y_prev)
 
             for element in to_spinapi:
-                if element[0] == self.channel_dict['TRIGGER']:
+                if element[0] == self.channel_dict['DETECTION']:
                     self.i_trigger = self.i_trigger + 1
-                    assert( self.i_trigger <= 1 ), 'Only 1 TRIGGER pulse allowed' 
+                    assert( self.i_trigger <= 1 ), 'Only 1 DETECTION pulse allowed' 
 
                     self.pulse_write_stop(320, element[1], element[2], self.i_trigger , self.i_trigger_prev)
 
@@ -1813,9 +1814,9 @@ class PB_Micran:
             self.i_laser_2 = 0
 
             for element in to_spinapi:
-                if element[0] == self.channel_dict['TRIGGER']:
+                if element[0] == self.channel_dict['DETECTION']:
                     self.i_trigger = self.i_trigger + 1
-                    assert( self.i_trigger <= 1 ), 'Only 1 TRIGGER pulse allowed' 
+                    assert( self.i_trigger <= 1 ), 'Only 1 DETECTION pulse allowed' 
 
                     #self.pulse_write_stop(320, element[1], element[2], self.i_trigger , self.i_trigger_prev)
 

@@ -9,6 +9,7 @@ from operator import iconcat
 from functools import reduce
 from itertools import groupby, chain
 import numpy as np
+import atomize.main.local_config as lconf
 import atomize.device_modules.config.config_utils as cutil
 import atomize.general_modules.general_functions as general
 import atomize.general_modules.spinapi as spinapi
@@ -27,8 +28,8 @@ class PB_ESR_500_Pro:
 
         #### Inizialization
         # setting path to *.ini file
-        self.path_current_directory = os.path.dirname(__file__)
-        self.path_config_file = os.path.join(self.path_current_directory, 'config','PB_ESR_500_pro_config.ini')
+        self.path_current_directory = lconf.load_config_device()
+        self.path_config_file = os.path.join(self.path_current_directory, 'PB_ESR_500_pro_config.ini')
 
         # configuration data
         #config = cutil.read_conf_util(self.path_config_file)
@@ -38,7 +39,7 @@ class PB_ESR_500_Pro:
         # only awg regime with automatic awg_trigger?
 
         # Channel assignments
-        self.ch0 = self.specific_parameters['ch0'] # TRIGGER
+        self.ch0 = self.specific_parameters['ch0'] # DETECTION
         self.ch1 = self.specific_parameters['ch1'] # AMP_ON
         self.ch2 = self.specific_parameters['ch2'] # LNA_PROTECT
         self.ch3 = self.specific_parameters['ch3'] # MW
@@ -47,7 +48,6 @@ class PB_ESR_500_Pro:
         self.ch6 = self.specific_parameters['ch6'] # TRIGGER_AWG
         self.ch7 = self.specific_parameters['ch7'] # AWG
         self.ch8 = self.specific_parameters['ch8'] # LASER
-        self.ch9 = self.specific_parameters['ch9'] # SYNT2
 
         # AWG pulse will be substitued by a shifted RECT_AWG pulse and AMP_ON pulse
         # TRIGGER_AWG is used to trigger AWG card
@@ -56,7 +56,7 @@ class PB_ESR_500_Pro:
         # -Y for Mikran bridge is simutaneously turned on -X; +Y
         # that is why there is no -Y channel instead we add both -X and +Y pulses
         self.channel_dict = {self.ch0: 0, self.ch1: 1, self.ch2: 2, self.ch3: 3, self.ch4: 4, self.ch5: 5, \
-                        self.ch6: 6, self.ch7: 7, self.ch8: 8, self.ch9: 9, 'CH10': 10, 'CH11': 11,\
+                        self.ch6: 6, self.ch7: 7, self.ch8: 8, 'CH9': 9, 'CH10': 10, 'CH11': 11,\
                         'CH12': 12, 'CH13': 13, 'CH14': 14, 'CH15': 15, 'CH16': 16, 'CH17': 17,\
                         'CH18': 18, 'CH19': 19, 'CH20': 20, 'CH21': 21, }
 
@@ -74,7 +74,7 @@ class PB_ESR_500_Pro:
 
         # a constant that use to overcome short instruction for our diagonal amp_on and mw pulses
         # see also add_amp_on_pulses() function; looking for pulses with +-overlap_amp_lna_mw overlap
-        self.overlap_amp_lna_mw = 5 # in clock ### it was 5; 06.03.2023
+        self.overlap_amp_lna_mw = 5 # in clock ### it was 6; 06.10.2021
 
         # after all manupulations with diagonal amp_on pulses there is a variant
         # when we use several mw pulses with app. 40 ns distance and with the phase different from
@@ -134,8 +134,6 @@ class PB_ESR_500_Pro:
             self.phase_pulses = 0
             self.instr_from_file = 0
             self.iterator_of_updates = 0
-            # Default synt for AWG channel
-            self.synt_number = 2
 
         elif self.test_flag == 'test':
             open('instructions.out', 'w').close()
@@ -154,15 +152,13 @@ class PB_ESR_500_Pro:
             self.awg_pulses = 0
             self.phase_pulses = 0
             self.instr_from_file = 0
-            # Default synt for AWG channel
-            self.synt_number = 2
 
     # Module functions
     def pulser_name(self):
         answer = 'PB ESR 500 Pro'
         return answer
 
-    def pulser_pulse(self, name = 'P0', channel = 'TRIGGER', start = '0 ns', length = '100 ns', \
+    def pulser_pulse(self, name = 'P0', channel = 'DETECTION', start = '0 ns', length = '100 ns', \
         delta_start = '0 ns', length_increment = '0 ns', phase_list = []):
         """
         A function that added a new pulse at specified channel. The possible arguments:
@@ -190,8 +186,8 @@ class PB_ESR_500_Pro:
             # phase_list's length
             if channel == 'MW':
                 self.phase_array_length.append(len(list(phase_list)))
-            elif channel == 'TRIGGER':
-                assert( len(list(phase_list)) ) == 0, 'TRIGGER pulse should not have phase'
+            elif channel == 'DETECTION':
+                assert( len(list(phase_list)) ) == 0, 'DETECTION pulse should not have phase'
 
             # Checks
             # two equal names
@@ -422,7 +418,7 @@ class PB_ESR_500_Pro:
             self.phase_pulses = 0
             # adding phase switch pulses
             for index, element in enumerate(self.pulse_array):
-                if len(list(element['phase_list'])) != 0:
+                if (len(list(element['phase_list'])) != 0) and (element['channel'] != 'DETECTION'):
                     if element['phase_list'][self.current_phase_index] == '+x':
                         #pass
                         # 21-08-2021; Correction of non updating case for ['-x', '+x']
@@ -497,7 +493,7 @@ class PB_ESR_500_Pro:
 
             self.phase_pulses = 0
             for index, element in enumerate(self.pulse_array):
-                if len(list(element['phase_list'])) != 0:
+                if (len(list(element['phase_list'])) != 0) and (element['channel'] != 'DETECTION'):
                     if element['phase_list'][self.current_phase_index] == '+x':
                         #pass
                         # 21-08-2021; Correction of non updating case for ['-x', '+x']
@@ -601,9 +597,7 @@ class PB_ESR_500_Pro:
                 ##        self.pulser_stop()
 
                 #general.message( to_spinapi )
-                self.pulser_stop()
-                general.wait( str(round(rep_time*10**(-6), 0)) + ' ms' )
-
+                #self.pulser_stop()
                 # initialization
                 #pb_init()
                 #pb.core_clock(self.clock)
@@ -664,7 +658,6 @@ class PB_ESR_500_Pro:
 
         elif self.test_flag == 'test':
             # get repetition rate
-
             rep_rate = self.rep_rate[0]
             if rep_rate[-3:] == ' Hz':
                 rep_time = int(1000000000/float(rep_rate[:-3]))
@@ -674,9 +667,6 @@ class PB_ESR_500_Pro:
                 rep_time = int(1000/float(rep_rate[:-4]))
             else:
                 assert(1 == 2), "Incorrect repetition rate dimension (Hz, kHz, MHz)"
-
-            self.pulser_stop()
-            general.wait( str(round(rep_time*10**(-6), 0)) + ' ms' )
 
             if self.reset_count == 0 or self.shift_count == 1 or self.increment_count == 1:
                 # using a special functions for convertion to instructions
@@ -691,7 +681,7 @@ class PB_ESR_500_Pro:
                     f.close()
 
                 for element in to_spinapi:
-                    if element[2] < 12:  # it was 12; 06.10.2021
+                    if element[2] < 10:  # it was 12; 06.10.2021
                         assert( 1 == 2 ), 'Incorrect instruction are found. Probably Trigger pulses are overlap with other'
 
                 self.reset_count = 1
@@ -998,9 +988,6 @@ class PB_ESR_500_Pro:
             elif rep_rate[-3:] == 'MHz':
                 rep_time = int(1000/float(rep_rate[:-4]))
 
-            self.pulser_stop()
-            general.wait( str(round(rep_time*10**(-6), 0)) + ' ms' )
-
             # reset the pulses; deepcopy helps to create a TRULY NEW array
             self.pulse_array = deepcopy( self.pulse_array_init )
             # using a special functions for convertion to instructions
@@ -1080,10 +1067,6 @@ class PB_ESR_500_Pro:
                 rep_time = int(1000/float(rep_rate[:-4]))
             else:
                 assert( 1 == 2 ), 'Incorrect dimension of repetition rate (Hz, kHz, MHz)'
-
-
-            self.pulser_stop()
-            general.wait( str(round(rep_time*10**(-6), 0)) + ' ms' )
 
             # reset the pulses; deepcopy helps to create a TRULY NEW array
             self.pulse_array = deepcopy( self.pulse_array_init )
@@ -1324,15 +1307,6 @@ class PB_ESR_500_Pro:
                 self.instr_from_file = 1
             elif flag == 0:
                 self.instr_from_file = 0
-
-    def pulser_default_synt(self, num):
-        """
-        Function to change synthetizer for AWG channel of the ITC microwave bridge
-        """
-        if self.test_flag != 'test':
-            self.synt_number = num
-        elif self.test_flag == 'test':
-            assert(num == 1 or num == 2), 'Incorrect synthetizer number'
 
     # Auxilary functions
     def convertion_to_numpy(self, p_array):
@@ -2161,7 +2135,6 @@ class PB_ESR_500_Pro:
 
             bit_array = np.zeros( max_pulse - min_pulse, dtype = np.int64 )
 
-
             i = 0
             while i < len(pulses):
                 # convert each pulse in an array of 0 and 1,
@@ -2172,15 +2145,6 @@ class PB_ESR_500_Pro:
                 
                 # summing arrays for each pulse into the finalbit_array
                 bit_array = bit_array + translation_array
-
-                # ITC bridge with two syntetizer
-                # AWG channel uses synt2 as default
-                # we need to add a pulse
-                # RECT/AWG pulse: pulses[i, 0] == 2**7
-                if self.synt_number == 1 and pulses[i, 0] == 2**7:
-                    bit_array = bit_array + 2**self.channel_dict[self.ch9]*np.concatenate( (np.zeros( pulses[i, 1] - min_pulse, dtype = np.int64), \
-                        np.ones(pulses[i, 2] - pulses[i, 1], dtype = np.int64), \
-                        np.zeros(max_pulse - pulses[i, 2], dtype = np.int64)), axis = None)
 
                 i += 1
 
@@ -2205,15 +2169,6 @@ class PB_ESR_500_Pro:
                 
                 # summing arrays for each pulse into the finalbit_array
                 bit_array = bit_array + translation_array
-
-                # ITC bridge with two syntetizer
-                # AWG channel uses synt2 as default
-                # we need to add a pulse
-                # RECT/AWG pulse: pulses[i, 0] == 2**7
-                if self.synt_number == 1 and pulses[i, 0] == 2**7:
-                    bit_array = bit_array + 2**self.channel_dict[self.ch9]*np.concatenate( (np.zeros( pulses[i, 1] - min_pulse, dtype = np.int64), \
-                        np.ones(pulses[i, 2] - pulses[i, 1], dtype = np.int64), \
-                        np.zeros(max_pulse - pulses[i, 2], dtype = np.int64)), axis = None)
 
                 i += 1
 
@@ -2256,17 +2211,6 @@ class PB_ESR_500_Pro:
                     # appending each pulses individually
                     bit_array_pulses.append(translation_array)
 
-                    # ITC bridge with two syntetizer
-                    # AWG channel uses synt2 as default
-                    # we need to add a pulse
-                    # RECT/AWG pulse: pulses[i, 0] == 2**7
-                    if self.synt_number == 1 and pulses[i, 0] == 2**7:
-
-                        translation_array = 2**self.channel_dict[self.ch9]*np.concatenate( (np.zeros( 2*(pulses[i, 1] - min_pulse), dtype = np.int64), \
-                            np.ones(2*(pulses[i, 2] - pulses[i, 1]), dtype = np.int64), \
-                            np.zeros(2*(max_pulse - pulses[i, 2]), dtype = np.int64)), axis = None)
-                        bit_array_pulses.append(translation_array)
-
                 i += 1
 
             return bit_array_pulses
@@ -2292,19 +2236,8 @@ class PB_ESR_500_Pro:
                         np.ones(pulses[i, 2] - pulses[i, 1], dtype = np.int64), \
                         np.zeros(max_pulse - pulses[i, 2], dtype = np.int64)), axis = None)
                 
-                    # summing arrays for each pulse into the finalbit_array
+                # summing arrays for each pulse into the finalbit_array
                     bit_array_pulses.append(translation_array)
-
-                    # ITC bridge with two syntetizer
-                    # AWG channel uses synt2 as default
-                    # we need to add a pulse
-                    # RECT/AWG pulse: pulses[i, 0] == 2**7
-                    if self.synt_number == 1 and pulses[i, 0] == 2**7:
-                        
-                        translation_array = 2**self.channel_dict[self.ch9]*np.concatenate( (np.zeros( 2*(pulses[i, 1] - min_pulse), dtype = np.int64), \
-                            np.ones(2*(pulses[i, 2] - pulses[i, 1]), dtype = np.int64), \
-                            np.zeros(2*(max_pulse - pulses[i, 2]), dtype = np.int64)), axis = None)
-                        bit_array_pulses.append(translation_array)
 
                 i += 1
 

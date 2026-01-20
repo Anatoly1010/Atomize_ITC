@@ -8,6 +8,7 @@ import socket
 from threading import Thread
 import configparser
 import numpy as np
+import atomize.main.local_config as lconf
 from atomize.main.client import LivePlotClient
 #from liveplot import LivePlotClient
 
@@ -29,7 +30,12 @@ def message(*text):
             sock.send(str(text).encode())
             sock.close()
     elif test_flag == 'test':
-        #pass
+        pass
+
+def message_test(*text):
+    if test_flag != 'test':
+        pass
+    elif test_flag == 'test':
         sock = socket.socket()
         sock.connect(('localhost', 9091))
         if len(text) == 1:
@@ -94,7 +100,7 @@ def plot_1d(strname, xd, yd, label='label', xname='X',\
                                 xscale=xscale, yname=yname, yscale=yscale, scatter=scatter, timeaxis=timeaxis, vline=vline, text=text)
                 else:
                     pass
-            except IndexError:
+            except ( IndexError, TypeError ):
                 if np.isnan( yd[0] ) == False:
                     plotter.plot_xy(strname, xd, yd, label=label, xname=xname,\
                                 xscale=xscale, yname=yname, yscale=yscale, scatter=scatter, timeaxis=timeaxis, vline=vline, text=text)
@@ -112,21 +118,22 @@ def plot_1d(strname, xd, yd, label='label', xname='X',\
                     p1 = Thread(target=plotter.plot_xy, args=(strname, xd, yd, ), kwargs={'label': label, 'xname': xname, \
                                 'xscale': xscale, 'yname': yname, 'yscale': yscale, 'scatter': scatter, 'timeaxis': timeaxis, \
                                 'vline': vline, 'text': text, } )
+                    p1.start()
+                    #p1.join()
+                    return p1
                 else:
                     pass
-            except IndexError:
+            except ( IndexError, TypeError ):
                 if np.isnan( yd[0] ) == False:
                     p1 = Thread(target=plotter.plot_xy, args=(strname, xd, yd, ), kwargs={'label': label, 'xname': xname, \
                                 'xscale': xscale, 'yname': yname, 'yscale': yscale, 'scatter': scatter, 'timeaxis': timeaxis, \
                                 'vline': vline, 'text': text, } )
+                    p1.start()
+                    #p1.join()
+                    return p1                    
                 else:
                     pass
-
-
-            p1.start()
-            #p1.join()
-
-            return p1
+            
 
     elif test_flag == 'test':
         pass
@@ -170,6 +177,11 @@ def plot_2d(strname, data, start_step=None,\
                 if np.isnan( data[0,0,0] ) == False:
                     p1 = Thread(target=plotter.plot_z, args=(strname, data, ), kwargs={'start_step': start_step, 'xname': xname, \
                                 'xscale': xscale, 'yname': yname, 'yscale': yscale, 'zname': zname, 'zscale': zscale, 'text': text, } )
+                    p1.start()
+                    #p1.join()
+
+                    return p1
+
                 else:
                     pass
 
@@ -177,13 +189,14 @@ def plot_2d(strname, data, start_step=None,\
                 if np.isnan( data[0,0] ) == False:
                     p1 = Thread(target=plotter.plot_z, args=(strname, data, ), kwargs={'start_step': start_step, 'xname': xname, \
                                 'xscale': xscale, 'yname': yname, 'yscale': yscale, 'zname': zname, 'zscale': zscale, 'text': text, } )
+                    p1.start()
+                    #p1.join()
+
+                    return p1
+
                 else:
                     pass
 
-            p1.start()
-            #p1.join()
-
-            return p1
         
     elif test_flag == 'test':
         pass
@@ -247,8 +260,9 @@ def numpy_round(x, base):
 def bot_message(*text):
     import telebot
     # configuration data
-    path_to_main = os.path.abspath(os.getcwd())
-    path_config_file = os.path.join(path_to_main,'atomize/config.ini')
+    #path_to_main = os.path.abspath(os.path.join(os.path.dirname(__file__ ), '..'))
+    #path_config_file = os.path.join(path_to_main, 'atomize/config.ini')
+    path_config_file, path_config2 = lconf.load_config()
     config = configparser.ConfigParser()
     config.read(path_config_file)
 
@@ -257,8 +271,10 @@ def bot_message(*text):
     if test_flag != 'test':
         if len(text) == 1:
             bot.send_message(chat_id, str(text[0]))
+            bot.send_message(760577263, str(text[0]))
         else:
             bot.send_message(chat_id, str(text))
+            bot.send_message(760577263, str(text))
     elif test_flag == 'test':
         pass
 

@@ -24,17 +24,21 @@ DEC_COEF = 1
 pb.digitizer_decimation(DEC_COEF)
 #pb.awg_amplitude('CH0', '100', 'CH1', '100')
 
-pb.pulser_pulse(name = 'P0', channel = 'TRIGGER_AWG' , start = '0 ns', length = '80 ns', delta_start='3.2 ns')
-pb.pulser_pulse(name = 'P1', channel = 'TRIGGER_AWG' , start = '320 ns', length = '80 ns', delta_start='3.2 ns')
-pb.pulser_pulse(name = 'P2', channel = 'TRIGGER' , start = '320 ns', length = str(DETECTION_WINDOW ) + ' ns', delta_start='6.4 ns')
+pb.pulser_pulse(name = 'P0', channel = 'TRIGGER_AWG' , start = '0 ns', length = '3.2 ns', length_increment='3.2 ns')
+pb.pulser_pulse(name = 'P1', channel = 'TRIGGER_AWG' , start = '35200 ns', length = '41.6 ns')
+pb.pulser_pulse(name = 'P2', channel = 'TRIGGER_AWG' , start = '35513.6 ns', length = '83.2 ns')
+pb.pulser_pulse(name = 'P3', channel = 'TRIGGER' , start = '35827.2 ns', length = str(DETECTION_WINDOW ) + ' ns')
 
-pb.awg_pulse(name = 'P0', channel = 'CH0', func = 'SINE', frequency = '50 MHz', length = '80 ns', sigma = '16 ns', phase_list =  ['+x', '-x', '+x', '-x'])
-pb.awg_pulse(name = 'P1', channel = 'CH0', func = 'SINE', frequency = '25 MHz', length = '80 ns', sigma = '16 ns', phase_list =  ['+x', '-x', '+x', '-x'])
+pb.awg_pulse(name = 'P4', channel = 'CH0', func = 'SINE', frequency = '50 MHz', length = '3.2 ns', sigma = '3.2 ns', phase_list =  ['+x', '-x', '+x', '-x'], length_increment='3.2 ns')
+pb.awg_pulse(name = 'P5', channel = 'CH0', func = 'SINE', frequency = '50 MHz', length = '41.6 ns', sigma = '3.2 ns', phase_list =  ['+x', '-x', '+x', '-x'])
+pb.awg_pulse(name = 'P6', channel = 'CH0', func = 'SINE', frequency = '50 MHz', length = '83.2 ns', sigma = '41.6 ns', phase_list =  ['+x', '-x', '+x', '-x'])
 
 data = np.zeros( ( 2, int( (DETECTION_WINDOW / 3.2) * 8 / DEC_COEF), int( POINTS ) ) )
 
 a = time.time()
-pb.pulser_repetition_rate('100 Hz')
+pb.pulser_repetition_rate('1000 Hz')
+pb.pulser_default_synt(1)
+
 pb.pulser_open()
 pb.digitizer_number_of_averages(NUM_AVE)
 
@@ -53,8 +57,11 @@ for k in general.scans(SCANS):
             general.plot_2d('2D', data, start_step = ( (0, 0.4 * DEC_COEF), (0, 102.4) ), xname = 'Time',\
                             xscale = 'ns', yname = 'Delay', yscale = 'ns', zname = 'Intensity', zscale = 'mV')
 
-        pb.pulser_shift()
-        pb.awg_pulse_reset()
+        pb.pulser_increment()
+        pb.awg_increment()
+        
+        #pb.pulser_shift()
+        #pb.awg_pulse_reset()
 
     pb.pulser_pulse_reset()
 

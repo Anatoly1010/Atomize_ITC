@@ -894,7 +894,7 @@ class Insys_FPGA:
             self.phase_pulses_pulser = 0
             # adding phase switch pulses
             for index, element in enumerate(self.pulse_array_pulser):            
-                if len(list(element['phase_list'])) != 0:
+                if (len(list(element['phase_list'])) != 0) and (element['channel'] != 'DETECTION'):
                     if element['phase_list'][self.current_phase_index_pulser] == '+x':
                         #pass
                         # 21-08-2021; Correction of non updating case for ['-x', '+x']
@@ -990,7 +990,7 @@ class Insys_FPGA:
 
             self.phase_pulses_pulser = 0
             for index, element in enumerate(self.pulse_array_pulser):
-                if len(list(element['phase_list'])) != 0:
+                if (len(list(element['phase_list'])) != 0) and (element['channel'] != 'DETECTION'):
                     if element['phase_list'][self.current_phase_index_pulser] == '+x':
                         #pass
                         # 21-08-2021; Correction of non updating case for ['-x', '+x']
@@ -2065,11 +2065,14 @@ class Insys_FPGA:
 
                     self.nStrmBufTotalCnt_brd = BufCnt
 
-            data_i = self.adc_sens * self.data_raw[0::(2*self.dec_coef)]
-            data_q = self.adc_sens * self.data_raw[1::(2*self.dec_coef)]
+            #data_i = self.adc_sens * self.data_raw[0::(2*self.dec_coef)]
+            #data_q = self.adc_sens * self.data_raw[1::(2*self.dec_coef)]
 
             if self.buffer_ready == 1:
                 #general.message(self.count_nip)
+                data_i = self.adc_sens * self.data_raw[0::(2*self.dec_coef)]
+                data_q = self.adc_sens * self.data_raw[1::(2*self.dec_coef)]
+                
                 if integral == False:
                     self.data_i_ph, self.data_q_ph = self.pulser_acquisition_cycle(data_i.reshape(int(p * ph), int( adc_window * 8 / self.dec_coef )) / self.count_nip[:,None] / self.gimSum_brd, data_q.reshape(int(p * ph), int( adc_window * 8 / self.dec_coef  )) / self.count_nip[:,None] / self.gimSum_brd, acq_cycle = self.detection_phase_list)
                     

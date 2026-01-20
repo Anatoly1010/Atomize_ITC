@@ -5,7 +5,9 @@ import os
 import gc
 import sys
 import pyvisa
+import pyqtgraph as pg
 from pyvisa.constants import StopBits, Parity
+import atomize.main.local_config as lconf
 import atomize.device_modules.config.config_utils as cutil
 import atomize.general_modules.general_functions as general
 
@@ -15,8 +17,8 @@ class SR_860:
 
         #### Inizialization
         # setting path to *.ini file
-        self.path_current_directory = os.path.dirname(__file__)
-        self.path_config_file = os.path.join(self.path_current_directory, 'config','SR_860_config.ini')
+        self.path_current_directory = lconf.load_config_device()
+        self.path_config_file = os.path.join(self.path_current_directory, 'SR_860_config.ini')
 
         # configuration data
         self.config = cutil.read_conf_util(self.path_config_file)
@@ -46,6 +48,8 @@ class SR_860:
         self.ref_ampl_max = 2
         self.harm_max = 99
         self.harm_min = 1
+        self.ref_freq = 50
+        self.harm = 1
 
         # Test run parameters
         # These values are returned by the modules in the test run 
@@ -68,15 +72,15 @@ class SR_860:
                         if answer == 0:
                             self.status_flag = 1
                         else:
-                            general.message('During internal device test errors are found')
+                            general.message(f'During internal device test errors were found {self.__class__.__name__}')
                             self.status_flag = 0
                             sys.exit()
                     except BrokenPipeError:
-                        general.message("No connection")
+                        general.message(f"No connection {self.__class__.__name__}")
                         self.status_flag = 0
                         sys.exit()
                 except BrokenPipeError:
-                    general.message("No connection")
+                    general.message(f"No connection {self.__class__.__name__}")
                     self.status_flag = 0
                     sys.exit()
 
@@ -95,23 +99,16 @@ class SR_860:
                         if answer == 0:
                             self.status_flag = 1
                         else:
-                            general.message('During internal device test errors are found')
+                            general.message(f'During internal device test errors are found {self.__class__.__name__}')
                             self.status_flag = 0
                             sys.exit()
-                    except pyvisa.VisaIOError:
+                    except (pyvisa.VisaIOError, BrokenPipeError):
                         self.status_flag = 0
-                        general.message("No connection")
+                        general.message(f"No connection {self.__class__.__name__}")
                         sys.exit()
-                    except BrokenPipeError:
-                        general.message("No connection")
-                        self.status_flag = 0
-                        sys.exit()
-                except pyvisa.VisaIOError:
-                    general.message("No connection")
-                    self.status_flag = 0
-                    sys.exit()
-                except BrokenPipeError:
-                    general.message("No connection")
+
+                except (pyvisa.VisaIOError, BrokenPipeError):
+                    general.message(f"No connection {self.__class__.__name__}")
                     self.status_flag = 0
                     sys.exit()
 
@@ -128,31 +125,28 @@ class SR_860:
                         if answer == 0:
                             self.status_flag = 1
                         else:
-                            general.message('During internal device test errors are found')
+                            general.message(f'During internal device test errors are found {self.__class__.__name__}')
                             self.status_flag = 0
                             sys.exit()
-                    except pyvisa.VisaIOError:
-                        general.message("No connection")
+                    except (pyvisa.VisaIOError, BrokenPipeError):
+                        general.message(f"No connection {self.__class__.__name__}")
                         self.status_flag = 0
                         sys.exit()
-                    except BrokenPipeError:
-                        general.message("No connection")
-                        self.status_flag = 0
-                        sys.exit()
-                except pyvisa.VisaIOError:
-                    general.message("No connection")
+
+                except (pyvisa.VisaIOError, BrokenPipeError):
+                    general.message(f"No connection {self.__class__.__name__}")
                     self.status_flag = 0
                     sys.exit()
-                except BrokenPipeError:
-                    general.message("No connection")
-                    self.status_flag = 0
-                    sys.exit()
+
+            self.ref_freq = float( self.device_query( 'FREQ?' ) )
+            self.harm = int(self.device_query("HARM?"))
+
         elif self.test_flag == 'test':
             self.test_signal = 0.001
-            self.test_frequency = 10000
-            self.test_phase = 10
+            self.test_frequency = '10 kHz'
+            self.test_phase = '10 deg'
             self.test_timeconstant = '10 ms'
-            self.test_amplitude = 0.3
+            self.test_amplitude = '300 mV'
             self.test_sensitivity = '100 mV'
             self.test_ref_mode = 'Internal'
             self.test_ref_slope = 'Sine'
@@ -172,7 +166,7 @@ class SR_860:
             command = str(command)
             self.device.write(command)
         else:
-            general.message("No Connection")
+            general.message(f"No connection {self.__class__.__name__}")
             self.status_flag = 0
             sys.exit()
 
@@ -188,7 +182,7 @@ class SR_860:
                 answer = self.device.query(command)
             return answer
         else:
-            general.message("No Connection")
+            general.message(f"No connection {self.__class__.__name__}")
             self.status_flag = 0
             sys.exit()
 
@@ -204,26 +198,36 @@ class SR_860:
     def lock_in_ref_frequency(self, *frequency):
         if self.test_flag != 'test':
             if len(frequency) == 1:
-                freq = float(frequency[0])
-                if freq >= self.ref_freq_min and freq <= self.ref_freq_max:
+                freq_str = str(frequency[0])
+                freq = pg.siEval( freq_str )
+                if (freq >= self.ref_freq_min and freq <= self.ref_freq_max and self.harm * freq <= self.ref_freq_max ):
                     self.device_write('FREQ '+ str(freq))
+                    self.ref_freq = freq
                 else:
-                    general.message("Incorrect frequency")
-                    sys.exit()
+                    general.message(f"Incorrect reference frequency. The maximum value of the product of the harmonic and the current reference frequency is {self.ref_freq_max}. The current harmonic is { self.harm}")
+                    
             elif len(frequency) == 0:
-                answer = float(self.device_query('FREQ?'))
+                raw_answer = float(self.device_query('FREQ?'))
+                self.ref_freq = raw_answer
+                answer = pg.siFormat( raw_answer, suffix = 'Hz', precision = 7, allowUnicode = False)
                 return answer
-            else:
-                general.message("Invalid argument")
-                sys.exit()
 
         elif self.test_flag == 'test':
             if len(frequency) == 1:
-                freq = float(frequency[0])
-                assert(freq >= self.ref_freq_min and freq <= self.ref_freq_max), "Incorrect frequency is reached"
+                freq_str = str(frequency[0])
+                freq = pg.siEval( freq_str )
+                min_f = pg.siFormat( self.ref_freq_min, suffix = 'Hz', precision = 3, allowUnicode = False)
+                max_f = pg.siFormat( self.ref_freq_max, suffix = 'Hz', precision = 3, allowUnicode = False)
+                assert(freq >= self.ref_freq_min and freq <= self.ref_freq_max), \
+                            f"Incorrect frequency. The available range is from {min_f} to {max_f}"
+                assert( self.harm * freq <= self.ref_freq_max ), f"Incorrect reference frequency. The maximum value of the product of the harmonic and the current reference frequency is {self.ref_freq_max}. The current harmonic is { self.harm}"
+                self.ref_freq = freq
+
             elif len(frequency) == 0:
                 answer = self.test_frequency
                 return answer
+            else:
+                assert( 1 == 2 ), "Incorrect argument; frequency: float + [' MHz', ' kHz', ' Hz', ' mHz']"
 
     def lock_in_phase(self, *degree):
         if self.test_flag != 'test':
@@ -231,108 +235,89 @@ class SR_860:
                 degs = float(degree[0])
                 if degs >= -360000 and degs <= 360000:
                     self.device_write('PHAS '+str(degs))
-                else:
-                    general.message("Incorrect phase")
-                    sys.exit()
+
             elif len(degree) == 0:
                 answer = float(self.device_query('PHAS?'))
-                return answer
-            else:
-                general.message("Invalid Argument")
-                sys.exit()
+                return f"{answer} deg"
 
         elif self.test_flag == 'test':
             if len(degree) == 1:
                 degs = float(degree[0])
-                assert(degs >= -360000 and degs <= 360000), "Incorrect phase is reached"
+                assert(degs >= -360000 and degs <= 360000), f"Incorrect phase. The available range is from {-360000} to {360000}"
             elif len(degree) == 0:
                 answer = self.test_phase
                 return answer
+            else:
+                assert( 1 == 2 ), "Incorrect argument; phase: float"
+
+    def lock_in_auto_phase(self):
+        """
+        The APHS command performs the Auto Phase function. This command is the same
+        as pressing Shift−Phase. This command adjusts the reference phase so that the
+        current measurement has a Y value of zero and an X value equal to the signal
+        magnitude, R.
+        """
+        if self.test_flag != 'test':
+            self.device_write('APHS')
+
+        elif self.test_flag == 'test':
+            pass
 
     def lock_in_time_constant(self, *timeconstant):
         if self.test_flag != 'test':
-            if  len(timeconstant) == 1:
-                temp = timeconstant[0].split(' ')
-                if float(temp[0]) > 30 and temp[1] == 'ks':
-                    general.message("Desired sensitivity cannot be set, the nearest available value is used")
-                    self.device_write("OFLT "+ str(21))
-                else:
-                    number_tc = min(self.helper_tc_list, key=lambda x: abs(x - int(temp[0])))
-                    if int(number_tc) == 1000 and temp[1] == 'us':
-                        number_tc = 1
-                        temp[1] = 'ms'
-                    elif int(number_tc) == 1000 and temp[1] == 'ms':
-                        number_tc = 1
-                        temp[1] = 's'
-                    elif int(number_tc) == 1000 and temp[1] == 's':
-                        number_tc = 1
-                        temp[1] = 'ks'
-                    if int(number_tc) != int(temp[0]):
-                        general.message("Desired time constant cannot be set, the nearest available value is used")
-                    tc = str(number_tc) + ' ' + temp[1]
-                    if tc in self.timeconstant_dict:
-                        flag = self.timeconstant_dict[tc]
-                        self.device_write("OFLT "+ str(flag))
-                    else:
-                        general.message("Invalid time constant value (too high/too low)")
-                        sys.exit()
+            if len(timeconstant) == 1:
+                tc = timeconstant[0]
+                parsed_value, int_value, a = cutil.parse_pg(tc, self.helper_tc_list)
+                val, val_key, b = cutil.search_and_limit_keys_dictionary( self.timeconstant_dict, parsed_value, 1e-6, 30e3 )
+                self.device_write("OFLT "+ str(val))
+                
+                if ( a == 1 ) or ( b == 1 ):
+                    general.message(f"Desired time constant cannot be set, the nearest available value of {val_key} is used")
+
             elif len(timeconstant) == 0:
                 raw_answer = int(self.device_query("OFLT?"))
                 answer = cutil.search_keys_dictionary(self.timeconstant_dict, raw_answer)
                 return answer
-            else:
-                general.message("Invalid Argument")
-                sys.exit()
 
         elif self.test_flag == 'test':
-            if  len(timeconstant) == 1:
-                temp = timeconstant[0].split(' ')
-                if float(temp[0]) > 30 and temp[1] == 'ks':
-                    tc = '30 ks'
-                else:
-                    number_tc = min(self.helper_tc_list, key=lambda x: abs(x - int(temp[0])))
-                    if int(number_tc) == 1000 and temp[1] == 'us':
-                        number_tc = 1
-                        temp[1] = 'ms'
-                    elif int(number_tc) == 1000 and temp[1] == 'ms':
-                        number_tc = 1
-                        temp[1] = 's'
-                    elif int(number_tc) == 1000 and temp[1] == 's':
-                        number_tc = 1
-                        temp[1] = 'ks'
-                    tc = str(number_tc) + ' ' + temp[1]
-                    if tc in self.timeconstant_dict:
-                        pass
-                    else:
-                        assert(1 == 2), "Incorrect time constant is used"
+            if len(timeconstant) == 1:
+                tc = timeconstant[0]
+                assert( isinstance(tc, str) ), "Incorrect argument; time_constant: int + [' us', ' ms', ' s', ' ks']"
+                val, val_key, b = cutil.search_and_limit_keys_dictionary( self.timeconstant_dict, \
+                                    cutil.parse_pg(tc, self.helper_tc_list)[0], 1e-6, 30e3 )
+                assert( val_key in self.timeconstant_dict ), "Incorrect argument; time_constant: int + [' us', ' ms', ' s', ' ks']"
+
             elif len(timeconstant) == 0:
                 answer = self.test_timeconstant
                 return answer
+            else:
+                assert( 1 == 2), "Incorrect argument; time_constant: int + [' us', ' ms', ' s', ' ks']"
 
     def lock_in_ref_amplitude(self, *amplitude):
         if self.test_flag != 'test':
             if len(amplitude) == 1:
-                ampl = float(amplitude[0]);
+                ampl_str = str(amplitude[0])
+                ampl = pg.siEval( ampl_str )
                 if ampl <= self.ref_ampl_max and ampl >= self.ref_ampl_min:
                     self.device_write('SLVL '+ str(ampl))
-                else:
-                    self.device_write('SLVL '+ str(self.ref_ampl_min))
-                    general.message("Invalid Argument")
-                    sys.exit()
             elif len(amplitude) == 0:
-                answer = float(self.device_query("SLVL?"))
+                raw_answer = float(self.device_query("SLVL?"))
+                answer = pg.siFormat( raw_answer, suffix = 'V', precision = 4, allowUnicode = False)
                 return answer
-            else:
-                general.message("Invalid Argument")
-                sys.exit()
 
         elif self.test_flag == 'test':
             if len(amplitude) == 1:
-                ampl = float(amplitude[0]);
-                assert(ampl <= self.ref_ampl_max and ampl >= self.ref_ampl_min), "Incorrect amplitude is reached"
+                ampl_str = str(amplitude[0])
+                ampl = pg.siEval( ampl_str )
+                min_a = pg.siFormat( self.ref_ampl_min, suffix = 'V', precision = 3, allowUnicode = False)
+                max_a = pg.siFormat( self.ref_ampl_max, suffix = 'V', precision = 3, allowUnicode = False)
+                assert(ampl <= self.ref_ampl_max and ampl >= self.ref_ampl_min), \
+                            f"Incorrect amplitude. The available range is from {min_a} to {max_a}"
             elif len(amplitude) == 0:
                 answer = self.test_amplitude
                 return answer
+            else:
+                assert( 1 == 2 ), "Incorrect argument; amplitude: float + [' mV', ' V']"
 
     def lock_in_get_data(self, *channel):
         if self.test_flag != 'test':
@@ -372,7 +357,7 @@ class SR_860:
                 return answer
             elif len(channel) == 1:
                 assert(int(channel[0]) == 1 or int(channel[0]) == 2 or \
-                    int(channel[0]) == 3 or int(channel[0]) == 4), 'Invalid channel is given'
+                    int(channel[0]) == 3 or int(channel[0]) == 4), "Invalid channel; channel: ['1', '2', '3', '4']"
                 answer = self.test_signal
                 return answer
             elif len(channel) == 2 and int(channel[0]) == 1 and int(channel[1]) == 2:
@@ -381,66 +366,50 @@ class SR_860:
             elif len(channel) == 3 and int(channel[0]) == 1 and int(channel[1]) == 2 and int(channel[2]) == 3:
                 x = y = r = self.test_signal
                 return x, y, r
+            else:
+                assert( 1 == 2 ), "Incorrect argument; channel1: int, channel2: int, channel3: int"
 
     def lock_in_sensitivity(self, *sensitivity):
         if self.test_flag != 'test':
             if len(sensitivity) == 1:
-                temp = sensitivity[0].split(' ')
-                if float(temp[0]) > 1 and temp[1] == 'V':
-                    general.message("Desired sensitivity cannot be set, the nearest available value is used")
-                    self.device_write("SCAL "+ str(0))
-                else:
-                    number_sens = min(self.helper_sens_list, key=lambda x: abs(x - int(temp[0])))
-                    if int(number_sens) == 1000 and temp[1] == 'nV':
-                        number_sens = 1
-                        temp[1] = 'uV'
-                    elif int(number_sens) == 1000 and temp[1] == 'uV':
-                        number_sens = 1
-                        temp[1] = 'mV'
-                    elif int(number_sens) == 1000 and temp[1] == 'mV':
-                        number_sens = 1
-                        temp[1] = 'V'
-                    sens = str(number_sens) + ' ' + temp[1]
-                    if int(number_sens) != int(temp[0]):
-                        general.message("Desired sensitivity cannot be set, the nearest available value is used")
-                    if sens in self.sensitivity_dict:
-                        flag = self.sensitivity_dict[sens]
-                        self.device_write("SCAL "+ str(flag))
-                    else:
-                        general.message("Invalid sensitivity value (too high/too low)")
-                        sys.exit()
+                sens = sensitivity[0]
+                parsed_value, int_value, a = cutil.parse_pg(sens, self.helper_sens_list)
+                val, val_key, b = cutil.search_and_limit_keys_dictionary( self.sensitivity_dict, parsed_value, 1e-9, 1e0 )
+                self.device_write("SCAL "+ str(val))
+           
+                if ( a == 1 ) or ( b == 1 ):
+                    general.message(f"Desired sensitivity cannot be set, the nearest available value of {val_key} is used")
+
             elif len(sensitivity) == 0:
                 raw_answer = int(self.device_query("SCAL?"))
                 answer = cutil.search_keys_dictionary(self.sensitivity_dict, raw_answer)
                 return answer
-            else:
-                general.message("Invalid Argument")
-                sys.exit()
 
         elif self.test_flag == 'test':
-            if  len(sensitivity) == 1:
-                temp = sensitivity[0].split(' ')
-                if float(temp[0]) > 1 and temp[1] == 'V':
-                    sens = '1 V'
-                else:
-                    number_sens = min(self.helper_sens_list, key=lambda x: abs(x - int(temp[0])))
-                    if int(number_sens) == 1000 and temp[1] == 'nV':
-                        number_sens = 1
-                        temp[1] = 'uV'
-                    elif int(number_sens) == 1000 and temp[1] == 'uV':
-                        number_sens = 1
-                        temp[1] = 'mV'
-                    elif int(number_sens) == 1000 and temp[1] == 'mV':
-                        number_sens = 1
-                        temp[1] = 'V'
-                    tc = str(number_sens) + ' ' + temp[1]
-                    if tc in self.sensitivity_dict:
-                        pass
-                    else:
-                        assert(1 == 2), "Incorrect sensitivity is used"
+            if len(sensitivity) == 1:
+                sens = sensitivity[0]
+                assert( isinstance(sens, str) ), "Incorrect argument; sensitivity: int + [' nV', ' uV', ' mV', ' V']"
+                val, val_key, b = cutil.search_and_limit_keys_dictionary( self.sensitivity_dict, \
+                                    cutil.parse_pg(sens, self.helper_sens_list)[0], 1e-9, 1e0 )
+                assert( val_key in self.sensitivity_dict ), "Incorrect argument; sensitivity: int + [' nV', ' uV', ' mV', ' V']"
+
             elif len(sensitivity) == 0:
                 answer = self.test_sensitivity
                 return answer
+            else:
+                assert( 1 == 2), "Incorrect argument; sensitivity: int + [' nV', ' uV', ' mV', ' V']"
+
+    def lock_in_auto_sensitivity(self):
+        """
+        The ASCL command performs the Auto Scale function
+        This function may take some time if the time constant is long. This function does
+        nothing if the time constant is greater than one second.
+        """
+        if self.test_flag != 'test':
+            self.device_write('ASCL')
+
+        elif self.test_flag == 'test':
+            pass
 
     def lock_in_ref_mode(self, *mode):
         if self.test_flag != 'test':
@@ -449,16 +418,11 @@ class SR_860:
                 if md in self.ref_mode_dict:
                     flag = self.ref_mode_dict[md]
                     self.device_write("RSRC "+ str(flag))
-                else:
-                    general.message("Invalid mode")
-                    sys.exit()
+
             elif len(mode) == 0:
                 raw_answer = int(self.device_query("RSRC?"))
                 answer = cutil.search_keys_dictionary(self.ref_mode_dict, raw_answer)
                 return answer
-            else:
-                general.message("Invalid argumnet")
-                sys.exit()
 
         elif self.test_flag == 'test':
             if len(mode) == 1:
@@ -466,10 +430,12 @@ class SR_860:
                 if md in self.ref_mode_dict:
                     pass
                 else:
-                    assert(1 == 2), "Incorrect ref mode is used"
+                    assert(1 == 2), f"Incorrect mode; mode: {list(self.ref_mode_dict.keys())}"
             elif len(mode) == 0:
                 answer = self.test_ref_mode
                 return answer
+            else:
+                assert( 1 == 2 ), f"Incorrect argument; mode: {list(self.ref_mode_dict.keys())}"
 
     def lock_in_ref_slope(self, *mode):
         if self.test_flag != 'test':
@@ -478,16 +444,11 @@ class SR_860:
                 if md in self.ref_slope_dict:
                     flag = self.ref_slope_dict[md]
                     self.device_write("RTRG "+ str(flag))
-                else:
-                    general.message("Invalid mode")
-                    sys.exit()
+
             elif len(mode) == 0:
                 raw_answer = int(self.device_query("RTRG?"))
                 answer = cutil.search_keys_dictionary(self.ref_slope_dict, raw_answer)
                 return answer
-            else:
-                general.message("Invalid argumnet")
-                sys.exit()
 
         elif self.test_flag == 'test':
             if  len(mode) == 1:
@@ -495,10 +456,12 @@ class SR_860:
                 if md in self.ref_slope_dict:
                     pass
                 else:
-                    assert(1 == 2), "Incorrect ref slope is used"
+                    assert(1 == 2), f"Incorrect slope; slope: {list(self.ref_slope_dict.keys())}"
             elif len(mode) == 0:
                 answer = self.test_ref_slope
                 return answer             
+            else:
+                assert( 1 == 2 ), f"Incorrect argument; slope: {list(self.ref_slope_dict.keys())}"
 
     def lock_in_sync_filter(self, *mode):
         if self.test_flag != 'test':
@@ -507,16 +470,11 @@ class SR_860:
                 if md in self.sync_dict:
                     flag = self.sync_dict[md]
                     self.device_write("SYNC "+ str(flag))
-                else:
-                    general.message("Invalid argument")
-                    sys.exit()
+
             elif len(mode) == 0:
                 raw_answer = int(self.device_query("SYNC?"))
                 answer = cutil.search_keys_dictionary(self.sync_dict, raw_answer)
                 return answer
-            else:
-                general.message("Invalid argumnet")
-                sys.exit()
 
         elif self.test_flag == 'test':
             if len(mode) == 1:
@@ -524,10 +482,12 @@ class SR_860:
                 if md in self.sync_dict:
                     pass
                 else:
-                    assert(1 == 2), "Incorrect sync filter parameter"
+                    assert(1 == 2), f"Incorrect sync filter; filter: {list(self.sync_dict.keys())}"
             elif len(mode) == 0:
                 answer = self.test_sync
                 return answer   
+            else:
+                assert( 1 == 2 ), f"Incorrect argument; filter: {list(self.sync_dict.keys())}"
 
     def lock_in_lp_filter(self, *mode):
         if self.test_flag != 'test':
@@ -536,16 +496,11 @@ class SR_860:
                 if md in self.lp_fil_dict:
                     flag = self.lp_fil_dict[md]
                     self.device_write("OFSL "+ str(flag))
-                else:
-                    general.message("Invalid mode")
-                    sys.exit()
+
             elif len(mode) == 0:
                 raw_answer = int(self.device_query("OFSL?"))
                 answer = cutil.search_keys_dictionary(self.lp_fil_dict, raw_answer)
                 return answer
-            else:
-                general.message("Invalid argumnet")
-                sys.exit()
 
         elif self.test_flag == 'test':
             if len(mode) == 1:
@@ -553,36 +508,42 @@ class SR_860:
                 if md in self.lp_fil_dict:
                     pass
                 else:
-                    assert(1 == 2), "Incorrect low pass filter is used"
+                    assert(1 == 2), f"Incorrect low pass filter; filter: {list(self.lp_fil_dict.keys())}"
             elif len(mode) == 0:
                 answer = self.test_lp_filter
                 return answer   
+            else:
+                assert( 1 == 2 ), f"Incorrect argument; filter: {list(self.lp_fil_dict.keys())}"
 
     def lock_in_harmonic(self, *harmonic):
         if self.test_flag != 'test':
             if len(harmonic) == 1:
                 harm = int(harmonic[0]);
                 if harm <= self.harm_max and harm >= self.harm_min:
-                    self.device_write('HARM '+ str(harm))
-                else:
-                    self.device_write('HARM '+ str(self.harm_min))
-                    general.message("Invalid Argument")
-                    sys.exit()
+                    if  (harm * self.ref_freq <= self.ref_freq_max ):
+                        self.device_write('HARM '+ str(harm))
+                        self.harm = harm
+                    else:
+                        general.message(f"Incorrect harmonic. The maximum value of the product of the harmonic and the current reference frequency is {self.ref_freq_max}. The current reference frequency is { pg.siFormat( self.ref_freq_max, suffix = 'Hz', precision = 3, allowUnicode = False)}")
+
             elif len(harmonic) == 0:
                 answer = int(self.device_query("HARM?"))
                 return answer
-            else:
-                general.message("Invalid Argument")
-                sys.exit()
 
         elif self.test_flag == 'test':
             if len(harmonic) == 1:
-                harm = float(harmonic[0])
-                assert(harm <= self.harm_max and harm >= self.harm_min), "Incorrect harmonic is reached"
+                harm = int(harmonic[0])
+                assert(harm <= self.harm_max and harm >= self.harm_min), \
+                    f"Incorrect harmonic. The available range is from {self.harm_min} to {self.harm_max}"
+                assert( harm * self.ref_freq <= self.ref_freq_max ), f"Incorrect harmonic. The maximum value of the product of the harmonic and the current reference frequency is {self.ref_freq_max}. The current reference frequency is { pg.siFormat( self.ref_freq_max, suffix = 'Hz', precision = 3, allowUnicode = False)}"
+                self.harm = harm
+
             elif len(harmonic) == 0:
                 answer = self.test_harmonic
                 return answer
-
+            else:
+                assert( 1 == 2 ), f"Incorrect argument; harmonic: int [{self.harm_min} {self.harm_max}]"
+    
     def lock_in_command(self, command):
         if self.test_flag != 'test':
             self.device_write(command)

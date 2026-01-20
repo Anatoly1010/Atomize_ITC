@@ -5,17 +5,18 @@ import atomize.device_modules.BH_15 as bh
 
 bh15 = bh.BH_15()
 
-bh15.magnet_setup(2000, 10)
+bh15.magnet_setup(100, 10)
+bh15.magnet_field(3000)
 #general.message(bh15.device_write('SS175.000'))
 #general.message(bh15.device_query('LE'))
 
-i = 0
-while i < 5:
+#i = 0
+#while i < 5:
 
-    a = float(bh15.magnet_field(0 + 10*i))
-    general.message(bh15.magnet_field())
-    general.wait('200 ms')
-    i = i + 1
+#    a = float(bh15.magnet_field(5 + 1*i))
+#    general.message(bh15.magnet_field())
+#    general.wait('200 ms')
+#    i = i + 1
     
 
 #Plot_xy Test
