@@ -5,6 +5,7 @@ import os
 import sys
 import time
 import socket
+import traceback
 import numpy as np
 from multiprocessing import Process, Pipe
 from PyQt6 import QtWidgets, uic #, QtCore, QtGui
@@ -1392,37 +1393,62 @@ class MainWindow(QtWidgets.QMainWindow):
         self.test_process.start()
 
         # in order to finish a test
-        time.sleep( 0.5 )
+        #time.sleep( 0.5 )
+        self.test_process.join()
 
-        if self.test_process.exitcode == 0:
-            self.test_process.join()
+        if self.parent_conn.poll() == True:
+            msg_type, data = self.parent_conn.recv()
+            self.message(data)
 
-            # RUN
-            # can be problem here:
-            # maybe it should be moved to pulser_test()
-            # and deleted from here
+            #self.test_process.join()
+            self.errors.clear()
+            self.errors.appendPlainText(data)
+        else:
+            #self.test_process.join()
+        
             self.pb.pulser_clear()
             self.pb.awg_clear()
-            # init will set the 'None' flag
-            self.pb.pulser_test_flag( 'test' )
+            self.pb.pulser_test_flag('test')
             self.pb.awg_test_flag( 'test' )
             self.pulse_sequence()
-            ##self.errors.appendPlainText( self.awg.awg_pulse_list() )
-            self.pb.pulser_test_flag( 'None' )
+
+            self.pb.pulser_test_flag('None')
             self.pb.awg_test_flag( 'None' )
 
             self.pb.dac_window = 0
             self.pb.adc_window = 0
             self.dig_start()
 
-        else:
-            self.test_process.join()
-            self.errors.clear()
-            self.errors.appendPlainText( 'Incorrect pulse setting. Check that your pulses:\n' + \
-                                        '1. Not overlapped\n' + \
-                                        '2. Distance between pulses is more than 44.8 ns\n' + \
-                                        '3. Pulse length should be longer or equal to sigma\n' + \
-                                        '\nIs the pulser running in another application?' )
+
+        #if self.test_process.exitcode == 0:
+        #    self.test_process.join()
+        #
+        #    # RUN
+        #    # can be problem here:
+        #    # maybe it should be moved to pulser_test()
+        #    # and deleted from here
+        #    self.pb.pulser_clear()
+        #    self.pb.awg_clear()
+        #    # init will set the 'None' flag
+        #    self.pb.pulser_test_flag( 'test' )
+        #    self.pb.awg_test_flag( 'test' )
+        #    self.pulse_sequence()
+        #    ##self.errors.appendPlainText( self.awg.awg_pulse_list() )
+        #    self.pb.pulser_test_flag( 'None' )
+        #    self.pb.awg_test_flag( 'None' )
+        #
+        #    self.pb.dac_window = 0
+        #    self.pb.adc_window = 0
+        #    self.dig_start()
+        #
+        #else:
+        #    self.test_process.join()
+        #    self.errors.clear()
+        #    self.errors.appendPlainText( 'Incorrect pulse setting. Check that your pulses:\n' + \
+        #                                '1. Not overlapped\n' + \
+        #                                '2. Distance between pulses is more than 44.8 ns\n' + \
+        #                                '3. Pulse length should be longer or equal to sigma\n' + \
+        #                                '\nIs the pulser running in another application?' )
 
             # no need in stop and close, since AWG is not opened
             #self.awg.awg_stop()
@@ -1433,15 +1459,20 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         Test run
         """
+        try:
 
-        self.pb.pulser_clear()
-        self.pb.awg_clear()
-        # AWG should be reinitialized after clear; it helps in test regime; self.max_pulse_length
-        #self.pb.__init__()
-        self.pb.pulser_test_flag( flag )
-        self.pb.awg_test_flag( flag )
+            self.pb.pulser_clear()
+            self.pb.awg_clear()
+            # AWG should be reinitialized after clear; it helps in test regime; self.max_pulse_length
+            #self.pb.__init__()
+            self.pb.pulser_test_flag( flag )
+            self.pb.awg_test_flag( flag )
 
-        self.pulse_sequence()
+            self.pulse_sequence()
+
+        except BaseException as e:
+            exc_info = f"{type(e)} \n{str(e)} \n{traceback.format_exc()}"
+            conn.send( ('Error', exc_info) )        
 
     def dig_stop(self):
         """
@@ -1459,6 +1490,20 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.message('Digitizer is not running')
 
         #self.opened = 0
+
+        self.errors.clear()
+        
+        try:   
+            if self.parent_conn_dig.poll() == True:
+                msg_type, data = self.parent_conn_dig.recv()
+                self.message(data)
+
+                self.errors.appendPlainText(data)
+
+            else:
+                pass
+        except AttributeError:
+            pass
 
         file_to_read = open(path_file, 'w')
         file_to_read.write('Points: ' + str( self.p1_length ) +'\n')
@@ -1478,7 +1523,6 @@ class MainWindow(QtWidgets.QMainWindow):
         file_to_read.write('Decimation: ' + str( self.decimation ) +'\n')
 
         file_to_read.close()
-        self.errors.clear()
         
     def dig_start(self):
         """
@@ -1537,7 +1581,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.quit()
         sys.exit()
 
-    def message(*text):
+    def message(self, *text):
         sock = socket.socket()
         sock.connect(('localhost', 9091))
         if len(text) == 1:
@@ -1571,280 +1615,287 @@ class Worker(QWidget):
         # should be inside dig_on() function;
         # freezing after digitizer restart otherwise
         #import time
-        import numpy as np
-        import atomize.general_modules.general_functions as general
-        import atomize.device_modules.Insys_FPGA as pb_pro
-        import atomize.math_modules.fft as fft_module
-        import atomize.device_modules.BH_15 as itc
+        import traceback
 
-        pb = pb_pro.Insys_FPGA()
-        fft = fft_module.Fast_Fourier()
-        bh15 = itc.BH_15()
-        bh15.magnet_setup( p15, 0.5 )
-        bh15.magnet_field( p15 ) #, calibration = 'True' )
-
-        process = 'None'
-        num_ave =           p3
-
-        ###
-        pb.phase_shift_ch1_seq_mode_awg = p17
-        ###
-
-        # correction from file
-        if p33 == 0:
-            pass
-        elif p33 == 1:
-            path_to_main = os.path.abspath( os.getcwd() )
-            path_file = os.path.join(path_to_main, '../atomize/control_center/correction.param')
-            file_to_read = open(path_file, 'r')
-
-            text_from_file = file_to_read.read().split('\n')
-            # ['BL: 5.92087', 'A1: 412.868', 'X1: -124.647', 'W1: 62.0069', 'A2: 420.717', 'X2: -35.8879', 
-            # 'W2: 34.4214', A3: 9893.97', 'X3: 12.4056', 'W3: 150.304', 'LOW: 16', 'LIMIT: 23', '']
-
-            coef = [float( text_from_file[0].split(' ')[1] ), float( text_from_file[1].split(' ')[1] ), \
-                    float( text_from_file[2].split(' ')[1] ), float( text_from_file[3].split(' ')[1] ), \
-                    float( text_from_file[4].split(' ')[1] ), float( text_from_file[5].split(' ')[1] ), \
-                    float( text_from_file[6].split(' ')[1] ), float( text_from_file[7].split(' ')[1] ),  \
-                    float( text_from_file[8].split(' ')[1] ), float( text_from_file[9].split(' ')[1] )]
-
-            pb.awg_correction(only_pi_half = 'True', coef_array = coef, \
-                               low_level = float( text_from_file[10].split(' ')[1] ), limit = float( text_from_file[11].split(' ')[1] ))
-        elif p33 == 2:
-            path_to_main = os.path.abspath( os.getcwd() )
-            path_file = os.path.join(path_to_main, '../atomize/control_center/correction.param')
-            file_to_read = open(path_file, 'r')
-
-            text_from_file = file_to_read.read().split('\n')
-            # ['BL: 5.92087', 'A1: 412.868', 'X1: -124.647', 'W1: 62.0069', 'A2: 420.717', 'X2: -35.8879', 
-            # 'W2: 34.4214', A3: 9893.97', 'X3: 12.4056', 'W3: 150.304', 'LOW: 16', 'LIMIT: 23', '']
+        try:
             
-            coef = [float( text_from_file[0].split(' ')[1] ), float( text_from_file[1].split(' ')[1] ), \
-                    float( text_from_file[2].split(' ')[1] ), float( text_from_file[3].split(' ')[1] ), \
-                    float( text_from_file[4].split(' ')[1] ), float( text_from_file[5].split(' ')[1] ), \
-                    float( text_from_file[6].split(' ')[1] ), float( text_from_file[7].split(' ')[1] ),  \
-                    float( text_from_file[8].split(' ')[1] ), float( text_from_file[9].split(' ')[1] )]
+            import numpy as np
+            import atomize.general_modules.general_functions as general
+            import atomize.device_modules.Insys_FPGA as pb_pro
+            import atomize.math_modules.fft as fft_module
+            import atomize.device_modules.BH_15 as itc
 
-            pb.awg_correction(only_pi_half = 'False', coef_array = coef, \
-                               low_level = float( text_from_file[10].split(' ')[1] ), limit = float( text_from_file[11].split(' ')[1] ))
-        
-        pb.awg_amplitude('CH0', str(p18), 'CH1', str(p19) )
-        pb.pulser_repetition_rate( str(p14) + ' Hz' )
+            pb = pb_pro.Insys_FPGA()
+            fft = fft_module.Fast_Fourier()
+            bh15 = itc.BH_15()
+            bh15.magnet_setup( p15, 0.5 )
+            bh15.magnet_field( p15 ) #, calibration = 'True' )
 
-        #pb.pulser_pulse(name = 'P0', channel = 'TRIGGER_AWG', start = '0 ns', length = '30 ns')
-
-        if int(float( p6[2].split(' ')[0] )) != 0:
-            pb.pulser_pulse(name = 'P1', channel = p6[0], start = p6[1], length = p6[2], phase_list = p6[3])
-        
-        if int(float( p7[1].split(' ')[0] )) != 0:
-            if p21[0] != 'WURST' and p21[0] != 'SECH/TANH':
-                pb.awg_pulse(name = 'P2', channel = 'CH0', func = p21[0], frequency = p21[1], \
-                        length = p21[3], sigma = p21[4], start = p21[5], d_coef = p21[6], phase_list = p21[7] )
-            else:
-                pb.awg_pulse(name = 'P2', channel = 'CH0', func = p21[0], frequency = ( p21[1], p21[2] ), \
-                    length = p21[3], sigma = p21[4], start = p21[5], d_coef = p21[6], n = p13, phase_list = p21[7], b = p32 )
-
-            if p21[0] != 'BLANK':
-                pb.pulser_pulse(name = 'P3', channel = 'TRIGGER_AWG', start = p7[0], length = p7[1] ) #p7[1]
-
-        if int(float( p8[1].split(' ')[0] )) != 0:
-            if p22[0] != 'WURST' and p22[0] != 'SECH/TANH':
-                pb.awg_pulse(name = 'P4', channel = 'CH0', func = p22[0], frequency = p22[1], \
-                        length = p22[3], sigma = p22[4], start = p22[5], d_coef = p22[6], phase_list = p22[7] )
-            else:
-                pb.awg_pulse(name = 'P4', channel = 'CH0', func = p22[0], frequency = ( p22[1], p22[2] ), \
-                    length = p22[3], sigma = p22[4], start = p22[5], d_coef = p22[6], n = p13, phase_list = p22[7], b = p32)
-
-            if p22[0] != 'BLANK':
-                pb.pulser_pulse(name = 'P5', channel = 'TRIGGER_AWG', start = p8[0], length = p8[1] ) 
-
-        if int(float( p9[1].split(' ')[0] )) != 0:
-            if p23[0] != 'WURST' and p23[0] != 'SECH/TANH':
-                pb.awg_pulse(name = 'P6', channel = 'CH0', func = p23[0], frequency = p23[1], \
-                        length = p23[3], sigma = p23[4], start = p23[5], d_coef = p23[6], phase_list = p23[7] )
-            else:
-                pb.awg_pulse(name = 'P6', channel = 'CH0', func = p23[0], frequency = ( p23[1], p23[2] ), \
-                    length = p23[3], sigma = p23[4], start = p23[5], d_coef = p23[6], n = p13, phase_list = p23[7], b = p32 )
-
-            if p23[0] != 'BLANK':
-                pb.pulser_pulse(name = 'P7', channel = 'TRIGGER_AWG', start = p9[0], length = p9[1] ) 
-
-        if int(float( p10[1].split(' ')[0] )) != 0:
-            if p24[0] != 'WURST' and p24[0] != 'SECH/TANH':
-                pb.awg_pulse(name = 'P8', channel = 'CH0', func = p24[0], frequency = p24[1], \
-                        length = p24[3], sigma = p24[4], start = p24[5], d_coef = p24[6], phase_list = p24[7] )
-            else:
-                pb.awg_pulse(name = 'P8', channel = 'CH0', func = p24[0], frequency = ( p24[1], p24[2] ), \
-                    length = p24[3], sigma = p24[4], start = p24[5], d_coef = p24[6], n = p13, phase_list = p24[7], b = p32 )
-
-            if p24[0] != 'BLANK':
-                pb.pulser_pulse(name = 'P9', channel = 'TRIGGER_AWG', start = p10[0], length = p10[1] ) 
-
-        if int(float( p11[1].split(' ')[0] )) != 0:
-            if p25[0] != 'WURST' and p25[0] != 'SECH/TANH':
-                pb.awg_pulse(name = 'P10', channel = 'CH0', func = p25[0], frequency = p25[1], \
-                        length = p25[3], sigma = p25[4], start = p25[5], d_coef = p25[6], phase_list = p25[7] )
-            else:
-                pb.awg_pulse(name = 'P10', channel = 'CH0', func = p25[0], frequency = ( p25[1], p25[2] ), \
-                    length = p25[3], sigma = p25[4], start = p25[5], d_coef = p25[6], n = p13, phase_list = p25[7], b = p32 )
-
-            if p25[0] != 'BLANK':
-                pb.pulser_pulse(name = 'P11', channel = 'TRIGGER_AWG', start = p11[0], length = p11[1] ) 
-
-        if int(float( p12[1].split(' ')[0] )) != 0:
-            if p26[0] != 'WURST' and p26[0] != 'SECH/TANH':
-                pb.awg_pulse(name = 'P12', channel = 'CH0', func = p26[0], frequency = p26[1], \
-                        length = p26[3], sigma = p26[4], start = p26[5], d_coef = p26[6], phase_list = p26[7] )
-            else:
-                pb.awg_pulse(name = 'P12', channel = 'CH0', func = p26[0], frequency = ( p26[1], p26[2] ), \
-                    length = p26[3], sigma = p26[4], start = p26[5], d_coef = p26[6], n = p13, phase_list = p26[7], b = p32 )
-
-            if p26[0] != 'BLANK':
-                pb.pulser_pulse(name = 'P13', channel = 'TRIGGER_AWG', start = p12[0], length = p12[1] )
-
-        pb.pulser_default_synt(p34)
-        
-        POINTS = 1
-        pb.digitizer_decimation(p1)
-        DETECTION_WINDOW = round( pb.adc_window * 3.2, 1 )
-        TR_ADC = round( 3.2 / 8, 1 )
-        WIN_ADC = int( pb.adc_window * 8 / p1 )
-
-        data = np.zeros( ( 2, WIN_ADC, 1 ) )
-        ##data = np.random.random( ( 2, WIN_ADC, 1 ) )
-        x_axis = np.linspace(0, ( DETECTION_WINDOW - TR_ADC), num = WIN_ADC)
-
-        t_res = 0.4 * p1
-        pb.digitizer_number_of_averages(p3)
-        PHASES = len( p6[3] )
-        
-        #pb.pulser_visualize()
-        pb.pulser_open()
-
-        # the idea of automatic and dynamic changing is
-        # sending a new value of repetition rate via self.command
-        # in each cycle we will check the current value of self.command
-        # self.command = 'exit' will stop the digitizer
-        while self.command != 'exit':
-            # always test our self.command attribute for stopping the script when neccessary
-
-            if self.command[0:2] == 'PO':
-                #points_value = int( self.command[2:] )
-                #a2012.oscilloscope_stop()
-                #a2012.oscilloscope_timebase( str(points_value) + ' ns' )
-                #a2012.oscilloscope_run_stop()
-                pass
-
-            elif self.command[0:2] == 'HO':
-                #posstrigger_value = int( self.command[2:] )
-                #a2012.oscilloscope_stop()
-                #a2012.oscilloscope_horizontal_offset( str(posstrigger_value) + ' ns' )
-                #a2012.oscilloscope_run_stop()
-                pass
-                
-            elif self.command[0:2] == 'NA':
-                num_ave = int( self.command[2:] )
-                #print( num_ave )
-                pb.digitizer_number_of_averages( num_ave )
-
-            elif self.command[0:2] == 'WL':
-                p4 = int( self.command[2:] )
-            elif self.command[0:2] == 'WR':
-                p5 = int( self.command[2:] )
-            elif self.command[0:2] == 'RR':
-                p14 = float( self.command[2:] )
-                #print( p14 )
-                if p14 > 49:
-                    pb.pulser_repetition_rate( str(p14) + ' Hz' )
-                else:
-                    general.message('For REPETITION RATE lower then 50 Hz, please, press UPDATE')
-            elif self.command[0:2] == 'FI':
-                p15 = float( self.command[2:] )
-                bh15.magnet_field( p15 )#, calibration = 'True' )
-            elif self.command[0:2] == 'FF':
-                p16 = int( self.command[2:] )
-            elif self.command[0:2] == 'QC':
-                p27 = int( self.command[2:] )
-            elif self.command[0:2] == 'ZO':
-                p28 = float( self.command[2:] )
-            elif self.command[0:2] == 'FO':
-                p29 = float( self.command[2:] )
-            elif self.command[0:2] == 'SO':
-                p30 = float( self.command[2:] )
-            elif self.command[0:2] == 'PD':
-                p31 = int( self.command[2:] )
-            elif self.command[0:2] == 'LM':
-                #p2 = int( self.command[2:] )
-                pass
+            process = 'None'
+            num_ave =           p3
 
             ###
-            ###awg.phase_x = p17
+            pb.phase_shift_ch1_seq_mode_awg = p17
+            ###
 
-            # check integration window
-            if p4 > WIN_ADC:
-                p4 = WIN_ADC
-            if p5 > WIN_ADC:
-                p5 = WIN_ADC
-
-            # phase cycle
-            PHASES = len( p6[3] )
-
-            for i in range( PHASES ):
-
-                pb.awg_next_phase()
-                pb.pulser_update()
-                
-                if p2 == 0:
-                    data[0], data[1] = pb.digitizer_get_curve(POINTS, PHASES, live_mode = 1)
-                elif p2 == 1:
-                    data[0], data[1] = pb.digitizer_get_curve(POINTS, PHASES, live_mode = 0)
-                ##general.wait('100 ms')
-                ##data = np.random.random( ( 2, WIN_ADC, 1 ) )
-
-                data_x = data[0].ravel()
-                data_y = data[1].ravel()
-
-                if p16 == 0:                
-                    general.plot_1d('Dig', x_axis, ( data_x, data_y ), \
-                                xscale = 'ns', yscale = 'mV', label = 'ch', vline = (p4 * t_res, p5 * t_res))
-
-                else:
-                    # acquisition cycle
-                    general.plot_1d('Dig', x_axis, ( data_x, data_y ), label = 'ch', xscale = 'ns', yscale = 'mV', \
-                                        vline = (p4 * t_res, p5 * t_res) )
-
-                    if p27 == 0:
-                        freq_axis, abs_values = fft.fft(x_axis, data_x, data_y, t_res * 1)
-                        m_val = round( np.amax( abs_values ), 2 )
-                        general.plot_1d('FFT', freq_axis, abs_values, xname = 'Offset', label = 'FFT', \
-                                                  xscale = 'MHz', yscale = 'A.U.', text = 'Max ' + str(m_val))
-                    else:
-                        if p31 > len( data_x ) - 0.4 * p1:
-                            p31 = len( data_x ) - 0.8 * p1
-                            general.message('Maximum length of the data achieved. A number of drop points was corrected.')
-                        # fixed resolution of digitizer; 2 ns
-                        freq, fft_x, fft_y = fft.fft( x_axis[p31:], data_x[p31:], data_y[p31:], t_res * 1, re = 'True' )
-                        data_fft = fft.ph_correction( freq, fft_x, fft_y, p28, p29, p30 )
-                        general.plot_1d('FFT', freq, ( data_fft[0], data_fft[1] ), xname = 'Offset', xscale = 'MHz', \
-                                                   yscale = 'A.U.', label = 'FFT')
-
-            self.command = 'start'
-            if PHASES != 1:
-                pb.awg_pulse_reset()
-                pb.pulser_pulse_reset()
-            else:
+            # correction from file
+            if p33 == 0:
                 pass
-            
-            # poll() checks whether there is data in the Pipe to read
-            # we use it to stop the script if the exit command was sent from the main window
-            # we read data by conn.recv() only when there is the data to read
-            if conn.poll() == True:
-                self.command = conn.recv()
+            elif p33 == 1:
+                path_to_main = os.path.abspath( os.getcwd() )
+                path_file = os.path.join(path_to_main, '../atomize/control_center/correction.param')
+                file_to_read = open(path_file, 'r')
 
-        if self.command == 'exit':
-            ##print('exit')
-            pb.pulser_close()
+                text_from_file = file_to_read.read().split('\n')
+                # ['BL: 5.92087', 'A1: 412.868', 'X1: -124.647', 'W1: 62.0069', 'A2: 420.717', 'X2: -35.8879', 
+                # 'W2: 34.4214', A3: 9893.97', 'X3: 12.4056', 'W3: 150.304', 'LOW: 16', 'LIMIT: 23', '']
+
+                coef = [float( text_from_file[0].split(' ')[1] ), float( text_from_file[1].split(' ')[1] ), \
+                        float( text_from_file[2].split(' ')[1] ), float( text_from_file[3].split(' ')[1] ), \
+                        float( text_from_file[4].split(' ')[1] ), float( text_from_file[5].split(' ')[1] ), \
+                        float( text_from_file[6].split(' ')[1] ), float( text_from_file[7].split(' ')[1] ),  \
+                        float( text_from_file[8].split(' ')[1] ), float( text_from_file[9].split(' ')[1] )]
+
+                pb.awg_correction(only_pi_half = 'True', coef_array = coef, \
+                                   low_level = float( text_from_file[10].split(' ')[1] ), limit = float( text_from_file[11].split(' ')[1] ))
+            elif p33 == 2:
+                path_to_main = os.path.abspath( os.getcwd() )
+                path_file = os.path.join(path_to_main, '../atomize/control_center/correction.param')
+                file_to_read = open(path_file, 'r')
+
+                text_from_file = file_to_read.read().split('\n')
+                # ['BL: 5.92087', 'A1: 412.868', 'X1: -124.647', 'W1: 62.0069', 'A2: 420.717', 'X2: -35.8879', 
+                # 'W2: 34.4214', A3: 9893.97', 'X3: 12.4056', 'W3: 150.304', 'LOW: 16', 'LIMIT: 23', '']
+                
+                coef = [float( text_from_file[0].split(' ')[1] ), float( text_from_file[1].split(' ')[1] ), \
+                        float( text_from_file[2].split(' ')[1] ), float( text_from_file[3].split(' ')[1] ), \
+                        float( text_from_file[4].split(' ')[1] ), float( text_from_file[5].split(' ')[1] ), \
+                        float( text_from_file[6].split(' ')[1] ), float( text_from_file[7].split(' ')[1] ),  \
+                        float( text_from_file[8].split(' ')[1] ), float( text_from_file[9].split(' ')[1] )]
+
+                pb.awg_correction(only_pi_half = 'False', coef_array = coef, \
+                                   low_level = float( text_from_file[10].split(' ')[1] ), limit = float( text_from_file[11].split(' ')[1] ))
             
+            pb.awg_amplitude('CH0', str(p18), 'CH1', str(p19) )
+            pb.pulser_repetition_rate( str(p14) + ' Hz' )
+
+            #pb.pulser_pulse(name = 'P0', channel = 'TRIGGER_AWG', start = '0 ns', length = '30 ns')
+
+            if int(float( p6[2].split(' ')[0] )) != 0:
+                pb.pulser_pulse(name = 'P1', channel = p6[0], start = p6[1], length = p6[2], phase_list = p6[3])
+            
+            if int(float( p7[1].split(' ')[0] )) != 0:
+                if p21[0] != 'WURST' and p21[0] != 'SECH/TANH':
+                    pb.awg_pulse(name = 'P2', channel = 'CH0', func = p21[0], frequency = p21[1], \
+                            length = p21[3], sigma = p21[4], start = p21[5], d_coef = p21[6], phase_list = p21[7] )
+                else:
+                    pb.awg_pulse(name = 'P2', channel = 'CH0', func = p21[0], frequency = ( p21[1], p21[2] ), \
+                        length = p21[3], sigma = p21[4], start = p21[5], d_coef = p21[6], n = p13, phase_list = p21[7], b = p32 )
+
+                if p21[0] != 'BLANK':
+                    pb.pulser_pulse(name = 'P3', channel = 'TRIGGER_AWG', start = p7[0], length = p7[1] ) #p7[1]
+
+            if int(float( p8[1].split(' ')[0] )) != 0:
+                if p22[0] != 'WURST' and p22[0] != 'SECH/TANH':
+                    pb.awg_pulse(name = 'P4', channel = 'CH0', func = p22[0], frequency = p22[1], \
+                            length = p22[3], sigma = p22[4], start = p22[5], d_coef = p22[6], phase_list = p22[7] )
+                else:
+                    pb.awg_pulse(name = 'P4', channel = 'CH0', func = p22[0], frequency = ( p22[1], p22[2] ), \
+                        length = p22[3], sigma = p22[4], start = p22[5], d_coef = p22[6], n = p13, phase_list = p22[7], b = p32)
+
+                if p22[0] != 'BLANK':
+                    pb.pulser_pulse(name = 'P5', channel = 'TRIGGER_AWG', start = p8[0], length = p8[1] ) 
+
+            if int(float( p9[1].split(' ')[0] )) != 0:
+                if p23[0] != 'WURST' and p23[0] != 'SECH/TANH':
+                    pb.awg_pulse(name = 'P6', channel = 'CH0', func = p23[0], frequency = p23[1], \
+                            length = p23[3], sigma = p23[4], start = p23[5], d_coef = p23[6], phase_list = p23[7] )
+                else:
+                    pb.awg_pulse(name = 'P6', channel = 'CH0', func = p23[0], frequency = ( p23[1], p23[2] ), \
+                        length = p23[3], sigma = p23[4], start = p23[5], d_coef = p23[6], n = p13, phase_list = p23[7], b = p32 )
+
+                if p23[0] != 'BLANK':
+                    pb.pulser_pulse(name = 'P7', channel = 'TRIGGER_AWG', start = p9[0], length = p9[1] ) 
+
+            if int(float( p10[1].split(' ')[0] )) != 0:
+                if p24[0] != 'WURST' and p24[0] != 'SECH/TANH':
+                    pb.awg_pulse(name = 'P8', channel = 'CH0', func = p24[0], frequency = p24[1], \
+                            length = p24[3], sigma = p24[4], start = p24[5], d_coef = p24[6], phase_list = p24[7] )
+                else:
+                    pb.awg_pulse(name = 'P8', channel = 'CH0', func = p24[0], frequency = ( p24[1], p24[2] ), \
+                        length = p24[3], sigma = p24[4], start = p24[5], d_coef = p24[6], n = p13, phase_list = p24[7], b = p32 )
+
+                if p24[0] != 'BLANK':
+                    pb.pulser_pulse(name = 'P9', channel = 'TRIGGER_AWG', start = p10[0], length = p10[1] ) 
+
+            if int(float( p11[1].split(' ')[0] )) != 0:
+                if p25[0] != 'WURST' and p25[0] != 'SECH/TANH':
+                    pb.awg_pulse(name = 'P10', channel = 'CH0', func = p25[0], frequency = p25[1], \
+                            length = p25[3], sigma = p25[4], start = p25[5], d_coef = p25[6], phase_list = p25[7] )
+                else:
+                    pb.awg_pulse(name = 'P10', channel = 'CH0', func = p25[0], frequency = ( p25[1], p25[2] ), \
+                        length = p25[3], sigma = p25[4], start = p25[5], d_coef = p25[6], n = p13, phase_list = p25[7], b = p32 )
+
+                if p25[0] != 'BLANK':
+                    pb.pulser_pulse(name = 'P11', channel = 'TRIGGER_AWG', start = p11[0], length = p11[1] ) 
+
+            if int(float( p12[1].split(' ')[0] )) != 0:
+                if p26[0] != 'WURST' and p26[0] != 'SECH/TANH':
+                    pb.awg_pulse(name = 'P12', channel = 'CH0', func = p26[0], frequency = p26[1], \
+                            length = p26[3], sigma = p26[4], start = p26[5], d_coef = p26[6], phase_list = p26[7] )
+                else:
+                    pb.awg_pulse(name = 'P12', channel = 'CH0', func = p26[0], frequency = ( p26[1], p26[2] ), \
+                        length = p26[3], sigma = p26[4], start = p26[5], d_coef = p26[6], n = p13, phase_list = p26[7], b = p32 )
+
+                if p26[0] != 'BLANK':
+                    pb.pulser_pulse(name = 'P13', channel = 'TRIGGER_AWG', start = p12[0], length = p12[1] )
+
+            pb.pulser_default_synt(p34)
+            
+            POINTS = 1
+            pb.digitizer_decimation(p1)
+            DETECTION_WINDOW = round( pb.adc_window * 3.2, 1 )
+            TR_ADC = round( 3.2 / 8, 1 )
+            WIN_ADC = int( pb.adc_window * 8 / p1 )
+
+            data = np.zeros( ( 2, WIN_ADC, 1 ) )
+            ##data = np.random.random( ( 2, WIN_ADC, 1 ) )
+            x_axis = np.linspace(0, ( DETECTION_WINDOW - TR_ADC), num = WIN_ADC)
+
+            t_res = 0.4 * p1
+            pb.digitizer_number_of_averages(p3)
+            PHASES = len( p6[3] )
+            
+            #pb.pulser_visualize()
+            pb.pulser_open()
+
+            # the idea of automatic and dynamic changing is
+            # sending a new value of repetition rate via self.command
+            # in each cycle we will check the current value of self.command
+            # self.command = 'exit' will stop the digitizer
+            while self.command != 'exit':
+                # always test our self.command attribute for stopping the script when neccessary
+
+                if self.command[0:2] == 'PO':
+                    #points_value = int( self.command[2:] )
+                    #a2012.oscilloscope_stop()
+                    #a2012.oscilloscope_timebase( str(points_value) + ' ns' )
+                    #a2012.oscilloscope_run_stop()
+                    pass
+
+                elif self.command[0:2] == 'HO':
+                    #posstrigger_value = int( self.command[2:] )
+                    #a2012.oscilloscope_stop()
+                    #a2012.oscilloscope_horizontal_offset( str(posstrigger_value) + ' ns' )
+                    #a2012.oscilloscope_run_stop()
+                    pass
+                    
+                elif self.command[0:2] == 'NA':
+                    num_ave = int( self.command[2:] )
+                    #print( num_ave )
+                    pb.digitizer_number_of_averages( num_ave )
+
+                elif self.command[0:2] == 'WL':
+                    p4 = int( self.command[2:] )
+                elif self.command[0:2] == 'WR':
+                    p5 = int( self.command[2:] )
+                elif self.command[0:2] == 'RR':
+                    p14 = float( self.command[2:] )
+                    #print( p14 )
+                    if p14 > 49:
+                        pb.pulser_repetition_rate( str(p14) + ' Hz' )
+                    else:
+                        general.message('For REPETITION RATE lower then 50 Hz, please, press UPDATE')
+                elif self.command[0:2] == 'FI':
+                    p15 = float( self.command[2:] )
+                    bh15.magnet_field( p15 )#, calibration = 'True' )
+                elif self.command[0:2] == 'FF':
+                    p16 = int( self.command[2:] )
+                elif self.command[0:2] == 'QC':
+                    p27 = int( self.command[2:] )
+                elif self.command[0:2] == 'ZO':
+                    p28 = float( self.command[2:] )
+                elif self.command[0:2] == 'FO':
+                    p29 = float( self.command[2:] )
+                elif self.command[0:2] == 'SO':
+                    p30 = float( self.command[2:] )
+                elif self.command[0:2] == 'PD':
+                    p31 = int( self.command[2:] )
+                elif self.command[0:2] == 'LM':
+                    #p2 = int( self.command[2:] )
+                    pass
+
+                ###
+                ###awg.phase_x = p17
+
+                # check integration window
+                if p4 > WIN_ADC:
+                    p4 = WIN_ADC
+                if p5 > WIN_ADC:
+                    p5 = WIN_ADC
+
+                # phase cycle
+                PHASES = len( p6[3] )
+
+                for i in range( PHASES ):
+
+                    pb.awg_next_phase()
+                    pb.pulser_update()
+                    
+                    if p2 == 0:
+                        data[0], data[1] = pb.digitizer_get_curve(POINTS, PHASES, live_mode = 1)
+                    elif p2 == 1:
+                        data[0], data[1] = pb.digitizer_get_curve(POINTS, PHASES, live_mode = 0)
+                    ##general.wait('100 ms')
+                    ##data = np.random.random( ( 2, WIN_ADC, 1 ) )
+
+                    data_x = data[0].ravel()
+                    data_y = data[1].ravel()
+
+                    if p16 == 0:                
+                        general.plot_1d('Dig', x_axis, ( data_x, data_y ), \
+                                    xscale = 'ns', yscale = 'mV', label = 'ch', vline = (p4 * t_res, p5 * t_res))
+
+                    else:
+                        # acquisition cycle
+                        general.plot_1d('Dig', x_axis, ( data_x, data_y ), label = 'ch', xscale = 'ns', yscale = 'mV', \
+                                            vline = (p4 * t_res, p5 * t_res) )
+
+                        if p27 == 0:
+                            freq_axis, abs_values = fft.fft(x_axis, data_x, data_y, t_res * 1)
+                            m_val = round( np.amax( abs_values ), 2 )
+                            general.plot_1d('FFT', freq_axis, abs_values, xname = 'Offset', label = 'FFT', \
+                                                      xscale = 'MHz', yscale = 'A.U.', text = 'Max ' + str(m_val))
+                        else:
+                            if p31 > len( data_x ) - 0.4 * p1:
+                                p31 = len( data_x ) - 0.8 * p1
+                                general.message('Maximum length of the data achieved. A number of drop points was corrected.')
+                            # fixed resolution of digitizer; 2 ns
+                            freq, fft_x, fft_y = fft.fft( x_axis[p31:], data_x[p31:], data_y[p31:], t_res * 1, re = 'True' )
+                            data_fft = fft.ph_correction( freq, fft_x, fft_y, p28, p29, p30 )
+                            general.plot_1d('FFT', freq, ( data_fft[0], data_fft[1] ), xname = 'Offset', xscale = 'MHz', \
+                                                       yscale = 'A.U.', label = 'FFT')
+
+                self.command = 'start'
+                if PHASES != 1:
+                    pb.awg_pulse_reset()
+                    pb.pulser_pulse_reset()
+                else:
+                    pass
+                
+                # poll() checks whether there is data in the Pipe to read
+                # we use it to stop the script if the exit command was sent from the main window
+                # we read data by conn.recv() only when there is the data to read
+                if conn.poll() == True:
+                    self.command = conn.recv()
+
+            if self.command == 'exit':
+                ##print('exit')
+                pb.pulser_close()
+
+        except BaseException as e:
+            exc_info = f"{type(e)} \n{str(e)} \n{traceback.format_exc()}"
+            conn.send( ('Error', exc_info) )            
 def main():
     """
     A function to run the main window of the programm.

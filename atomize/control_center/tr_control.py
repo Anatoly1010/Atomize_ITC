@@ -107,7 +107,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.check_scan.stateChanged.connect( self.save_each_scan )
 
         self.save_scan = 0
-        
         """
         Create a process to interact with an experimental script that will run on a different thread.
         We need a different thread here, since PyQt GUI applications have a main thread of execution 
@@ -239,14 +238,15 @@ class MainWindow(QtWidgets.QMainWindow):
             self.parent_conn.send( 'exit' )
             self.exp_process.join()
         except AttributeError:
+            self.par_conn = 0
             self.message('Experimental script is not running')
 
         if self.parent_conn.poll() == True:
             msg_type, data = self.parent_conn.recv()
-            self.message(data)
+            self.message( data )
         else:
             pass
-    
+
     def start(self):
         """
         Button Start; Run function script(pipe_addres, four parameters of the experimental script)
@@ -280,7 +280,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # send a command in a different thread about the current state
         self.parent_conn.send('start')
 
-    def message(*text):
+    def message(self, *text):
         sock = socket.socket()
         sock.connect(('localhost', 9091))
         if len(text) == 1:
@@ -364,10 +364,15 @@ class Worker(QWidget):
             ##real_length = 4000
             if p9 > 1:
                 a2012_2.oscilloscope_record_length( 4000 )
+                try:
+                    real_length_2 = a2012_2.oscilloscope_record_length( )
+                except ZeroDivisionError:
+                    general.message('Incorrect Trigger Channel')                
                 #print(a2012_2.oscilloscope_record_length( ))
                 #t_res_2 = round( a2012_2.oscilloscope_timebase() / real_length, 7 ) # in us
                 #t_res_2_rough = round( t_res_2, 3 )
                 t_res_2 = a2012_2.oscilloscope_time_resolution()
+                t_res_rough_2 = t_res_2.split(" ")
 
             # parameters for initial initialization
             field = 100
@@ -384,29 +389,29 @@ class Worker(QWidget):
             if p9 == 1:
                 data = np.zeros( (2, real_length, points + 1) )
             elif p9 == 2:
-                data = np.zeros( (4, real_length, points + 1) )
+                data = np.zeros( (2, real_length, points + 1) )
+                data_2 = np.zeros( (2, real_length_2, points + 1) )
             else:
-                data = np.zeros( (5, real_length, points + 1) )
-            
-            ##axis_x = np.arange(4000)
+                data = np.zeros( (3, real_length, points + 1) )
+                data_2 = np.zeros( (2, real_length_2, points + 1) )
             
             temp_start = str( ls335.tc_temperature('B') )
 
             # Oscilloscopes bugs
-            a2012.oscilloscope_number_of_averages(2)
-            if p9 > 1:
-                a2012_2.oscilloscope_number_of_averages(2)
+            #a2012.oscilloscope_number_of_averages(2)
+            #if p9 > 1:
+            #    a2012_2.oscilloscope_number_of_averages(2)
 
-            a2012.oscilloscope_start_acquisition()
-            if p9 > 1:
-                a2012_2.oscilloscope_start_acquisition()
+            #a2012.oscilloscope_start_acquisition()
+            #if p9 > 1:
+            #    a2012_2.oscilloscope_start_acquisition()
             
-            if p9 == 1:
-                y = a2012.oscilloscope_get_curve('CH1')
+            #if p9 == 1:
+            #    y = a2012.oscilloscope_get_curve('CH1')
 
-            elif p9 == 2:
-                y = a2012.oscilloscope_get_curve('CH1')
-                y2 = a2012_2.oscilloscope_get_curve('CH1')
+            #elif p9 == 2:
+            #    y = a2012.oscilloscope_get_curve('CH1')
+            #    y2 = a2012_2.oscilloscope_get_curve('CH1')
 
             # the idea of automatic and dynamic changing is
             # sending a new value of repetition rate via self.command
@@ -492,7 +497,7 @@ class Worker(QWidget):
                                 'Number of Scans: ' + str(SCANS) + '\n' + \
                                 'Temperature Start Exp: ' + str( temp_start ) + ' K\n' +\
                                 'Temperature End Exp: ' + str( temp_start ) + ' K\n' +\
-                                'Record Length: ' + str(real_length) + ' Points\n' + 'Time Resolution: ' + str(t_res_2) + '\n' + \
+                                'Record Length: ' + str(real_length_2) + ' Points\n' + 'Time Resolution: ' + str(t_res_2) + '\n' + \
                                 'Frequency: ' + str( ag53131a.freq_counter_frequency('CH3')) + '\n' + '2D Data'
 
                     file_handler.save_header(file_save_1, header = header, mode = 'w')
@@ -533,9 +538,9 @@ class Worker(QWidget):
 
                         y2 = a2012_2.oscilloscope_get_curve('CH1')
                         ##y2 = 1 + 10*np.exp(-axis_x/ch_time) + 50*np.random.normal(size = (4000))
-                        data[2, :, 0] = ( data[2, :, 0] * (j - 1) + y2 ) / j
-                        data[3, :, 0] = ( data[2, :, 0] - data[2, :, 0] )
-                        data[3, :, :] = ( data[3, :, :] - data[3, 0, :] )
+                        data_2[0, :, 0] = ( data_2[0, :, 0] * (j - 1) + y2 ) / j
+                        data_2[1, :, 0] = ( data_2[0, :, 0] - data_2[0, :, 0] )
+                        data_2[1, :, :] = ( data_2[1, :, :] - data_2[1, 0, :] )
 
                     elif p9 == 3:
                         y = a2012.oscilloscope_get_curve('CH1')
@@ -546,13 +551,13 @@ class Worker(QWidget):
 
                         y3 = a2012.oscilloscope_get_curve('CH2')
                         ##y3 = 1 + 10*np.exp(-axis_x/ch_time) + 50*np.random.normal(size = (4000))
-                        data[4, :, 0] = ( data[4, :, 0] * (j - 1) + y3 ) / j
+                        data[2, :, 0] = ( data[2, :, 0] * (j - 1) + y3 ) / j
 
                         y2 = a2012_2.oscilloscope_get_curve('CH1')
                         ##y2 = 1 + 10*np.exp(-axis_x/ch_time) + 50*np.random.normal(size = (4000))
-                        data[2, :, 0] = ( data[2, :, 0] * (j - 1) + y2 ) / j
-                        data[3, :, 0] = ( data[2, :, 0] - data[2, :, 0] )
-                        data[3, :, :] = ( data[3, :, :] - data[3, 0, :] )
+                        data_2[0, :, 0] = ( data_2[0, :, 0] * (j - 1) + y2 ) / j
+                        data_2[1, :, 0] = ( data_2[1, :, 0] - data_2[0, :, 0] )
+                        data_2[1, :, :] = ( data_2[1, :, :] - data_2[1, 0, :] )
 
                     while field < START_FIELD:
                         field = bh15.magnet_field( field + initialization_step)
@@ -596,11 +601,11 @@ class Worker(QWidget):
                             ##y2 = 1 + 100*np.exp(-axis_x/ch_time) + 7*np.random.normal(size = (4000))
 
                             data[0, :, i+1] = ( data[0, :, i+1] * (j - 1) + y ) / j
-                            data[2, :, i+1] = ( data[2, :, i+1] * (j - 1) + y2) / j
+                            data_2[0, :, i+1] = ( data_2[0, :, i+1] * (j - 1) + y2) / j
                             data[1, :, i+1] = ( data[0, :, i+1] - data[0, :, 0] )
                             data[1, :, :] = ( data[1, :, :] - data[1, 0, :] )
-                            data[3, :, i+1] = ( data[2, :, i+1] - data[2, :, 0] )
-                            data[3, :, :] = ( data[3, :, :] - data[3, 0, :] )
+                            data_2[1, :, i+1] = ( data_2[0, :, i+1] - data_2[0, :, 0] )
+                            data_2[1, :, :] = ( data_2[1, :, :] - data_2[1, 0, :] )
 
                         elif p9 == 3:
                             y = a2012.oscilloscope_get_curve('CH1')
@@ -611,18 +616,24 @@ class Worker(QWidget):
                             ##y3 = 1 + 100*np.exp(-axis_x/ch_time) + 50*np.random.normal(size = (4000))
 
                             data[0, :, i+1] = ( data[0, :, i+1] * (j - 1) + y ) / j
-                            data[2, :, i+1] = ( data[2, :, i+1] * (j - 1) + y2) / j
+                            data_2[0, :, i+1] = ( data_2[0, :, i+1] * (j - 1) + y2) / j
                             data[1, :, i+1] = ( data[0, :, i+1] - data[0, :, 0] )
                             data[1, :, :] = ( data[1, :, :] - data[1, 0, :] )
-                            data[3, :, i+1] = ( data[2, :, i+1] - data[2, :, 0] )
-                            data[3, :, :] = ( data[3, :, :] - data[3, 0, :] )
-                            data[4, :, i+1] = ( data[4, :, i+1] * (j - 1) + y3 ) / j
+                            data_2[1, :, i+1] = ( data_2[0, :, i+1] - data_2[0, :, 0] )
+                            data_2[1, :, :] = ( data_2[1, :, :] - data_2[1, 0, :] )
+                            data[3, :, i+1] = ( data[3, :, i+1] * (j - 1) + y3 ) / j
 
                         #start_time = time.time()
-                        # (0, t_res) xscale='us'
+
                         process = general.plot_2d( p2, data[:,:,1:points+1],  xname='Time', start_step=( (0, round(float(t_res_rough[0]), 3)), (START_FIELD, FIELD_STEP) ),\
                             xscale=str(t_res_rough[1]), yname='Field', yscale='G', zname='Intensity', zscale='V', pr = process, \
-                            text = 'Scan / Field: ' + str(j) + ' / ' + str(field))
+                            text = 'S / F: ' + str(j) + ' / ' + str(field))
+
+                        if p9 > 1:
+
+                            process = general.plot_2d( f"{p2}_2", data_2[:,:,1:points+1],  xname='Time', start_step=( (0, round(float(t_res_rough_2[0]), 3)), (START_FIELD, FIELD_STEP) ),\
+                                xscale=str(t_res_rough_2[1]), yname='Field', yscale='G', zname='Intensity', zscale='V', pr = process, \
+                                text = 'S / F: ' + str(j) + ' / ' + str(field))
 
                         #general.message( str( time.time() - start_time ) )
 
@@ -703,11 +714,11 @@ class Worker(QWidget):
                                 'Number of Scans: ' + str(SCANS) + '\n' + \
                                 'Temperature Start Exp: ' + str( temp_start ) + ' K\n' +\
                                 'Temperature End Exp: ' + str( temp_end ) + ' K\n' +\
-                                'Record Length: ' + str(real_length) + ' Points\n' + 'Time Resolution: ' + str(t_res_2) + '\n' + \
+                                'Record Length: ' + str(real_length_2) + ' Points\n' + 'Time Resolution: ' + str(t_res_2) + '\n' + \
                                 'Frequency: ' + str( ag53131a.freq_counter_frequency('CH3')) + '\n' + '2D Data'
 
                     file_handler.save_data(file_save_1, np.transpose( data[0, :, :] ), header = header)
-                    file_handler.save_data(file_save_2, np.transpose( data[2, :, :] ), header = header_2)
+                    file_handler.save_data(file_save_2, np.transpose( data_2[0, :, :] ), header = header_2)
                 elif p9 == 3:
 
                     header = 'Date: ' + str(datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")) + '\n' + 'Time Resolved EPR Spectrum\n' + \
@@ -731,12 +742,12 @@ class Worker(QWidget):
                                 'Number of Scans: ' + str(SCANS) + '\n' + \
                                 'Temperature Start Exp: ' + str( temp_start ) + ' K\n' +\
                                 'Temperature End Exp: ' + str( temp_end ) + ' K\n' +\
-                                'Record Length: ' + str(real_length) + ' Points\n' + 'Time Resolution: ' + str(t_res_2) + '\n' + \
+                                'Record Length: ' + str(real_length_2) + ' Points\n' + 'Time Resolution: ' + str(t_res_2) + '\n' + \
                                 'Frequency: ' + str( ag53131a.freq_counter_frequency('CH3')) + '\n' + '2D Data'
 
                     file_handler.save_data(file_save_1, np.transpose( data[0, :, :] ), header = header)
-                    file_handler.save_data(file_save_2, np.transpose( data[2, :, :] ), header = header_2)
-                    file_handler.save_data(file_save_3, np.transpose( data[4, :, :] ), header = header)
+                    file_handler.save_data(file_save_2, np.transpose( data_2[0, :, :] ), header = header_2)
+                    file_handler.save_data(file_save_3, np.transpose( data[3, :, :] ), header = header)
 
                 while field > OFFRES_FIELD:
                     field = bh15.magnet_field( field - initialization_step)
@@ -745,7 +756,7 @@ class Worker(QWidget):
                 field = OFFRES_FIELD
 
         except BaseException as e:
-            exc_info = (type(e), str(e), traceback.format_exc() )
+            exc_info = f"{type(e)} \n{str(e)} \n{traceback.format_exc()}"
             conn.send( ('Error', exc_info) )
 
 def main():

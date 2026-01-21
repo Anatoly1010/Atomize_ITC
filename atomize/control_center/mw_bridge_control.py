@@ -44,7 +44,7 @@ class MainWindow(QtWidgets.QMainWindow):
         config = configparser.ConfigParser()
         config.read(path_config_file)
 
-        self.ecc15k = ecc.ECC_15K()
+        #self.ecc15k = ecc.ECC_15K()
 
         self.UDP_IP = str(config['DEFAULT']['UDP_IP'])
         self.UDP_PORT = int(config['DEFAULT']['UDP_PORT'])
@@ -104,12 +104,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.Synt2.valueChanged.connect(self.synt2)
         self.Synt2.setStyleSheet("QSpinBox { color : rgb(193, 202, 227);  selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
         freq2 = int( self.Synt2.value() )
-        self.ecc15k.synthetizer_frequency(freq2)
+        #self.ecc15k.synthetizer_frequency(f"{freq2} MHz")
 
         self.Synt2_power.valueChanged.connect(self.synt2_power)
         self.Synt2_power.setStyleSheet("QSpinBox { color : rgb(193, 202, 227);  selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
         power2 = int( self.Synt2_power.value() )
-        self.ecc15k.synthetizer_power(power2)
+        ###self.ecc15k.synthetizer_power(power2)
 
         self.Synt2_state.setStyleSheet("QComboBox { color : rgb(193, 202, 227); selection-color: rgb(211, 194, 78); }")
         self.Synt2_state.currentIndexChanged.connect(self.synt2_state)
@@ -131,18 +131,18 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def synt2(self):
         freq2 = int( self.Synt2.value() )
-        self.ecc15k.synthetizer_frequency(freq2)
-        self.telemetry_text.appendPlainText( f'Synt2 Freq: {self.ecc15k.synthetizer_frequency().split(" ")[0]}')
+        #self.ecc15k.synthetizer_frequency(f"{freq2} MHz")
+        #self.telemetry_text.appendPlainText( f'Synt2 Freq: {self.ecc15k.synthetizer_frequency().split(" ")[0]}')
     
     def synt2_power(self):
         power2 = int( self.Synt2_power.value() )
-        self.ecc15k.synthetizer_power(power2)
-        self.telemetry_text.appendPlainText( f'Synt2 Power Level: {self.ecc15k.synthetizer_power()}')
+        #self.ecc15k.synthetizer_power(power2)
+        #self.telemetry_text.appendPlainText( f'Synt2 Power Level: {self.ecc15k.synthetizer_power()}')
 
     def synt2_state(self):
         txt = str( self.Synt2_state.currentText() )
-        self.ecc15k.synthetizer_state(txt)
-        self.telemetry_text.appendPlainText( f'Synt2 State: {self.ecc15k.synthetizer_state()}')
+        #self.ecc15k.synthetizer_state(txt)
+        #self.telemetry_text.appendPlainText( f'Synt2 State: {self.ecc15k.synthetizer_state()}')
 
     def _on_destroyed(self):
         """
@@ -528,7 +528,7 @@ class MainWindow(QtWidgets.QMainWindow):
         A function to initialize a bridge.
         """
 
-        self.ecc15k.synthetizer_state('Off')
+        #self.ecc15k.synthetizer_state('Off')
         
         # Rotary vane to 60 dB
         step = int( self.calibration( 60 ) ) - int( self.calibration( self.prev_dB ) )

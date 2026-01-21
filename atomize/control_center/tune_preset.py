@@ -210,7 +210,13 @@ class MainWindow(QtWidgets.QMainWindow):
             self.exp_process.join()
         except AttributeError:
             self.message('Experimental script is not running')
-   
+
+        if self.parent_conn.poll() == True:
+            msg_type, data = self.parent_conn.recv()
+            self.message(data)
+        else:
+            pass
+
     def start(self):
         """
         Button Start; Run function script(pipe_addres, four parameters of the experimental script)
@@ -242,7 +248,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # send a command in a different thread about the current state
         self.parent_conn.send('start')
 
-    def message(*text):
+    def message(self, *text):
         sock = socket.socket()
         sock.connect(('localhost', 9091))
         if len(text) == 1:
@@ -271,150 +277,156 @@ class Worker(QWidget):
 
         # should be inside dig_on() function;
         # freezing after digitizer restart otherwise
-        import random
-        import sys
-        import numpy as np
-        import atomize.general_modules.general_functions as general
-        import atomize.device_modules.Keysight_2000_Xseries as a2012
-        import atomize.device_modules.Mikran_X_band_MW_bridge_v2 as mwBridge
-        import atomize.device_modules.Insys_FPGA as pb_pro
-        import atomize.general_modules.csv_opener_saver_tk_kinter as openfile
+        #import random
+        import traceback
+
+        try:
+            import sys
+            import numpy as np
+            import atomize.general_modules.general_functions as general
+            import atomize.device_modules.Keysight_2000_Xseries as a2012
+            import atomize.device_modules.Micran_X_band_MW_bridge_v2 as mwBridge
+            import atomize.device_modules.Insys_FPGA as pb_pro
+            import atomize.general_modules.csv_opener_saver_tk_kinter as openfile
 
 
-        file_handler = openfile.Saver_Opener()
-        a2012 = a2012.Keysight_2000_Xseries()
-        pb = pb_pro.Insys_FPGA()
-        mw = mwBridge.Mikran_X_band_MW_bridge_v2()
+            file_handler = openfile.Saver_Opener()
+            a2012 = a2012.Keysight_2000_Xseries()
+            pb = pb_pro.Insys_FPGA()
+            mw = mwBridge.Micran_X_band_MW_bridge_v2()
 
-        ### Experimental parameters
-        START_FREQ = p5
-        END_FREQ = p8
-        STEP = p9
-        SCANS = p7
-        AVERAGES = p10
-        PHASES = 2
-        process = 'None'
+            ### Experimental parameters
+            START_FREQ = p5
+            END_FREQ = p8
+            STEP = p9
+            SCANS = p7
+            AVERAGES = p10
+            PHASES = 2
+            process = 'None'
 
-        # PULSES
-        REP_RATE = str(p6) + ' Hz'
-        PULSE_1_LENGTH = str(p4) + ' ns'
-        PULSE_1_START = '0 ns'
+            # PULSES
+            REP_RATE = str(p6) + ' Hz'
+            PULSE_1_LENGTH = str(p4) + ' ns'
+            PULSE_1_START = '0 ns'
 
-        # setting pulses:
-        pb.pulser_pulse(name ='P0', channel = 'TRIGGER', start = PULSE_1_START, length = '640 ns', phase_list = ['+x', '+x'])
-        pb.pulser_pulse(name ='P1', channel = 'MW', start = PULSE_1_START, length = PULSE_1_LENGTH, phase_list = ['+x', '+x'])
-        pb.pulser_pulse(name ='P2', channel = 'LASER', start = PULSE_1_START, length = PULSE_1_LENGTH)
+            # setting pulses:
+            pb.pulser_pulse(name ='P0', channel = 'TRIGGER', start = PULSE_1_START, length = '640 ns', phase_list = ['+x', '+x'])
+            pb.pulser_pulse(name ='P1', channel = 'MW', start = PULSE_1_START, length = PULSE_1_LENGTH, phase_list = ['+x', '+x'])
+            pb.pulser_pulse(name ='P2', channel = 'LASER', start = PULSE_1_START, length = PULSE_1_LENGTH)
 
 
-        pb.pulser_repetition_rate( REP_RATE )
-        pb.digitizer_number_of_averages(2)
+            pb.pulser_repetition_rate( REP_RATE )
+            pb.digitizer_number_of_averages(2)
 
-        pb.pulser_open()
+            pb.pulser_open()
 
-        for i in range( PHASES ):
-            pb.pulser_next_phase()
+            for i in range( PHASES ):
+                pb.pulser_next_phase()
+                general.wait('200 ms')
+
+            a2012.oscilloscope_acquisition_type('Average')
+            a2012.oscilloscope_trigger_channel('Ext')
+            a2012.oscilloscope_number_of_averages(AVERAGES)
+            a2012.oscilloscope_stop()
+
+            # Oscilloscopes bug
+            a2012.oscilloscope_number_of_averages(2)
+            a2012.oscilloscope_start_acquisition()
+
+            y = a2012.oscilloscope_get_curve('CH1')
+            a2012.oscilloscope_stop()
+            a2012.oscilloscope_number_of_averages(AVERAGES)
+            
+            a2012.oscilloscope_record_length( 2000 )
+            real_length = a2012.oscilloscope_record_length( )
+
+            points = int( (END_FREQ - START_FREQ) / STEP ) + 1
+            data = np.zeros( (points, real_length) )
+            ###
+
+            freq_before = int(str( mw.mw_bridge_synthesizer() ).split(' ')[1])
+            # initialize the power and skip the incorrect first point
+            mw.mw_bridge_synthesizer( START_FREQ )
             general.wait('200 ms')
+            a2012.oscilloscope_start_acquisition()
+            a2012.oscilloscope_get_curve('CH2')
 
-        a2012.oscilloscope_acquisition_type('Average')
-        a2012.oscilloscope_trigger_channel('Ext')
-        a2012.oscilloscope_number_of_averages(AVERAGES)
-        a2012.oscilloscope_stop()
+            # the idea of automatic and dynamic changing is
+            # sending a new value of repetition rate via self.command
+            # in each cycle we will check the current value of self.command
+            # self.command = 'exit' will stop the digitizer
+            while self.command != 'exit':
 
-        # Oscilloscopes bug
-        a2012.oscilloscope_number_of_averages(2)
-        a2012.oscilloscope_start_acquisition()
+                # Start of experiment
+                j = 1
+                while j <= SCANS:
 
-        y = a2012.oscilloscope_get_curve('CH1')
-        a2012.oscilloscope_stop()
-        a2012.oscilloscope_number_of_averages(AVERAGES)
-        
-        a2012.oscilloscope_record_length( 2000 )
-        real_length = a2012.oscilloscope_record_length( )
-
-        points = int( (END_FREQ - START_FREQ) / STEP ) + 1
-        data = np.zeros( (points, real_length) )
-        ###
-
-        freq_before = int(str( mw.mw_bridge_synthesizer() ).split(' ')[1])
-        # initialize the power and skip the incorrect first point
-        mw.mw_bridge_synthesizer( START_FREQ )
-        general.wait('200 ms')
-        a2012.oscilloscope_start_acquisition()
-        a2012.oscilloscope_get_curve('CH2')
-
-        # the idea of automatic and dynamic changing is
-        # sending a new value of repetition rate via self.command
-        # in each cycle we will check the current value of self.command
-        # self.command = 'exit' will stop the digitizer
-        while self.command != 'exit':
-
-            # Start of experiment
-            j = 1
-            while j <= SCANS:
-
-                i = 0
-                freq = START_FREQ
-                mw.mw_bridge_synthesizer( freq )
-                general.wait('300 ms')
-                
-                a2012.oscilloscope_start_acquisition()
-                a2012.oscilloscope_get_curve('CH2')
-
-                while freq <= END_FREQ:
-                    
+                    i = 0
+                    freq = START_FREQ
                     mw.mw_bridge_synthesizer( freq )
-
-                    a2012.oscilloscope_start_acquisition()
-                    y = -a2012.oscilloscope_get_curve('CH2')
                     general.wait('300 ms')
                     
-                    data[i] = ( data[i] * (j - 1) + y ) / j
+                    a2012.oscilloscope_start_acquisition()
+                    a2012.oscilloscope_get_curve('CH2')
 
-                    general.plot_2d(p2, np.transpose( data ), start_step = ( (0, 1), (START_FREQ*1000000, STEP*1000000) ),\
-                                 xname = 'Time', xscale = 's', yname = 'Frequency', yscale = 'Hz', zname = 'Intensity', zscale = 'V', \
-                                 text = 'Scan / Frequency: ' + str(j) + ' / ' + str(freq))
-                    
-                    freq = round( (STEP + freq), 3 )
-                    
-                    # check our polling data
-                    if self.command[0:2] == 'SC':
-                        SCANS = int( self.command[2:] )
-                        self.command = 'start'
-                    elif self.command[0:2] == 'GR':
-                        p11 = int( self.command[2:] )
-                        self.command = 'start'
-                    elif self.command == 'exit':
-                        break
-                    
-                    if conn.poll() == True:
-                        self.command = conn.recv()
+                    while freq <= END_FREQ:
+                        
+                        mw.mw_bridge_synthesizer( freq )
 
-                    i += 1
+                        a2012.oscilloscope_start_acquisition()
+                        y = -a2012.oscilloscope_get_curve('CH2')
+                        general.wait('300 ms')
+                        
+                        data[i] = ( data[i] * (j - 1) + y ) / j
 
-                mw.mw_bridge_synthesizer( START_FREQ )
-                j += 1
+                        general.plot_2d(p2, np.transpose( data ), start_step = ( (0, 1), (START_FREQ*1000000, STEP*1000000) ),\
+                                     xname = 'Time', xscale = 's', yname = 'Frequency', yscale = 'Hz', zname = 'Intensity', zscale = 'V', \
+                                     text = 'Scan / Frequency: ' + str(j) + ' / ' + str(freq))
+                        
+                        freq = round( (STEP + freq), 3 )
+                        
+                        # check our polling data
+                        if self.command[0:2] == 'SC':
+                            SCANS = int( self.command[2:] )
+                            self.command = 'start'
+                        elif self.command[0:2] == 'GR':
+                            p11 = int( self.command[2:] )
+                            self.command = 'start'
+                        elif self.command == 'exit':
+                            break
+                        
+                        if conn.poll() == True:
+                            self.command = conn.recv()
 
-            # finish succesfully
-            self.command = 'exit'
+                        i += 1
 
-        if self.command == 'exit':
-            general.message('Script finished')
-            mw.mw_bridge_synthesizer( freq_before )
-            general.wait('300 ms')
+                    mw.mw_bridge_synthesizer( START_FREQ )
+                    j += 1
 
-            pb.pulser_close()
+                # finish succesfully
+                self.command = 'exit'
 
-            # Data saving
-            header = 'Date: ' + str(datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")) + '\n' + \
-                     'Tune\n' + 'START FREQUENCY: ' + str(START_FREQ) + ' MHz\n' + \
-                     'END FREQUENCY: ' + str(END_FREQ) + ' MHz\n' + \
-                     'STEP: ' + str(STEP) + ' MHz\n' + '2D Data:'
+            if self.command == 'exit':
+                general.message('Script finished')
+                mw.mw_bridge_synthesizer( freq_before )
+                general.wait('300 ms')
 
-            file_data, file_param = file_handler.create_file_parameters('.param')
-            file_handler.save_header(file_param, header = header, mode = 'w')
+                pb.pulser_close()
 
-            file_handler.save_data(file_data, np.transpose( data ), header = header, mode = 'w')
+                # Data saving
+                header = 'Date: ' + str(datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")) + '\n' + \
+                         'Tune\n' + 'START FREQUENCY: ' + str(START_FREQ) + ' MHz\n' + \
+                         'END FREQUENCY: ' + str(END_FREQ) + ' MHz\n' + \
+                         'STEP: ' + str(STEP) + ' MHz\n' + '2D Data:'
 
+                file_data, file_param = file_handler.create_file_parameters('.param')
+                file_handler.save_header(file_param, header = header, mode = 'w')
+
+                file_handler.save_data(file_data, np.transpose( data ), header = header, mode = 'w')
+
+        except BaseException as e:
+            exc_info = f"{type(e)} \n{str(e)} \n{traceback.format_exc()}"
+            conn.send( ('Error', exc_info) )
 
 def main():
     """

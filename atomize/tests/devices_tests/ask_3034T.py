@@ -11,7 +11,7 @@ t3034 = key.Keysight_2000_Xseries()
 #t3034.oscilloscope_acquisition_type('Average')
 #general.message(t3034.oscilloscope_acquisition_type())
 
-t3034.oscilloscope_timebase('10.0 us')
+#t3034.oscilloscope_timebase('10 us')
 
 t3034.oscilloscope_record_length(4000)
 general.message(t3034.oscilloscope_record_length())

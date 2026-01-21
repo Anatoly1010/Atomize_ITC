@@ -5,7 +5,6 @@ import os
 import gc
 import sys
 import pyvisa
-import time
 import numpy as np
 import pyqtgraph as pg
 import atomize.main.local_config as lconf

@@ -240,7 +240,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # send a command in a different thread about the current state
         self.parent_conn.send('start')
 
-    def message(*text):
+    def message(self, *text):
         sock = socket.socket()
         sock.connect(('localhost', 9091))
         if len(text) == 1:
@@ -403,7 +403,7 @@ class Worker(QWidget):
                 file_handler.save_data(file_data, np.c_[x_axis, data], header = header, mode = 'w')
 
         except BaseException as e:
-            exc_info = (type(e), str(e), traceback.format_exc() )
+            exc_info = f"{type(e)} \n{str(e)} \n{traceback.format_exc()}"
             conn.send( ('Error', exc_info) )
 
 

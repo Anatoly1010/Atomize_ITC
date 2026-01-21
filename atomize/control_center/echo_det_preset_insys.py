@@ -227,7 +227,13 @@ class MainWindow(QtWidgets.QMainWindow):
             self.exp_process.join()
         except AttributeError:
             self.message('Experimental script is not running')
-   
+
+        if self.parent_conn.poll() == True:
+            msg_type, data = self.parent_conn.recv()
+            self.message(data)
+        else:
+            pass
+
     def start(self):
         """
         Button Start; Run function script(pipe_addres, four parameters of the experimental script)
@@ -259,7 +265,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # send a command in a different thread about the current state
         self.parent_conn.send('start')
 
-    def message(*text):
+    def message(self, *text):
         sock = socket.socket()
         sock.connect(('localhost', 9091))
         if len(text) == 1:
@@ -290,129 +296,136 @@ class Worker(QWidget):
         # freezing after digitizer restart otherwise
         ##import random
         ##import time
-        import datetime
-        import numpy as np
-        import atomize.general_modules.general_functions as general
-        import atomize.device_modules.Insys_FPGA as pb_pro
-        import atomize.device_modules.Mikran_X_band_MW_bridge_v2 as mwBridge
-        import atomize.device_modules.BH_15 as itc
-        import atomize.device_modules.Lakeshore_335 as ls
-        import atomize.general_modules.csv_opener_saver_tk_kinter as openfile
-
-        file_handler = openfile.Saver_Opener()
-        ls335 = ls.Lakeshore_335()
-        mw = mwBridge.Mikran_X_band_MW_bridge_v2()
-        pb = pb_pro.Insys_FPGA()
-        bh15 = itc.BH_15()
-
-        ### Experimental parameters
-        START_FIELD = p5
-        END_FIELD = p8
-        FIELD_STEP = p9
-        AVERAGES = p10
-        SCANS = p7
-        process = 'None'
-
-        # PULSES
-        REP_RATE = str(p6) + ' Hz'
-        PULSE_1_LENGTH = str(p4) + ' ns'
-        PULSE_2_LENGTH = str( round(float(2*p4), 1) ) + ' ns'
-        PULSE_1_START = '0 ns'
-        PULSE_2_START = str( p3 ) + ' ns'
-        PULSE_SIGNAL_START = str( round(float(2*p3), 1) ) + ' ns'
-
-        #
-        PHASES = 2
-        POINTS = int( (END_FIELD - START_FIELD) / FIELD_STEP ) + 1
-        data = np.zeros( ( 2, POINTS ) )
-        x_axis = np.linspace(START_FIELD, END_FIELD, num = POINTS)
-        ###
-
-        bh15.magnet_setup( START_FIELD, 0.5 )
-        bh15.magnet_field(START_FIELD) #, calibration = 'True')
-        general.wait('4000 ms')
-
-
-        adc_wind = pb.digitizer_read_settings()
-
-        pb.pulser_pulse(name ='P0', channel = 'MW', start = PULSE_1_START, length = PULSE_1_LENGTH, phase_list = ['+x', '-x'])
-        pb.pulser_pulse(name ='P1', channel = 'MW', start = PULSE_2_START, length = PULSE_2_LENGTH, phase_list = ['+x', '+x'])
-        pb.pulser_pulse(name ='P2', channel = 'DETECTION', start = PULSE_SIGNAL_START, length = adc_wind, phase_list = ['+x', '-x'])
-
-        pb.pulser_repetition_rate( REP_RATE )
-        # read integration window
-        pb.digitizer_number_of_averages(AVERAGES)
-
-        pb.pulser_open()
+        import traceback
         
-        # the idea of automatic and dynamic changing is
-        # sending a new value of repetition rate via self.command
-        # in each cycle we will check the current value of self.command
-        # self.command = 'exit' will stop the digitizer
-        while self.command != 'exit':
+        try:
+            import datetime
+            import numpy as np
+            import atomize.general_modules.general_functions as general
+            import atomize.device_modules.Insys_FPGA as pb_pro
+            import atomize.device_modules.Micran_X_band_MW_bridge_v2 as mwBridge
+            import atomize.device_modules.BH_15 as itc
+            import atomize.device_modules.Lakeshore_335 as ls
+            import atomize.general_modules.csv_opener_saver_tk_kinter as openfile
 
-            # Start of experiment
-            j = 1
-            while j <= SCANS:
+            file_handler = openfile.Saver_Opener()
+            ls335 = ls.Lakeshore_335()
+            mw = mwBridge.Micran_X_band_MW_bridge_v2()
+            pb = pb_pro.Insys_FPGA()
+            bh15 = itc.BH_15()
 
-                field = START_FIELD
-                
-                if self.command == 'exit':
-                    break
+            ### Experimental parameters
+            START_FIELD = p5
+            END_FIELD = p8
+            FIELD_STEP = p9
+            AVERAGES = p10
+            SCANS = p7
+            process = 'None'
 
-                for k in range(POINTS):
-                    # phase cycle
-                    for i in range(PHASES):
-                        pb.pulser_next_phase()
-                        data[0], data[1] = pb.digitizer_get_curve( POINTS, PHASES, integral = True )
-                        general.plot_1d(p2, x_axis, ( data[0], data[1] ), xname = 'Field',\
-                                xscale = 'G', yname = 'Area', yscale = 'A.U.', label = p1, \
-                                text = 'Scan / Field: ' + str(j) + ' / ' + str(field))
+            # PULSES
+            REP_RATE = str(p6) + ' Hz'
+            PULSE_1_LENGTH = str(p4) + ' ns'
+            PULSE_2_LENGTH = str( round(float(2*p4), 1) ) + ' ns'
+            PULSE_1_START = '0 ns'
+            PULSE_2_START = str( p3 ) + ' ns'
+            PULSE_SIGNAL_START = str( round(float(2*p3), 1) ) + ' ns'
 
-                    bh15.magnet_field(field)#, calibration = 'True')
+            #
+            PHASES = 2
+            POINTS = int( (END_FIELD - START_FIELD) / FIELD_STEP ) + 1
+            data = np.zeros( ( 2, POINTS ) )
+            x_axis = np.linspace(START_FIELD, END_FIELD, num = POINTS)
+            ###
+
+            bh15.magnet_setup( START_FIELD, 0.5 )
+            bh15.magnet_field(START_FIELD) #, calibration = 'True')
+            general.wait('4000 ms')
+
+
+            adc_wind = pb.digitizer_read_settings()
+
+            pb.pulser_pulse(name ='P0', channel = 'MW', start = PULSE_1_START, length = PULSE_1_LENGTH, phase_list = ['+x', '-x'])
+            pb.pulser_pulse(name ='P1', channel = 'MW', start = PULSE_2_START, length = PULSE_2_LENGTH, phase_list = ['+x', '+x'])
+            pb.pulser_pulse(name ='P2', channel = 'DETECTION', start = PULSE_SIGNAL_START, length = adc_wind, phase_list = ['+x', '-x'])
+
+            pb.pulser_repetition_rate( REP_RATE )
+            # read integration window
+            pb.digitizer_number_of_averages(AVERAGES)
+
+            pb.pulser_open()
+            
+            # the idea of automatic and dynamic changing is
+            # sending a new value of repetition rate via self.command
+            # in each cycle we will check the current value of self.command
+            # self.command = 'exit' will stop the digitizer
+            while self.command != 'exit':
+
+                # Start of experiment
+                j = 1
+                while j <= SCANS:
+
+                    field = START_FIELD
                     
-                    field = round( (FIELD_STEP + field), 3 )
-                    
-                    # check our polling data
-                    if self.command[0:2] == 'SC':
-                        SCANS = int( self.command[2:] )
-                        self.command = 'start'
-                    elif self.command == 'exit':
+                    if self.command == 'exit':
                         break
-                    
-                    if conn.poll() == True:
-                        self.command = conn.recv()
 
-                    pb.pulser_shift()
+                    for k in range(POINTS):
+                        # phase cycle
+                        for i in range(PHASES):
+                            pb.pulser_next_phase()
+                            data[0], data[1] = pb.digitizer_get_curve( POINTS, PHASES, integral = True )
+                            general.plot_1d(p2, x_axis, ( data[0], data[1] ), xname = 'Field',\
+                                    xscale = 'G', yname = 'Area', yscale = 'A.U.', label = p1, \
+                                    text = 'Scan / Field: ' + str(j) + ' / ' + str(field))
 
-                pb.pulser_pulse_reset()
+                        bh15.magnet_field(field)#, calibration = 'True')
+                        
+                        field = round( (FIELD_STEP + field), 3 )
+                        
+                        # check our polling data
+                        if self.command[0:2] == 'SC':
+                            SCANS = int( self.command[2:] )
+                            self.command = 'start'
+                        elif self.command == 'exit':
+                            break
+                        
+                        if conn.poll() == True:
+                            self.command = conn.recv()
 
-                bh15.magnet_field(START_FIELD)#, calibration = 'True')
-                general.wait('4000 ms')
+                        pb.pulser_shift()
 
-                j += 1
+                    pb.pulser_pulse_reset()
 
-            # finish succesfully
-            self.command = 'exit'
+                    bh15.magnet_field(START_FIELD)#, calibration = 'True')
+                    general.wait('4000 ms')
 
-        if self.command == 'exit':
-            general.message('Script finished')
-            tb = pb.adc_window * 0.4 * pb.digitizer_decimation()
-            pb.pulser_close()
+                    j += 1
 
-            # Data saving
-            header = 'Date: ' + str(datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")) + '\n' + 'Echo Detected Spectrum\n' + \
-                        'Start Field: ' + str(START_FIELD) + ' G \n' + 'End Field: ' + str(END_FIELD) + ' G \n' + \
-                        'Field Step: ' + str(FIELD_STEP) + ' G \n' + str(mw.mw_bridge_att_prm()) + '\n' + str(mw.mw_bridge_att2_prm()) + '\n' +\
-                        str(mw.mw_bridge_att1_prd()) + '\n' + str(mw.mw_bridge_synthesizer()) + '\n' + \
-                       'Repetition Rate: ' + str(pb.pulser_repetition_rate()) + '\n' + 'Number of Scans: ' + str(SCANS) + '\n' +\
-                       'Averages: ' + str(AVERAGES) + '\n' + 'Window: ' + str(tb) + ' ns\n' + \
-                       'Temperature: ' + str(ls335.tc_temperature('B')) + ' K\n' +\
-                       'Pulse List: ' + '\n' + str(pb.pulser_pulse_list()) + 'Field (G), I (A.U.), Q (A.U.) '
+                # finish succesfully
+                self.command = 'exit'
 
-            file_data, file_param = file_handler.create_file_parameters('.param')
-            file_handler.save_header(file_param, header = header, mode = 'w')
-            file_handler.save_data(file_data, np.c_[x_axis, data[0], data[1]], header = header, mode = 'w')
+            if self.command == 'exit':
+                general.message('Script finished')
+                tb = pb.adc_window * 0.4 * pb.digitizer_decimation()
+                pb.pulser_close()
+
+                # Data saving
+                header = 'Date: ' + str(datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")) + '\n' + 'Echo Detected Spectrum\n' + \
+                            'Start Field: ' + str(START_FIELD) + ' G \n' + 'End Field: ' + str(END_FIELD) + ' G \n' + \
+                            'Field Step: ' + str(FIELD_STEP) + ' G \n' + str(mw.mw_bridge_att_prm()) + '\n' + str(mw.mw_bridge_att2_prm()) + '\n' +\
+                            str(mw.mw_bridge_att1_prd()) + '\n' + str(mw.mw_bridge_synthesizer()) + '\n' + \
+                           'Repetition Rate: ' + str(pb.pulser_repetition_rate()) + '\n' + 'Number of Scans: ' + str(SCANS) + '\n' +\
+                           'Averages: ' + str(AVERAGES) + '\n' + 'Window: ' + str(tb) + ' ns\n' + \
+                           'Temperature: ' + str(ls335.tc_temperature('B')) + ' K\n' +\
+                           'Pulse List: ' + '\n' + str(pb.pulser_pulse_list()) + 'Field (G), I (A.U.), Q (A.U.) '
+
+                file_data, file_param = file_handler.create_file_parameters('.param')
+                file_handler.save_header(file_param, header = header, mode = 'w')
+                file_handler.save_data(file_data, np.c_[x_axis, data[0], data[1]], header = header, mode = 'w')
+
+        except BaseException as e:
+            exc_info = f"{type(e)} \n{str(e)} \n{traceback.format_exc()}"
+            conn.send( ('Error', exc_info) )
 
 def main():
     """

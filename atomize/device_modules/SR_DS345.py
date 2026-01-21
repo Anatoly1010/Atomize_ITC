@@ -174,6 +174,8 @@ class SR_DS345:
             self.test_trigger_rate = '100 Hz'
             self.test_burst_count = 10
             self.test_mod_rate_divider = 10
+            self.start_freq = 1e3
+            self.stop_freq = 10e3
 
     def device_write(self, command):
         if self.status_flag == 1:
@@ -580,7 +582,7 @@ class SR_DS345:
                 temp = span[0].split(" ")
                 scaling = temp[1]
                 assert(scaling in self.freq_list), f"Incorrect SI suffix. Available options are {self.freq_list}"
-                assert( (self.freq - freq/2) >= self.wave_gen_freq_min and (self.freq + freq/2) <= self.wave_gen_freq_max), f"Incorrect frequency range. The available range is from {self.f_min} to {self.f_max}"
+                #assert( (self.freq - freq/2) >= self.wave_gen_freq_min and (self.freq + freq/2) <= self.wave_gen_freq_max), f"Incorrect frequency range. The available range is from {self.f_min} to {self.f_max}"
 
         elif len(span) == 0:
             if self.test_flag != 'test':
@@ -604,7 +606,7 @@ class SR_DS345:
         'float deg'
         """
         if len(span) == 1:
-            ph = round( float(phase[0]), 3 )
+            ph = round( float(span[0]), 3 )
             self.ph_span = ph
             if self.test_flag != 'test':
                 self.device_write( f"PDEV {ph}" )
@@ -668,7 +670,7 @@ class SR_DS345:
         'stop' = 'float + SI suffix'
         f"START FREQ: {f_start}; STOP FREQ: {f_stop}"
         """
-        if len(kargs) == 3:
+        if len(kargs) == 2:
             self.start_freq = pg.siEval( kargs['start'] )
             self.stop_freq = pg.siEval( kargs['stop'] )
             if self.test_flag != 'test':
@@ -699,6 +701,10 @@ class SR_DS345:
                 assert(self.stop_freq >= self.wave_gen_freq_min and self.stop_freq <= self.wave_gen_freq_max), f"Incorrect stop frequency. The available range is from {self.f_min} to {self.f_max}"
 
         elif len(kargs) == 0:
+            if self.test_flag != 'test':
+                self.start_freq = float(self.device_query( f"STFR?" ))
+                self.stop_freq = float(self.device_query( f"SPFR?" ))
+
             f_start = pg.siFormat( self.start_freq, suffix = 'Hz', precision = 12, allowUnicode = False)
             f_stop = pg.siFormat( self.stop_freq, suffix = 'Hz', precision = 12, allowUnicode = False)
             return f"START FREQ: {f_start}; STOP FREQ: {f_stop}"
@@ -706,6 +712,8 @@ class SR_DS345:
             if self.test_flag == 'test':
                 assert( 1 == 2 ), f"Incorrect kargs; start: float + [' MHz', ' kHz', ' Hz', ' mHz', ' uHz'] , stop: float + [' MHz', ' kHz', ' Hz', ' mHz', ' uHz']"
 
+
+    ####
     def wave_gen_modulation_rate(self, *rate):
         """
         The RATE command sets the modulation rate to x Hertz. x is rounded to 2

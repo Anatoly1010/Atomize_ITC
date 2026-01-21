@@ -254,7 +254,13 @@ class MainWindow(QtWidgets.QMainWindow):
             self.exp_process.join()
         except AttributeError:
             self.message('Experimental script is not running')
-   
+
+        if self.parent_conn.poll() == True:
+            msg_type, data = self.parent_conn.recv()
+            self.message(data)
+        else:
+            pass
+    
     def start(self):
         """
         Button Start; Run function script(pipe_addres, four parameters of the experimental script)
@@ -289,7 +295,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # send a command in a different thread about the current state
         self.parent_conn.send('start')
 
-    def message(*text):
+    def message(self, *text):
         sock = socket.socket()
         sock.connect(('localhost', 9091))
         if len(text) == 1:
@@ -322,160 +328,167 @@ class Worker(QWidget):
         # freezing after digitizer restart otherwise
         ##import random
         ##import time
-        import datetime
-        import numpy as np
-        import atomize.general_modules.general_functions as general
-        import atomize.device_modules.Insys_FPGA as pb_pro
-        import atomize.device_modules.Mikran_X_band_MW_bridge_v2 as mwBridge
-        import atomize.device_modules.ITC_FC as itc
-        import atomize.device_modules.Lakeshore_335 as ls
-        import atomize.general_modules.csv_opener_saver_tk_kinter as openfile
+        import traceback
+        
+        try:
+            import datetime
+            import numpy as np
+            import atomize.general_modules.general_functions as general
+            import atomize.device_modules.Insys_FPGA as pb_pro
+            import atomize.device_modules.Micran_X_band_MW_bridge_v2 as mwBridge
+            import atomize.device_modules.ITC_FC as itc
+            import atomize.device_modules.Lakeshore_335 as ls
+            import atomize.general_modules.csv_opener_saver_tk_kinter as openfile
 
-        file_handler = openfile.Saver_Opener()
-        ls335 = ls.Lakeshore_335()
-        mw = mwBridge.Mikran_X_band_MW_bridge_v2()
-        pb = pb_pro.Insys_FPGA()
-        bh15 = itc.ITC_FC()
+            file_handler = openfile.Saver_Opener()
+            ls335 = ls.Lakeshore_335()
+            mw = mwBridge.Micran_X_band_MW_bridge_v2()
+            pb = pb_pro.Insys_FPGA()
+            bh15 = itc.ITC_FC()
 
-        # parameters for initial initialization
-        #POINTS = p9
-        STEP = p5
-        FIELD = p8
-        AVERAGES = p10
-        SCANS = p7
-        process = 'None'
+            # parameters for initial initialization
+            #POINTS = p9
+            STEP = p5
+            FIELD = p8
+            AVERAGES = p10
+            SCANS = p7
+            process = 'None'
 
-        # PULSES
-        REP_RATE = str(p6) + ' Hz'
-        PULSE_1_LENGTH = str(p4) + ' ns'
-        PULSE_2_LENGTH = str(p4) + ' ns'
-        PULSE_3_LENGTH = str(p4) + ' ns'
-        PULSE_1_START = '0 ns'
-        PULSE_2_START = str( p3 ) + ' ns'
-        PULSE_3_START = str( round(float(p3 + p12), 1) ) + ' ns'
-        PULSE_SIGNAL_START = str( round(float( 2 * p3 ) + p12, 1) ) + ' ns'
+            # PULSES
+            REP_RATE = str(p6) + ' Hz'
+            PULSE_1_LENGTH = str(p4) + ' ns'
+            PULSE_2_LENGTH = str(p4) + ' ns'
+            PULSE_3_LENGTH = str(p4) + ' ns'
+            PULSE_1_START = '0 ns'
+            PULSE_2_START = str( p3 ) + ' ns'
+            PULSE_3_START = str( round(float(p3 + p12), 1) ) + ' ns'
+            PULSE_SIGNAL_START = str( round(float( 2 * p3 ) + p12, 1) ) + ' ns'
 
-        #
-        if p13 == 0:
-            PHASES = 4
-        else:
-            PHASES = 1
-        POINTS = p9
-        data = np.zeros( ( 2, POINTS ) )
-        x_axis = np.linspace(0, (POINTS - 1)*STEP, num = POINTS)
-        ###
-
-        bh15.magnet_field(FIELD, calibration = 'True')
-        general.wait('4000 ms')
-
-        adc_wind = pb.digitizer_read_settings()
-
-        if p13 == 0:
-            pb.pulser_pulse(name = 'P0', channel = 'MW', start = PULSE_1_START, length = PULSE_1_LENGTH, phase_list = ['+x', '-x', '+x', '-x'])
-            pb.pulser_pulse(name = 'P1', channel = 'MW', start = PULSE_2_START, length = PULSE_2_LENGTH, phase_list = ['+x', '+x', '-x', '-x'])
-            pb.pulser_pulse(name = 'P2', channel = 'MW', start = PULSE_3_START, length = PULSE_3_LENGTH, delta_start = str(STEP) + ' ns', phase_list = ['+x', '+x', '+x', '+x'])
-            pb.pulser_pulse(name = 'P3', channel = 'DETECTION', start = PULSE_SIGNAL_START, length = adc_wind, delta_start = str(STEP) + ' ns', phase_list = ['+x', '-x', '-x', '+x'])
-        elif p13 == 1:
-            pb.pulser_pulse(name = 'P0', channel = 'MW', start = PULSE_1_START, length = PULSE_1_LENGTH, phase_list = ['+x'])
-            pb.pulser_pulse(name = 'P1', channel = 'MW', start = PULSE_2_START, length = PULSE_2_LENGTH, phase_list = ['+x'])
-            pb.pulser_pulse(name = 'P2', channel = 'MW', start = PULSE_3_START, length = PULSE_3_LENGTH, delta_start = str(STEP) + ' ns', phase_list = ['+x'])
-            pb.pulser_pulse(name = 'P3', channel = 'DETECTION', start = PULSE_SIGNAL_START, length = adc_wind, delta_start = str(STEP) + ' ns', phase_list = ['+x'])
-
-        pb.pulser_repetition_rate( REP_RATE )
-        # read integration window
-        pb.digitizer_number_of_averages(AVERAGES)
-
-        pb.pulser_open()
-
-        # the idea of automatic and dynamic changing is
-        # sending a new value of repetition rate via self.command
-        # in each cycle we will check the current value of self.command
-        # self.command = 'exit' will stop the digitizer
-        while self.command != 'exit':
-
-            # Start of experiment
+            #
             if p13 == 0:
-                j = 1
-                while j <= SCANS:
+                PHASES = 4
+            else:
+                PHASES = 1
+            POINTS = p9
+            data = np.zeros( ( 2, POINTS ) )
+            x_axis = np.linspace(0, (POINTS - 1)*STEP, num = POINTS)
+            ###
 
-                    if self.command == 'exit':
-                        break
+            bh15.magnet_field(FIELD, calibration = 'True')
+            general.wait('4000 ms')
 
-                    for i in range(POINTS):
+            adc_wind = pb.digitizer_read_settings()
 
-                        for k in range(PHASES):
-                            pb.pulser_next_phase()
+            if p13 == 0:
+                pb.pulser_pulse(name = 'P0', channel = 'MW', start = PULSE_1_START, length = PULSE_1_LENGTH, phase_list = ['+x', '-x', '+x', '-x'])
+                pb.pulser_pulse(name = 'P1', channel = 'MW', start = PULSE_2_START, length = PULSE_2_LENGTH, phase_list = ['+x', '+x', '-x', '-x'])
+                pb.pulser_pulse(name = 'P2', channel = 'MW', start = PULSE_3_START, length = PULSE_3_LENGTH, delta_start = str(STEP) + ' ns', phase_list = ['+x', '+x', '+x', '+x'])
+                pb.pulser_pulse(name = 'P3', channel = 'DETECTION', start = PULSE_SIGNAL_START, length = adc_wind, delta_start = str(STEP) + ' ns', phase_list = ['+x', '-x', '-x', '+x'])
+            elif p13 == 1:
+                pb.pulser_pulse(name = 'P0', channel = 'MW', start = PULSE_1_START, length = PULSE_1_LENGTH, phase_list = ['+x'])
+                pb.pulser_pulse(name = 'P1', channel = 'MW', start = PULSE_2_START, length = PULSE_2_LENGTH, phase_list = ['+x'])
+                pb.pulser_pulse(name = 'P2', channel = 'MW', start = PULSE_3_START, length = PULSE_3_LENGTH, delta_start = str(STEP) + ' ns', phase_list = ['+x'])
+                pb.pulser_pulse(name = 'P3', channel = 'DETECTION', start = PULSE_SIGNAL_START, length = adc_wind, delta_start = str(STEP) + ' ns', phase_list = ['+x'])
+
+            pb.pulser_repetition_rate( REP_RATE )
+            # read integration window
+            pb.digitizer_number_of_averages(AVERAGES)
+
+            pb.pulser_open()
+
+            # the idea of automatic and dynamic changing is
+            # sending a new value of repetition rate via self.command
+            # in each cycle we will check the current value of self.command
+            # self.command = 'exit' will stop the digitizer
+            while self.command != 'exit':
+
+                # Start of experiment
+                if p13 == 0:
+                    j = 1
+                    while j <= SCANS:
+
+                        if self.command == 'exit':
+                            break
+
+                        for i in range(POINTS):
+
+                            for k in range(PHASES):
+                                pb.pulser_next_phase()
+                                data[0], data[1] = pb.digitizer_get_curve( POINTS, PHASES, integral = True )
+                                general.plot_1d(p2, x_axis, ( data[0], data[1] ), xname = 'T',\
+                                        xscale = 'ns', yname = 'Area', yscale = 'A.U.', label = p1, \
+                                        text = 'Scan / Time: ' + str(j) + ' / ' + str(i*STEP))
+
+                            pb.pulser_shift()
+
+                            # check our polling data
+                            if self.command[0:2] == 'SC':
+                                SCANS = int( self.command[2:] )
+                                self.command = 'start'
+                            elif self.command == 'exit':
+                                break
+                            
+                            if conn.poll() == True:
+                                self.command = conn.recv()
+
+                        j += 1
+                        pb.pulser_pulse_reset()
+
+                elif p13 == 1:
+                    j = 1
+                    while j <= SCANS:
+
+                        if self.command == 'exit':
+                            break
+
+                        for i in range(POINTS):
+                            pb.pulser_update()
                             data[0], data[1] = pb.digitizer_get_curve( POINTS, PHASES, integral = True )
                             general.plot_1d(p2, x_axis, ( data[0], data[1] ), xname = 'T',\
-                                    xscale = 'ns', yname = 'Area', yscale = 'A.U.', label = p1, \
-                                    text = 'Scan / Time: ' + str(j) + ' / ' + str(i*STEP))
+                                        xscale = 'ns', yname = 'Area', yscale = 'A.U.', label = p1, \
+                                        text = 'Scan / Time: ' + str(j) + ' / ' + str(round(i*STEP, 1)))
 
-                        pb.pulser_shift()
+                            pb.pulser_shift()
 
-                        # check our polling data
-                        if self.command[0:2] == 'SC':
-                            SCANS = int( self.command[2:] )
-                            self.command = 'start'
-                        elif self.command == 'exit':
-                            break
-                        
-                        if conn.poll() == True:
-                            self.command = conn.recv()
+                            # check our polling data
+                            if self.command[0:2] == 'SC':
+                                SCANS = int( self.command[2:] )
+                                self.command = 'start'
+                            elif self.command == 'exit':
+                                break
+                            
+                            if conn.poll() == True:
+                                self.command = conn.recv()
 
-                    j += 1
-                    pb.pulser_pulse_reset()
+                        j += 1
+                        pb.pulser_pulse_reset()
 
-            elif p13 == 1:
-                j = 1
-                while j <= SCANS:
-
-                    if self.command == 'exit':
-                        break
-
-                    for i in range(POINTS):
-                        pb.pulser_update()
-                        data[0], data[1] = pb.digitizer_get_curve( POINTS, PHASES, integral = True )
-                        general.plot_1d(p2, x_axis, ( data[0], data[1] ), xname = 'T',\
-                                    xscale = 'ns', yname = 'Area', yscale = 'A.U.', label = p1, \
-                                    text = 'Scan / Time: ' + str(j) + ' / ' + str(round(i*STEP, 1)))
-
-                        pb.pulser_shift()
-
-                        # check our polling data
-                        if self.command[0:2] == 'SC':
-                            SCANS = int( self.command[2:] )
-                            self.command = 'start'
-                        elif self.command == 'exit':
-                            break
-                        
-                        if conn.poll() == True:
-                            self.command = conn.recv()
-
-                    j += 1
-                    pb.pulser_pulse_reset()
-
-            # finish succesfully
-            self.command = 'exit'
+                # finish succesfully
+                self.command = 'exit'
 
 
-        if self.command == 'exit':
-            general.message('Script finished')
-            
-            tb = pb.adc_window * 0.4 * pb.digitizer_decimation()
-            pb.pulser_close()
+            if self.command == 'exit':
+                general.message('Script finished')
+                
+                tb = pb.adc_window * 0.4 * pb.digitizer_decimation()
+                pb.pulser_close()
 
-            # Data saving
-            header = 'Date: ' + str(datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")) + '\n' + '3pESEEM\n' + \
-                        'Field: ' + str(FIELD) + ' G \n' + str(mw.mw_bridge_att_prm()) + '\n' + str(mw.mw_bridge_att2_prm()) + '\n' + \
-                        str(mw.mw_bridge_att1_prd()) + '\n' + str(mw.mw_bridge_synthesizer()) + '\n' + \
-                       'Repetition Rate: ' + str(pb.pulser_repetition_rate()) + '\n' + 'Number of Scans: ' + str(SCANS) + '\n' +\
-                       'Averages: ' + str(AVERAGES) + '\n' + 'Points: ' + str(POINTS) + '\n' + 'Window: ' + str(tb) + ' ns\n' \
-                       + 'Horizontal Resolution: ' + str(STEP) + ' ns\n' + 'Temperature: ' + str(ls335.tc_temperature('B')) + ' K\n' +\
-                       'Pulse List: ' + '\n' + str(pb.pulser_pulse_list()) + 'T (ns), I (A.U.), Q (A.U.) '
+                # Data saving
+                header = 'Date: ' + str(datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")) + '\n' + '3pESEEM\n' + \
+                            'Field: ' + str(FIELD) + ' G \n' + str(mw.mw_bridge_att_prm()) + '\n' + str(mw.mw_bridge_att2_prm()) + '\n' + \
+                            str(mw.mw_bridge_att1_prd()) + '\n' + str(mw.mw_bridge_synthesizer()) + '\n' + \
+                           'Repetition Rate: ' + str(pb.pulser_repetition_rate()) + '\n' + 'Number of Scans: ' + str(SCANS) + '\n' +\
+                           'Averages: ' + str(AVERAGES) + '\n' + 'Points: ' + str(POINTS) + '\n' + 'Window: ' + str(tb) + ' ns\n' \
+                           + 'Horizontal Resolution: ' + str(STEP) + ' ns\n' + 'Temperature: ' + str(ls335.tc_temperature('B')) + ' K\n' +\
+                           'Pulse List: ' + '\n' + str(pb.pulser_pulse_list()) + 'T (ns), I (A.U.), Q (A.U.) '
 
-            file_data, file_param = file_handler.create_file_parameters('.param')
-            file_handler.save_header(file_param, header = header, mode = 'w')
-            file_handler.save_data(file_data, np.c_[x_axis, data[0], data[1]], header = header, mode = 'w')
+                file_data, file_param = file_handler.create_file_parameters('.param')
+                file_handler.save_header(file_param, header = header, mode = 'w')
+                file_handler.save_data(file_data, np.c_[x_axis, data[0], data[1]], header = header, mode = 'w')
+
+        except BaseException as e:
+            exc_info = f"{type(e)} \n{str(e)} \n{traceback.format_exc()}"
+            conn.send( ('Error', exc_info) )
 
 def main():
     """
