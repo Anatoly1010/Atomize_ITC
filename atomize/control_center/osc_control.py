@@ -64,19 +64,19 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Spinboxes
         self.Hor_offset.valueChanged.connect(self.hor_offset)
-        self.Hor_offset.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); }")
+        self.Hor_offset.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
         self.Wind.valueChanged.connect(self.wind)
-        self.Wind.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); }")
+        self.Wind.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
         self.Ch1_scale.valueChanged.connect(self.ch1_scale)
-        self.Ch1_scale.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); }")
+        self.Ch1_scale.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
         self.Ch1_offset.valueChanged.connect(self.ch1_offset)
-        self.Ch1_offset.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); }")
+        self.Ch1_offset.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
         self.Ch2_scale.valueChanged.connect(self.ch2_scale)
-        self.Ch2_scale.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); }")
+        self.Ch2_scale.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
         self.Ch2_offset.valueChanged.connect(self.ch2_offset)
-        self.Ch2_offset.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); }")
+        self.Ch2_offset.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
         self.Acq_number.valueChanged.connect(self.acq_number)
-        self.Acq_number.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); }")
+        self.Acq_number.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
 
         self.combo_trig_ch.setStyleSheet("QComboBox { color : rgb(193, 202, 227); selection-color: rgb(211, 194, 78); }")
         

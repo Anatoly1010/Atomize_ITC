@@ -4,23 +4,18 @@ import configparser
 import pyqtgraph as pg
 import numpy as np
 import math
-#from tkinter import filedialog
-#import tkinter
 from datetime import datetime
 from pathlib import Path
 from pyqtgraph.dockarea import Dock
 from PyQt6 import QtWidgets, QtCore, QtGui
 from PyQt6.QtWidgets import QFileDialog
 import atomize.main.local_config as lconf
-#import OpenGL
 
 pg.setConfigOption('background', (63,63,97))
 pg.setConfigOption('leftButtonPan', False)
 pg.setConfigOption('foreground', (192, 202, 227))
 #pg.setConfigOptions(imageAxisOrder='row-major')
 
-#pg.setConfigOption('useOpenGL', True)
-#pg.setConfigOption('enableExperimental', True)
 LastExportDirectory = None
 
 def get_widget(rank, name):
@@ -32,23 +27,42 @@ def get_widget(rank, name):
 class CloseableDock(Dock):
     docklist = []
     def __init__(self, *args, **kwargs):
+        # Default 'closable' to False to prevent pyqtgraph's native button from interfering
+        kwargs.setdefault('closable', False)
         super(CloseableDock, self).__init__(*args, **kwargs)
+        
+        self.setStyleSheet("background: rgba(42, 42, 64, 255);")
         style = QtWidgets.QStyleFactory().create("fusion")
         close_icon = style.standardIcon(QtWidgets.QStyle.StandardPixmap.SP_TitleBarCloseButton)
-        close_button = QtWidgets.QPushButton(close_icon, "", self)
-        close_button.clicked.connect(self.close)
-        close_button.setGeometry(0, 0, 15, 15)
-        close_button.raise_()
-        self.closeClicked = close_button.clicked
-
-        #max_icon = style.standardIcon(QtWidgets.QStyle.StandardPixmap.SP_TitleBarMaxButton)
-        #max_button = QtWidgets.QPushButton(max_icon, "", self)
-        #max_button.clicked.connect(self.maximize)
-        #max_button.setGeometry(15, 0, 15, 15)
-        #max_button.raise_()
-
+        
+        self.close_button = QtWidgets.QPushButton(close_icon, "", self)
+        self.close_button.setGeometry(0, 0, 13, 13)
+        self.close_button.setStyleSheet("border: rgba(0, 0, 0, 255); background: rgba(211, 194, 78, 255);")
+        self.close_button.raise_()
+        self.close_button.clicked.connect(self.close)
+        
+        self.closeClicked = self.close_button.clicked
         self.closed = False
         CloseableDock.docklist.append(self)
+
+    def containerChanged(self, container):
+        """Triggered by pyqtgraph when the dock moves (including floating)."""
+        super().containerChanged(container)
+        container.setStyleSheet(f"background-color: rgba(42, 42, 64, 255);")
+        # Ensure button is on top when it moves to a new floating window
+        self.update_button_layout()
+
+    def resizeEvent(self, event):
+        """Keeps the button in the top-right corner during any resize."""
+        super().resizeEvent(event)
+        self.update_button_layout()
+
+    def update_button_layout(self):
+        """Positions the button relative to the current dock size."""
+        margin = 0
+        # Position at top-right
+        self.close_button.move(margin, margin)
+        self.close_button.raise_()
 
     def close(self):
         self.setParent(None)
@@ -56,11 +70,6 @@ class CloseableDock(Dock):
         if hasattr(self, '_container'):
             if self._container is not self.area.topContainer:
                 self._container.apoptose()
-
-    #def maximize(self):
-    #    for d in CloseableDock.docklist:
-    #        if d is not self and not d.closed:
-    #            d.close()
 
 class CrosshairPlotWidget(pg.PlotWidget):
     def __init__(self, parametric = False, *args, **kwargs):
@@ -72,19 +81,27 @@ class CrosshairPlotWidget(pg.PlotWidget):
         self.search_mode = True
         self.label = None
         self.label2 = None
+        self.image_operation = 0
+        self.click_count = 1
 
     def toggle_search(self, mouse_event):
         if mouse_event.double():
             if self.cross_section_enabled:
                 self.hide_cross_hair()
             else:
+                self.image_operation = 0
                 item = self.getPlotItem()
                 vb = item.getViewBox()
                 view_coords = vb.mapSceneToView(mouse_event.scenePos())
-                x_log_mode, y_log_mode = vb.state['logMode'][0], vb.state['logMode'][1]
                 view_x, view_y = view_coords.x(), view_coords.y()
                 self.add_cross_hair(view_x, view_y)
+
         elif self.cross_section_enabled:
+            self.click_count = (self.click_count + 1 ) % 2
+            if self.click_count == 0:
+                self.image_operation = 0
+            elif self.click_count == 1:
+                self.image_operation = 1
             self.search_mode = not self.search_mode
             if self.search_mode:
                 self.handle_mouse_move(mouse_event.scenePos())
@@ -107,8 +124,37 @@ class CrosshairPlotWidget(pg.PlotWidget):
             best_guesses = []
             for data_item in item.items:
                 if isinstance(data_item, pg.PlotDataItem) and (data_item.isVisible()):
-                    xdata, ydata = data_item.xData, data_item.yData
-                    index_distance = lambda i: ((xdata[i]-view_x))**2 + ((ydata[i] - view_y)/view_y)**2
+                    xdata_0, ydata_0 = data_item.xData, data_item.yData
+
+                    # handle different options and different version of pyqtgraph
+                    try:
+                        if item.items[0].opts['fftMode'] == True:
+                            xdata, ydata = self._fourierTransform(xdata_0, ydata_0)
+                            if item.items[0].opts['logMode'][0]:
+                                xdata = xdata[1:]
+                                ydata = ydata[1:]
+                        elif item.items[0].opts['subtractMeanMode'] == True:
+                            xdata, ydata = xdata_0, ydata_0 - np.mean(ydata_0)
+                        elif item.items[0].opts['derivativeMode'] == True:
+                            xdata, ydata = xdata_0[:-1], np.diff(ydata_0) / np.diff(xdata_0)
+                        elif item.items[0].opts['phasemapMode'] == True:
+                            xdata, ydata = ydata_0[:-1], np.diff(ydata_0) / np.diff(xdata_0)
+                        else:
+                            xdata, ydata = xdata_0, ydata_0
+                    except KeyError:
+                        if item.items[0].opts['fftMode'] == True:
+                            xdata, ydata = self._fourierTransform(xdata_0, ydata_0)
+                            if item.items[0].opts['logMode'][0]:
+                                xdata = xdata[1:]
+                                ydata = ydata[1:]
+                        elif item.items[0].opts['derivativeMode'] == True:
+                            xdata, ydata = xdata_0[:-1], np.diff(ydata_0) / np.diff(xdata_0)
+                        elif item.items[0].opts['phasemapMode'] == True:
+                            xdata, ydata = ydata_0[:-1], np.diff(ydata_0) / np.diff(xdata_0)
+                        else:
+                            xdata, ydata = xdata_0, ydata_0
+
+                    index_distance = lambda i: ((xdata[i] - view_x))**2 + ((ydata[i] - view_y))**2
                     if self.parametric:
                         index = min(list(range(len(xdata))), key=index_distance)
                     else:
@@ -174,6 +220,24 @@ class CrosshairPlotWidget(pg.PlotWidget):
         self.removeItem(self.v_line)
         self.cross_section_enabled = False
 
+    def _fourierTransform(self, x, y):
+        # Perform Fourier transform. If x values are not sampled uniformly,
+        # then use np.interp to resample before taking fft.
+        if len(x) == 1: 
+            return np.array([0]), abs(y)
+        dx = np.diff(x)
+        uniform = not np.any(np.abs(dx - dx[0]) > (abs(dx[0]) / 1000.))
+        if not uniform:
+            x2 = np.linspace(x[0], x[-1], len(x))
+            y = np.interp(x2, x, y)
+            x = x2
+        n = y.size
+        f = np.fft.rfft(y) / n
+        d = float(x[-1] - x[0]) / (len(x) - 1)
+        x = np.fft.rfftfreq(n, d)
+        y = np.abs(f)
+        return x, y
+
 class CrosshairDock(CloseableDock):
     def __init__(self, **kwargs):
         # open directory
@@ -190,7 +254,9 @@ class CrosshairDock(CloseableDock):
         self.open_dir = str(config['DEFAULT']['open_dir'])
         if self.open_dir == '':
             self.open_dir = lconf.load_scripts(os.path.join(path_to_main, '..', 'tests'))
-        
+        #plot_item.scene().contextMenu = None 
+
+
         # for not removing vertical line if the position is the same
         self.ver_line_1 = 0
         self.ver_line_2 = 0
@@ -218,19 +284,17 @@ class CrosshairDock(CloseableDock):
         self.menu.addMenu(self.shift_menu)
 
         open_action = QtGui.QAction('Open 1D Data', self)
-        open_action.triggered.connect(self.file_dialog) # self.open_file_dialog
+        open_action.triggered.connect(self.file_dialog)
         self.menu.addAction(open_action)
 
-        self.avail_colors = [pg.mkPen(color=(47,79,79),width=1), pg.mkPen(color=(255,153,0),width=1), pg.mkPen(color=(255,0,255),width=1), \
-        pg.mkPen(color=(0,0,255),width=1), \
-        pg.mkPen(color=(0,0,0),width=1), pg.mkPen(color=(255,0,0),width=1), \
-        pg.mkPen(color=(95,158,160),width=1), pg.mkPen(color=(0,128,0),width=1), pg.mkPen(color=(255,255,0),width=1), \
-        pg.mkPen(color=(255,255,255),width=1)]
+        self.avail_colors = [pg.mkPen(color=(47,79,79),width=1), pg.mkPen(color=(255,153,0),width=1), pg.mkPen(color=(255,0,255),width=1), pg.mkPen(color=(0,0,255),width=1), pg.mkPen(color=(0,0,0),width=1), pg.mkPen(color=(255,0,0),width=1), pg.mkPen(color=(95,158,160),width=1), pg.mkPen(color=(0,128,0),width=1), pg.mkPen(color=(255,255,0),width=1), pg.mkPen(color=(255,255,255),width=1)]
         self.avail_symbols= ['x','p','star','s','o','+']
-        self.avail_sym_pens = [ pg.mkPen(color=(0, 0, 0), width=0), pg.mkPen(color=(255, 255, 255), width=0),pg.mkPen(color=(0, 255, 0), width=0),
-        pg.mkPen(color=(0, 0, 255), width=0),pg.mkPen(color=(255, 0, 0), width=0),pg.mkPen(color=(255, 0, 255), width=0)]
-        self.avail_sym_brush = [pg.mkBrush(0, 0, 0, 255), pg.mkBrush(255, 255, 255, 255),pg.mkBrush(0, 255, 0, 255),pg.mkBrush(0, 0, 255, 255),
-        pg.mkBrush(255, 0, 0, 255),pg.mkBrush(255, 0, 255, 255)]
+        self.avail_sym_pens = [ pg.mkPen(color=(0, 0, 0), width=0), pg.mkPen(color=(255, 255, 255), width=0), pg.mkPen(color=(0, 255, 0), width=0), pg.mkPen(color=(0, 0, 255), width=0),pg.mkPen(color=(255, 0, 0), width=0),pg.mkPen(color=(255, 0, 255), width=0)]
+        self.avail_sym_brush = [pg.mkBrush(0, 0, 0, 255), pg.mkBrush(255, 255, 255, 255),pg.mkBrush(0, 255, 0, 255),pg.mkBrush(0, 0, 255, 255), pg.mkBrush(255, 0, 0, 255),pg.mkBrush(255, 0, 255, 255)]
+
+        self.white_pen = pg.mkPen(color=(255, 255, 255), width=1)
+        self.yellow_pen = pg.mkPen(color=(255, 255, 0), width=1)
+
         self.used_colors = {}
         self.used_pens = {}
         self.used_symbols = {}
@@ -246,9 +310,22 @@ class CrosshairDock(CloseableDock):
         # for delete and shift q_action
         self.qaction_added = 0
 
+        self.plot_item = self.plot_widget.getPlotItem()
+        self.plot_item.ctrl.fftCheck.toggled.connect(self.on_fft_toggled)
+
+    def on_fft_toggled(self, enabled):
+        if enabled:
+            self.plot_item.setLabel('bottom', 'Frequency', units = 'Hz')
+        else:
+            try:
+                self.plot_item.setLabel('bottom', self.bottom_axis_text, units = self.bottom_axis_units)
+            except AttributeError:
+                pass
+
     def plot(self, *args, **kwargs):
         self.plot_widget.parametric = kwargs.pop('parametric', False)
         vline_arg = kwargs.get('vline', '')
+
         if kwargs.get('timeaxis', '') == 'True':
             # strange scaling when zoom
             axis = pg.DateAxisItem()
@@ -262,10 +339,7 @@ class CrosshairDock(CloseableDock):
 
         if name in self.curves:
             if kwargs.get('scatter', '') == 'True':
-                kwargs['pen'] = None;
-                kwargs['symbol'] = self.used_symbols[name]
-                kwargs['symbolPen'] = self.used_pens[name]
-                kwargs['symbolBrush'] = self.used_brush[name]
+                kwargs['pen'] = None        
                 kwargs['symbolSize'] = 7
                 self.curves[name].setData(*args, **kwargs)
             elif kwargs.get('scatter', '') == 'False':
@@ -293,7 +367,10 @@ class CrosshairDock(CloseableDock):
                                     self.setTitle( temp )
                             else:
                                 kwargs['name'] = name
-                                kwargs['pen'] = self.used_colors[name] = self.avail_colors.pop()
+                                try:
+                                    kwargs['pen'] = self.used_colors[name] = self.avail_colors.pop()
+                                except IndexError:
+                                    kwargs['pen'] = self.used_colors[name] = self.white_pen
                                 args_mod = (args[0][i], args[1][i])
                                 self.curves[name] = self.plot_widget.plot(*args_mod, **kwargs)
                                 # Text label above the graph
@@ -306,7 +383,6 @@ class CrosshairDock(CloseableDock):
                                 shifter = QtWidgets.QDoubleSpinBox()
                                 shiftAction = QtWidgets.QWidgetAction(self)
                                 self.add_del_shift_actions(name, del_action, shifter, shiftAction)
-
 
                 else:
                     kwargs['pen'] = self.used_colors[name]
@@ -331,10 +407,15 @@ class CrosshairDock(CloseableDock):
                         pass
         else:
             if kwargs.get('scatter', '') == 'True':
-                kwargs['pen'] = None;
-                kwargs['symbol'] = self.used_symbols[name] = self.avail_symbols.pop()
-                kwargs['symbolPen'] = self.used_pens[name] = self.avail_sym_pens.pop()
-                kwargs['symbolBrush'] = self.used_brush[name] = self.avail_sym_brush.pop()
+                kwargs['pen'] = None
+                try:
+                    kwargs['symbol'] = self.used_symbols[name] = self.avail_symbols.pop()
+                    kwargs['symbolPen'] = self.used_pens[name] = self.avail_sym_pens.pop()
+                    kwargs['symbolBrush'] = self.used_brush[name] = self.avail_sym_brush.pop()
+                except IndexError:
+                    kwargs['symbol'] = self.used_symbols[name] = '+'
+                    kwargs['symbolPen'] = self.used_pens[name] = pg.mkPen(color=(255, 255, 255), width=0)
+                    kwargs['symbolBrush'] = self.used_brush[name] = pg.mkBrush(255, 255, 255, 255)                    
                 kwargs['symbolSize'] = 7
                 self.curves[name] = self.plot_widget.plot(*args, **kwargs)
             elif kwargs.get('scatter', '') == 'False':
@@ -342,12 +423,16 @@ class CrosshairDock(CloseableDock):
                     # simultaneous plot of two curves
                     for i in range( len( args[0] )):
                         if i == 0:
-                            kwargs['pen'] = self.used_colors[name] = self.avail_colors.pop()
+                            try:
+                                kwargs['pen'] = self.used_colors[name] = self.avail_colors.pop()
+                            except IndexError:
+                                kwargs['pen'] = self.used_colors[name] = self.white_pen
                             args_mod = (args[0][i], args[1][i])
                             self.curves[name] = self.plot_widget.plot(*args_mod, **kwargs)
                         else:
                             kwargs['pen'] = self.used_colors[name]
                             args_mod = (args[0][0], args[1][0])
+
                             # the first curve is already plotted
                             self.curves[name].setData(*args_mod, **kwargs)
 
@@ -373,7 +458,10 @@ class CrosshairDock(CloseableDock):
                                 self.qaction_added = 1
                             else:
                                 kwargs['name'] = name
-                                kwargs['pen'] = self.used_colors[name] = self.avail_colors.pop()
+                                try:
+                                    kwargs['pen'] = self.used_colors[name] = self.avail_colors.pop()
+                                except IndexError:
+                                    kwargs['pen'] = self.used_colors[name] = self.yellow_pen
                                 args_mod = (args[0][i], args[1][i])
                                 # the second curve is a new one
                                 self.curves[name] = self.plot_widget.plot(*args_mod, **kwargs)
@@ -383,7 +471,10 @@ class CrosshairDock(CloseableDock):
                                     self.setTitle( temp )
 
                 else:
-                    kwargs['pen'] = self.used_colors[name] = self.avail_colors.pop()
+                    try:
+                        kwargs['pen'] = self.used_colors[name] = self.avail_colors.pop()
+                    except IndexError:
+                        kwargs['pen'] = self.used_colors[name] = self.white_pen
                     self.curves[name] = self.plot_widget.plot(*args, **kwargs)
                     # Text label above the graph
                     temp = kwargs.get('text', '')
@@ -393,7 +484,6 @@ class CrosshairDock(CloseableDock):
                 # vertical lines
                 if vline_arg != 'False':
                     try:
-                        # , pen = pg.mkPen(color=(230, 0, 126), width = 1)
                         self.vl1 = self.plot_widget.addLine( x = float(vline_arg[0]) )
                         self.vl2 = self.plot_widget.addLine( x = float(vline_arg[1]) )
                     except IndexError:
@@ -404,7 +494,15 @@ class CrosshairDock(CloseableDock):
                 shifter_2 = QtWidgets.QDoubleSpinBox()
                 shiftAction_2 = QtWidgets.QWidgetAction(self)
                 self.add_del_shift_actions(name, del_action_2, shifter_2, shiftAction_2)
-    
+
+        item = self.plot_widget.getPlotItem()
+        fft_state = item.items[0].opts['fftMode']
+        self.on_fft_toggled( fft_state )
+
+        if not fft_state:
+            self.bottom_axis_text = self.plot_widget.getAxis('bottom').labelText
+            self.bottom_axis_units = self.plot_widget.getAxis('bottom').labelUnits
+
     def add_del_shift_actions(self, gr_name, del_act, shiftspinbox, shift_act):
         """
         05-01-2021
@@ -516,36 +614,11 @@ class CrosshairDock(CloseableDock):
             self.plot(data[0], data[3], parametric = True, name = file_path + '_2', xname = 'X', xscale = 'Arb. U.',\
                 yname = 'Y', yscale = 'Arb. U.', label = 'Data_2', scatter = 'False')
 
-    # unused
-    def open_file_dialog(self, directory = '', header = 0):
-        pass
-        #file_path = self.file_dialog(directory = directory)
-
-        #header_array = []
-        #file_to_read = open(file_path,'r')
-        #for i, line in enumerate(file_to_read):
-        #    if i is header: break
-        #    temp = line.split("#")
-        #    header_array.append(temp)
-        #file_to_read.close()
-
-        #temp = np.genfromtxt(file_path, dtype = float, delimiter = ',', skip_header = 0) 
-        #data = np.transpose(temp)
-        #if len(data) == 2:
-        #    self.plot(data[0], data[1], parametric = True, name = file_path, xname = 'X', xscale = 'Arb. U.',\
-        #    yname = 'Y', yscale = 'Arb. U.', label = 'Data_1', scatter = 'False')
-        #elif len(data) == 3:
-        #    self.plot(data[0], data[1], parametric = True, name = file_path + '_1', xname = 'X', xscale = 'Arb. U.',\
-        #    yname = 'Y', yscale = 'Arb. U.', label = 'Data_1', scatter = 'False')
-        #    self.plot(data[0], data[2], parametric = True, name = file_path + '_2', xname = 'X', xscale = 'Arb. U.',\
-        #    yname = 'Y', yscale = 'Arb. U.', label = 'Data_2', scatter = 'False')
-
     def file_dialog(self, directory = ''):
         """
         A function to open a new window for choosing 1d data
         """
-        filedialog = QFileDialog(self, 'Open File', directory = self.open_dir, filter = "CSV (*.csv)", \
-                                    options = QtWidgets.QFileDialog.Option.DontUseNativeDialog ) 
+        filedialog = QFileDialog(self, 'Open File', directory = self.open_dir, filter = "CSV (*.csv)",  options = QtWidgets.QFileDialog.Option.DontUseNativeDialog ) 
         # options = QtWidgets.QFileDialog.Option.DontUseNativeDialog
         # use QFileDialog.Option.DontUseNativeDialog to change directory
         filedialog.setStyleSheet("QWidget { background-color : rgb(42, 42, 64); color: rgb(211, 194, 78);}")
@@ -589,8 +662,21 @@ class CrossSectionDock(CloseableDock):
     def __init__(self, trace_size = 80, **kwargs):
         self.plot_item = view = pg.PlotItem(labels = kwargs.pop('labels', None))
         self.img_view = kwargs['widget'] = pg.ImageView(view = view)
+
+        # Define positions and corresponding colors
+        pos = np.array([0.0, 0.5, 1.0])
+        color = np.array([
+            [0, 0, 255, 255],       # Blue
+            [255, 255, 255, 255],   # White
+            [255, 0, 0, 255]        # Red
+        ], dtype = np.ubyte)
+        cmap = pg.ColorMap(pos, color)
+
         # plot options menu
-        #view.ctrlMenu.setStyleSheet("QMenu::item:selected {background-color: rgb(40, 40, 40); }")
+        #self.plot_item.getViewBox().menu.setStyleSheet("QMenu::item:selected {background-color: rgb(40, 40, 40); } QMenu::item { color: rgb(211, 194, 78); } QMenu {background-color: rgb(42, 42, 64); }")
+        #self.plot_item.ctrlMenu.setStyleSheet("QMenu::item:selected {background-color: rgb(40, 40, 40); } QMenu::item { color: rgb(211, 194, 78); } QMenu {background-color: rgb(42, 42, 64); }")
+        self.auto_levels = 0
+        self.set_image = 0
         view.setAspectLocked(lock=False)
         self.ui = self.img_view.ui
         self.imageItem = self.img_view.imageItem
@@ -619,8 +705,8 @@ class CrossSectionDock(CloseableDock):
         self.clear_action = QtGui.QAction('Clear Contents', self)
         self.clear_action.triggered.connect(self.clear)
         self.img_view.scene.contextMenu.append(self.clear_action)
+        self.ui.histogram.gradient.setColorMap(cmap) #loadPreset('bipolar')
 
-        self.ui.histogram.gradient.loadPreset('bipolar')
         try:
             self.connect_signal()
         except RuntimeError:
@@ -628,6 +714,7 @@ class CrossSectionDock(CloseableDock):
 
         self.y_cross_index = 0
         self.h_cross_section_widget = CrosshairPlotWidget()
+        self.h_cross_section_widget.image_operation = 1
         self.h_cross_dock = CloseableDock(name='X trace', widget=self.h_cross_section_widget, area=self.area)
         self.h_cross_section_widget.add_cross_hair_zero()
         self.h_cross_section_widget.search_mode = False
@@ -635,13 +722,13 @@ class CrossSectionDock(CloseableDock):
 
         self.x_cross_index = 0
         self.v_cross_section_widget = CrosshairPlotWidget()
+        self.v_cross_section_widget.image_operation = 1
         self.v_cross_dock = CloseableDock(name='Y trace', widget=self.v_cross_section_widget, area=self.area)
         self.v_cross_section_widget.add_cross_hair_zero()
         self.v_cross_section_widget.search_mode = False
         self.v_cross_section_widget_data = self.v_cross_section_widget.plot([0,0])
 
     def setLabels(self, xlabel = "X", ylabel = "Y", zlabel = "Z"):
-        print(self.h_cross_dock.label)
         self.plot_item.setLabels(bottom=(xlabel,), left=(ylabel,))
         self.h_cross_section_widget.plotItem.setLabels(bottom=xlabel, left=zlabel)
         self.v_cross_section_widget.plotItem.setLabels(bottom=ylabel, left=zlabel)
@@ -667,11 +754,28 @@ class CrossSectionDock(CloseableDock):
         else:
             self._xscale, self._yscale = 1, 1
 
+        if self.set_image != 0:
+            if self._x0_prev != self._x0 or self._y0_prev != self._y0 or self._xscale_prev != self._xscale or self._yscale_prev != self._yscale:
+                self.hide_cross_section()
+
+        self._x0_prev = self._x0
+        self._y0_prev = self._y0
+        self._xscale_prev = self._xscale
+        self._yscale_prev = self._yscale
+
         autorange = self.img_view.getView().vb.autoRangeEnabled()[0]
         kwargs['autoRange'] = autorange
+
+        if self.auto_levels == 0:
+            kwargs['autoLevels'] = True
+        else:
+            kwargs['autoLevels'] = False
+        self.auto_levels = 0
+
         self.img_view.setImage(*args, **kwargs )
         self.img_view.getView().vb.enableAutoRange(enable = autorange)
         self.update_cross_section()
+        self.set_image = 1
 
     def setTitle(self, text):
         self.plot_item.setTitle(text)
@@ -720,8 +824,8 @@ class CrossSectionDock(CloseableDock):
                   footer = '', comments = '#', encoding = None)
 
     def fileSaveDialog(self):
-        self.fileDialog = QFileDialog()
-        #self.fileDialog.setOption(QtGui.QFileDialog.Option.DontUseNativeDialog)
+        self.fileDialog = QFileDialog(self, 'Save File', options = QtWidgets.QFileDialog.Option.DontUseNativeDialog)
+        self.fileDialog.setStyleSheet("QWidget { background-color : rgb(42, 42, 64); color: rgb(211, 194, 78);}")
         self.fileDialog.setNameFilters(['*.csv','*.txt','*.dat'])
         self.fileDialog.setAcceptMode(QtWidgets.QFileDialog.AcceptMode.AcceptSave)
         global LastExportDirectory
@@ -811,11 +915,14 @@ class CrossSectionDock(CloseableDock):
         ydata = np.linspace(y0, y0+(yscale*(ny-1)), ny)
         zval = self.imageItem.image[self.x_cross_index, self.y_cross_index]
         self.h_cross_section_widget_data.setData(xdata, self.imageItem.image[:, self.y_cross_index])
-        self.h_cross_section_widget.v_line.setPos(xdata[self.x_cross_index])
-        self.h_cross_section_widget.h_line.setPos(zval)
         self.v_cross_section_widget_data.setData(ydata, self.imageItem.image[self.x_cross_index, :])
-        self.v_cross_section_widget.v_line.setPos(ydata[self.y_cross_index])
-        self.v_cross_section_widget.h_line.setPos(zval)
+
+        if self.v_cross_section_widget.image_operation == 1 and self.h_cross_section_widget.image_operation == 1:
+            self.h_cross_section_widget.v_line.setPos(xdata[self.x_cross_index])
+            self.h_cross_section_widget.h_line.setPos(zval)
+            self.v_cross_section_widget.v_line.setPos(ydata[self.y_cross_index])
+            self.v_cross_section_widget.h_line.setPos(zval)
+
 
 class MoviePlotDock(CrossSectionDock):
     def __init__(self, array, *args, **kwargs):

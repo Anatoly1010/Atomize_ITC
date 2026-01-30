@@ -9,7 +9,7 @@ import socket
 import numpy as np
 from multiprocessing import Process, Pipe
 from PyQt6 import QtWidgets, uic
-from PyQt6.QtWidgets import QWidget 
+from PyQt6.QtWidgets import QWidget, QCheckBox
 from PyQt6.QtGui import QIcon
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -54,11 +54,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.label_6.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
         self.label_7.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
         self.label_8.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
+        self.label_9.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
         self.label_10.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
 
         # text edits
-        self.text_edit_curve.setStyleSheet("QTextEdit { color : rgb(211, 194, 78) ; }") # rgb(193, 202, 227)
-        self.text_edit_exp_name.setStyleSheet("QTextEdit { color : rgb(211, 194, 78) ; }") # rgb(193, 202, 227)
+        self.text_edit_curve.setStyleSheet("QTextEdit { color : rgb(211, 194, 78) ; selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}") 
+        self.text_edit_exp_name.setStyleSheet("QTextEdit { color : rgb(211, 194, 78) ; selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}") 
         self.cur_curve_name = self.text_edit_curve.toPlainText()
         self.cur_exp_name = self.text_edit_exp_name.toPlainText()
         self.text_edit_curve.textChanged.connect(self.curve_name)
@@ -89,6 +90,15 @@ class MainWindow(QtWidgets.QMainWindow):
         self.cur_sens = self.combo_sens.currentText()
         self.combo_sens.setStyleSheet("QComboBox { color : rgb(193, 202, 227); selection-color: rgb(211, 194, 78); }")
         
+        
+        self.checkbox_back_scan = QCheckBox("")
+        self.gridLayout.addWidget(self.checkbox_back_scan, 15, 1)
+    
+        self.checkbox_back_scan.setStyleSheet("QCheckBox { color : rgb(193, 202, 227); }")
+        self.checkbox_back_scan.stateChanged.connect( self.two_side_measure )
+
+        self.two_side = 0        
+
         """
         Create a process to interact with an experimental script that will run on a different thread.
         We need a different thread here, since PyQt GUI applications have a main thread of execution 
@@ -97,6 +107,15 @@ class MainWindow(QtWidgets.QMainWindow):
         the application
         """
         self.worker = Worker()
+
+    def two_side_measure(self):
+        """
+        Turn on/off backward measurement
+        """
+        if self.checkbox_back_scan.checkState().value == 2: # checked
+            self.two_side = 1
+        elif self.checkbox_back_scan.checkState().value == 0: # unchecked
+            self.two_side = 0
 
     def _on_destroyed(self):
         """
@@ -162,7 +181,8 @@ class MainWindow(QtWidgets.QMainWindow):
         try:
             self.parent_conn.send( 'SC' + str( self.cur_scan ) )
         except AttributeError:
-            self.message('Experimental script is not running')
+            pass
+            #self.message('Experimental script is not running')
 
     def lock_tc(self):
         """
@@ -234,7 +254,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # sending parameters for initial initialization
         self.exp_process = Process( target = self.worker.exp_on, args = ( self.child_conn, self.cur_curve_name, self.cur_exp_name, \
                                             self.cur_end_field, self.cur_start_field, self.cur_step, self.cur_lock_ampl, self.cur_scan, \
-                                            self.cur_tc, self.cur_sens, ) )
+                                            self.cur_tc, self.cur_sens, self.two_side, ) )
                
         self.exp_process.start()
         # send a command in a different thread about the current state
@@ -258,7 +278,7 @@ class Worker(QWidget):
 
         self.command = 'start'
                    
-    def exp_on(self, conn, p1, p2, p3, p4, p5, p6, p7, p8, p9):
+    def exp_on(self, conn, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10):
         """
         function that contains experimental script
         """
@@ -266,6 +286,8 @@ class Worker(QWidget):
         #self.cur_curve_name, self.cur_exp_name, self.cur_end_field, self.cur_start_field, 
         # [          5,                 6,              7,           8,             9,     ]
         #self.cur_step, self.cur_lock_ampl, self.cur_scan, self.cur_tc, self.cur_sens, 
+        #           10,     ]
+        #self.two_side,
 
         # should be inside dig_on() function;
         # freezing after digitizer restart otherwise
@@ -341,7 +363,10 @@ class Worker(QWidget):
 
                     i = 0
                     field = START_FIELD
-                    general.wait('2000 ms')
+                    if p10 == 0:
+                        general.wait('2000 ms')
+                    elif p10 == 1:
+                        pass
 
                     if self.command == 'exit':
                         break
@@ -352,11 +377,14 @@ class Worker(QWidget):
                         general.wait( p8 )
                             #general.wait('10 ms')
 
-                        data[i] = ( data[i] * (j - 1) + sr860.lock_in_get_data() ) / j
+                        if p10 == 0:
+                            data[i] = ( data[i] * (j - 1) + sr860.lock_in_get_data() ) / j
+                        elif p10 == 1:
+                            data[i] = ( data[i] * (2*j - 2) + sr860.lock_in_get_data() ) / (2*j - 1)
 
                         process = general.plot_1d( p2, x_axis, data, xname = 'Field',\
-                            xscale = 'G', yname = 'Intensity', yscale = 'V', label = p1, pr = process, \
-                            text = 'Scan / Field: ' + str(j) + ' / ' + str(field) )
+                            xscale = 'G', yname = 'Intensity', yscale = 'V', label = p1, \
+                            text = 'Scan / Field: ' + str(j) + ' / ' + str(field), pr = process )
 
                         field = round( (FIELD_STEP + field), 3 )
                         itc_fc.magnet_field(field) #, calibration = 'True')
@@ -373,19 +401,48 @@ class Worker(QWidget):
 
                         i += 1
 
-                    while field > START_FIELD:
-                        field = itc_fc.magnet_field( field - initialization_step)
-                        field = field - initialization_step
+                    if p10 == 0:
 
+                        while field > START_FIELD:
+                            field = itc_fc.magnet_field( field - initialization_step)
+                            field = field - initialization_step
+
+                    elif p10 == 1:
+                        while field > START_FIELD:
+
+                            i -= 1
+                            #if tc_wait == 1:
+                            general.wait( p8 )
+                                #general.wait('10 ms')
+                            
+                            field = round( (-FIELD_STEP + field), 3 )
+                            itc_fc.magnet_field(field) #, calibration = 'True')
+                            
+                            data[i] = ( data[i] * (2*j - 1) + sr860.lock_in_get_data() ) / (2*j)
+
+                            process = general.plot_1d( p2, x_axis, data, xname = 'Field',\
+                                xscale = 'G', yname = 'Intensity', yscale = 'V', label = p1, \
+                                text = 'Scan / Field: ' + str(j) + ' / ' + str(field), pr = process )
+
+                            # check our polling data
+                            if self.command[0:2] == 'SC':
+                                SCANS = int( self.command[2:] )
+                                self.command = 'start'
+                            elif self.command == 'exit':
+                                break
+                            
+                            if conn.poll() == True:
+                                self.command = conn.recv()
+                    
                     j += 1
 
                 # finish succesfully
                 self.command = 'exit'
 
             if self.command == 'exit':
-                general.message('Script finished')
+                general.message(f'Script {p2} finished')
                 sr860.lock_in_sensitivity( '1 V' )
-                while field >= START_FIELD:
+                while field > START_FIELD:
                     field = itc_fc.magnet_field( field - initialization_step )
                     field = field - initialization_step 
 

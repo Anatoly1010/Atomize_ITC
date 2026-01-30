@@ -141,8 +141,10 @@ class Keysight_2000_Xseries:
             self.test_wave_gen_impedance = '1 M'
             self.test_area = 0.001
 
-            self.mod_function = 'Sin'
-            self.mod_status = 'Off'
+            self.test_mod_function = 'Sin'
+            self.test_mod_status = 'Off'
+            self.test_mod_type = 'AM'
+            self.test_mod_depth = '100 %'
             self.test_mod_hop = '1 kHz'
             self.test_mod_rate = '100 Hz'
             self.test_mod_span_frequency = '50 Hz'
@@ -1108,7 +1110,7 @@ class Keysight_2000_Xseries:
                 answer = cutil.search_keys_dictionary(self.modulation_type_dict, raw_answer)
                 return answer
             elif self.test_flag == 'test':
-                answer = self.mod_type
+                answer = self.test_mod_type
                 return answer
 
         else:
@@ -1133,7 +1135,7 @@ class Keysight_2000_Xseries:
                 answer = cutil.search_keys_dictionary(self.modulation_wavefunction_dict, raw_answer)
                 return answer
             elif self.test_flag == 'test':
-                answer = self.mod_function
+                answer = self.test_mod_function
                 return answer
         else:
             if self.test_flag == 'test':
@@ -1143,19 +1145,19 @@ class Keysight_2000_Xseries:
         """
         sets the AM modulation depth to i percent ( 0 to 100%).
         """
-        if len(function) == 1:
+        if len(depth) == 1:
             val = int(depth[0])
             if self.test_flag != 'test':
                 self.device_write(f":WGEN:MODulation:AM:DEPTh {val}")
             elif self.test_flag == 'test':
                 assert( (val >= -100) and (val <= 100) ), f"Invalid modulation depth range. The available range is from 0 % to 100 %"
 
-        elif len(type) == 0:
+        elif len(depth) == 0:
             if self.test_flag != 'test':            
                 raw_answer = int(self.device_query(':WGEN:MODulation:AM:DEPTh?'))
                 return f"{raw_answer} %"
             elif self.test_flag == 'test':
-                answer = self.mod_depth
+                answer = self.test_mod_depth
                 return answer
 
         else:
@@ -1184,7 +1186,7 @@ class Keysight_2000_Xseries:
                 answer = cutil.search_keys_dictionary(self.status_dict, raw_answer)
                 return answer
             elif self.test_flag == 'test':
-                answer = self.mod_status
+                answer = self.test_mod_status
                 return answer
 
         else:
@@ -1256,7 +1258,7 @@ class Keysight_2000_Xseries:
                 temp = span[0].split(" ")
                 scaling = temp[1]
                 assert(scaling in self.freq_list), f"Incorrect SI suffix. Available options are {self.freq_list}"
-                assert( (self.freq - freq) >= self.wave_gen_freq_min and (self.freq + freq) <= self.max_freq_dict[self.func_type] ), f"Incorrect frequency range for {cutil.search_keys_dictionary(self.wavefunction_dic, self.func_type)}. The available range is from {self.f_min} to {f_max}"
+                #assert( (self.freq - freq) >= self.wave_gen_freq_min and (self.freq + freq) <= self.max_freq_dict[self.func_type] ), f"Incorrect frequency range for {cutil.search_keys_dictionary(self.wavefunction_dic, self.func_type)}. The available range is from {self.f_min} to {f_max}"
 
         elif len(span) == 0:
             if self.test_flag != 'test':

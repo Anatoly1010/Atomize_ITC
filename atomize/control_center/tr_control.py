@@ -8,7 +8,7 @@ import socket
 import numpy as np
 from multiprocessing import Process, Pipe
 from PyQt6 import QtWidgets, uic
-from PyQt6.QtWidgets import QWidget 
+from PyQt6.QtWidgets import QWidget, QCheckBox
 from PyQt6.QtGui import QIcon
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -56,9 +56,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.label_9.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
         self.label_10.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
         self.label_11.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
+        self.label_12.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
 
         # text edits
-        self.text_edit_exp_name.setStyleSheet("QTextEdit { color : rgb(211, 194, 78) ; }") # rgb(193, 202, 227)
+        self.text_edit_exp_name.setStyleSheet("QTextEdit { color : rgb(211, 194, 78) ; selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}") 
         self.cur_exp_name = self.text_edit_exp_name.toPlainText()
         self.text_edit_exp_name.textChanged.connect(self.exp_name)
 
@@ -107,6 +108,15 @@ class MainWindow(QtWidgets.QMainWindow):
         self.check_scan.stateChanged.connect( self.save_each_scan )
 
         self.save_scan = 0
+
+
+        self.checkbox_back_scan = QCheckBox("")
+        self.gridLayout.addWidget(self.checkbox_back_scan, 11, 1)
+    
+        self.checkbox_back_scan.setStyleSheet("QCheckBox { color : rgb(193, 202, 227); }")
+        self.checkbox_back_scan.stateChanged.connect( self.two_side_measure )
+
+        self.two_side = 0        
         """
         Create a process to interact with an experimental script that will run on a different thread.
         We need a different thread here, since PyQt GUI applications have a main thread of execution 
@@ -115,6 +125,15 @@ class MainWindow(QtWidgets.QMainWindow):
         the application
         """
         self.worker = Worker()
+
+    def two_side_measure(self):
+        """
+        Turn on/off backward measurement
+        """
+        if self.checkbox_back_scan.checkState().value == 2: # checked
+            self.two_side = 1
+        elif self.checkbox_back_scan.checkState().value == 0: # unchecked
+            self.two_side = 0
 
     def _on_destroyed(self):
         """
@@ -192,7 +211,8 @@ class MainWindow(QtWidgets.QMainWindow):
         try:
             self.parent_conn.send( 'SC' + str( self.cur_scan ) )
         except AttributeError:
-            self.message('Experimental script is not running')
+            pass
+            #self.message('Experimental script is not running')
 
     def ave(self):
         """
@@ -272,7 +292,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # sending parameters for initial initialization
         self.exp_process = Process( target = self.worker.exp_on, args = ( self.child_conn, self.cur_offres_field, self.cur_exp_name, \
                                             self.cur_end_field, self.cur_start_field, self.cur_step, self.cur_ave_offres, self.cur_scan, \
-                                            self.cur_ave, self.cur_num_osc, self.cur_trig_ch, self.save_scan, ) )
+                                            self.cur_ave, self.cur_num_osc, self.cur_trig_ch, self.save_scan, self.two_side, ) )
             
 
         self.exp_process.start()
@@ -298,14 +318,14 @@ class Worker(QWidget):
 
         self.command = 'start'
                    
-    def exp_on(self, conn, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11):
+    def exp_on(self, conn, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11, p12):
         """
         function that contains experimental script
         """
         # [                  1,                 2,                  3,                    4, ]
         #self.cur_offres_field, self.cur_exp_name, self.cur_end_field, self.cur_start_field, 
-        # [          5,                   6,              7,           8,                9,               10,             11 ]
-        #self.cur_step, self.cur_ave_offres, self.cur_scan, self.cur_ave, self.cur_num_osc, self.cur_trig_ch, self.save_scan
+        # [          5,                   6,              7,           8,                9,               10,             11,       12 ]
+        #self.cur_step, self.cur_ave_offres, self.cur_scan, self.cur_ave, self.cur_num_osc, self.cur_trig_ch, self.save_scan, self.two_side,
 
         # should be inside dig_on() function;
         # freezing after digitizer restart otherwise
@@ -574,6 +594,12 @@ class Worker(QWidget):
                         a2012_2.oscilloscope_number_of_averages(p8)
 
                     i = 0
+
+                    if p12 == 0:
+                        j = j
+                    elif p12 == 1:
+                        j = 2*j - 1
+
                     while field <= END_FIELD:
                         
                         if self.command == 'exit':
@@ -585,6 +611,7 @@ class Worker(QWidget):
                         if p9 > 1:
                             a2012_2.oscilloscope_start_acquisition()
                         
+
                         ##ch_time = np.random.randint(250, 500, 1)
                         if p9 == 1:
                             y = a2012.oscilloscope_get_curve('CH1')
@@ -652,6 +679,86 @@ class Worker(QWidget):
 
                         i += 1
 
+                    if p12 == 1:
+
+                        while field > START_FIELD:
+                            
+                            if self.command == 'exit':
+                                break
+
+                            i -= 1
+                            general.wait('80 ms')
+
+                            field = round( (-FIELD_STEP + field), 3 )
+                            bh15.magnet_field(field)
+
+                            a2012.oscilloscope_start_acquisition()
+                            if p9 > 1:
+                                a2012_2.oscilloscope_start_acquisition()
+                            
+                            ##ch_time = np.random.randint(250, 500, 1)
+                            if p9 == 1:
+                                y = a2012.oscilloscope_get_curve('CH1')
+                                ##y = 1 + 100*np.exp(-axis_x/ch_time) + 7*np.random.normal(size = (4000))
+
+                                data[0, :, i+1] = ( data[0, :, i+1] * j + y ) / ( j + 1 )
+                                data[1, :, i+1] = ( data[0, :, i+1] - data[0, :, 0] )
+                                data[1, :, :] = ( data[1, :, :] - data[1, 0, :] )
+
+                            elif p9 == 2:
+                                y = a2012.oscilloscope_get_curve('CH1')
+                                ##y = 1 + 100*np.exp(-axis_x/ch_time) + 7*np.random.normal(size = (4000))
+                                y2 = a2012_2.oscilloscope_get_curve('CH1')
+                                ##y2 = 1 + 100*np.exp(-axis_x/ch_time) + 7*np.random.normal(size = (4000))
+
+                                data[0, :, i+1] = ( data[0, :, i+1] * j + y ) / ( j + 1 )
+                                data_2[0, :, i+1] = ( data_2[0, :, i+1] * j + y2) / ( j + 1 )
+                                data[1, :, i+1] = ( data[0, :, i+1] - data[0, :, 0] )
+                                data[1, :, :] = ( data[1, :, :] - data[1, 0, :] )
+                                data_2[1, :, i+1] = ( data_2[0, :, i+1] - data_2[0, :, 0] )
+                                data_2[1, :, :] = ( data_2[1, :, :] - data_2[1, 0, :] )
+
+                            elif p9 == 3:
+                                y = a2012.oscilloscope_get_curve('CH1')
+                                ##y = 1 + 100*np.exp(-axis_x/ch_time) + 7*np.random.normal(size = (4000))
+                                y2 = a2012_2.oscilloscope_get_curve('CH1')
+                                ##y2 = 1 + 100*np.exp(-axis_x/ch_time) + 7*np.random.normal(size = (4000))
+                                y3 = a2012.oscilloscope_get_curve('CH2')
+                                ##y3 = 1 + 100*np.exp(-axis_x/ch_time) + 50*np.random.normal(size = (4000))
+
+                                data[0, :, i+1] = ( data[0, :, i+1] * j + y ) / ( j + 1 )
+                                data_2[0, :, i+1] = ( data_2[0, :, i+1] * j + y2) / ( j + 1 )
+                                data[1, :, i+1] = ( data[0, :, i+1] - data[0, :, 0] )
+                                data[1, :, :] = ( data[1, :, :] - data[1, 0, :] )
+                                data_2[1, :, i+1] = ( data_2[0, :, i+1] - data_2[0, :, 0] )
+                                data_2[1, :, :] = ( data_2[1, :, :] - data_2[1, 0, :] )
+                                data[3, :, i+1] = ( data[3, :, i+1] * j + y3 ) / ( j + 1 )
+
+                            #start_time = time.time()
+
+                            process = general.plot_2d( p2, data[:,:,1:points+1],  xname='Time', start_step=( (0, round(float(t_res_rough[0]), 3)), (START_FIELD, FIELD_STEP) ),\
+                                xscale=str(t_res_rough[1]), yname='Field', yscale='G', zname='Intensity', zscale='V', pr = process, \
+                                text = 'S / F: ' + str(j) + ' / ' + str(field))
+
+                            if p9 > 1:
+
+                                process = general.plot_2d( f"{p2}_2", data_2[:,:,1:points+1],  xname='Time', start_step=( (0, round(float(t_res_rough_2[0]), 3)), (START_FIELD, FIELD_STEP) ),\
+                                    xscale=str(t_res_rough_2[1]), yname='Field', yscale='G', zname='Intensity', zscale='V', pr = process, \
+                                    text = 'S / F: ' + str(j) + ' / ' + str(field))
+
+                            #general.message( str( time.time() - start_time ) )
+
+                            # check our polling data
+                            if self.command[0:2] == 'SC':
+                                SCANS = int( self.command[2:] )
+                                self.command = 'start'
+                            elif self.command == 'exit':
+                                break
+                            
+                            if conn.poll() == True:
+                                self.command = conn.recv()
+
+
                     while field > OFFRES_FIELD:
                         field = bh15.magnet_field( field - initialization_step)
                         field = field - initialization_step
@@ -660,7 +767,7 @@ class Worker(QWidget):
                     field = bh15.magnet_field( OFFRES_FIELD )
                     field = OFFRES_FIELD
                     
-                    if p9 == 1 and p11 == 1:
+                    if p9 == 1 and p11 == 1 and p12 == 0:
                         if j == 1:
                             file_handler.save_data(file_save_1, np.transpose( data[0, :, :] ), header = header)
                         else:
@@ -673,7 +780,7 @@ class Worker(QWidget):
                 self.command = 'exit'
 
             if self.command == 'exit':
-                general.message('Script finished')
+                general.message(f'Script {p2} finished')
                 
                 temp_end = str( ls335.tc_temperature('B') )
                 if p9 == 1 and p11 == 0:

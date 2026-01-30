@@ -14,20 +14,17 @@ import webbrowser
 import subprocess
 import configparser
 import platform
-#from tkinter import filedialog#, ttk
-#import tkinter
 import numpy as np
 from . import widgets
 import pyqtgraph as pg
 from datetime import datetime
-#import OpenGL
 from PyQt6.QtCore import QSharedMemory, QSize
 from PyQt6.QtGui import QColor, QIcon, QStandardItem, QStandardItemModel, QAction
 from PyQt6.QtWidgets import QFileDialog, QMessageBox, QListView, QDockWidget, QVBoxLayout
 from PyQt6.QtNetwork import QLocalServer
 from PyQt6 import QtWidgets, uic, QtCore, QtGui
-#from PyQt6.QtCore import Qt
 from pyqtgraph.dockarea import DockArea
+import atomize.main.queue as queue
 import atomize.main.local_config as lconf
 import atomize.main.messenger_socket_server as socket_server
 
@@ -63,6 +60,7 @@ class MainWindow(QtWidgets.QMainWindow):
         path_to_main = os.path.join(self.path_to_main,'..','atomize/tests')
 
         self.design_setting()
+        self.queue = 0
 
         # Liveplot server settings
         self.server = QLocalServer()
@@ -173,7 +171,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.process.finished.connect(self.on_finished_checking)
         self.process_python.finished.connect(self.on_finished_script)
 
-    ############################################## Liveplot Functions
+    ####№ Liveplot Functions
 
     def close(self, sig = None, frame = None):
         #print('closing')
@@ -204,23 +202,33 @@ class MainWindow(QtWidgets.QMainWindow):
     # noinspection PyNoneFunctionAssignment
     def read_from(self, conn, memory):
         logging.debug('reading data')
-        self.meta = json.loads(conn.read(320).decode())
+        try:
+            self.meta = json.loads(conn.read(320).decode())
+        except json.decoder.JSONDecodeError:
+            #print('error')
+            pass
+
         if self.meta['arrsize'] != 0:
             memory.lock()
-            raw_data = memory.data()
-            if raw_data!=None:
-                ba = raw_data[:self.meta['arrsize']]
-                arr = np.frombuffer(memoryview(ba), dtype=self.meta['dtype'])
+            try:
+                raw_data = memory.data()
+                if raw_data is not None:
+                    # Slice and create a view directly without copying yet
+                    ba = raw_data[:self.meta['arrsize']]
+                    # interpreted as the correct dtype
+                    arr = np.frombuffer(ba, dtype = self.meta['dtype'])
+                    # Reshape first, THEN copy while still LOCKED to ensure data integrity
+                    arr = arr.reshape(self.meta['shape']).copy() 
+                    conn.write(b'ok')
+                else:
+                    arr = None
+            finally:
+                # Using finally ensures the lock is released even if reshape/copy fails
                 memory.unlock()
-                conn.write(b'ok')
-                arr = arr.reshape(self.meta['shape']).copy()
-            else: 
-                arr = None
         else:
             arr = None
+
         self.do_operation(arr)
-        if conn.bytesAvailable():
-            self.read_from(conn, memory)
 
     def do_operation(self, arr = None):
         def clear(name):
@@ -238,9 +246,9 @@ class MainWindow(QtWidgets.QMainWindow):
 
         if name in self.namelist:
             pw = self.namelist[name]
-            if pw.closed:
-                pw.closed = False
-                self.dockarea.addDock(pw)
+            #if pw.closed:
+            #    pw.closed = False
+            #    self.dockarea.addDock(pw)
 
         elif name == "*":
             if operation == 'clear':
@@ -430,13 +438,18 @@ class MainWindow(QtWidgets.QMainWindow):
         self.button_quit.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97);\
          border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }\
           QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
-        self.textEdit.setStyleSheet("QPlainTextEdit {background-color: rgb(42, 42, 64); color: rgb(211, 194, 78); }\
-         QScrollBar:vertical {background-color: rgb(42, 42, 64); }")
+        self.textEdit.setStyleSheet("QPlainTextEdit {background-color: rgb(42, 42, 64); color: rgb(211, 194, 78); selection-background-color: rgb(211, 197, 78); selection-color: rgb(63, 63, 97); } QScrollBar:vertical {background-color: rgb(42, 42, 64); }")
+
+        self.button_queue.clicked.connect(self.add_to_queue)
+        self.button_queue.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; } QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
+
+        self.button_stop.clicked.connect(self.stop_script)
+        self.button_stop.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; } QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
         
         # show spaces
-        option = QtGui.QTextOption()
-        option.setFlags( QtGui.QTextOption.Flag.ShowTabsAndSpaces ) # | QtGui.QTextOption.ShowLineAndParagraphSeparators
-        self.textEdit.document().setDefaultTextOption(option)
+        #option = QtGui.QTextOption()
+        #option.setFlags( QtGui.QTextOption.Flag.ShowTabsAndSpaces ) # | QtGui.QTextOption.ShowLineAndParagraphSeparators
+        #self.textEdit.document().setDefaultTextOption(option)
         self.textEdit.textChanged.connect(self.save_edited_text)
 
         # set tab distance
@@ -446,14 +459,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.label_filename.setStyleSheet("QLabel { color : rgb(193, 202, 227); }")
 
         self.text_errors.top_margin  = 2
-        self.text_errors.setStyleSheet("QPlainTextEdit {background-color: rgb(42, 42, 64); color: rgb(211, 194, 78); }")
         self.text_errors.setCenterOnScroll(True)
         self.text_errors.ensureCursorVisible()
 
         self.text_errors.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.ActionsContextMenu)
-        self.text_errors.setStyleSheet("QPlainTextEdit {background-color: rgb(42, 42, 64); color: rgb(211, 194, 78); } \
-                                    QMenu::item { color: rgb(211, 194, 78); } QMenu::item:selected {background-color: rgb(48, 48, 75);  }\
-                                    QMenu::item:selected:active {background-color: rgb(63, 63, 97); } ")
+        self.text_errors.setStyleSheet("QPlainTextEdit {background-color: rgb(42, 42, 64); color: rgb(211, 194, 78); selection-background-color: rgb(211, 197, 78); selection-color: rgb(63, 63, 97); } QMenu::item { color: rgb(211, 194, 78); } QMenu::item:selected {background-color: rgb(48, 48, 75);  } QMenu::item:selected:active {background-color: rgb(63, 63, 97); } ")
         clear_action = QAction('Clear', self.text_errors)
         clear_action.triggered.connect(self.clear_errors)
         self.text_errors.addAction(clear_action)
@@ -540,12 +550,21 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.dock_editor = self.dockarea2.addDock(name="Script Editor")
         self.dock_editor.addWidget(widget = self.textEdit )
-        self.gridLayout_tab.addWidget(self.dockarea2, 1, 2, 10, 1)
+        self.gridLayout_tab.addWidget(self.dockarea2, 1, 2, 12, 1)
         
         self.dock_errors = self.dockarea3.addDock(name="Output", position='top')
         self.dock_errors.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Expanding)
         self.dock_errors.addWidget(widget = self.text_errors )
-        self.gridLayout_tab.addWidget(self.dockarea3, 11, 0, 1, 3)
+        self.gridLayout_tab.addWidget(self.dockarea3, 13, 0, 1, 3)
+
+        self.dockarea4 = DockArea()        
+        self.script_queue = queue.QueueList(self)
+        #self.dockarea4.setMinimumHeight(65)
+        self.dockarea4.setMaximumHeight(70)
+
+        self.dock_queue = self.dockarea4.addDock(name="Queue")
+        self.gridLayout_tab.addWidget(self.dockarea4, 14, 0, 1, 3)
+        self.dock_queue.addWidget(widget = self.script_queue )
 
         # Liveplot tab setting
         self.dockarea = DockArea()
@@ -557,11 +576,26 @@ class MainWindow(QtWidgets.QMainWindow):
         self.gridLayout_tab_liveplot.setAlignment(self.namelist, QtCore.Qt.AlignmentFlag.AlignLeft)
         self.gridLayout_tab_liveplot.addWidget(self.dockarea, 0, 1)
         #self.gridLayout_tab_liveplot.setAlignment(self.dockarea, QtConst.AlignRight)
-        self.namelist.setStyleSheet("QNameList {background-color: rgb(42, 42, 64); color: rgb(211, 194, 78); border: 4px solid rgb(40, 30, 45); }")
-        self.namelist.setStyleSheet("QListView {background-color: rgb(42, 42, 64); selection-color: rgb(63, 63, 97);\
-            color: rgb(211, 194, 78); selection-background-color: rgb(211, 194, 78); } ")
+        #self.namelist.setStyleSheet("QNameList {background-color: rgb(42, 42, 64); color: rgb(211, 194, 78); border: 4px solid rgb(40, 30, 45); }")
+        self.namelist.setStyleSheet("QListView {background-color: rgb(42, 42, 64); selection-color: rgb(211, 194, 78); color: rgb(211, 194, 78); selection-background-color: rgb(63, 63, 97); border: 1px solid rgb(40, 30, 45);}  QListView::item:hover { background-color: rgb(211, 194, 78); color: rgb(42, 42, 64)}")
 
-        self.namelist.namelist_view.setStyleSheet("QMenu::item:selected {background-color: rgb(48, 48, 75);  }")
+        self.namelist.namelist_view.setStyleSheet("")
+
+    def stop_script(self):
+        sock = socket.socket()
+        sock.connect(('localhost', 9091))
+        sock.send(b'Script stopped')
+        sock.close()
+
+    def add_to_queue(self):
+        key_number = str( len(self.script_queue.keys()) )
+        self.test(self.script)
+        exec_code = self.process.waitForFinished( msecs = self.test_timeout )
+
+        if self.test_flag == 0 and exec_code == True:
+            self.script_queue[key_number] = self.script
+        else:
+            pass
 
     def _on_destroyed(self):
         """
@@ -623,14 +657,26 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         A function to run an experimental script using python.exe.
         """
+        if len(self.script_queue.keys()) != 0:
+            self.queue = 1
+            first_index = self.script_queue.namelist_model.index(0, 0 )
+            self.script_queue.namelist_view.setCurrentIndex(first_index)            
+        else:
+            self.queue = 0
+
+        if self.queue == 0:
+            name = self.script
+        else:
+            name = self.script_queue.values()[0]
+
         if self.script != '':
-            stamp = os.stat(self.script).st_mtime
+            stamp = os.stat(name).st_mtime
         else:
             self.text_errors.appendPlainText('No experimental script is opened')
             return
 
         if self.checkTests.checkState().value == 2:
-            self.test()
+            self.test(name)
             exec_code = self.process.waitForFinished( msecs = self.test_timeout ) # timeout in msec
         elif self.checkTests.checkState().value == 0:
             self.test_flag = 0
@@ -642,7 +688,7 @@ class MainWindow(QtWidgets.QMainWindow):
                                 str( self.test_timeout / 60000 ) + " minutes")
             return        # stop current function
         elif self.test_flag == 0 and exec_code == True:
-            self.process_python.setArguments([self.script])
+            self.process_python.setArguments([name])
             self.process_python.start()
             self.pid = self.process_python.processId()
             print(f'SCRIPT PROCESS ID: {self.pid}')
@@ -771,18 +817,18 @@ class MainWindow(QtWidgets.QMainWindow):
         else:
             return
 
-    def test(self):
+    def test(self, name):
         """
         A function to run script check.
         """
 
-        if self.script != '':
-            stamp = os.stat(self.script).st_mtime
+        if name != '':
+            stamp = os.stat(name).st_mtime
         else:
             self.text_errors.appendPlainText('No experimental script is opened')
             return
 
-        if stamp != self.cached_stamp and self.flag_opened_script_changed == 1:
+        if stamp != self.cached_stamp and self.flag_opened_script_changed == 1 and self.queue == 0:
             self.cached_stamp = stamp
             message = QMessageBox(self);  # Message Box for warning of updated file
             message.setWindowTitle("Your script has been changed!")
@@ -796,7 +842,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         #self.text_errors.appendPlainText("Testing... Please, wait!")
         #self.process.setArguments(['--errors-only', self.script])
-        self.process.setArguments([self.script, 'test'])
+        self.process.setArguments([name, 'test'])
         self.process.start()
 
     def reload(self):
@@ -815,14 +861,6 @@ class MainWindow(QtWidgets.QMainWindow):
         A function to add the information about errors found during syntax checking
         to a dedicated text box in the main window of the programm.
         """
-        #text = self.process.readAllStandardOutput().data().decode()
-        #if text == '':
-        #    self.text_errors.appendPlainText("No errors are found!")
-        #else:
-        #    self.text_errors.appendPlainText(text)
-        #    self.text_errors.verticalScrollBar().setValue(self.text_errors.verticalScrollBar().maximum())
-
-        # Version for real tests
         text = self.process.readAllStandardOutput().data().decode()
         text_errors_script = self.process.readAllStandardError().data().decode()
         if text_errors_script == '':
@@ -843,6 +881,12 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         A function to add the information about errors found during syntax checking to a dedicated text box in the main window of the programm.
         """
+        if self.queue == 1:
+            key_to_del = self.script_queue.values()[0]
+            del self.script_queue[key_to_del]
+        #except IndexError:
+        #    pass
+
         text = self.process_python.readAllStandardOutput().data().decode()
         text_errors_script = self.process_python.readAllStandardError().data().decode()
         if text_errors_script == '':
@@ -851,7 +895,12 @@ class MainWindow(QtWidgets.QMainWindow):
         elif text_errors_script != '':
             self.text_errors.appendPlainText(f"The script PID {self.pid} was executed with errors")
             self.text_errors.appendPlainText(text_errors_script)
-            #self.text_errors.verticalScrollBar().setValue(self.text_errors.verticalScrollBar().maximum())
+
+        if len(self.script_queue.keys()) != 0:
+            self.start_experiment()
+            self.queue = 1
+        else:
+            self.queue = 0
 
     def help(self):
         """
@@ -948,35 +997,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.text_errors.appendPlainText(str(data))
 
         if data == 'Script stopped':
-
+            self.script_queue.clear()
+            self.queue = 0
             self.process_python.terminate()
             time.sleep(4)
             self.process_python.close()
-
-            #path_to_main = os.path.abspath(os.getcwd())
-            #lib_path = os.path.join(self.path_to_main, 'atomize/general_modules', 'libspinapi.so')
-            #lib_path2 = os.path.join(self.path_to_main, 'atomize/general_modules', 'spinapi64.dll')
-
-            #if os.path.exists(lib_path) == False and os.path.exists(lib_path2) == False:
-            #    self.process_python.close()
-            #else:
-            #    
-            #    ### keysight lines
-            #    self.process_python.terminate()
-            #    time.sleep(10)
-            #
-            #    import atomize.device_modules.PB_ESR_500_pro as pb_pro
-            #    pb = pb_pro.PB_ESR_500_Pro()
-            #    pb.pulser_stop()
-            # 
-            #    ### comment next lines for keysight:
-            #    self.process_python.terminate()
-            #
-            #    # AWG
-            #    hCard1 = spcm_hOpen (create_string_buffer (b'/dev/spcm0'))
-            #    spcm_dwSetParam_i32 (hCard1, SPC_M2CMD, M2CMD_CARD_STOP)
-            #    # clean up
-            #    spcm_vClose (hCard1)
 
     def open_directory(self, path):
         if os.name == 'nt':
@@ -990,7 +1015,10 @@ class NameList(QDockWidget):
     def __init__(self, window):
         super(NameList, self).__init__('Current Plots:')
         self.setFeatures(QDockWidget.DockWidgetFeature.NoDockWidgetFeatures)
-        
+        self.setTitleBarWidget(QtWidgets.QWidget(self))
+
+        self.setStyleSheet("background-color: rgb(42, 42, 64); color: rgb(211, 194, 78); border: 2px solid rgb(40, 30, 45)")
+
         #directories
         self.path_to_main = os.path.join(os.path.abspath(os.getcwd()))
         path_to_main = os.path.join(self.path_to_main,'..','atomize/tests')
@@ -1102,57 +1130,6 @@ class NameList(QDockWidget):
             zname = 'X', zscale = 'Arb. U.')
         pw.setImage(data, axes = {'y': 0, 'x': 1})
 
-    # unused
-    def open_file_dialog(self, directory = '', header = 0):
-        pass
-        # For Tkinter Open 1D; Unused
-        # file_path = self.file_dialog(directory = directory)
-
-        #header_array = [];
-        #file_to_read = open(file_path, 'r')
-        #for i, line in enumerate(file_to_read):
-        #    if i is header: break
-        #    temp = line.split("#")
-        #    header_array.append(temp)
-        #file_to_read.close()
-
-        #temp = np.genfromtxt(file_path, dtype = float, delimiter = ',', skip_header = 0) 
-        #data = np.transpose(temp)
-
-        #name_plot = datetime.now().strftime('%d-%m-%Y %H:%M:%S')
-        #pw = self.window.add_new_plot(1, name_plot)
-        #if len(data) == 2:
-        #    pw.plot(data[0], data[1], parametric = True, name = file_path, xname = 'X', xscale = 'Arb. U.',\
-        #            yname = 'Y', yscale = 'Arb. U.', label = 'Data_1', scatter = 'False')
-        #elif len(data) == 3:
-        #    pw.plot(data[0], data[1], parametric = True, name = file_path + '_1', xname = 'X', xscale = 'Arb. U.',\
-        #            yname = 'Y', yscale = 'Arb. U.', label = 'Data_1', scatter = 'False')
-        #    pw.plot(data[0], data[2], parametric = True, name = file_path + '_2', xname = 'X', xscale = 'Arb. U.',\
-        #            yname = 'Y', yscale = 'Arb. U.', label = 'Data_2', scatter = 'False')
-
-    # unused
-    def open_file_dialog_2(self, directory = '', header = 0):
-        pass
-        # For Tkinter Open 1D; Unused
-        #file_path = self.file_dialog(directory = directory)
-
-        #header_array = []
-        #file_to_read = open(file_path, 'r')
-        #for i, line in enumerate(file_to_read):
-        #    if i is header: break
-        #    temp = line.split("#")
-        #    header_array.append(temp)
-        #file_to_read.close()
-
-        #temp = np.genfromtxt(file_path, dtype = float, delimiter = ',', skip_header = 0) 
-        #data = temp
-
-        #name_plot = datetime.now().strftime('%d-%m-%Y %H:%M:%S')
-        #pw = self.window.add_new_plot(2, name_plot)
-        #pw.setAxisLabels(xname = 'X', xscale = 'Arb. U.',yname = 'X', yscale = 'Arb. U.',\
-        #    zname = 'X', zscale = 'Arb. U.')
-        #pw.setImage(data, axes = {'y': 0, 'x': 1})
-
     def file_dialog(self, directory = ''):
         """
         A function to open a new window for choosing 1d data
@@ -1225,8 +1202,13 @@ class NameList(QDockWidget):
     def __delitem__(self, name):
         self.namelist_model.removeRow(self.namelist_model.findItems(name)[0].index().row())
         self.plot_dict[name].close()
+        try:
+            self.plot_dict[name].h_cross_dock.close()
+            self.plot_dict[name].v_cross_dock.close()
+        except AttributeError:
+            pass        
         del self.plot_dict[name]
-
+    
     def keys(self):
         return list( self.plot_dict.keys() )
 
@@ -1235,6 +1217,13 @@ def main():
     """
     A function to run the main window of the programm.
     """
+    # Windows taskbar
+    try:
+        myappid = 'atomize' 
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+    except Exception:
+        pass
+    
     app = QtWidgets.QApplication(sys.argv)
     main = MainWindow()
     helper = socket_server.Helper()
