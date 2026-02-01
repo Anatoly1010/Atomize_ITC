@@ -6,6 +6,7 @@ import os
 import sys
 import time
 import json
+import ctypes
 import logging
 import signal
 import socket
@@ -18,6 +19,7 @@ import numpy as np
 from . import widgets
 import pyqtgraph as pg
 from datetime import datetime
+from pathlib import Path
 from PyQt6.QtCore import QSharedMemory, QSize
 from PyQt6.QtGui import QColor, QIcon, QStandardItem, QStandardItemModel, QAction
 from PyQt6.QtWidgets import QFileDialog, QMessageBox, QListView, QDockWidget, QVBoxLayout
@@ -36,29 +38,32 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         A function for connecting actions and creating a main window.
         """
+        additional_path = kwargs.pop('ptm', '')
         super(MainWindow, self).__init__(*args, **kwargs)
-        # absolute path to icon:
-        self.path_to_main = os.path.join(os.path.abspath(os.getcwd()), 'libs')
-        os.chdir(self.path_to_main)
-        self.icon_path = os.path.join(self.path_to_main ,'..', 'atomize/main','Icon.png')
-        self.setWindowIcon(QIcon(self.icon_path))
 
-        #self.destroyed.connect(MainWindow._on_destroyed)          # connect some actions to exit
-        self.destroyed.connect(lambda: self._on_destroyed())       # connect some actions to exit
-        # Load the UI Page
-        uic.loadUi( os.path.join(self.path_to_main ,'..', 'atomize/main/gui/main_window.ui'), self)        # Design file
+        path_to_main = Path(__file__).parent
+        self.destroyed.connect(lambda: self._on_destroyed())
+
+        os.chdir(os.path.join(path_to_main, '..'))
+        uic.loadUi(os.path.join(path_to_main,'gui','main_window.ui'), self) 
+        os.chdir(path_to_main)
+
+        path_to_main_lib = os.path.join(path_to_main, additional_path)
+        os.chdir(path_to_main_lib)
+
+        self.icon_path = os.path.join(path_to_main,'icon.ico')
+        self.setWindowIcon(QIcon(self.icon_path))
 
         # important attribures
         if len(sys.argv) > 1 and sys.argv[1] != '':  # for bash option
             self.script = sys.argv[1]
-            self.open_file( self.script )
+            self.open_file(self.script)
         elif len(sys.argv) == 1:
             self.script = '' # for not opened script
         self.test_flag = 0 # flag for not running script if test is failed
         self.flag_opened_script_changed = 0 # flag for saving changes in the opened script
-        self.path = os.path.join(self.path_to_main,'..','atomize/tests')
-        path_to_main = os.path.join(self.path_to_main,'..','atomize/tests')
-
+        #self.path = os.path.join(path_to_main,'atomize/tests')
+        self.path = os.path.join(path_to_main, '..', 'tests')
         self.design_setting()
         self.queue = 0
 
@@ -74,8 +79,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.conns = []
         self.shared_mems = []
         signal.signal(signal.SIGINT, self.close)
+        self.system = platform.system()
 
         # configuration data
+        #path_config_file = os.path.join(path_to_main,'atomize/config.ini')
         path_config_file = os.path.join(path_to_main, '..', 'config.ini')
         path_config_file_device = os.path.join(path_to_main, '..', 'device_modules/config')
         path_config_file, self.path_config2 = lconf.copy_config(path_config_file, path_config_file_device)
@@ -91,9 +98,6 @@ class MainWindow(QtWidgets.QMainWindow):
         if self.script_dir == '':
             self.script_dir = lconf.load_scripts(os.path.join(path_to_main, '..', 'tests'))
 
-        # check where we are
-        self.system = platform.system()
-        
         print( f'SYSTEM: {self.system}' )
         print( f'DATA DIRECTORY: {self.open_dir}' )
         print( f'SCRIPTS DIRECTORY: {self.script_dir}' )
@@ -107,42 +111,13 @@ class MainWindow(QtWidgets.QMainWindow):
         self.process = QtCore.QProcess(self)
         self.process_text_editor = QtCore.QProcess(self)
         self.process_python = QtCore.QProcess(self)
-        self.process_tr = QtCore.QProcess(self)
-        self.process_osc = QtCore.QProcess(self)
-        self.process_osc2 = QtCore.QProcess(self)
-        self.process_cw = QtCore.QProcess(self)
-        self.process_temp = QtCore.QProcess(self)
-        self.process_field = QtCore.QProcess(self)
-        self.process_mw = QtCore.QProcess(self)
-        self.process_tune_preset = QtCore.QProcess(self)
-        self.process_phasing = QtCore.QProcess(self)
-        self.process_awg_phasing = QtCore.QProcess(self)
-        self.process_t2 = QtCore.QProcess(self)
-        self.process_t1 = QtCore.QProcess(self)
-        self.process_ed = QtCore.QProcess(self)
-        self.process_eseem = QtCore.QProcess(self)
         self.pid = 0
-
 
         if self.system == 'Windows':
             self.process_text_editor.setProgram(str(config['DEFAULT']['editorW']))
-            print('EDITOR: ' + str(config['DEFAULT']['editorW']))
             self.process.setProgram('python.exe')
             self.process_python.setProgram('python.exe')
-            self.process_tr.setProgram('python.exe')
-            self.process_osc.setProgram('python.exe')
-            self.process_osc2.setProgram('python.exe')
-            self.process_cw.setProgram('python.exe')
-            self.process_temp.setProgram('python.exe')
-            self.process_field.setProgram('python.exe')
-            self.process_mw.setProgram('python.exe')
-            self.process_tune_preset.setProgram('python.exe')
-            self.process_phasing.setProgram('python.exe')
-            self.process_awg_phasing.setProgram('python.exe')
-            self.process_t2.setProgram('python.exe')
-            self.process_t1.setProgram('python.exe')
-            self.process_ed.setProgram('python.exe')
-            self.process_eseem.setProgram('python.exe')
+            print('EDITOR: ' + str(config['DEFAULT']['editorW']))
         elif self.system == 'Linux':
             self.editor = str(config['DEFAULT']['editor'])
             if self.editor == 'nano' or self.editor == 'vi':
@@ -153,25 +128,11 @@ class MainWindow(QtWidgets.QMainWindow):
                 print('EDITOR: ' + str(config['DEFAULT']['editor']))
             self.process.setProgram('python3')
             self.process_python.setProgram('python3')
-            self.process_tr.setProgram('python3')
-            self.process_osc.setProgram('python3')
-            self.process_osc2.setProgram('python3')
-            self.process_cw.setProgram('python3')
-            self.process_temp.setProgram('python3')
-            self.process_field.setProgram('python3')
-            self.process_mw.setProgram('python3')
-            self.process_tune_preset.setProgram('python3')
-            self.process_phasing.setProgram('python3')
-            self.process_awg_phasing.setProgram('python3')
-            self.process_t2.setProgram('python3')
-            self.process_t1.setProgram('python3')
-            self.process_ed.setProgram('python3')
-            self.process_eseem.setProgram('python3')
 
         self.process.finished.connect(self.on_finished_checking)
         self.process_python.finished.connect(self.on_finished_script)
 
-    ####№ Liveplot Functions
+    ##### Liveplot Functions
 
     def close(self, sig = None, frame = None):
         #print('closing')
@@ -199,7 +160,6 @@ class MainWindow(QtWidgets.QMainWindow):
         conn.disconnected.connect(memory.detach)
         conn.write(b'ok')
 
-    # noinspection PyNoneFunctionAssignment
     def read_from(self, conn, memory):
         logging.debug('reading data')
         try:
@@ -259,7 +219,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 list(map(remove, list(self.namelist.keys())))
             return
         else:
-            if operation in ('clear', 'close', 'remove','none'):
+            if operation in ('clear', 'close', 'remove', 'none'):
                 return
             pw = self.add_new_plot(meta['rank'], name)
 
@@ -312,14 +272,14 @@ class MainWindow(QtWidgets.QMainWindow):
                 (x0, dx), (y0, dy) = start_step
                 pw.setAxisLabels(xname=xnam, xscale =xscal, yname=ynam, yscale =yscal,\
                 zname=znam, zscale =zscal)
-                pw.setImage(arr, pos=(x0, y0), scale=(dx, dy)) # , axes={'y':0, 'x':1}
+                pw.setImage(arr, pos=(x0, y0), scale=(dx, dy) ) # , axes={'y':0, 'x':1}
                 # Graph title
                 if tex != '':
                     pw.setTitle(meta['value'])
             else:
                 pw.setAxisLabels(xname=xnam, xscale =xscal, yname=ynam, yscale =yscal,\
                  zname=znam, zscale =zscal)
-                pw.setImage(arr) # , axes={'y':0, 'x':1}
+                pw.setImage(arr) #, axes={'y':0, 'x':1}
                 # Graph title
                 if tex != '':
                     pw.setTitle(meta['value'])
@@ -408,65 +368,51 @@ class MainWindow(QtWidgets.QMainWindow):
         # Connection of different action to different Menus and Buttons
         self.tabwidget.tabBar().setTabTextColor(0, QColor(193, 202, 227))
         self.tabwidget.tabBar().setTabTextColor(1, QColor(193, 202, 227))
-        self.tabwidget.tabBar().setTabTextColor(2, QColor(193, 202, 227))
         self.tabwidget.tabBar().setStyleSheet(" font-weight: bold ")
         self.button_open.clicked.connect(self.open_file_dialog)
-        self.button_open.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97);\
-         border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }\
-          QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
+        self.button_open.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; } QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
         self.button_edit.clicked.connect(self.edit_file)
-        self.button_edit.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97);\
-         border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }\
-          QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
-        self.button_test.clicked.connect(self.test)
-        self.button_test.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97);\
-         border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }\
-          QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
+        self.button_edit.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; } QPushButton:pressed {background-color: rgb(211, 194, 78); ; border-style: inset; font-weight: bold; }")
+        #self.button_test.clicked.connect(self.test)
+        self.button_test.clicked.connect(lambda checked: self.test(self.script) ) 
+        self.button_test.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; } QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
         self.button_reload.clicked.connect(self.reload)
-        self.button_reload.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97);\
-         border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }\
-          QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
+        self.button_reload.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; } QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
         self.button_start.clicked.connect(self.start_experiment)
-        self.button_start.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97);\
-         border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }\
-          QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
+        self.button_start.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; } QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
         self.button_help.clicked.connect(self.help)
-        self.button_help.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97);\
-         border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }\
-          QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
+        self.button_help.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; } QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
         self.button_quit.clicked.connect(lambda: self.quit())
-        self.button_quit.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97);\
-         border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }\
-          QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
-        self.textEdit.setStyleSheet("QPlainTextEdit {background-color: rgb(42, 42, 64); color: rgb(211, 194, 78); selection-background-color: rgb(211, 197, 78); selection-color: rgb(63, 63, 97); } QScrollBar:vertical {background-color: rgb(42, 42, 64); }")
+        self.button_quit.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; } QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
+        self.textEdit.setStyleSheet("QPlainTextEdit {background-color: rgb(42, 42, 64); color: rgb(211, 194, 78); selection-background-color: rgb(211, 197, 78); selection-color: rgb(63, 63, 97); } QScrollBar:vertical {background-color: rgb(42, 42, 64);}")
+        self.textEdit.textChanged.connect(self.save_edited_text)
 
         self.button_queue.clicked.connect(self.add_to_queue)
         self.button_queue.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; } QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
 
         self.button_stop.clicked.connect(self.stop_script)
         self.button_stop.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; } QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
-        
+
         # show spaces
         #option = QtGui.QTextOption()
         #option.setFlags( QtGui.QTextOption.Flag.ShowTabsAndSpaces ) # | QtGui.QTextOption.ShowLineAndParagraphSeparators
-        #self.textEdit.document().setDefaultTextOption(option)
-        self.textEdit.textChanged.connect(self.save_edited_text)
+        #sself.textEdit.document().setDefaultTextOption(option)
 
         # set tab distance
         self.textEdit.setTabStopDistance( QtGui.QFontMetricsF(self.textEdit.font()).horizontalAdvance(' ') * 4 )
-        #self.textEdit.setTabStopWidth( 20 )
-
-        self.label_filename.setStyleSheet("QLabel { color : rgb(193, 202, 227); }")
-
+        
         self.text_errors.top_margin  = 2
         self.text_errors.setCenterOnScroll(True)
         self.text_errors.ensureCursorVisible()
 
+        self.label_filename.setStyleSheet("QLabel { color : rgb(193, 202, 227); }")
+
         self.text_errors.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.ActionsContextMenu)
-        self.text_errors.setStyleSheet("QPlainTextEdit {background-color: rgb(42, 42, 64); color: rgb(211, 194, 78); selection-background-color: rgb(211, 197, 78); selection-color: rgb(63, 63, 97); } QMenu::item { color: rgb(211, 194, 78); } QMenu::item:selected {background-color: rgb(48, 48, 75);  } QMenu::item:selected:active {background-color: rgb(63, 63, 97); } ")
+        self.text_errors.setStyleSheet("QPlainTextEdit {background-color: rgb(42, 42, 64); color: rgb(211, 194, 78); selection-background-color: rgb(211, 197, 78); selection-color: rgb(63, 63, 97); }  QMenu::item { color: rgb(211, 194, 78); } QMenu::item:selected {background-color: rgb(48, 48, 75);  } QMenu::item:selected:active {background-color: rgb(63, 63, 97); } QScrollBar:vertical {background-color: rgb(42, 42, 64);}")
         clear_action = QAction('Clear', self.text_errors)
         clear_action.triggered.connect(self.clear_errors)
         self.text_errors.addAction(clear_action)
+
 
         conf_dir_action = QAction('Open Config Directory', self.text_errors)
         conf_dir_action.triggered.connect(self.conf_dir_action)
@@ -476,83 +422,16 @@ class MainWindow(QtWidgets.QMainWindow):
         list_resources_action.triggered.connect(self.list_resources_action)
         self.text_errors.addAction(list_resources_action)
 
-        # Control Window tab setting
-        self.tab_control.setStyleSheet("background-color: rgb(42, 42, 64); color: rgb(211, 194, 78); ")
-        self.button_osc.clicked.connect(self.start_osc_control)
-        self.button_osc.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97);\
-         border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }\
-          QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
-        self.button_field.clicked.connect(self.start_field_control)
-        self.button_field.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97);\
-         border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }\
-          QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
-        self.button_osc2.clicked.connect(self.start_osc_control_2)
-        self.button_osc2.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97);\
-         border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }\
-          QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
-        self.button_cw.clicked.connect(self.start_cw)
-        self.button_cw.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97);\
-         border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }\
-          QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
-        self.button_temp.clicked.connect(self.start_temp_control)
-        self.button_temp.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97);\
-         border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }\
-          QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
-        self.button_tr.clicked.connect(self.start_tr_control)
-        self.button_tr.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97);\
-         border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }\
-          QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
-        self.button_mw.clicked.connect(self.start_mw_control)
-        self.button_mw.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97);\
-         border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }\
-          QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
-        self.button_rect.clicked.connect(self.start_rect_phasing)
-        self.button_rect.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97);\
-         border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }\
-          QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
-        self.button_awg.clicked.connect(self.start_awg_phasing)
-        self.button_awg.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97);\
-         border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }\
-          QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
-        self.button_tune_preset.clicked.connect(self.start_tune_preset)
-        self.button_tune_preset.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97);\
-         border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }\
-          QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
-        self.button_t2.clicked.connect(self.start_t2_preset)
-        self.button_t2.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97);\
-         border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }\
-          QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
-        self.button_ed.clicked.connect(self.start_ed_preset)
-        self.button_ed.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97);\
-         border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }\
-          QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
-        self.button_t1.clicked.connect(self.start_t1_preset)
-        self.button_t1.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97);\
-         border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }\
-          QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
-        self.button_eseem.clicked.connect(self.start_eseem_preset)
-        self.button_eseem.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97);\
-         border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }\
-          QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
-
-        self.label_creator.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.script_chooser.setStyleSheet("QComboBox { color : rgb(193, 202, 227); selection-color: rgb(211, 194, 78); font-weight: bold; }")
-        self.script_chooser.currentIndexChanged.connect(self.script_open_combo)
-        self.script = self.text_to_script_name( self.script_chooser.currentText() )
-        # preopen script
-        self.open_file( self.script )
-
-        self.checkTests.setStyleSheet("QCheckBox { color : rgb(193, 202, 227); font-weight: bold; }")
 
         self.dockarea2 = DockArea()
         self.dockarea3 = DockArea()
-
         self.dock_editor = self.dockarea2.addDock(name="Script Editor")
+
         self.dock_editor.addWidget(widget = self.textEdit )
         self.gridLayout_tab.addWidget(self.dockarea2, 1, 2, 12, 1)
         
         self.dock_errors = self.dockarea3.addDock(name="Output", position='top')
+        #self.dock_errors.setStyleSheet("QWidget { background-color: yellow; }")
         self.dock_errors.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Expanding)
         self.dock_errors.addWidget(widget = self.text_errors )
         self.gridLayout_tab.addWidget(self.dockarea3, 13, 0, 1, 3)
@@ -560,7 +439,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.dockarea4 = DockArea()        
         self.script_queue = queue.QueueList(self)
         #self.dockarea4.setMinimumHeight(65)
-        self.dockarea4.setMaximumHeight(70)
+        self.dockarea4.setMaximumHeight(70)        
 
         self.dock_queue = self.dockarea4.addDock(name="Queue")
         self.gridLayout_tab.addWidget(self.dockarea4, 14, 0, 1, 3)
@@ -576,10 +455,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.gridLayout_tab_liveplot.setAlignment(self.namelist, QtCore.Qt.AlignmentFlag.AlignLeft)
         self.gridLayout_tab_liveplot.addWidget(self.dockarea, 0, 1)
         #self.gridLayout_tab_liveplot.setAlignment(self.dockarea, QtConst.AlignRight)
-        #self.namelist.setStyleSheet("QNameList {background-color: rgb(42, 42, 64); color: rgb(211, 194, 78); border: 4px solid rgb(40, 30, 45); }")
         self.namelist.setStyleSheet("QListView {background-color: rgb(42, 42, 64); selection-color: rgb(211, 194, 78); color: rgb(211, 194, 78); selection-background-color: rgb(63, 63, 97); border: 1px solid rgb(40, 30, 45);}  QListView::item:hover { background-color: rgb(211, 194, 78); color: rgb(42, 42, 64)}")
-
-        self.namelist.namelist_view.setStyleSheet("")
 
     def stop_script(self):
         sock = socket.socket()
@@ -602,20 +478,6 @@ class MainWindow(QtWidgets.QMainWindow):
         A function to do some actions when the main window is closing.
         """
         self.process_python.close()
-        self.process_tr.close()
-        self.process_osc.close()
-        self.process_osc2.close()
-        self.process_cw.close()
-        self.process_temp.close()
-        self.process_field.close()
-        self.process_mw.close()
-        self.process_tune_preset.close()
-        self.process_phasing.close()
-        self.process_awg_phasing.close()
-        self.process_t2.close()
-        self.process_t1.close()
-        self.process_ed.close()
-        self.process_eseem.close()
     
     def clear_errors(self):
         self.text_errors.clear()
@@ -634,24 +496,7 @@ class MainWindow(QtWidgets.QMainWindow):
         A function to quit the programm
         """
         self.process_python.terminate()
-        self.process_tr.terminate()
-        self.process_osc.terminate()
-        self.process_osc2.terminate()
-        self.process_cw.terminate()
-        self.process_temp.terminate()
-        self.process_field.terminate()
-        self.process_mw.terminate()
-        self.process_tune_preset.terminate()
-        self.process_phasing.terminate()
-        self.process_awg_phasing.terminate()
-        self.process_t2.terminate()
-        self.process_t1.terminate()
-        self.process_ed.terminate()
-        self.process_eseem.terminate()
         sys.exit()
-        ####
-        #### QProcess: Destroyed while process ("python3") is still running.
-        ####
 
     def start_experiment(self):
         """
@@ -660,7 +505,8 @@ class MainWindow(QtWidgets.QMainWindow):
         if len(self.script_queue.keys()) != 0:
             self.queue = 1
             first_index = self.script_queue.namelist_model.index(0, 0 )
-            self.script_queue.namelist_view.setCurrentIndex(first_index)            
+            self.script_queue.namelist_view.setCurrentIndex(first_index)
+
         else:
             self.queue = 0
 
@@ -675,136 +521,18 @@ class MainWindow(QtWidgets.QMainWindow):
             self.text_errors.appendPlainText('No experimental script is opened')
             return
 
-        if self.checkTests.checkState().value == 2:
-            self.test(name)
-            exec_code = self.process.waitForFinished( msecs = self.test_timeout ) # timeout in msec
-        elif self.checkTests.checkState().value == 0:
-            self.test_flag = 0
-            exec_code = True
-            self.text_errors.appendPlainText("Testing of experimental scripts are disabled")
+        self.test(name)
+        exec_code = self.process.waitForFinished( msecs = self.test_timeout ) # timeout in msec
 
         if self.test_flag == 1:
-            self.text_errors.appendPlainText("Experiment cannot be started, since test is not passed. Test execution timeout is " +\
-                                str( self.test_timeout / 60000 ) + " minutes")
-            return        # stop current function
+            self.text_errors.appendPlainText("Experiment cannot be started, since test is not passed. Test execution timeout is " + str( self.test_timeout / 60000 ) + " minutes")
+            return
+
         elif self.test_flag == 0 and exec_code == True:
             self.process_python.setArguments([name])
             self.process_python.start()
             self.pid = self.process_python.processId()
             print(f'SCRIPT PROCESS ID: {self.pid}')
-
-    def start_eseem_preset(self):
-        """
-        A function to run an phasing for rect channel.
-        """
-        self.process_eseem.setArguments([os.path.join('..','atomize/control_center/eseem_preset_insys.py')])
-        self.process_eseem.start()
-
-    def start_ed_preset(self):
-        """
-        A function to run an phasing for rect channel.
-        """
-        self.process_ed.setArguments([os.path.join('..','atomize/control_center/echo_det_preset_insys.py')])
-        self.process_ed.start()
-
-    def start_t1_preset(self):
-        """
-        A function to run an phasing for rect channel.
-        """
-        self.process_t1.setArguments([os.path.join('..','atomize/control_center/t1_preset_insys.py')])
-        self.process_t1.start()
-
-    def start_t2_preset(self):
-        """
-        A function to run an phasing for rect channel.
-        """
-        self.process_t2.setArguments([os.path.join('..','atomize/control_center/t2_preset_insys.py')])
-        self.process_t2.start()
-
-    def start_rect_phasing(self):
-        """
-        A function to run an phasing for rect channel.
-        """
-        self.process_phasing.setArguments([os.path.join('..','atomize/control_center/phasing_insys.py')])
-        self.process_phasing.start()
-
-    def start_awg_phasing(self):
-        """
-        A function to run an phasing for rect channel.
-        """
-        self.process_awg_phasing.setArguments([os.path.join('..','atomize/control_center/awg_phasing_insys.py')])
-        self.process_awg_phasing.start()
-
-    def start_tune_preset(self):
-        """
-        A function to run tuning.
-        """
-        self.process_tune_preset.setArguments([os.path.join('..','atomize/control_center/tune_preset.py')])
-        self.process_tune_preset.start()
-
-    def start_mw_control(self):
-        """
-        A function to run an pulse_creator.
-        """
-        self.process_mw.setArguments([os.path.join('..','atomize/control_center/mw_bridge_control.py')])
-        self.process_mw.start()
-
-    def start_tr_control(self):
-        """
-        A function to run an pulse_creator.
-        """
-        self.process_tr.setArguments([os.path.join('..','atomize/control_center/tr_control.py')])
-        self.process_tr.start()
-    
-    def start_osc_control(self):
-        """
-        A function to run an Keysight control.
-        """
-        self.process_osc.setArguments([os.path.join('..','atomize/control_center/osc_control.py')])
-        self.process_osc.start()
-
-    def start_field_control(self):
-        """
-        A function to run an Field control.
-        """
-        self.process_field.setArguments([os.path.join('..','atomize/control_center/field_control.py')])
-        self.process_field.start()
-
-    def start_osc_control_2(self):
-        """
-        A function to run an Keysight control.
-        """
-        self.process_osc2.setArguments([os.path.join('..','atomize/control_center/osc_control_2.py')])
-        self.process_osc2.start()
-
-    def start_cw(self):
-        """
-        A function to run an Keysight control.
-        """
-        self.process_cw.setArguments([os.path.join('..','atomize/control_center/cw_control.py')])
-        self.process_cw.start()
-
-    def start_temp_control(self):
-        """
-        A function to run an Keysight control.
-        """
-        self.process_temp.setArguments([os.path.join('..','atomize/control_center/temp_control.py')])
-        self.process_temp.start()
-
-    def script_open_combo(self):
-        self.script = self.text_to_script_name( self.script_chooser.currentText() )
-        self.open_file(  os.path.join(self.script, '..', 'atomize/tests/') )
-
-    def text_to_script_name(self, text_to_parse):
-
-        if text_to_parse == ' Tuning':
-            return os.path.join(self.path_to_main, '..', 'atomize/tests/pulse_epr/01_resonator_tuning.py')
-        elif text_to_parse == ' T2 Echo Shape':
-            return os.path.join(self.path_to_main, '..', 'atomize/tests/pulse_epr/keysight/02_t2_baseline_echo_shape.py')
-        elif text_to_parse == ' ED Spectrum':
-            return os.path.join(self.path_to_main, '..', 'atomize/tests/pulse_epr/keysight/03_echo_detected_spectrum_baseline.py')
-        elif text_to_parse == ' ESEEM Echo Shape':
-            return os.path.join(self.path_to_main, '..', 'atomize/tests/pulse_epr/keysight/07_eseem_phase_echo_shape.py')
 
     def message_box_clicked(self, btn):
         """
@@ -837,8 +565,8 @@ class MainWindow(QtWidgets.QMainWindow):
             message.addButton(QtWidgets.QPushButton('Update Script'), QtWidgets.QMessageBox.ButtonRole.NoRole)
             message.setText("Your experimental script has been changed   ");
             message.show();
-            message.buttonClicked.connect(self.message_box_clicked)   # connect function clicked to button; get the button name
-            return        # stop current function
+            message.buttonClicked.connect(self.message_box_clicked)
+            return
 
         #self.text_errors.appendPlainText("Testing... Please, wait!")
         #self.process.setArguments(['--errors-only', self.script])
@@ -864,18 +592,11 @@ class MainWindow(QtWidgets.QMainWindow):
         text = self.process.readAllStandardOutput().data().decode()
         text_errors_script = self.process.readAllStandardError().data().decode()
         if text_errors_script == '':
-        # if text == '' and text_errors_script == '':
             self.text_errors.appendPlainText("No errors are found")
             self.test_flag = 0
         elif text_errors_script != '':
             self.test_flag = 1
             self.text_errors.appendPlainText(text_errors_script)
-            path_status_file = os.path.join(self.path_to_main, 'status')
-            file_to_read = open(path_status_file, 'w')
-            file_to_read.write('Status:  Off' + '\n')
-            file_to_read.close()
-
-            #self.text_errors.verticalScrollBar().setValue(self.text_errors.verticalScrollBar().maximum())
 
     def on_finished_script(self):
         """
@@ -890,7 +611,6 @@ class MainWindow(QtWidgets.QMainWindow):
         text = self.process_python.readAllStandardOutput().data().decode()
         text_errors_script = self.process_python.readAllStandardError().data().decode()
         if text_errors_script == '':
-        #if text == '' and text_errors_script == '':
             self.text_errors.appendPlainText(f"The script PID {self.pid} was executed normally")
         elif text_errors_script != '':
             self.text_errors.appendPlainText(f"The script PID {self.pid} was executed with errors")
@@ -934,10 +654,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.script = filename
         self.textEdit.setPlainText(text)
 
-        # scroll to Experimental parameters
-        QtCore.QTimer.singleShot(0, lambda: self.textEdit.verticalScrollBar().setValue(9))
         self.label_filename.setText( str( self.script ) )
-    
+
     def save_file(self, filename):
         """
         A function to save a new experimental script.
@@ -953,8 +671,7 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         A function to open a new window for choosing an experimental script.
         """
-        filedialog = QFileDialog(self, 'Open File', directory = self.path, filter = "python (*.py)",\
-            options = QtWidgets.QFileDialog.Option.DontUseNativeDialog)
+        filedialog = QFileDialog(self, 'Open File', directory = self.path, filter = "python (*.py)",options = QtWidgets.QFileDialog.Option.DontUseNativeDialog)
         # use QFileDialog.Option.DontUseNativeDialog to change directory
         filedialog.setStyleSheet("QWidget { background-color : rgb(42, 42, 64); color: rgb(211, 194, 78);}")
         filedialog.setFileMode(QtWidgets.QFileDialog.FileMode.AnyFile)
@@ -965,8 +682,7 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         A function to open a new window for choosing a name for a new experimental script.
         """
-        filedialog = QFileDialog(self, 'Save File', directory = self.path, filter = "python (*.py)",\
-            options = QtWidgets.QFileDialog.Option.DontUseNativeDialog)
+        filedialog = QFileDialog(self, 'Save File', directory = self.path, filter = "python (*.py)",options = QtWidgets.QFileDialog.Option.DontUseNativeDialog)
         filedialog.setAcceptMode(QFileDialog.AcceptMode.AcceptSave)
         # use QFileDialog.Option.DontUseNativeDialog to change directory
         filedialog.setStyleSheet("QWidget { background-color : rgb(42, 42, 64); color: rgb(211, 194, 78);}")
@@ -987,7 +703,7 @@ class MainWindow(QtWidgets.QMainWindow):
             if self.textEdit.toPlainText() != '': # save file dialog will be opened after at least one character is added
                 self.save_file_dialog()
         
-    @QtCore.pyqtSlot(str) 
+    @QtCore.pyqtSlot(str)
     def add_error_message(self, data):
         """
         A function for adding an error message to a dedicated text box in the main window of the programm;
@@ -999,8 +715,6 @@ class MainWindow(QtWidgets.QMainWindow):
         if data == 'Script stopped':
             self.script_queue.clear()
             self.queue = 0
-            self.process_python.terminate()
-            time.sleep(4)
             self.process_python.close()
 
     def open_directory(self, path):
@@ -1020,9 +734,8 @@ class NameList(QDockWidget):
         self.setStyleSheet("background-color: rgb(42, 42, 64); color: rgb(211, 194, 78); border: 2px solid rgb(40, 30, 45)")
 
         #directories
-        self.path_to_main = os.path.join(os.path.abspath(os.getcwd()))
-        path_to_main = os.path.join(self.path_to_main,'..','atomize/tests')
-
+        path_to_main = os.path.abspath(os.getcwd())
+        # configuration data
         path_config_file = os.path.join(path_to_main, '..', 'config.ini')
         path_config_file_device = os.path.join(path_to_main, '..', 'device_modules/config')
         path_config_file, path_config2 = lconf.copy_config(path_config_file, path_config_file_device)
@@ -1045,7 +758,7 @@ class NameList(QDockWidget):
         self.namelist_view.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.ActionsContextMenu)
         delete_action = QAction("Delete Selected", self.namelist_view)
         ###
-        pause_action = QAction("Stop Script", self.namelist_view)
+        pause_action = QAction("Stop Experiment", self.namelist_view)
         delete_action.triggered.connect(self.delete_item)
         pause_action.triggered.connect(self.pause)
         self.namelist_view.addAction(delete_action)
@@ -1061,7 +774,7 @@ class NameList(QDockWidget):
 
     def open_file(self, filename):
         """
-        A function to open 1d data.
+        A function to open existing 1d data.
         :param filename: string
         """
         file_path = filename
@@ -1069,6 +782,7 @@ class NameList(QDockWidget):
         header_array = []
         header = 0
 
+        # detecting the file header for further skipping
         file_to_read = open(filename, 'r')
         for i, line in enumerate(file_to_read):
             if i is header: break
@@ -1076,11 +790,17 @@ class NameList(QDockWidget):
             header_array.append(temp)
         file_to_read.close()
 
+        # read data
         temp = np.genfromtxt(file_path, dtype = float, delimiter = ',', skip_header = 1, comments = '#') 
         data = np.transpose(temp)
 
+        # universal name
         name_plot = datetime.now().strftime('%d-%m-%Y %H:%M:%S')
         pw = self.window.add_new_plot(1, name_plot)
+        # opening of a simple CSV file with a maximum of 4 columns. 
+        # this is usually related to internal pyqtgraph export.
+        # in this case, there is an extra comma that creates an empty column, which should be taken into account
+        # the data may have a different number of columns.
         if len(data) == 2:
             pw.plot(data[0], data[1], parametric = True, name = file_path, xname = 'X', xscale = 'Arb. U.',\
                 yname = 'Y', yscale = 'Arb. U.', label = 'Data_1', scatter = 'False')
@@ -1134,8 +854,7 @@ class NameList(QDockWidget):
         """
         A function to open a new window for choosing 1d data
         """
-        filedialog = QFileDialog(self, 'Open File', directory = self.open_dir, filter = "CSV (*.csv)", \
-                                    options = QtWidgets.QFileDialog.Option.DontUseNativeDialog )
+        filedialog = QFileDialog(self, 'Open File', directory = self.open_dir, filter = "CSV (*.csv)", options = QtWidgets.QFileDialog.Option.DontUseNativeDialog )
         # options = QtWidgets.QFileDialog.Option.DontUseNativeDialog
         # use QFileDialog.Option.DontUseNativeDialog to change directory
         filedialog.setStyleSheet("QWidget { background-color : rgb(42, 42, 64); color: rgb(211, 194, 78);}")
@@ -1160,8 +879,7 @@ class NameList(QDockWidget):
         """
         A function to open a new window for choosing 2D data
         """
-        filedialog = QFileDialog(self, 'Open File', directory = self.open_dir, filter = "CSV (*.csv)", \
-                                    options = QtWidgets.QFileDialog.Option.DontUseNativeDialog )
+        filedialog = QFileDialog(self, 'Open File', directory = self.open_dir, filter = "CSV (*.csv)", options = QtWidgets.QFileDialog.Option.DontUseNativeDialog )
         #options = QtWidgets.QFileDialog.Option.DontUseNativeDialog
         # use QFileDialog.Option.DontUseNativeDialog to change directory
         filedialog.setStyleSheet("QWidget { background-color : rgb(42, 42, 64); color: rgb(211, 194, 78);}")
@@ -1208,9 +926,9 @@ class NameList(QDockWidget):
         except AttributeError:
             pass        
         del self.plot_dict[name]
-    
+
     def keys(self):
-        return list( self.plot_dict.keys() )
+        return list(self.plot_dict.keys())
 
 
 def main():
@@ -1223,17 +941,17 @@ def main():
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
     except Exception:
         pass
-    
+
     app = QtWidgets.QApplication(sys.argv)
     main = MainWindow()
     helper = socket_server.Helper()
     server = socket_server.Socket_server()
     # to connect a function add_error_message when the signal from the helper will be emitted.
-    #QtCore.Qt.ContextMenuPolicy.ActionsContextMenu
-    helper.changedSignal.connect( main.add_error_message, QtCore.Qt.ConnectionType.QueuedConnection )
-    threading.Thread( target = server.start_messenger_server, args = (helper,), daemon = True ).start()
+    helper.changedSignal.connect(main.add_error_message, QtCore.Qt.ConnectionType.QueuedConnection)
+    threading.Thread(target = server.start_messenger_server, args = (helper, ), daemon = True).start()
     main.show()
-    sys.exit( app.exec() )
+    sys.exit(app.exec())
 
 if __name__ == '__main__':
     main()
+
