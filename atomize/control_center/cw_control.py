@@ -8,11 +8,12 @@ import datetime
 import socket
 import numpy as np
 from multiprocessing import Process, Pipe
-from PyQt6 import QtWidgets, uic
-from PyQt6.QtWidgets import QWidget, QCheckBox
+from PyQt6 import QtWidgets
+from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QLabel, QDoubleSpinBox, QSpinBox, QComboBox, QPushButton, QTextEdit, QGridLayout, QFrame, QCheckBox
 from PyQt6.QtGui import QIcon
+from PyQt6.QtCore import Qt
 
-class MainWindow(QtWidgets.QMainWindow):
+class MainWindow(QMainWindow):
     """
     A main window class
     """
@@ -21,83 +22,9 @@ class MainWindow(QtWidgets.QMainWindow):
         A function for connecting actions and creating a main window
         """
         super(MainWindow, self).__init__(*args, **kwargs)
-        
-        self.destroyed.connect(lambda: self._on_destroyed())         # connect some actions to exit
-        # Load the UI Page
-        path_to_main = os.path.dirname(os.path.abspath(__file__))
-        gui_path = os.path.join(path_to_main,'gui/cw_main_window.ui')
-        icon_path = os.path.join(path_to_main, 'gui/icon_cw.png')
-        self.setWindowIcon( QIcon(icon_path) )
 
-        uic.loadUi(gui_path, self)                        # Design file
-
-        # Connection of different action to different Menus and Buttons
-        self.button_start.clicked.connect(self.start)
-        self.button_start.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97);\
-         border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }\
-          QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
-        self.button_off.clicked.connect(self.turn_off)
-        self.button_off.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97);\
-         border-style: outset; color: rgb(193, 202, 227); font-weight: bold;  }\
-          QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
-        self.button_stop.clicked.connect(self.stop)
-        self.button_stop.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97);\
-         border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }\
-          QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
-
-        # text labels
-        self.label.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_2.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_3.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_4.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_5.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_6.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_7.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_8.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_9.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_10.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-
-        # text edits
-        self.text_edit_curve.setStyleSheet("QTextEdit { color : rgb(211, 194, 78) ; selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}") 
-        self.text_edit_exp_name.setStyleSheet("QTextEdit { color : rgb(211, 194, 78) ; selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}") 
-        self.cur_curve_name = self.text_edit_curve.toPlainText()
-        self.cur_exp_name = self.text_edit_exp_name.toPlainText()
-        self.text_edit_curve.textChanged.connect(self.curve_name)
-        self.text_edit_exp_name.textChanged.connect(self.exp_name)
-
-        # Spinboxes
-        self.box_end_field.valueChanged.connect(self.end_field)
-        self.box_end_field.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
-        self.cur_end_field = float( self.box_end_field.value() )
-        self.box_st_field.valueChanged.connect(self.st_field)
-        self.box_st_field.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
-        self.cur_start_field = float( self.box_st_field.value() )
-        self.box_step_field.valueChanged.connect(self.step_field)
-        self.box_step_field.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
-        self.cur_step = float( self.box_step_field.value() )
-        self.box_lock_ampl.valueChanged.connect(self.lock_ampl)
-        self.box_lock_ampl.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
-        self.cur_lock_ampl = float( self.box_lock_ampl.value() )
-        self.box_scan.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
-        self.box_scan.valueChanged.connect(self.scan)
-        #self.box_scan.lineEdit().setReadOnly( True )
-        self.cur_scan = int( self.box_scan.value() )
-        
-        self.combo_tc.currentIndexChanged.connect(self.lock_tc)
-        self.cur_tc = self.combo_tc.currentText() 
-        self.combo_tc.setStyleSheet("QComboBox { color : rgb(193, 202, 227); selection-color: rgb(211, 194, 78); }")
-        self.combo_sens.currentIndexChanged.connect(self.lock_sens)
-        self.cur_sens = self.combo_sens.currentText()
-        self.combo_sens.setStyleSheet("QComboBox { color : rgb(193, 202, 227); selection-color: rgb(211, 194, 78); }")
-        
-        
-        self.checkbox_back_scan = QCheckBox("")
-        self.gridLayout.addWidget(self.checkbox_back_scan, 15, 1)
-    
-        self.checkbox_back_scan.setStyleSheet("QCheckBox { color : rgb(193, 202, 227); }")
-        self.checkbox_back_scan.stateChanged.connect( self.two_side_measure )
-
-        self.two_side = 0        
+        self.two_side = 0
+        self.design()
 
         """
         Create a process to interact with an experimental script that will run on a different thread.
@@ -107,6 +34,205 @@ class MainWindow(QtWidgets.QMainWindow):
         the application
         """
         self.worker = Worker()
+
+    def design(self):
+
+        self.destroyed.connect(lambda: self._on_destroyed())
+        self.setObjectName("MainWindow")
+        self.setWindowTitle("CW EPR")
+        self.setStyleSheet("background-color: rgb(42,42,64);")
+
+        path_to_main = os.path.dirname(os.path.abspath(__file__))
+        icon_path = os.path.join(path_to_main, 'gui/icon_cw.png')
+        self.setWindowIcon( QIcon(icon_path) )
+
+        centralwidget = QWidget(self)
+        #centralwidget.setFixedSize(360, 470)
+        self.setCentralWidget(centralwidget)
+
+        gridLayout = QGridLayout()
+        gridLayout.setContentsMargins(15, 10, 10, 10)
+        centralwidget.setLayout(gridLayout)
+
+        # ---- Labels & Inputs ----
+        label_1 = QLabel("Start Field")
+        label_2 = QLabel("End Field")
+        label_3 = QLabel("Field Step")
+        label_4 = QLabel("Lock In Amplitude")
+        label_5 = QLabel("Lock In Sensitivity")
+        label_6 = QLabel("Lock In Time Constant")
+        label_7 = QLabel("Number of Scans")
+        label_8 = QLabel("Two-Side Measurement")
+        label_9 = QLabel("Experiment Name")
+        label_10 = QLabel("Curve Name")
+
+        for lbl in (
+            label_1, label_2, label_3, label_4,
+            label_5, label_6, label_7,
+            label_8, label_9, label_10
+        ):
+            lbl.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
+
+
+        self.box_st_field = QDoubleSpinBox()
+        self.box_st_field.setDecimals(1)
+        self.box_st_field.setMinimum(0)
+        self.box_st_field.setSingleStep(1)
+        self.box_st_field.setMaximum(15000)
+        self.box_st_field.setValue(3000)
+        self.box_st_field.setSuffix(" G")
+        self.box_st_field.valueChanged.connect(self.st_field)
+        self.cur_start_field = float( self.box_st_field.value() )
+
+        self.box_end_field = QDoubleSpinBox()
+        self.box_end_field.setDecimals(1)
+        self.box_end_field.setMinimum(0)
+        self.box_end_field.setSingleStep(1)
+        self.box_end_field.setMaximum(15000)
+        self.box_end_field.setValue(4000)
+        self.box_end_field.setSuffix(" G")
+        self.box_end_field.valueChanged.connect(self.end_field)
+        self.cur_end_field = float( self.box_end_field.value() )
+
+        self.box_step_field = QDoubleSpinBox()
+        self.box_step_field.setDecimals(2)
+        self.box_step_field.setSingleStep(0.1)
+        self.box_step_field.setMinimum(0.01)
+        self.box_step_field.setMaximum(50)
+        self.box_step_field.setValue(0.5)
+        self.box_step_field.setSuffix(" G")
+        self.box_step_field.valueChanged.connect(self.step_field)
+        self.cur_step = float( self.box_step_field.value() )
+
+        self.box_lock_ampl = QDoubleSpinBox()        
+        self.box_lock_ampl.setDecimals(3)
+        self.box_lock_ampl.setSingleStep(0.1)
+        self.box_lock_ampl.setMinimum(0.001)
+        self.box_lock_ampl.setMaximum(2.0)
+        self.box_lock_ampl.setValue(2.0)
+        self.box_lock_ampl.setSuffix(" V")
+        self.box_lock_ampl.valueChanged.connect(self.lock_ampl)
+        self.cur_lock_ampl = float( self.box_lock_ampl.value() )
+
+        for db_spin in (self.box_lock_ampl, self.box_step_field, self.box_end_field, self.box_st_field):
+            db_spin.setFixedSize(130, 22)
+            db_spin.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.PlusMinus)
+            db_spin.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
+
+        self.combo_tc = QComboBox()
+        self.combo_tc.addItems([
+            "1 s", "300 ms", "100 ms", "30 ms", "10 ms",
+            "3 ms", "1 ms", "300 us", "100 us", "30 us",
+            "10 us", "3 us", "1 us"
+        ])
+        self.combo_tc.setCurrentText("30 ms")
+        self.combo_tc.currentIndexChanged.connect(self.lock_tc)
+        self.cur_tc = self.combo_tc.currentText() 
+
+        self.combo_sens = QComboBox()
+        self.combo_sens.addItems([
+            "1 V", "500 mV", "200 mV", "100 mV", "50 mV",
+            "20 mV", "10 mV", "5 mV", "2 mV", "1 mV",
+            "500 uV", "200 uV", "100 uV"
+        ])
+        self.combo_sens.setCurrentText("200 mV")
+        self.combo_sens.currentIndexChanged.connect(self.lock_sens)
+        self.cur_sens = self.combo_sens.currentText()
+
+        for c_box in (self.combo_sens, self.combo_tc):
+            c_box.setFixedSize(130, 22)
+            c_box.setStyleSheet("QComboBox { color : rgb(193, 202, 227); selection-color: rgb(211, 194, 78); }")
+
+        self.box_scan = QSpinBox()
+        self.box_scan.setFixedSize(130, 22)
+        self.box_scan.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.PlusMinus)
+        self.box_scan.setRange(1, 100)
+        self.box_scan.setSingleStep(1)
+        self.box_scan.setValue(1)
+        self.box_scan.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
+        self.box_scan.valueChanged.connect(self.scan)
+        self.cur_scan = int( self.box_scan.value() )
+
+        self.text_edit_exp_name = QTextEdit("CW")
+        self.text_edit_curve = QTextEdit("exp1")
+        self.cur_curve_name = self.text_edit_curve.toPlainText()
+        self.cur_exp_name = self.text_edit_exp_name.toPlainText()
+        self.text_edit_curve.textChanged.connect(self.curve_name)
+        self.text_edit_exp_name.textChanged.connect(self.exp_name)
+
+        for txt_edit in (self.text_edit_curve, self.text_edit_exp_name):
+            txt_edit.setFixedSize(130, 22)
+            txt_edit.setAcceptRichText(False)
+            txt_edit.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+            txt_edit.setStyleSheet("QTextEdit { color : rgb(211, 194, 78) ; selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
+
+        self.checkbox_back_scan = QCheckBox("")
+        self.checkbox_back_scan.setStyleSheet("QCheckBox { color : rgb(193, 202, 227); }")
+        self.checkbox_back_scan.stateChanged.connect( self.two_side_measure )
+
+
+        # ---- Buttons ----
+        self.button_start = QPushButton("Start")
+        self.button_start.clicked.connect(self.start)
+        self.button_stop = QPushButton("Stop")
+        self.button_stop.clicked.connect(self.stop)
+        self.button_off = QPushButton("Exit")
+        self.button_off.clicked.connect(self.turn_off)
+
+        for btn in (self.button_start, self.button_stop, self.button_off):
+            btn.setFixedHeight(40)
+            btn.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; } QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
+
+        # ---- Separators ----
+        def hline():
+            line = QFrame()
+            line.setFrameShape(QFrame.Shape.HLine)
+            line.setFrameShadow(QFrame.Shadow.Sunken)
+            line.setLineWidth(2)
+            return line
+
+        # ---- Layout placement ----
+        gridLayout.addWidget(label_1, 0, 0)
+        gridLayout.addWidget(self.box_st_field, 0, 1)
+        gridLayout.addWidget(label_2, 1, 0)
+        gridLayout.addWidget(self.box_end_field, 1, 1)
+        gridLayout.addWidget(label_3, 2, 0)
+        gridLayout.addWidget(self.box_step_field, 2, 1)
+        gridLayout.addWidget(hline(), 3, 0, 1, 2)
+
+        gridLayout.addWidget(label_4, 4, 0)
+        gridLayout.addWidget(self.box_lock_ampl, 4, 1)
+
+        gridLayout.addWidget(label_5, 5, 0)
+        gridLayout.addWidget(self.combo_tc, 5, 1)
+
+        gridLayout.addWidget(label_6, 6, 0)
+        gridLayout.addWidget(self.combo_sens, 6, 1)
+
+        gridLayout.addWidget(hline(), 7, 0, 1, 2)
+
+        gridLayout.addWidget(label_7, 8, 0)
+        gridLayout.addWidget(self.box_scan, 8, 1)
+        gridLayout.addWidget(label_8, 9, 0)
+        gridLayout.addWidget(self.checkbox_back_scan, 9, 1)
+
+        gridLayout.addWidget(hline(), 10, 0, 1, 2)
+
+        gridLayout.addWidget(label_9, 11, 0)
+        gridLayout.addWidget(self.text_edit_exp_name, 11, 1)
+        gridLayout.addWidget(label_10, 12, 0)
+        gridLayout.addWidget(self.text_edit_curve, 12, 1)
+
+        gridLayout.addWidget(hline(), 13, 0, 1, 2)
+
+        gridLayout.addWidget(self.button_start, 14, 0)
+        gridLayout.addWidget(self.button_stop, 15, 0)
+        gridLayout.addWidget(self.button_off, 16, 0)
+
+        gridLayout.setVerticalSpacing(4)
+        gridLayout.setHorizontalSpacing(20)
+        gridLayout.setRowStretch(17, 2)
+        gridLayout.setColumnStretch(17, 2)
 
     def two_side_measure(self):
         """
