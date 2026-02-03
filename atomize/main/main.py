@@ -124,7 +124,7 @@ class MainExtended(MainWindow):
         self.script_chooser.currentIndexChanged.connect(self.script_open_combo)
         self.script = self.text_to_script_name( self.script_chooser.currentText() )
         # preopen script
-        self.open_file( self.script )
+        #self.open_file( self.script )
 
         # Test ooption
         self.checkTests = QCheckBox("Test Scripts    ")
@@ -214,6 +214,8 @@ class MainExtended(MainWindow):
             self.text_errors.appendPlainText('No experimental script is opened')
             return
 
+        self.button_start.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(193, 202, 227); border-style: outset; color: rgb(63, 63, 97); font-weight: bold; } ")
+
         # mod
         if self.checkTests.checkState().value == 2:
             self.test(name)
@@ -227,9 +229,10 @@ class MainExtended(MainWindow):
         if self.test_flag == 1:
             self.text_errors.appendPlainText("Experiment cannot be started, since test is not passed. Test execution timeout is " +\
                                 str( self.test_timeout / 60000 ) + " minutes")
-            return        # stop current function
+            return
         elif self.test_flag == 0 and exec_code == True:
             self.process_python.setArguments([name])
+            self.button_start.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(211, 194, 78); border-style: outset; color: rgb(63, 63, 97); font-weight: bold; } ")
             self.process_python.start()
             self.pid = self.process_python.processId()
             print(f'SCRIPT PROCESS ID: {self.pid}')

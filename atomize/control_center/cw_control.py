@@ -51,28 +51,22 @@ class MainWindow(QMainWindow):
 
         gridLayout = QGridLayout()
         gridLayout.setContentsMargins(15, 10, 10, 10)
+        gridLayout.setVerticalSpacing(4)
+        gridLayout.setHorizontalSpacing(20)
+
         centralwidget.setLayout(gridLayout)
 
-        # ---- Labels & Inputs ----
-        label_1 = QLabel("Start Field")
-        label_2 = QLabel("End Field")
-        label_3 = QLabel("Field Step")
-        label_4 = QLabel("Lock In Amplitude")
-        label_5 = QLabel("Lock In Sensitivity")
-        label_6 = QLabel("Lock In Time Constant")
-        label_7 = QLabel("Number of Scans")
-        label_8 = QLabel("Two-Side Measurement")
-        label_9 = QLabel("Experiment Name")
-        label_10 = QLabel("Curve Name")
 
-        for lbl in (
-            label_1, label_2, label_3, label_4,
-            label_5, label_6, label_7,
-            label_8, label_9, label_10
-        ):
+        # ---- Labels & Inputs ----
+        labels = [("Start Field", "label_1"), ("End Field", "label_2"), ("Field Step", "label_3"), ("Lock In Amplitude", "label_4"), ("Lock In Sensitivity", "label_5"), ("Lock In Time Constant", "label_6"), ("Number of Scans", "label_7"), ("Two-Side Measurement", "label_8"), ("Experiment Name", "label_9"), ("Curve Name", "label_10")]
+
+        for name, attr_name in labels:
+            lbl = QLabel(name)
+            setattr(self, attr_name, lbl)
             lbl.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
 
 
+        # ---- Boxes ----
         double_boxes = [(QDoubleSpinBox, "box_st_field", "cur_start_field", self.st_field, 0, 15000, 3000, 1, 1, " G"),
                       (QDoubleSpinBox, "box_end_field", "cur_end_field", self.end_field, 0, 15000, 4000, 1, 1, " G"),
                       (QDoubleSpinBox, "box_step_field", "cur_step", self.step_field, 0.01, 50, 0.5, 0.1, 2, " G"),
@@ -103,61 +97,70 @@ class MainWindow(QMainWindow):
                 setattr(self, par_name, int(spin_box.value()))
 
 
+        # ---- Combo boxes----
+        combo_boxes = [("30 ms", "combo_tc", "cur_tc", self.lock_tc, 
+                        [
+                        "1 s", "300 ms", "100 ms", "30 ms", "10 ms",
+                        "3 ms", "1 ms", "300 us", "100 us", "30 us",
+                        "10 us", "3 us", "1 us"
+                        ]),
+                      ("200 mV", "combo_sens", "cur_sens", self.lock_sens, 
+                        [
+                        "1 V", "500 mV", "200 mV", "100 mV", "50 mV",
+                        "20 mV", "10 mV", "5 mV", "2 mV", "1 mV",
+                        "500 uV", "200 uV", "100 uV"
+                        ])
+                      ]
 
-        self.combo_tc = QComboBox()
-        self.combo_tc.addItems([
-            "1 s", "300 ms", "100 ms", "30 ms", "10 ms",
-            "3 ms", "1 ms", "300 us", "100 us", "30 us",
-            "10 us", "3 us", "1 us"
-        ])
-        self.combo_tc.setCurrentText("30 ms")
-        self.combo_tc.currentIndexChanged.connect(self.lock_tc)
-        self.cur_tc = self.combo_tc.currentText() 
-
-        self.combo_sens = QComboBox()
-        self.combo_sens.addItems([
-            "1 V", "500 mV", "200 mV", "100 mV", "50 mV",
-            "20 mV", "10 mV", "5 mV", "2 mV", "1 mV",
-            "500 uV", "200 uV", "100 uV"
-        ])
-        self.combo_sens.setCurrentText("200 mV")
-        self.combo_sens.currentIndexChanged.connect(self.lock_sens)
-        self.cur_sens = self.combo_sens.currentText()
-
-        for c_box in (self.combo_sens, self.combo_tc):
-            c_box.setFixedSize(130, 26)
-            c_box.setStyleSheet("QComboBox { color : rgb(193, 202, 227); selection-color: rgb(211, 194, 78); }")
+        for cur_text, attr_name, par_name, func, item in combo_boxes:
+            combo = QComboBox()
+            setattr(self, attr_name, combo)
+            setattr(self, par_name, combo.currentText())
+            combo.currentIndexChanged.connect(func)
+            combo.addItems(item)
+            combo.setCurrentText(cur_text)
+            combo.setFixedSize(130, 26)
+            combo.setStyleSheet("QComboBox { color : rgb(193, 202, 227); selection-color: rgb(211, 194, 78); }")
 
 
-        self.text_edit_exp_name = QTextEdit("CW")
-        self.text_edit_curve = QTextEdit("exp1")
-        self.cur_curve_name = self.text_edit_curve.toPlainText()
-        self.cur_exp_name = self.text_edit_exp_name.toPlainText()
-        self.text_edit_curve.textChanged.connect(self.curve_name)
-        self.text_edit_exp_name.textChanged.connect(self.exp_name)
+        # ---- Text Edits ----
+        text_edit = [("CW", "text_edit_exp_name", "cur_exp_name", self.curve_name),
+                     ("exp1", "text_edit_curve", "cur_curve_name", self.exp_name)
+                    ]
 
-        for txt_edit in (self.text_edit_curve, self.text_edit_exp_name):
-            txt_edit.setFixedSize(130, 26)
-            txt_edit.setAcceptRichText(False)
-            txt_edit.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-            txt_edit.setStyleSheet("QTextEdit { color : rgb(211, 194, 78) ; selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
+        for text, attr_name, par_name, func in text_edit:
+            txt = QTextEdit(text)
+            setattr(self, attr_name, txt)
+            setattr(self, par_name, txt.toPlainText())
+            txt.textChanged.connect(func)
+            txt.setFixedSize(130, 26)
+            txt.setAcceptRichText(False)
+            txt.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+            txt.setStyleSheet("QTextEdit { color : rgb(211, 194, 78) ; selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
 
-        self.checkbox_back_scan = QCheckBox("")
-        self.checkbox_back_scan.setStyleSheet("QCheckBox { color : rgb(193, 202, 227); }")
-        self.checkbox_back_scan.stateChanged.connect( self.two_side_measure )
 
+        # ---- Check Boxes ----
+        check_boxes = [("checkbox_back_scan", self.two_side_measure)]
+
+        for attr_name, func in check_boxes:
+            check = QCheckBox("")
+            setattr(self, attr_name, check)
+            check.stateChanged.connect(func)
+            check.setStyleSheet("QCheckBox { color : rgb(193, 202, 227); }")
+            
 
         # ---- Buttons ----
-        self.button_start = QPushButton("Start")
-        self.button_start.clicked.connect(self.start)
-        self.button_stop = QPushButton("Stop")
-        self.button_stop.clicked.connect(self.stop)
-        self.button_off = QPushButton("Exit")
-        self.button_off.clicked.connect(self.turn_off)
+        buttons = [("Start", "button_start", self.start),
+                   ("Stop", "button_stop", self.stop),
+                   ("Exit", "button_off", self.turn_off) ]
 
-        for btn in (self.button_start, self.button_stop, self.button_off):
+        for name, attr_name, func in buttons:
+            btn = QPushButton(name)
             btn.setFixedHeight(40)
+            btn.clicked.connect(func)
             btn.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; } QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
+            setattr(self, attr_name, btn)
+
 
         # ---- Separators ----
         def hline():
@@ -167,36 +170,38 @@ class MainWindow(QMainWindow):
             line.setLineWidth(2)
             return line
 
+
         # ---- Layout placement ----
-        gridLayout.addWidget(label_1, 0, 0)
+        gridLayout.addWidget(self.label_1, 0, 0)
         gridLayout.addWidget(self.box_st_field, 0, 1)
-        gridLayout.addWidget(label_2, 1, 0)
+        gridLayout.addWidget(self.label_2, 1, 0)
         gridLayout.addWidget(self.box_end_field, 1, 1)
-        gridLayout.addWidget(label_3, 2, 0)
+        gridLayout.addWidget(self.label_3, 2, 0)
         gridLayout.addWidget(self.box_step_field, 2, 1)
+
         gridLayout.addWidget(hline(), 3, 0, 1, 2)
 
-        gridLayout.addWidget(label_4, 4, 0)
+        gridLayout.addWidget(self.label_4, 4, 0)
         gridLayout.addWidget(self.box_lock_ampl, 4, 1)
 
-        gridLayout.addWidget(label_5, 5, 0)
+        gridLayout.addWidget(self.label_5, 5, 0)
         gridLayout.addWidget(self.combo_tc, 5, 1)
 
-        gridLayout.addWidget(label_6, 6, 0)
+        gridLayout.addWidget(self.label_6, 6, 0)
         gridLayout.addWidget(self.combo_sens, 6, 1)
 
         gridLayout.addWidget(hline(), 7, 0, 1, 2)
 
-        gridLayout.addWidget(label_7, 8, 0)
+        gridLayout.addWidget(self.label_7, 8, 0)
         gridLayout.addWidget(self.box_scan, 8, 1)
-        gridLayout.addWidget(label_8, 9, 0)
+        gridLayout.addWidget(self.label_8, 9, 0)
         gridLayout.addWidget(self.checkbox_back_scan, 9, 1)
 
         gridLayout.addWidget(hline(), 10, 0, 1, 2)
 
-        gridLayout.addWidget(label_9, 11, 0)
+        gridLayout.addWidget(self.label_9, 11, 0)
         gridLayout.addWidget(self.text_edit_exp_name, 11, 1)
-        gridLayout.addWidget(label_10, 12, 0)
+        gridLayout.addWidget(self.label_10, 12, 0)
         gridLayout.addWidget(self.text_edit_curve, 12, 1)
 
         gridLayout.addWidget(hline(), 13, 0, 1, 2)
@@ -205,8 +210,6 @@ class MainWindow(QMainWindow):
         gridLayout.addWidget(self.button_stop, 15, 0)
         gridLayout.addWidget(self.button_off, 16, 0)
 
-        gridLayout.setVerticalSpacing(4)
-        gridLayout.setHorizontalSpacing(20)
         gridLayout.setRowStretch(17, 2)
         gridLayout.setColumnStretch(17, 2)
 
@@ -319,8 +322,8 @@ class MainWindow(QMainWindow):
 
         if self.parent_conn.poll() == True:
             msg_type, data = self.parent_conn.recv()
-            self.button_start.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; } ")                
-            self.message(data)
+            self.message(data)            
+            self.button_start.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; } ")   
         else:
             pass
 

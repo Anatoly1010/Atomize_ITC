@@ -291,6 +291,8 @@ class MainWindow(QtWidgets.QMainWindow):
                                             self.cur_ave, self.cur_num_osc, self.cur_trig_ch, self.save_scan, self.two_side, ) )
             
 
+        self.button_start.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(211, 194, 78); border-style: outset; color: rgb(63, 63, 97); font-weight: bold; } ")
+
         self.exp_process.start()
 
         # send a command in a different thread about the current state
@@ -315,8 +317,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         if self.parent_conn.poll() == True:
             msg_type, data = self.parent_conn.recv()
-            self.button_start.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; } ")                
-            self.message(data)
+            self.message(data)    
+            self.button_start.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; } ")
         else:
             pass
 

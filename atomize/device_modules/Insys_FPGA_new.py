@@ -1712,7 +1712,7 @@ class Insys_FPGA:
             sh_points = int(points * phases)
 
             if (( int( j - i ) < 0 ) or ( self.nid_pc_prev_no_reset == int( sh_points - phases) )) and (i != 0):
-                general.message(i, j, self.nid_pc_prev_no_reset)
+                #general.message(i, j, self.nid_pc_prev_no_reset)
                 i = 0
                 j = sh_points
                 k = 1
@@ -1775,7 +1775,7 @@ class Insys_FPGA:
                 points_to_cycle_ph = int( points_to_cycle//phases)
 
                 if (self.n_scans == 2):
-                    #general.message(f'B: {self.count_nip[i:j]}')
+                    general.message(f'B: {self.count_nip[i:j]}')
 
                     for index, element in enumerate(self.count_nip[i:j]):
                         if element > 1:
@@ -1788,12 +1788,12 @@ class Insys_FPGA:
                             
                             ###
                             if l == 1:
-                                if (self.count_nip[int(index + i)] == 1) and (index) != 0:
+                                if (self.count_nip[int(index + i)] == 1):# and (index) != 0:
                                     self.count_nip[int(index + i)] += 1
                             l = 0
                             ###
 
-                    #general.message(self.count_nip[i:j])
+                    general.message(f'A: {self.count_nip[i:j]}')
 
                 data_for_cycling = self.data_raw[int(i*counts_adc_full):int(j*counts_adc_full)]
                 data_i =  self.adc_sens * (data_for_cycling[0::(2*self.dec_coef)]).reshape( points_to_cycle, counts_adc, order = 'C' ) / self.count_nip[i:j,None] / self.gimSum_brd / phases

@@ -522,7 +522,7 @@ class MainWindow(QtWidgets.QMainWindow):
             return
 
         self.test(name)
-        exec_code = self.process.waitForFinished( msecs = self.test_timeout ) # timeout in msec
+        exec_code = self.process.waitForFinished( msecs = self.test_timeout )
 
         if self.test_flag == 1:
             self.text_errors.appendPlainText("Experiment cannot be started, since test is not passed. Test execution timeout is " + str( self.test_timeout / 60000 ) + " minutes")
@@ -615,6 +615,8 @@ class MainWindow(QtWidgets.QMainWindow):
         elif text_errors_script != '':
             self.text_errors.appendPlainText(f"The script PID {self.pid} was executed with errors")
             self.text_errors.appendPlainText(text_errors_script)
+
+        self.button_start.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; } ")
 
         if len(self.script_queue.keys()) != 0:
             self.start_experiment()

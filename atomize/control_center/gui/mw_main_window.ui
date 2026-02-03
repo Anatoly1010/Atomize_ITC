@@ -276,7 +276,7 @@
          <bool>false</bool>
         </property>
         <property name="minimum">
-         <number>8000</number>
+         <number>7000</number>
         </property>
         <property name="maximum">
          <number>12000</number>
