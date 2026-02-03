@@ -64,6 +64,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.flag_opened_script_changed = 0 # flag for saving changes in the opened script
         #self.path = os.path.join(path_to_main,'atomize/tests')
         self.path = os.path.join(path_to_main, '..', 'tests')
+
         self.design_setting()
         self.queue = 0
 
@@ -521,8 +522,10 @@ class MainWindow(QtWidgets.QMainWindow):
             self.text_errors.appendPlainText('No experimental script is opened')
             return
 
+        self.button_start.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(193, 202, 227); border-style: outset; color: rgb(63, 63, 97); font-weight: bold; } ")
+
         self.test(name)
-        exec_code = self.process.waitForFinished( msecs = self.test_timeout )
+        exec_code = self.process.waitForFinished( msecs = self.test_timeout ) # timeout in msec
 
         if self.test_flag == 1:
             self.text_errors.appendPlainText("Experiment cannot be started, since test is not passed. Test execution timeout is " + str( self.test_timeout / 60000 ) + " minutes")
@@ -530,6 +533,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         elif self.test_flag == 0 and exec_code == True:
             self.process_python.setArguments([name])
+            self.button_start.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(211, 194, 78); border-style: outset; color: rgb(63, 63, 97); font-weight: bold; } ")
             self.process_python.start()
             self.pid = self.process_python.processId()
             print(f'SCRIPT PROCESS ID: {self.pid}')
@@ -956,4 +960,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-

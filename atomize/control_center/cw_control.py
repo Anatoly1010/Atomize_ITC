@@ -8,7 +8,6 @@ import datetime
 import socket
 import numpy as np
 from multiprocessing import Process, Pipe
-from PyQt6 import QtWidgets
 from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QLabel, QDoubleSpinBox, QSpinBox, QComboBox, QPushButton, QTextEdit, QGridLayout, QFrame, QCheckBox
 from PyQt6.QtGui import QIcon
 from PyQt6.QtCore import Qt
@@ -114,11 +113,11 @@ class MainWindow(QMainWindow):
 
         for cur_text, attr_name, par_name, func, item in combo_boxes:
             combo = QComboBox()
+            combo.setCurrentText(cur_text)
             setattr(self, attr_name, combo)
             setattr(self, par_name, combo.currentText())
             combo.currentIndexChanged.connect(func)
             combo.addItems(item)
-            combo.setCurrentText(cur_text)
             combo.setFixedSize(130, 26)
             combo.setStyleSheet("QComboBox { color : rgb(193, 202, 227); selection-color: rgb(211, 194, 78); }")
 
@@ -147,7 +146,7 @@ class MainWindow(QMainWindow):
             setattr(self, attr_name, check)
             check.stateChanged.connect(func)
             check.setStyleSheet("QCheckBox { color : rgb(193, 202, 227); }")
-            
+            check.setFixedSize(130, 26)
 
         # ---- Buttons ----
         buttons = [("Start", "button_start", self.start),
@@ -582,7 +581,7 @@ def main():
     """
     A function to run the main window of the programm.
     """
-    app = QtWidgets.QApplication(sys.argv)
+    app = QApplication(sys.argv)
     main = MainWindow()
     main.show()
     sys.exit(app.exec())
