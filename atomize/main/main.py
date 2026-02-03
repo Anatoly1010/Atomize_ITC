@@ -127,11 +127,11 @@ class MainExtended(MainWindow):
         self.open_file( self.script )
 
         # Test ooption
-        test_on_off = QCheckBox("Test Scripts    ")
-        gridlayout.addWidget(test_on_off, 2, 4)
-        test_on_off.setStyleSheet("QCheckBox { color : rgb(193, 202, 227); font-weight: bold; }")
-        test_on_off.setChecked(True)
-        test_on_off.setLayoutDirection(QtCore.Qt.LayoutDirection.RightToLeft)
+        self.checkTests = QCheckBox("Test Scripts    ")
+        gridlayout.addWidget(self.checkTests, 2, 4)
+        self.checkTests.setStyleSheet("QCheckBox { color : rgb(193, 202, 227); font-weight: bold; }")
+        self.checkTests.setChecked(True)
+        self.checkTests.setLayoutDirection(QtCore.Qt.LayoutDirection.RightToLeft)
 
 
         gridlayout.setColumnMinimumWidth(0, 20)

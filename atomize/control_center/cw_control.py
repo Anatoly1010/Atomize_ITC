@@ -3,6 +3,7 @@
 
 import os
 import sys
+import time
 import random
 import datetime
 import socket
@@ -11,7 +12,7 @@ from multiprocessing import Process, Pipe
 from PyQt6 import QtWidgets
 from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QLabel, QDoubleSpinBox, QSpinBox, QComboBox, QPushButton, QTextEdit, QGridLayout, QFrame, QCheckBox
 from PyQt6.QtGui import QIcon
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QThread, pyqtSignal
 
 class MainWindow(QMainWindow):
     """
@@ -34,6 +35,8 @@ class MainWindow(QMainWindow):
         the application
         """
         self.worker = Worker()
+        self.poller = StatusPoller()
+        self.poller.status_received.connect(self.update_gui_status)        
 
     def design(self):
 
@@ -47,7 +50,6 @@ class MainWindow(QMainWindow):
         self.setWindowIcon( QIcon(icon_path) )
 
         centralwidget = QWidget(self)
-        #centralwidget.setFixedSize(360, 470)
         self.setCentralWidget(centralwidget)
 
         gridLayout = QGridLayout()
@@ -74,50 +76,36 @@ class MainWindow(QMainWindow):
             lbl.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
 
 
-        box_st_field = QDoubleSpinBox()
-        box_st_field.setDecimals(1)
-        box_st_field.setMinimum(0)
-        box_st_field.setSingleStep(1)
-        box_st_field.setMaximum(15000)
-        box_st_field.setValue(3000)
-        box_st_field.setSuffix(" G")
-        box_st_field.valueChanged.connect(self.st_field)
-        self.cur_start_field = float( box_st_field.value() )
+        double_boxes = [(QDoubleSpinBox, "box_st_field", "cur_start_field", self.st_field, 0, 15000, 3000, 1, 1, " G"),
+                      (QDoubleSpinBox, "box_end_field", "cur_end_field", self.end_field, 0, 15000, 4000, 1, 1, " G"),
+                      (QDoubleSpinBox, "box_step_field", "cur_step", self.step_field, 0.01, 50, 0.5, 0.1, 2, " G"),
+                      (QDoubleSpinBox, "box_lock_ampl", "cur_lock_ampl", self.lock_ampl, 0.001, 2.0, 2.0, 0.1, 3, " V"),
+                      (QSpinBox, "box_scan", "cur_scan", self.scan, 1, 100, 1, 1, 0, "")
+                        ]
 
-        self.box_end_field = QDoubleSpinBox()
-        self.box_end_field.setDecimals(1)
-        self.box_end_field.setMinimum(0)
-        self.box_end_field.setSingleStep(1)
-        self.box_end_field.setMaximum(15000)
-        self.box_end_field.setValue(4000)
-        self.box_end_field.setSuffix(" G")
-        self.box_end_field.valueChanged.connect(self.end_field)
-        self.cur_end_field = float( self.box_end_field.value() )
+        for widget_class, attr_name, par_name, func, v_min, v_max, cur_val, v_step, dec, suf in double_boxes:
+            spin_box = widget_class()
+            if isinstance(spin_box, QDoubleSpinBox):
+                spin_box.setRange(v_min, v_max)
+            else:
+                spin_box.setRange(int(v_min), int(v_max))
+            spin_box.setSingleStep(v_step)
+            spin_box.setValue(cur_val)
+            if isinstance(spin_box, QDoubleSpinBox):
+                spin_box.setDecimals(dec)
+            spin_box.setSuffix(suf)
+            spin_box.valueChanged.connect(func)
+            spin_box.setFixedSize(130, 26)
+            spin_box.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.PlusMinus)
+            spin_box.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
 
-        self.box_step_field = QDoubleSpinBox()
-        self.box_step_field.setDecimals(2)
-        self.box_step_field.setSingleStep(0.1)
-        self.box_step_field.setMinimum(0.01)
-        self.box_step_field.setMaximum(50)
-        self.box_step_field.setValue(0.5)
-        self.box_step_field.setSuffix(" G")
-        self.box_step_field.valueChanged.connect(self.step_field)
-        self.cur_step = float( self.box_step_field.value() )
+            setattr(self, attr_name, spin_box)
+            if isinstance(spin_box, QDoubleSpinBox):
+                setattr(self, par_name, float(spin_box.value()))
+            else:
+                setattr(self, par_name, int(spin_box.value()))
 
-        self.box_lock_ampl = QDoubleSpinBox()        
-        self.box_lock_ampl.setDecimals(3)
-        self.box_lock_ampl.setSingleStep(0.1)
-        self.box_lock_ampl.setMinimum(0.001)
-        self.box_lock_ampl.setMaximum(2.0)
-        self.box_lock_ampl.setValue(2.0)
-        self.box_lock_ampl.setSuffix(" V")
-        self.box_lock_ampl.valueChanged.connect(self.lock_ampl)
-        self.cur_lock_ampl = float( self.box_lock_ampl.value() )
 
-        for db_spin in (self.box_lock_ampl, self.box_step_field, self.box_end_field, self.box_st_field):
-            db_spin.setFixedSize(130, 22)
-            db_spin.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.PlusMinus)
-            db_spin.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
 
         self.combo_tc = QComboBox()
         self.combo_tc.addItems([
@@ -140,18 +128,9 @@ class MainWindow(QMainWindow):
         self.cur_sens = self.combo_sens.currentText()
 
         for c_box in (self.combo_sens, self.combo_tc):
-            c_box.setFixedSize(130, 22)
+            c_box.setFixedSize(130, 26)
             c_box.setStyleSheet("QComboBox { color : rgb(193, 202, 227); selection-color: rgb(211, 194, 78); }")
 
-        self.box_scan = QSpinBox()
-        self.box_scan.setFixedSize(130, 22)
-        self.box_scan.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.PlusMinus)
-        self.box_scan.setRange(1, 100)
-        self.box_scan.setSingleStep(1)
-        self.box_scan.setValue(1)
-        self.box_scan.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
-        self.box_scan.valueChanged.connect(self.scan)
-        self.cur_scan = int( self.box_scan.value() )
 
         self.text_edit_exp_name = QTextEdit("CW")
         self.text_edit_curve = QTextEdit("exp1")
@@ -161,7 +140,7 @@ class MainWindow(QMainWindow):
         self.text_edit_exp_name.textChanged.connect(self.exp_name)
 
         for txt_edit in (self.text_edit_curve, self.text_edit_exp_name):
-            txt_edit.setFixedSize(130, 22)
+            txt_edit.setFixedSize(130, 26)
             txt_edit.setAcceptRichText(False)
             txt_edit.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
             txt_edit.setStyleSheet("QTextEdit { color : rgb(211, 194, 78) ; selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
@@ -337,21 +316,27 @@ class MainWindow(QMainWindow):
 
         sys.exit()
 
+    def update_gui_status(self, status_text):
+
+        self.poller.wait() 
+
+        if self.parent_conn.poll() == True:
+            msg_type, data = self.parent_conn.recv()
+            self.button_start.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; } ")                
+            self.message(data)
+        else:
+            pass
+
     def stop(self):
         """
         A function to stop script
         """
         try:
+            self.button_start.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }  ")
             self.parent_conn.send( 'exit' )
             self.exp_process.join()
         except AttributeError:
             self.message('Experimental script is not running')
-        
-        if self.parent_conn.poll() == True:
-            msg_type, data = self.parent_conn.recv()
-            self.message(data)
-        else:
-            pass
    
     def start(self):
         """
@@ -368,7 +353,6 @@ class MainWindow(QMainWindow):
             pass
 
 
-
         if self.cur_start_field >= self.cur_end_field:
             self.cur_start_field, self.cur_end_field = self.cur_end_field, self.cur_start_field
 
@@ -378,13 +362,16 @@ class MainWindow(QMainWindow):
         self.parent_conn, self.child_conn = Pipe()
         # a process for running function script 
         # sending parameters for initial initialization
-        self.exp_process = Process( target = self.worker.exp_on, args = ( self.child_conn, self.cur_curve_name, self.cur_exp_name, \
-                                            self.cur_end_field, self.cur_start_field, self.cur_step, self.cur_lock_ampl, self.cur_scan, \
-                                            self.cur_tc, self.cur_sens, self.two_side, ) )
-               
+        self.exp_process = Process( target = self.worker.exp_on, args = ( self.child_conn, self.cur_curve_name, self.cur_exp_name, self.cur_end_field, self.cur_start_field, self.cur_step, self.cur_lock_ampl, self.cur_scan, self.cur_tc, self.cur_sens, self.two_side, ) )
+        
+        self.button_start.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(211, 194, 78); border-style: outset; color: rgb(63, 63, 97); font-weight: bold; } ")
+
         self.exp_process.start()
         # send a command in a different thread about the current state
         self.parent_conn.send('start')
+
+        self.poller.update_command(self.parent_conn)
+        self.poller.start()
 
     def message(self, *text):
         sock = socket.socket()
@@ -566,7 +553,7 @@ class Worker(QWidget):
                 self.command = 'exit'
 
             if self.command == 'exit':
-                general.message(f'Script {p2} finished')
+                #general.message(f'Script {p2} finished')
                 sr860.lock_in_sensitivity( '1 V' )
                 while field > START_FIELD:
                     field = itc_fc.magnet_field( field - initialization_step )
@@ -585,9 +572,30 @@ class Worker(QWidget):
                 file_data, file_param = file_handler.create_file_parameters('.param')
                 file_handler.save_data(file_data, np.c_[x_axis, data], header = header, mode = 'w')
 
+                conn.send( ('', f'Script {p2} finished') )
+
         except BaseException as e:
             exc_info = f"{type(e)} \n{str(e)} \n{traceback.format_exc()}"
             conn.send( ('Error', exc_info) )
+
+
+class StatusPoller(QThread):
+    status_received = pyqtSignal(str)
+
+    def __init__(self, parent = None):
+        super().__init__(parent)
+        self.target_conn = ''
+
+    def update_command(self, new_cmd):
+        self.target_conn = new_cmd
+
+    def run(self):
+        while True:
+            if self.target_conn.poll() == True:
+                self.status_received.emit('')
+                break
+            
+            time.sleep(2) 
 
 
 def main():
