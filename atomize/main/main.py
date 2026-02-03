@@ -116,13 +116,13 @@ class MainExtended(MainWindow):
         gridlayout.addWidget(label, 1, 4)
 
         combo_items = [" Tuning", " T2 Echo Shape", " ED Spectrum", " ESEEM Echo Shape"]
-        combo_script = QComboBox()
-        combo_script.addItems(combo_items)
-        combo_script.setFixedSize(140, 40)
-        gridlayout.addWidget(combo_script, 1, 5)
-        combo_script.setStyleSheet("QComboBox { color : rgb(193, 202, 227); selection-color: rgb(211, 194, 78); font-weight: bold; }")
-        combo_script.currentIndexChanged.connect(self.script_open_combo)
-        self.script = self.text_to_script_name( combo_script.currentText() )
+        self.script_chooser = QComboBox()
+        self.script_chooser.addItems(combo_items)
+        self.script_chooser.setFixedSize(140, 40)
+        gridlayout.addWidget(self.script_chooser, 1, 5)
+        self.script_chooser.setStyleSheet("QComboBox { color : rgb(193, 202, 227); selection-color: rgb(211, 194, 78); font-weight: bold; }")
+        self.script_chooser.currentIndexChanged.connect(self.script_open_combo)
+        self.script = self.text_to_script_name( self.script_chooser.currentText() )
         # preopen script
         self.open_file( self.script )
 

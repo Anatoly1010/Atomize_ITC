@@ -74,15 +74,15 @@ class MainWindow(QMainWindow):
             lbl.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
 
 
-        self.box_st_field = QDoubleSpinBox()
-        self.box_st_field.setDecimals(1)
-        self.box_st_field.setMinimum(0)
-        self.box_st_field.setSingleStep(1)
-        self.box_st_field.setMaximum(15000)
-        self.box_st_field.setValue(3000)
-        self.box_st_field.setSuffix(" G")
-        self.box_st_field.valueChanged.connect(self.st_field)
-        self.cur_start_field = float( self.box_st_field.value() )
+        box_st_field = QDoubleSpinBox()
+        box_st_field.setDecimals(1)
+        box_st_field.setMinimum(0)
+        box_st_field.setSingleStep(1)
+        box_st_field.setMaximum(15000)
+        box_st_field.setValue(3000)
+        box_st_field.setSuffix(" G")
+        box_st_field.valueChanged.connect(self.st_field)
+        self.cur_start_field = float( box_st_field.value() )
 
         self.box_end_field = QDoubleSpinBox()
         self.box_end_field.setDecimals(1)
@@ -277,11 +277,11 @@ class MainWindow(QMainWindow):
         self.cur_end_field = round( float( self.box_end_field.value() ), 3 )
         #print(self.cur_end_field)
 
-    def st_field(self):
+    def st_field(self, value):
         """
         A function to send a start field value
         """
-        self.cur_start_field = round( float( self.box_st_field.value() ), 3 )
+        self.cur_start_field = round( float( value ), 3 )
         #print(self.cur_start_field)
 
     def step_field(self):
