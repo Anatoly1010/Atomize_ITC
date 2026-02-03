@@ -10,6 +10,7 @@ from multiprocessing import Process, Pipe
 from PyQt6 import QtWidgets, uic
 from PyQt6.QtWidgets import QWidget, QCheckBox
 from PyQt6.QtGui import QIcon
+import atomize.control_center.status_poller as pol
 
 class MainWindow(QtWidgets.QMainWindow):
     """
@@ -125,6 +126,8 @@ class MainWindow(QtWidgets.QMainWindow):
         the application
         """
         self.worker = Worker()
+        self.poller = pol.StatusPoller()
+        self.poller.status_received.connect(self.update_gui_status)
 
     def two_side_measure(self):
         """
@@ -258,14 +261,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.parent_conn.send( 'exit' )
             self.exp_process.join()
         except AttributeError:
-            self.par_conn = 0
             self.message('Experimental script is not running')
-
-        if self.parent_conn.poll() == True:
-            msg_type, data = self.parent_conn.recv()
-            self.message( data )
-        else:
-            pass
 
     def start(self):
         """
@@ -300,6 +296,9 @@ class MainWindow(QtWidgets.QMainWindow):
         # send a command in a different thread about the current state
         self.parent_conn.send('start')
 
+        self.poller.update_command(self.parent_conn)
+        self.poller.start()
+
     def message(self, *text):
         sock = socket.socket()
         sock.connect(('localhost', 9091))
@@ -309,6 +308,18 @@ class MainWindow(QtWidgets.QMainWindow):
         else:
             sock.send(str(text).encode())
             sock.close()
+
+    def update_gui_status(self, status_text):
+
+        self.poller.wait() 
+
+        if self.parent_conn.poll() == True:
+            msg_type, data = self.parent_conn.recv()
+            self.button_start.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; } ")                
+            self.message(data)
+        else:
+            pass
+
 
 # The worker class that run the digitizer in a different thread
 class Worker(QWidget):
@@ -780,7 +791,7 @@ class Worker(QWidget):
                 self.command = 'exit'
 
             if self.command == 'exit':
-                general.message(f'Script {p2} finished')
+                #general.message(f'Script {p2} finished')
                 
                 temp_end = str( ls335.tc_temperature('B') )
                 if p9 == 1 and p11 == 0:
@@ -861,6 +872,8 @@ class Worker(QWidget):
                     field = field - initialization_step
                 field = bh15.magnet_field( OFFRES_FIELD )
                 field = OFFRES_FIELD
+
+                conn.send( ('', f'Script {p2} finished') )
 
         except BaseException as e:
             exc_info = f"{type(e)} \n{str(e)} \n{traceback.format_exc()}"

@@ -3,7 +3,6 @@
 
 import os
 import sys
-import time
 import random
 import datetime
 import socket
@@ -12,7 +11,8 @@ from multiprocessing import Process, Pipe
 from PyQt6 import QtWidgets
 from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QLabel, QDoubleSpinBox, QSpinBox, QComboBox, QPushButton, QTextEdit, QGridLayout, QFrame, QCheckBox
 from PyQt6.QtGui import QIcon
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PyQt6.QtCore import Qt
+import atomize.control_center.status_poller as pol
 
 class MainWindow(QMainWindow):
     """
@@ -29,13 +29,10 @@ class MainWindow(QMainWindow):
 
         """
         Create a process to interact with an experimental script that will run on a different thread.
-        We need a different thread here, since PyQt GUI applications have a main thread of execution 
-        that runs the event loop and GUI. If you launch a long-running task in this thread, then your GUI
-        will freeze until the task terminates. During that time, the user won’t be able to interact with 
-        the application
+        We need a different thread here, since PyQt GUI applications have a main thread of execution that runs the event loop and GUI. If you launch a long-running task in this thread, then your GUI will freeze until the task terminates. During that time, the user won’t be able to interact with the application
         """
         self.worker = Worker()
-        self.poller = StatusPoller()
+        self.poller = pol.StatusPoller()
         self.poller.status_received.connect(self.update_gui_status)        
 
     def design(self):
@@ -577,26 +574,6 @@ class Worker(QWidget):
         except BaseException as e:
             exc_info = f"{type(e)} \n{str(e)} \n{traceback.format_exc()}"
             conn.send( ('Error', exc_info) )
-
-
-class StatusPoller(QThread):
-    status_received = pyqtSignal(str)
-
-    def __init__(self, parent = None):
-        super().__init__(parent)
-        self.target_conn = ''
-
-    def update_command(self, new_cmd):
-        self.target_conn = new_cmd
-
-    def run(self):
-        while True:
-            if self.target_conn.poll() == True:
-                self.status_received.emit('')
-                break
-            
-            time.sleep(2) 
-
 
 def main():
     """
