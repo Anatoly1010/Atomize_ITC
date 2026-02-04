@@ -1,5 +1,6 @@
 import os
 import sys
+import time
 import threading
 from pathlib import Path
 from PyQt6 import QtWidgets, uic, QtCore, QtGui
@@ -214,12 +215,11 @@ class MainExtended(MainWindow):
             self.text_errors.appendPlainText('No experimental script is opened')
             return
 
-        self.button_start.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(193, 202, 227); border-style: outset; color: rgb(63, 63, 97); font-weight: bold; } ")
-
         # mod
         if self.checkTests.checkState().value == 2:
             self.test(name)
-            exec_code = self.process.waitForFinished( msecs = self.test_timeout ) # timeout in msec
+            exec_code = self.success
+            #self.process.waitForFinished( msecs = self.test_timeout ) # timeout in msec
         elif self.checkTests.checkState().value == 0:
             self.test_flag = 0
             exec_code = True
@@ -238,13 +238,13 @@ class MainExtended(MainWindow):
             print(f'SCRIPT PROCESS ID: {self.pid}')
 
     # redefined method
-    def on_finished_checking(self):
+    def on_finished_checking(self, exit_code, exit_status, loop, process):
         """
         A function to add the information about errors found during syntax checking
         to a dedicated text box in the main window of the programm.
         """
-        text = self.process.readAllStandardOutput().data().decode()
-        text_errors_script = self.process.readAllStandardError().data().decode()
+        text = process.readAllStandardOutput().data().decode()
+        text_errors_script = process.readAllStandardError().data().decode()
         if text_errors_script == '':
             self.text_errors.appendPlainText("No errors are found")
             self.test_flag = 0
@@ -257,6 +257,11 @@ class MainExtended(MainWindow):
             file_to_read.write('Status:  Off' + '\n')
             file_to_read.close()
             # mod
+
+        self.button_test.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; } ")
+
+        self.success = (exit_status == QtCore.QProcess.ExitStatus.NormalExit and exit_code == 0)
+        loop.quit()
 
     # redefined method
     @QtCore.pyqtSlot(str)

@@ -14,6 +14,7 @@ from PyQt6.QtGui import QIcon
 from PyQt6.QtCore import Qt
 import atomize.general_modules.general_functions as general
 import atomize.device_modules.Insys_FPGA as pb_pro
+import atomize.control_center.status_poller as pol
 ###import atomize.device_modules.BH_15 as bh
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -397,6 +398,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.l_mode = 0
  
         self.dig_part()
+
+        self.poller = pol.StatusPoller()
+        self.poller.status_received.connect(self.update_gui_status)
 
     def dig_part(self):
         """
@@ -1389,7 +1393,10 @@ class MainWindow(QtWidgets.QMainWindow):
         
         self.parent_conn, self.child_conn = Pipe()
         # a process for running test
-        self.test_process = Process( target = self.pulser_test, args = ( self.child_conn, 'test', ) )       
+        self.test_process = Process( target = self.pulser_test, args = ( self.child_conn, 'test', ) )
+
+        self.button_update.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(193, 202, 227); border-style: outset; color: rgb(63, 63, 97); font-weight: bold; } ")
+
         self.test_process.start()
 
         # in order to finish a test
@@ -1418,42 +1425,6 @@ class MainWindow(QtWidgets.QMainWindow):
             self.pb.dac_window = 0
             self.pb.adc_window = 0
             self.dig_start()
-
-
-        #if self.test_process.exitcode == 0:
-        #    self.test_process.join()
-        #
-        #    # RUN
-        #    # can be problem here:
-        #    # maybe it should be moved to pulser_test()
-        #    # and deleted from here
-        #    self.pb.pulser_clear()
-        #    self.pb.awg_clear()
-        #    # init will set the 'None' flag
-        #    self.pb.pulser_test_flag( 'test' )
-        #    self.pb.awg_test_flag( 'test' )
-        #    self.pulse_sequence()
-        #    ##self.errors.appendPlainText( self.awg.awg_pulse_list() )
-        #    self.pb.pulser_test_flag( 'None' )
-        #    self.pb.awg_test_flag( 'None' )
-        #
-        #    self.pb.dac_window = 0
-        #    self.pb.adc_window = 0
-        #    self.dig_start()
-        #
-        #else:
-        #    self.test_process.join()
-        #    self.errors.clear()
-        #    self.errors.appendPlainText( 'Incorrect pulse setting. Check that your pulses:\n' + \
-        #                                '1. Not overlapped\n' + \
-        #                                '2. Distance between pulses is more than 44.8 ns\n' + \
-        #                                '3. Pulse length should be longer or equal to sigma\n' + \
-        #                                '\nIs the pulser running in another application?' )
-
-            # no need in stop and close, since AWG is not opened
-            #self.awg.awg_stop()
-            #self.awg.awg_close()
-            #self.pb.pulser_stop()
 
     def pulser_test(self, conn, flag):
         """
@@ -1487,23 +1458,13 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.parent_conn_dig.send('exit')
                 self.digitizer_process.join()
             except AttributeError:
-                self.message('Digitizer is not running')
+                pass
+                #self.message('Digitizer is not running')
 
         #self.opened = 0
 
         self.errors.clear()
-        
-        try:   
-            if self.parent_conn_dig.poll() == True:
-                msg_type, data = self.parent_conn_dig.recv()
-                self.message(data)
-
-                self.errors.appendPlainText(data)
-
-            else:
-                pass
-        except AttributeError:
-            pass
+        self.button_update.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; } ")
 
         file_to_read = open(path_file, 'w')
         file_to_read.write('Points: ' + str( self.p1_length ) +'\n')
@@ -1569,10 +1530,14 @@ class MainWindow(QtWidgets.QMainWindow):
                                             self.ch0_ampl, self.ch1_ampl, 0, p2_awg_list, p3_awg_list, p4_awg_list, p5_awg_list, \
                                             p6_awg_list, p7_awg_list, self.quad, self.zero_order, self.first_order, self.second_order, self.p_to_drop, \
                                             self.b_sech_cur, self.combo_cor, self.combo_synt, 0, ) )
+
+        self.button_update.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(211, 194, 78); border-style: outset; color: rgb(63, 63, 97); font-weight: bold; } ")
                
         self.digitizer_process.start()
         # send a command in a different thread about the current state
         self.parent_conn_dig.send('start')
+        self.poller.update_command(self.parent_conn_dig)
+        self.poller.start()
 
     def turn_off(self):
         """
@@ -1596,6 +1561,20 @@ class MainWindow(QtWidgets.QMainWindow):
         A function to open a documentation
         """
         pass
+
+    def update_gui_status(self, status_text):
+
+        self.poller.wait() 
+
+        if self.parent_conn.poll() == True:
+            msg_type, data = self.parent_conn_dig.recv()
+            if data != 'Pulses are stopped':
+                self.message(data)
+                self.errors.appendPlainText(data)
+            
+            self.button_update.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; } ")
+        else:
+            pass
 
 # The worker class that run the digitizer in a different thread
 class Worker(QWidget):
@@ -1892,10 +1871,12 @@ class Worker(QWidget):
             if self.command == 'exit':
                 ##print('exit')
                 pb.pulser_close()
+                conn.send( ('', f'Pulses are stopped') )
 
         except BaseException as e:
             exc_info = f"{type(e)} \n{str(e)} \n{traceback.format_exc()}"
             conn.send( ('Error', exc_info) )            
+
 def main():
     """
     A function to run the main window of the programm.

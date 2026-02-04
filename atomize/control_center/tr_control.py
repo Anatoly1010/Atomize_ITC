@@ -158,7 +158,7 @@ class MainWindow(QMainWindow):
 
         for name, attr_name, func in buttons:
             btn = QPushButton(name)
-            btn.setFixedHeight(40)
+            btn.setFixedSize(140, 40)
             btn.clicked.connect(func)
             btn.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; } QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
             setattr(self, attr_name, btn)

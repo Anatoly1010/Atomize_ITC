@@ -1003,8 +1003,6 @@ class MainWindow(QMainWindow):
             self.pb.adc_window = 0
             self.dig_start()
 
-        self.button_update.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; } ")
-
     def pulser_test(self, conn, flag):
         """
         Test run
@@ -1035,7 +1033,8 @@ class MainWindow(QMainWindow):
                 #self.message('Digitizer is not running')
 
         self.errors.clear()
-        
+        self.button_update.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; } ")
+
         file_to_read = open(path_file, 'w')
         file_to_read.write('Points: ' + str( self.p1_length ) +'\n')
         file_to_read.write('Sample Rate: ' + str( 2500 ) +'\n')
@@ -1054,7 +1053,7 @@ class MainWindow(QMainWindow):
         file_to_read.write('Decimation: ' + str( self.decimation ) +'\n')
 
         file_to_read.close()
-            
+        
     def dig_start(self):
         """
         Button Start; Run function script(pipe_addres, four parameters of the experimental script)
