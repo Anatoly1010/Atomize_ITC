@@ -77,8 +77,10 @@ class MainWindow(QMainWindow):
             spin_box = widget_class()
             if isinstance(spin_box, QDoubleSpinBox):
                 spin_box.setRange(v_min, v_max)
+                spin_box.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")                
             else:
                 spin_box.setRange(int(v_min), int(v_max))
+                spin_box.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")                
             spin_box.setSingleStep(v_step)
             spin_box.setValue(cur_val)
             if isinstance(spin_box, QDoubleSpinBox):
@@ -87,7 +89,7 @@ class MainWindow(QMainWindow):
             spin_box.valueChanged.connect(func)
             spin_box.setFixedSize(130, 26)
             spin_box.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.PlusMinus)
-            spin_box.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
+
 
             setattr(self, attr_name, spin_box)
             if isinstance(spin_box, QDoubleSpinBox):
