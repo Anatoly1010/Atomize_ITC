@@ -8,14 +8,15 @@ import socket
 import traceback
 import numpy as np
 from multiprocessing import Process, Pipe
-from PyQt6 import QtWidgets, uic #, QtCore, QtGui
-from PyQt6.QtWidgets import QWidget, QFileDialog
+from PyQt6 import uic
+from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QLabel, QDoubleSpinBox, QSpinBox, QComboBox, QPushButton, QTextEdit, QGridLayout, QFrame, QCheckBox, QFileDialog
 from PyQt6.QtGui import QIcon
 from PyQt6.QtCore import Qt
 import atomize.general_modules.general_functions as general
 import atomize.device_modules.Insys_FPGA as pb_pro
+import atomize.control_center.status_poller as pol
 
-class MainWindow(QtWidgets.QMainWindow):
+class MainWindow(QMainWindow):
     """
     A main window class
     """
@@ -235,6 +236,9 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.dig_part()
 
+        self.poller = pol.StatusPoller()
+        self.poller.status_received.connect(self.update_gui_status)
+
     def dig_part(self):
         """
         Digitizer settings
@@ -446,10 +450,10 @@ class MainWindow(QtWidgets.QMainWindow):
         A function to open a new window for choosing a pulse list
         """
         filedialog = QFileDialog(self, 'Open File', directory = self.path, filter = "Pulse Phase List (*.phase)",\
-            options = QtWidgets.QFileDialog.Option.DontUseNativeDialog)
+            options = QFileDialog.Option.DontUseNativeDialog)
         # use QFileDialog.DontUseNativeDialog to change directory
         filedialog.setStyleSheet("QWidget { background-color : rgb(42, 42, 64); color: rgb(211, 194, 78);}")
-        filedialog.setFileMode(QtWidgets.QFileDialog.FileMode.AnyFile)
+        filedialog.setFileMode(QFileDialog.FileMode.AnyFile)
         filedialog.fileSelected.connect(self.open_file)
         filedialog.show()
 
@@ -458,11 +462,11 @@ class MainWindow(QtWidgets.QMainWindow):
         A function to open a new window for choosing a pulse list
         """
         filedialog = QFileDialog(self, 'Save File', directory = self.path, filter = "Pulse Phase List (*.phase)",\
-            options = QtWidgets.QFileDialog.Option.DontUseNativeDialog)
+            options = QFileDialog.Option.DontUseNativeDialog)
         filedialog.setAcceptMode(QFileDialog.AcceptMode.AcceptSave)
         # use QFileDialog.DontUseNativeDialog to change directory
         filedialog.setStyleSheet("QWidget { background-color : rgb(42, 42, 64); color: rgb(211, 194, 78);}")
-        filedialog.setFileMode(QtWidgets.QFileDialog.FileMode.AnyFile)
+        filedialog.setFileMode(QFileDialog.FileMode.AnyFile)
         filedialog.fileSelected.connect(self.save_file)
         filedialog.show()
 
@@ -970,7 +974,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.errors.clear()
         self.parent_conn, self.child_conn = Pipe()
         # a process for running test
-        self.test_process = Process( target = self.pulser_test, args = ( self.child_conn, 'test', ) )       
+        self.test_process = Process( target = self.pulser_test, args = ( self.child_conn, 'test', ) )
+
+        self.button_update.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(193, 202, 227); border-style: outset; color: rgb(63, 63, 97); font-weight: bold; } ")
+
         self.test_process.start()
 
         # in order to finish a test
@@ -996,33 +1003,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.pb.adc_window = 0
             self.dig_start()
 
-
-        #if self.test_process.exitcode == 0:
-        #    self.test_process.join()
-        #
-        #    # RUN
-        #    # ?
-        #    # can be problem here:
-        #    # maybe it should be moved to pulser_test()
-        #    # and deleted from here
-        #    self.pb.pulser_clear()
-        #    self.pb.pulser_test_flag('test')
-        #    self.pulse_sequence()
-        #    
-        #    self.pb.pulser_test_flag('None')
-        #
-        #    self.pb.adc_window = 0
-        #    self.dig_start()
-        #
-        #else:
-        #    self.test_process.join()
-        #    #14-03-2021
-        #    #self.pb.pulser_stop()
-        #    self.errors.clear()
-        #    self.errors.appendPlainText( 'Incorrect pulse setting. Check that your pulses:\n' + \
-        #                                '1. Not overlapped\n' + \
-        #                                '2. Distance between MW pulses is more than 44.8 ns\n' + \
-        #                                '\nIs the pulser running in another application?')
+        self.button_update.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; } ")
 
     def pulser_test(self, conn, flag):
         """
@@ -1055,18 +1036,6 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.errors.clear()
         
-        try:   
-            if self.parent_conn_dig.poll() == True:
-                msg_type, data = self.parent_conn_dig.recv()
-                self.message(data)
-
-                self.errors.appendPlainText(data)
-
-            else:
-                pass
-        except AttributeError:
-            pass
-
         file_to_read = open(path_file, 'w')
         file_to_read.write('Points: ' + str( self.p1_length ) +'\n')
         file_to_read.write('Sample Rate: ' + str( 2500 ) +'\n')
@@ -1126,10 +1095,14 @@ class MainWindow(QtWidgets.QMainWindow):
                                             self.cur_win_left, self.cur_win_right, p1_list, p2_list, p3_list, p4_list, p5_list, p6_list, p7_list, \
                                             self.laser_flag, self.repetition_rate.split(' ')[0], self.mag_field, self.fft, self.quad, self.zero_order, self.first_order, \
                                             self.second_order, self.p_to_drop, self.combo_laser_num, self.laser_q_switch_delay, ) )
-               
+        
+        self.button_update.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(211, 194, 78); border-style: outset; color: rgb(63, 63, 97); font-weight: bold; } ")
+
         self.digitizer_process.start()
         # send a command in a different thread about the current state
         self.parent_conn_dig.send('start')
+        self.poller.update_command(self.parent_conn_dig)
+        self.poller.start()
 
     def turn_off(self):
         """
@@ -1159,6 +1132,20 @@ class MainWindow(QtWidgets.QMainWindow):
         else:
             sock.send(str(text).encode())
             sock.close()
+
+    def update_gui_status(self, status_text):
+
+        self.poller.wait() 
+
+        if self.parent_conn.poll() == True:
+            msg_type, data = self.parent_conn_dig.recv()
+            if data != 'Pulses are stopped':
+                self.message(data)
+                self.errors.appendPlainText(data)
+            
+            self.button_update.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; } ")
+        else:
+            pass
 
 # The worker class that run the digitizer in a different thread
 class Worker(QWidget):
@@ -1398,6 +1385,7 @@ class Worker(QWidget):
             if self.command == 'exit':
                 #print('exit')
                 pb.pulser_close()
+                conn.send( ('', f'Pulses are stopped') )
 
         except BaseException as e:
             exc_info = f"{type(e)} \n{str(e)} \n{traceback.format_exc()}"
@@ -1413,7 +1401,7 @@ def main():
     """
     A function to run the main window of the programm.
     """
-    app = QtWidgets.QApplication(sys.argv)
+    app = QApplication(sys.argv)
     main = MainWindow()
     main.show()
     sys.exit(app.exec())
