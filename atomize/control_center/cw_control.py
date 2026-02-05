@@ -560,15 +560,26 @@ class Worker(QWidget):
                     field = itc_fc.magnet_field( field - initialization_step )
                     field = field - initialization_step 
 
+                now = datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")
+                w = 25
+
                 # Data saving
-                header = 'Date: ' + str(datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")) + '\n' + 'Continious Wave EPR Spectrum\n' + \
-                            'Start Field: ' + str(START_FIELD) + ' G \n' + 'End Field: ' + str(END_FIELD) + ' G \n' + \
-                            'Field Step: ' + str(FIELD_STEP) + ' G \n' + 'Number of Scans: ' + str(SCANS) + '\n' + \
-                            'Temperature Start Exp: ' + str( t_start ) + ' K\n' +\
-                            'Temperature End Exp: ' + str( ls335.tc_temperature('A') ) + ' K\n' +\
-                            'Temperature Cernox: ' + str( ls335.tc_temperature('B') ) + ' K\n' +\
-                            'Time Constant: ' + str(p8) + '\n' + 'Modulation Amplitude: ' + str(p6) + ' V\n' + \
-                            'Frequency: ' + str( ag53131a.freq_counter_frequency('CH3')) + '\n' + 'Field (G), X (V)'
+                header = (
+                    f"{'Date:':<{w}} {now}\n"
+                    f"{'Experiment:':<{w}} Continuous Wave EPR Spectrum\n"
+                    f"{'Start Field:':<{w}} {START_FIELD} G\n"
+                    f"{'End Field:':<{w}} {END_FIELD} G\n"
+                    f"{'Field Step:':<{w}} {FIELD_STEP} G\n"
+                    f"{'Number of Scans:':<{w}} {SCANS}\n"
+                    f"{'Temp Start Exp:':<{w}} {t_start} K\n"
+                    f"{'Temp End Exp:':<{w}} {ls335.tc_temperature('A')} K\n"
+                    f"{'Temp Cernox:':<{w}} {ls335.tc_temperature('B')} K\n"
+                    f"{'Time Constant:':<{w}} {p8}\n"
+                    f"{'Modulation Ampl:':<{w}} {p6}\n"
+                    f"{'Frequency:':<{w}} {ag53131a.freq_counter_frequency('CH3')}\n"
+                    f"{'-'*50}\n"
+                    f"Field (G), X (V)"
+                )
 
                 file_data, file_param = file_handler.create_file_parameters('.param')
                 file_handler.save_data(file_data, np.c_[x_axis, data], header = header, mode = 'w')

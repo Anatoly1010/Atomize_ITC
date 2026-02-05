@@ -445,6 +445,7 @@ class Worker(QWidget):
             import atomize.device_modules.Agilent_53131a as ag
             import atomize.general_modules.csv_opener_saver_tk_kinter as openfile
 
+            w = 25
             file_handler = openfile.Saver_Opener()
             process = 'None'
             ag53131a = ag.Agilent_53131a()
@@ -551,45 +552,71 @@ class Worker(QWidget):
                 if p9 == 1:
                     file_save_1, file_save_param = file_handler.create_file_parameters('.param')
                     ##t_res = 1
-                    header = 'Date: ' + str(datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")) + '\n' + 'Time Resolved EPR Spectrum\n' + \
-                                'Start Field: ' + str(START_FIELD) + ' G \n' + 'End Field: ' + str(END_FIELD) + ' G \n' + \
-                                'Field Step: ' + str(FIELD_STEP) + ' G \n' + \
-                                'Off Resonance Field: ' + str(OFFRES_FIELD) + ' G \n' + \
-                                'Number of Off Resonance Averages: ' + str(p6) + '\n' + \
-                                'Number of Averages: ' + str(p8) + '\n' + \
-                                'Number of Scans: ' + str(SCANS) + '\n' + \
-                                'Temperature Start Exp: ' + str( temp_start ) + ' K\n' +\
-                                'Temperature End Exp: ' + str( temp_start ) + ' K\n' +\
-                                'Record Length: ' + str(real_length) + ' Points\n' + 'Time Resolution: ' + str(t_res) + '\n' + \
-                                'Frequency: ' + str( ag53131a.freq_counter_frequency('CH3')) + '\n' + '2D Data'
+
+                    now = datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")
+
+                    header = (
+                        f"{'Date:':<{w}} {now}\n"
+                        f"{'Experiment:':<{w}} Time Resolved EPR Spectrum\n"
+                        f"{'Start Field:':<{w}} {START_FIELD} G\n"
+                        f"{'End Field:':<{w}} {END_FIELD} G\n"
+                        f"{'Field Step:':<{w}} {FIELD_STEP} G\n"
+                        f"{'Off Resonance Field:':<{w}} {OFFRES_FIELD} G\n"
+                        f"{'Off Res Averages:':<{w}} {p6}\n"
+                        f"{'Number of Averages:':<{w}} {p8}\n"
+                        f"{'Number of Scans:':<{w}} {SCANS}\n"
+                        f"{'Temp Start Exp:':<{w}} {temp_start} K\n"
+                        f"{'Temp End Exp:':<{w}} {temp_start} K\n"
+                        f"{'Record Length:':<{w}} {real_length} Points\n"
+                        f"{'Time Resolution:':<{w}} {t_res}\n"
+                        f"{'Frequency:':<{w}} {ag53131a.freq_counter_frequency('CH3')}\n"
+                        f"{'-'*50}\n"
+                        f"2D Data"
+                    )
                     
                     file_handler.save_header(file_save_1, header = header, mode = 'w')
                 elif p9 == 2:
                     file_save_1, file_save_2 = file_handler.create_file_parameters('_osc2.csv')
 
-                    header = 'Date: ' + str(datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")) + '\n' + 'Time Resolved EPR Spectrum\n' + \
-                                'Start Field: ' + str(START_FIELD) + ' G \n' + 'End Field: ' + str(END_FIELD) + ' G \n' + \
-                                'Field Step: ' + str(FIELD_STEP) + ' G \n' + \
-                                'Off Resonance Field: ' + str(OFFRES_FIELD) + ' G \n' + \
-                                'Number of Off Resonance Averages: ' + str(p6) + '\n' + \
-                                'Number of Averages: ' + str(p8) + '\n' + \
-                                'Number of Scans: ' + str(SCANS) + '\n' + \
-                                'Temperature Start Exp: ' + str( temp_start ) + ' K\n' +\
-                                'Temperature End Exp: ' + str( temp_start ) + ' K\n' +\
-                                'Record Length: ' + str(real_length) + ' Points\n' + 'Time Resolution: ' + str(t_res) + '\n' + \
-                                'Frequency: ' + str( ag53131a.freq_counter_frequency('CH3')) + '\n' + '2D Data'
+                    now = datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")
 
-                    header_2 = 'Date: ' + str(datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")) + '\n' + 'Time Resolved EPR Spectrum\n' + \
-                                'Start Field: ' + str(START_FIELD) + ' G \n' + 'End Field: ' + str(END_FIELD) + ' G \n' + \
-                                'Field Step: ' + str(FIELD_STEP) + ' G \n' + \
-                                'Off Resonance Field: ' + str(OFFRES_FIELD) + ' G \n' + \
-                                'Number of Off Resonance Averages: ' + str(p6) + '\n' + \
-                                'Number of Averages: ' + str(p8) + '\n' + \
-                                'Number of Scans: ' + str(SCANS) + '\n' + \
-                                'Temperature Start Exp: ' + str( temp_start ) + ' K\n' +\
-                                'Temperature End Exp: ' + str( temp_start ) + ' K\n' +\
-                                'Record Length: ' + str(real_length) + ' Points\n' + 'Time Resolution: ' + str(t_res_2) + '\n' + \
-                                'Frequency: ' + str( ag53131a.freq_counter_frequency('CH3')) + '\n' + '2D Data'
+                    header = (
+                        f"{'Date:':<{w}} {now}\n"
+                        f"{'Experiment:':<{w}} Time Resolved EPR Spectrum\n"
+                        f"{'Start Field:':<{w}} {START_FIELD} G\n"
+                        f"{'End Field:':<{w}} {END_FIELD} G\n"
+                        f"{'Field Step:':<{w}} {FIELD_STEP} G\n"
+                        f"{'Off Resonance Field:':<{w}} {OFFRES_FIELD} G\n"
+                        f"{'Off Res Averages:':<{w}} {p6}\n"
+                        f"{'Number of Averages:':<{w}} {p8}\n"
+                        f"{'Number of Scans:':<{w}} {SCANS}\n"
+                        f"{'Temp Start Exp:':<{w}} {temp_start} K\n"
+                        f"{'Temp End Exp:':<{w}} {temp_start} K\n"
+                        f"{'Record Length:':<{w}} {real_length} Points\n"
+                        f"{'Time Resolution:':<{w}} {t_res}\n"
+                        f"{'Frequency:':<{w}} {ag53131a.freq_counter_frequency('CH3')}\n"
+                        f"{'-'*50}\n"
+                        f"2D Data"
+                    )
+
+                    header_2 = (
+                        f"{'Date:':<{w}} {now}\n"
+                        f"{'Experiment:':<{w}} Time Resolved EPR Spectrum (Header 2)\n"
+                        f"{'Start Field:':<{w}} {START_FIELD} G\n"
+                        f"{'End Field:':<{w}} {END_FIELD} G\n"
+                        f"{'Field Step:':<{w}} {FIELD_STEP} G\n"
+                        f"{'Off Resonance Field:':<{w}} {OFFRES_FIELD} G\n"
+                        f"{'Number of Off Res Averages:':<{w}} {p6}\n"
+                        f"{'Number of Averages:':<{w}} {p8}\n"
+                        f"{'Number of Scans:':<{w}} {SCANS}\n"
+                        f"{'Temperature Start Exp:':<{w}} {temp_start} K\n"
+                        f"{'Temperature End Exp:':<{w}} {temp_start} K\n"
+                        f"{'Record Length:':<{w}} {real_length} Points\n"
+                        f"{'Time Resolution:':<{w}} {t_res_2}\n"
+                        f"{'Frequency:':<{w}} {ag53131a.freq_counter_frequency('CH3')}\n"
+                        f"{'-'*w}\n"
+                        f"2D Data"
+                    )
 
                     file_handler.save_header(file_save_1, header = header, mode = 'w')
                     file_handler.save_header(file_save_2, header = header_2, mode = 'w')
@@ -598,29 +625,45 @@ class Worker(QWidget):
                     file_save_1, file_save_2 = file_handler.create_file_parameters('_osc2.csv')
                     file_save_3 = file_save_1.split('.csv')[0] + '_pulse.csv'
 
-                    header = 'Date: ' + str(datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")) + '\n' + 'Time Resolved EPR Spectrum\n' + \
-                                'Start Field: ' + str(START_FIELD) + ' G \n' + 'End Field: ' + str(END_FIELD) + ' G \n' + \
-                                'Field Step: ' + str(FIELD_STEP) + ' G \n' + \
-                                'Off Resonance Field: ' + str(OFFRES_FIELD) + ' G \n' + \
-                                'Number of Off Resonance Averages: ' + str(p6) + '\n' + \
-                                'Number of Averages: ' + str(p8) + '\n' + \
-                                'Number of Scans: ' + str(SCANS) + '\n' + \
-                                'Temperature Start Exp: ' + str( temp_start ) + ' K\n' +\
-                                'Temperature End Exp: ' + str( temp_start ) + ' K\n' +\
-                                'Record Length: ' + str(real_length) + ' Points\n' + 'Time Resolution: ' + str(t_res) + '\n' + \
-                                'Frequency: ' + str( ag53131a.freq_counter_frequency('CH3')) + '\n' + '2D Data'
+                    now = datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")
+                    
+                    header = (
+                        f"{'Date:':<{w}} {now}\n"
+                        f"{'Experiment:':<{w}} Time Resolved EPR Spectrum\n"
+                        f"{'Start Field:':<{w}} {START_FIELD} G\n"
+                        f"{'End Field:':<{w}} {END_FIELD} G\n"
+                        f"{'Field Step:':<{w}} {FIELD_STEP} G\n"
+                        f"{'Off Resonance Field:':<{w}} {OFFRES_FIELD} G\n"
+                        f"{'Off Res Averages:':<{w}} {p6}\n"
+                        f"{'Number of Averages:':<{w}} {p8}\n"
+                        f"{'Number of Scans:':<{w}} {SCANS}\n"
+                        f"{'Temp Start Exp:':<{w}} {temp_start} K\n"
+                        f"{'Temp End Exp:':<{w}} {temp_start} K\n"
+                        f"{'Record Length:':<{w}} {real_length} Points\n"
+                        f"{'Time Resolution:':<{w}} {t_res}\n"
+                        f"{'Frequency:':<{w}} {ag53131a.freq_counter_frequency('CH3')}\n"
+                        f"{'-'*50}\n"
+                        f"2D Data"
+                    )
 
-                    header_2 = 'Date: ' + str(datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")) + '\n' + 'Time Resolved EPR Spectrum\n' + \
-                                'Start Field: ' + str(START_FIELD) + ' G \n' + 'End Field: ' + str(END_FIELD) + ' G \n' + \
-                                'Field Step: ' + str(FIELD_STEP) + ' G \n' + \
-                                'Off Resonance Field: ' + str(OFFRES_FIELD) + ' G \n' + \
-                                'Number of Off Resonance Averages: ' + str(p6) + '\n' + \
-                                'Number of Averages: ' + str(p8) + '\n' + \
-                                'Number of Scans: ' + str(SCANS) + '\n' + \
-                                'Temperature Start Exp: ' + str( temp_start ) + ' K\n' +\
-                                'Temperature End Exp: ' + str( temp_start ) + ' K\n' +\
-                                'Record Length: ' + str(real_length_2) + ' Points\n' + 'Time Resolution: ' + str(t_res_2) + '\n' + \
-                                'Frequency: ' + str( ag53131a.freq_counter_frequency('CH3')) + '\n' + '2D Data'
+                    header_2 = (
+                        f"{'Date:':<{w}} {now}\n"
+                        f"{'Experiment:':<{w}} Time Resolved EPR Spectrum (Header 2)\n"
+                        f"{'Start Field:':<{w}} {START_FIELD} G\n"
+                        f"{'End Field:':<{w}} {END_FIELD} G\n"
+                        f"{'Field Step:':<{w}} {FIELD_STEP} G\n"
+                        f"{'Off Resonance Field:':<{w}} {OFFRES_FIELD} G\n"
+                        f"{'Number of Off Res Averages:':<{w}} {p6}\n"
+                        f"{'Number of Averages:':<{w}} {p8}\n"
+                        f"{'Number of Scans:':<{w}} {SCANS}\n"
+                        f"{'Temperature Start Exp:':<{w}} {temp_start} K\n"
+                        f"{'Temperature End Exp:':<{w}} {temp_start} K\n"
+                        f"{'Record Length:':<{w}} {real_length} Points\n"
+                        f"{'Time Resolution:':<{w}} {t_res_2}\n"
+                        f"{'Frequency:':<{w}} {ag53131a.freq_counter_frequency('CH3')}\n"
+                        f"{'-'*w}\n"
+                        f"2D Data"
+                    )
 
                     file_handler.save_header(file_save_1, header = header, mode = 'w')
                     file_handler.save_header(file_save_2, header = header_2, mode = 'w')
@@ -887,72 +930,113 @@ class Worker(QWidget):
                 temp_end = str( ls335.tc_temperature('B') )
                 if p9 == 1 and p11 == 0:
                     ##t_res = 1
-                    header = 'Date: ' + str(datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")) + '\n' + 'Time Resolved EPR Spectrum\n' + \
-                                'Start Field: ' + str(START_FIELD) + ' G \n' + 'End Field: ' + str(END_FIELD) + ' G \n' + \
-                                'Field Step: ' + str(FIELD_STEP) + ' G \n' + \
-                                'Off Resonance Field: ' + str(OFFRES_FIELD) + ' G \n' + \
-                                'Number of Off Resonance Averages: ' + str(p6) + '\n' + \
-                                'Number of Averages: ' + str(p8) + '\n' + \
-                                'Number of Scans: ' + str(SCANS) + '\n' + \
-                                'Temperature Start Exp: ' + str( temp_start ) + ' K\n' +\
-                                'Temperature End Exp: ' + str( temp_end ) + ' K\n' +\
-                                'Record Length: ' + str(real_length) + ' Points\n' + 'Time Resolution: ' + str(t_res) + '\n' + \
-                                'Frequency: ' + str( ag53131a.freq_counter_frequency('CH3')) + '\n' + '2D Data'
+                    now = datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")
+
+                    header = (
+                        f"{'Date:':<{w}} {now}\n"
+                        f"{'Experiment:':<{w}} Time Resolved EPR Spectrum\n"
+                        f"{'Start Field:':<{w}} {START_FIELD} G\n"
+                        f"{'End Field:':<{w}} {END_FIELD} G\n"
+                        f"{'Field Step:':<{w}} {FIELD_STEP} G\n"
+                        f"{'Off Resonance Field:':<{w}} {OFFRES_FIELD} G\n"
+                        f"{'Off Res Averages:':<{w}} {p6}\n"
+                        f"{'Number of Averages:':<{w}} {p8}\n"
+                        f"{'Number of Scans:':<{w}} {SCANS}\n"
+                        f"{'Temp Start Exp:':<{w}} {temp_start} K\n"
+                        f"{'Temp End Exp:':<{w}} {temp_start} K\n"
+                        f"{'Record Length:':<{w}} {real_length} Points\n"
+                        f"{'Time Resolution:':<{w}} {t_res}\n"
+                        f"{'Frequency:':<{w}} {ag53131a.freq_counter_frequency('CH3')}\n"
+                        f"{'-'*50}\n"
+                        f"2D Data"
+                    )
 
                     file_handler.save_data(file_save_1, np.transpose( data[0, :, :] ), header = header)
                 elif p9 == 2:
 
-                    header = 'Date: ' + str(datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")) + '\n' + 'Time Resolved EPR Spectrum\n' + \
-                                'Start Field: ' + str(START_FIELD) + ' G \n' + 'End Field: ' + str(END_FIELD) + ' G \n' + \
-                                'Field Step: ' + str(FIELD_STEP) + ' G \n' + \
-                                'Off Resonance Field: ' + str(OFFRES_FIELD) + ' G \n' + \
-                                'Number of Off Resonance Averages: ' + str(p6) + '\n' + \
-                                'Number of Averages: ' + str(p8) + '\n' + \
-                                'Number of Scans: ' + str(SCANS) + '\n' + \
-                                'Temperature Start Exp: ' + str( temp_start ) + ' K\n' +\
-                                'Temperature End Exp: ' + str( temp_end ) + ' K\n' +\
-                                'Record Length: ' + str(real_length) + ' Points\n' + 'Time Resolution: ' + str(t_res) + '\n' + \
-                                'Frequency: ' + str( ag53131a.freq_counter_frequency('CH3')) + '\n' + '2D Data'
+                    now = datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")
 
-                    header_2 = 'Date: ' + str(datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")) + '\n' + 'Time Resolved EPR Spectrum\n' + \
-                                'Start Field: ' + str(START_FIELD) + ' G \n' + 'End Field: ' + str(END_FIELD) + ' G \n' + \
-                                'Field Step: ' + str(FIELD_STEP) + ' G \n' + \
-                                'Off Resonance Field: ' + str(OFFRES_FIELD) + ' G \n' + \
-                                'Number of Off Resonance Averages: ' + str(p6) + '\n' + \
-                                'Number of Averages: ' + str(p8) + '\n' + \
-                                'Number of Scans: ' + str(SCANS) + '\n' + \
-                                'Temperature Start Exp: ' + str( temp_start ) + ' K\n' +\
-                                'Temperature End Exp: ' + str( temp_end ) + ' K\n' +\
-                                'Record Length: ' + str(real_length_2) + ' Points\n' + 'Time Resolution: ' + str(t_res_2) + '\n' + \
-                                'Frequency: ' + str( ag53131a.freq_counter_frequency('CH3')) + '\n' + '2D Data'
+                    header = (
+                        f"{'Date:':<{w}} {now}\n"
+                        f"{'Experiment:':<{w}} Time Resolved EPR Spectrum\n"
+                        f"{'Start Field:':<{w}} {START_FIELD} G\n"
+                        f"{'End Field:':<{w}} {END_FIELD} G\n"
+                        f"{'Field Step:':<{w}} {FIELD_STEP} G\n"
+                        f"{'Off Resonance Field:':<{w}} {OFFRES_FIELD} G\n"
+                        f"{'Off Res Averages:':<{w}} {p6}\n"
+                        f"{'Number of Averages:':<{w}} {p8}\n"
+                        f"{'Number of Scans:':<{w}} {SCANS}\n"
+                        f"{'Temp Start Exp:':<{w}} {temp_start} K\n"
+                        f"{'Temp End Exp:':<{w}} {temp_start} K\n"
+                        f"{'Record Length:':<{w}} {real_length} Points\n"
+                        f"{'Time Resolution:':<{w}} {t_res}\n"
+                        f"{'Frequency:':<{w}} {ag53131a.freq_counter_frequency('CH3')}\n"
+                        f"{'-'*50}\n"
+                        f"2D Data"
+                    )
+
+                    header_2 = (
+                        f"{'Date:':<{w}} {now}\n"
+                        f"{'Experiment:':<{w}} Time Resolved EPR Spectrum (Header 2)\n"
+                        f"{'Start Field:':<{w}} {START_FIELD} G\n"
+                        f"{'End Field:':<{w}} {END_FIELD} G\n"
+                        f"{'Field Step:':<{w}} {FIELD_STEP} G\n"
+                        f"{'Off Resonance Field:':<{w}} {OFFRES_FIELD} G\n"
+                        f"{'Number of Off Res Averages:':<{w}} {p6}\n"
+                        f"{'Number of Averages:':<{w}} {p8}\n"
+                        f"{'Number of Scans:':<{w}} {SCANS}\n"
+                        f"{'Temperature Start Exp:':<{w}} {temp_start} K\n"
+                        f"{'Temperature End Exp:':<{w}} {temp_start} K\n"
+                        f"{'Record Length:':<{w}} {real_length} Points\n"
+                        f"{'Time Resolution:':<{w}} {t_res_2}\n"
+                        f"{'Frequency:':<{w}} {ag53131a.freq_counter_frequency('CH3')}\n"
+                        f"{'-'*w}\n"
+                        f"2D Data"
+                    )
 
                     file_handler.save_data(file_save_1, np.transpose( data[0, :, :] ), header = header)
                     file_handler.save_data(file_save_2, np.transpose( data_2[0, :, :] ), header = header_2)
                 elif p9 == 3:
 
-                    header = 'Date: ' + str(datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")) + '\n' + 'Time Resolved EPR Spectrum\n' + \
-                                'Start Field: ' + str(START_FIELD) + ' G \n' + 'End Field: ' + str(END_FIELD) + ' G \n' + \
-                                'Field Step: ' + str(FIELD_STEP) + ' G \n' + \
-                                'Off Resonance Field: ' + str(OFFRES_FIELD) + ' G \n' + \
-                                'Number of Off Resonance Averages: ' + str(p6) + '\n' + \
-                                'Number of Averages: ' + str(p8) + '\n' + \
-                                'Number of Scans: ' + str(SCANS) + '\n' + \
-                                'Temperature Start Exp: ' + str( temp_start ) + ' K\n' +\
-                                'Temperature End Exp: ' + str( temp_end ) + ' K\n' +\
-                                'Record Length: ' + str(real_length) + ' Points\n' + 'Time Resolution: ' + str(t_res) + '\n' + \
-                                'Frequency: ' + str( ag53131a.freq_counter_frequency('CH3')) + '\n' + '2D Data'
+                    now = datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")
 
-                    header_2 = 'Date: ' + str(datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")) + '\n' + 'Time Resolved EPR Spectrum\n' + \
-                                'Start Field: ' + str(START_FIELD) + ' G \n' + 'End Field: ' + str(END_FIELD) + ' G \n' + \
-                                'Field Step: ' + str(FIELD_STEP) + ' G \n' + \
-                                'Off Resonance Field: ' + str(OFFRES_FIELD) + ' G \n' + \
-                                'Number of Off Resonance Averages: ' + str(p6) + '\n' + \
-                                'Number of Averages: ' + str(p8) + '\n' + \
-                                'Number of Scans: ' + str(SCANS) + '\n' + \
-                                'Temperature Start Exp: ' + str( temp_start ) + ' K\n' +\
-                                'Temperature End Exp: ' + str( temp_end ) + ' K\n' +\
-                                'Record Length: ' + str(real_length_2) + ' Points\n' + 'Time Resolution: ' + str(t_res_2) + '\n' + \
-                                'Frequency: ' + str( ag53131a.freq_counter_frequency('CH3')) + '\n' + '2D Data'
+                    header = (
+                        f"{'Date:':<{w}} {now}\n"
+                        f"{'Experiment:':<{w}} Time Resolved EPR Spectrum\n"
+                        f"{'Start Field:':<{w}} {START_FIELD} G\n"
+                        f"{'End Field:':<{w}} {END_FIELD} G\n"
+                        f"{'Field Step:':<{w}} {FIELD_STEP} G\n"
+                        f"{'Off Resonance Field:':<{w}} {OFFRES_FIELD} G\n"
+                        f"{'Off Res Averages:':<{w}} {p6}\n"
+                        f"{'Number of Averages:':<{w}} {p8}\n"
+                        f"{'Number of Scans:':<{w}} {SCANS}\n"
+                        f"{'Temp Start Exp:':<{w}} {temp_start} K\n"
+                        f"{'Temp End Exp:':<{w}} {temp_start} K\n"
+                        f"{'Record Length:':<{w}} {real_length} Points\n"
+                        f"{'Time Resolution:':<{w}} {t_res}\n"
+                        f"{'Frequency:':<{w}} {ag53131a.freq_counter_frequency('CH3')}\n"
+                        f"{'-'*50}\n"
+                        f"2D Data"
+                    )
+
+                    header_2 = (
+                        f"{'Date:':<{w}} {now}\n"
+                        f"{'Experiment:':<{w}} Time Resolved EPR Spectrum (Header 2)\n"
+                        f"{'Start Field:':<{w}} {START_FIELD} G\n"
+                        f"{'End Field:':<{w}} {END_FIELD} G\n"
+                        f"{'Field Step:':<{w}} {FIELD_STEP} G\n"
+                        f"{'Off Resonance Field:':<{w}} {OFFRES_FIELD} G\n"
+                        f"{'Number of Off Res Averages:':<{w}} {p6}\n"
+                        f"{'Number of Averages:':<{w}} {p8}\n"
+                        f"{'Number of Scans:':<{w}} {SCANS}\n"
+                        f"{'Temperature Start Exp:':<{w}} {temp_start} K\n"
+                        f"{'Temperature End Exp:':<{w}} {temp_start} K\n"
+                        f"{'Record Length:':<{w}} {real_length} Points\n"
+                        f"{'Time Resolution:':<{w}} {t_res_2}\n"
+                        f"{'Frequency:':<{w}} {ag53131a.freq_counter_frequency('CH3')}\n"
+                        f"{'-'*w}\n"
+                        f"2D Data"
+                    )
 
                     file_handler.save_data(file_save_1, np.transpose( data[0, :, :] ), header = header)
                     file_handler.save_data(file_save_2, np.transpose( data_2[0, :, :] ), header = header_2)

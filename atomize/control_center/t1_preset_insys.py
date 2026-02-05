@@ -292,7 +292,8 @@ class MainWindow(QMainWindow):
             self.parent_conn.send( 'exit' )
             self.exp_process.join()
         except AttributeError:
-            self.message('Experimental script is not running')
+            pass
+            #self.message('Experimental script is not running')
 
         if self.parent_conn.poll() == True:
             msg_type, data = self.parent_conn.recv()
@@ -457,7 +458,7 @@ class Worker(QWidget):
                         for i in range(PHASES):
 
                             pb.pulser_next_phase()
-                            process = general.plot_1d(p2, x_axis  / 1e9, ( data[0], data[1] ), xname = 'T', xscale = 's', yname = 'Area', yscale = 'A.U.', label = p1, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j*STEP, 1)), pr = process)
+                            process = general.plot_1d(p2, x_axis / 1e9, ( data[0], data[1] ), xname = 'T', xscale = 's', yname = 'Area', yscale = 'A.U.', label = p1, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j*STEP, 1)), pr = process)
                             data[0], data[1] = pb.digitizer_get_curve( POINTS, PHASES, current_scan = k, total_scan = SCANS, integral = True )
 
                         pb.pulser_shift()
@@ -472,7 +473,7 @@ class Worker(QWidget):
                         if conn.poll() == True:
                             self.command = conn.recv()
 
-                    process = general.plot_1d(p2, x_axis  / 1e9, ( data[0], data[1] ), xname = 'T', xscale = 's', yname = 'Area', yscale = 'A.U.', label = p1, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j*STEP, 1)), pr = process)
+                    general.plot_1d(p2, x_axis  / 1e9, ( data[0], data[1] ), xname = 'T', xscale = 's', yname = 'Area', yscale = 'A.U.', label = p1, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j*STEP, 1)))
 
                     pb.pulser_pulse_reset()
 
@@ -484,14 +485,28 @@ class Worker(QWidget):
                 tb = pb.adc_window * 0.4 * pb.digitizer_decimation()
                 pb.pulser_close()
 
-                # Data saving
-                header = 'Date: ' + str(datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")) + '\n' +\
-                         'T1 Inversion Recovery Measurement\n' + 'Field: ' + str(FIELD) + ' G\n' + \
-                         str(mw.mw_bridge_att_prm()) + '\n' + str(mw.mw_bridge_att2_prm()) + '\n' + str(mw.mw_bridge_att1_prd()) + '\n' + str(mw.mw_bridge_synthesizer()) + '\n' + \
-                         'Repetition Rate: ' + str(pb.pulser_repetition_rate()) + '\n' + 'Number of Scans: ' + str(SCANS) + '\n' +\
-                         'Averages: ' + str(AVERAGES) + '\n' + 'Points: ' + str(POINTS) + '\n' + 'Window: ' + str(tb) + ' ns\n'\
-                         + 'Horizontal Resolution: ' + str(STEP) + ' ns\n' + 'Temperature: ' + str(ls335.tc_temperature('B')) + ' K\n' +\
-                         'Pulse List: ' + '\n' + str(pb.pulser_pulse_list()) + 'T (ns), I (A.U.), Q (A.U.) '
+                now = datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")
+                w = 25
+
+                header = (
+                    f"{'Date:':<{w}} {now}\n"
+                    f"{'Experiment:':<{w}} T1 Inversion Recovery Measurement\n"
+                    f"{'Field:':<{w}} {FIELD} G\n"
+                    f"{general.fmt(mw.mw_bridge_att_prm())}\n"
+                    f"{general.fmt(mw.mw_bridge_att2_prm())}\n"
+                    f"{general.fmt(mw.mw_bridge_att1_prd())}\n"
+                    f"{general.fmt(mw.mw_bridge_synthesizer())}\n"
+                    f"{'Repetition Rate:':<{w}} {pb.pulser_repetition_rate()}\n"
+                    f"{'Number of Scans:':<{w}} {SCANS}\n"
+                    f"{'Averages:':<{w}} {AVERAGES}\n"
+                    f"{'Points:':<{w}} {POINTS}\n"
+                    f"{'Window:':<{w}} {tb} ns\n"
+                    f"{'Horizontal Resolution:':<{w}} {STEP} ns\n"
+                    f"{'Temperature:':<{w}} {ls335.tc_temperature('B')} K\n"
+                    f"{'-'*50}\n"
+                    f"Pulse List:\n{pb.pulser_pulse_list()}"
+                    f"T (ns), I (A.U.), Q (A.U.)"
+                )
 
                 file_data, file_param = file_handler.create_file_parameters('.param')
                 file_handler.save_header(file_param, header = header, mode = 'w')

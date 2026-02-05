@@ -97,20 +97,33 @@ tb = adc_wind * 0.4 * pb.digitizer_decimation()
 pb.pulser_repetition_rate( REP_RATE )
 pb.pulser_default_synt(1)
 
-
 pb.pulser_open()
 pb.digitizer_number_of_averages(AVERAGES)
 data = np.zeros( ( 2, adc_wind, POINTS ) )
 
 # Data saving
-header = 'Date: ' + str(datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")) + '\n' + \
-         'DEER\n' + 'Field: ' + str(FIELD) + ' G \n' + \
-          str(mw.mw_bridge_att_prm()) + '\n' + str(mw.mw_bridge_att2_prm()) + '\n' + str(mw.mw_bridge_att1_prd()) + '\n' + str(mw.mw_bridge_synthesizer()) + '\n' + \
-          'Repetition Rate: ' + str(pb.pulser_repetition_rate()) + '\n' + 'Number of Scans: ' + str(SCANS) + '\n' +\
-          'Averages: ' + str(AVERAGES) + '\n' + 'Points: ' + str(POINTS) + '\n' + 'Window: ' + str(tb) + ' ns\n' \
-          + 'Horizontal Resolution: ' + str(3.2) + ' ns\n' + 'Vertical Resolution: ' + str(STEP) + ' ns\n' \
-          + 'Temperature: ' + str(ls335.tc_temperature('B')) + ' K\n' +\
-          'Pulse List: ' + '\n' + str(pb.pulser_pulse_list()) + '2D Data'
+now = datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")
+w = 25
+header = (
+    f"{'Date:':<{w}} {now}\n"
+    f"{'Experiment:':<{w}} DEER\n"
+    f"{'Field:':<{w}} {FIELD} G\n"
+    f"{general.fmt(mw.mw_bridge_att_prm())}\n"
+    f"{general.fmt(mw.mw_bridge_att2_prm())}\n"
+    f"{general.fmt(mw.mw_bridge_att1_prd())}\n"
+    f"{general.fmt(mw.mw_bridge_synthesizer())}\n"
+    f"{'Repetition Rate:':<{w}} {pb.pulser_repetition_rate()}\n"
+    f"{'Number of Scans:':<{w}} {SCANS}\n"
+    f"{'Averages:':<{w}} {AVERAGES}\n"
+    f"{'Points:':<{w}} {POINTS}\n"
+    f"{'Window:':<{w}} {tb} ns\n"
+    f"{'Horizontal Res:':<{w}} {f"{0.4 * DEC_COEF:.1g}"} ns\n"
+    f"{'Vertical Res:':<{w}} {STEP} ns\n"
+    f"{'Temperature:':<{w}} {ls335.tc_temperature('B')} K\n"
+    f"{'-'*50}\n"
+    f"Pulse List:\n{pb.pulser_pulse_list()}"
+    f"2D Data"
+)
 
 ###file_data, file_param = file_handler.create_file_parameters('.param')
 ###file_handler.save_header(file_param, header = header, mode = 'w')

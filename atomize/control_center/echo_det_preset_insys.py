@@ -477,15 +477,29 @@ class Worker(QWidget):
                 tb = pb.adc_window * 0.4 * pb.digitizer_decimation()
                 pb.pulser_close()
 
+                now = datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")
+                w = 25
+
                 # Data saving
-                header = 'Date: ' + str(datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")) + '\n' + 'Echo Detected Spectrum\n' + \
-                            'Start Field: ' + str(START_FIELD) + ' G \n' + 'End Field: ' + str(END_FIELD) + ' G \n' + \
-                            'Field Step: ' + str(FIELD_STEP) + ' G \n' + str(mw.mw_bridge_att_prm()) + '\n' + str(mw.mw_bridge_att2_prm()) + '\n' +\
-                            str(mw.mw_bridge_att1_prd()) + '\n' + str(mw.mw_bridge_synthesizer()) + '\n' + \
-                           'Repetition Rate: ' + str(pb.pulser_repetition_rate()) + '\n' + 'Number of Scans: ' + str(SCANS) + '\n' +\
-                           'Averages: ' + str(AVERAGES) + '\n' + 'Window: ' + str(tb) + ' ns\n' + \
-                           'Temperature: ' + str(ls335.tc_temperature('B')) + ' K\n' +\
-                           'Pulse List: ' + '\n' + str(pb.pulser_pulse_list()) + 'Field (G), I (A.U.), Q (A.U.) '
+                header = (
+                    f"{'Date:':<{w}} {now}\n"
+                    f"{'Experiment:':<{w}} Echo Detected Spectrum\n"
+                    f"{'Start Field:':<{w}} {START_FIELD} G\n"
+                    f"{'End Field:':<{w}} {END_FIELD} G\n"
+                    f"{'Field Step:':<{w}} {FIELD_STEP} G\n"
+                    f"{general.fmt(mw.mw_bridge_att_prm())}\n"
+                    f"{general.fmt(mw.mw_bridge_att2_prm())}\n"
+                    f"{general.fmt(mw.mw_bridge_att1_prd())}\n"
+                    f"{general.fmt(mw.mw_bridge_synthesizer())}\n"
+                    f"{'Repetition Rate:':<{w}} {pb.pulser_repetition_rate()}\n"
+                    f"{'Number of Scans:':<{w}} {SCANS}\n"
+                    f"{'Averages:':<{w}} {AVERAGES}\n"
+                    f"{'Window:':<{w}} {tb} ns\n"
+                    f"{'Temperature:':<{w}} {ls335.tc_temperature('B')} K\n"
+                    f"{'-'*50}\n"
+                    f"Pulse List:\n{pb.pulser_pulse_list()}"
+                    f"Field (G), I (A.U.), Q (A.U.)"
+                )
 
                 file_data, file_param = file_handler.create_file_parameters('.param')
                 file_handler.save_header(file_param, header = header, mode = 'w')

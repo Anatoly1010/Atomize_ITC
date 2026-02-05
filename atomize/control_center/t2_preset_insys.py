@@ -468,14 +468,29 @@ class Worker(QWidget):
                 tb = pb.adc_window * 0.4 * pb.digitizer_decimation()
                 pb.pulser_close()
 
+                now = datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")
+                w = 25
+
                 # Data saving
-                header = 'Date: ' + str(datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")) + '\n' + \
-                         'T2 Measurement\n' + 'Field: ' + str(FIELD) + ' G \n' + \
-                          str(mw.mw_bridge_att_prm()) + '\n' + str(mw.mw_bridge_att2_prm()) + '\n' + str(mw.mw_bridge_att1_prd()) + '\n' + str(mw.mw_bridge_synthesizer()) + '\n' + \
-                          'Repetition Rate: ' + str(pb.pulser_repetition_rate()) + '\n' + 'Number of Scans: ' + str(SCANS) + '\n' +\
-                          'Averages: ' + str(AVERAGES) + '\n' + 'Points: ' + str(POINTS) + '\n' + 'Window: ' + str(tb) + ' ns\n' \
-                          + 'Horizontal Resolution: ' + str(STEP) + ' ns\n' + 'Temperature: ' + str(ls335.tc_temperature('B')) + ' K\n' +\
-                          'Pulse List: ' + '\n' + str(pb.pulser_pulse_list()) + '2*Tau (ns), I (A.U.), Q (A.U.) '
+                header = (
+                    f"{'Date:':<{w}} {now}\n"
+                    f"{'Experiment:':<{w}} T2 Measurement\n"
+                    f"{'Field:':<{w}} {FIELD} G\n"
+                    f"{general.fmt(mw.mw_bridge_att_prm())}\n"
+                    f"{general.fmt(mw.mw_bridge_att2_prm())}\n"
+                    f"{general.fmt(mw.mw_bridge_att1_prd())}\n"
+                    f"{general.fmt(mw.mw_bridge_synthesizer())}\n"
+                    f"{'Repetition Rate:':<{w}} {pb.pulser_repetition_rate()}\n"
+                    f"{'Number of Scans:':<{w}} {SCANS}\n"
+                    f"{'Averages:':<{w}} {AVERAGES}\n"
+                    f"{'Points:':<{w}} {POINTS}\n"
+                    f"{'Window:':<{w}} {tb} ns\n"
+                    f"{'Horizontal Resolution:':<{w}} {STEP} ns\n"
+                    f"{'Temperature:':<{w}} {ls335.tc_temperature('B')} K\n"
+                    f"{'-'*50}\n"
+                    f"Pulse List:\n{pb.pulser_pulse_list()}"
+                    f"2*Tau (ns), I (A.U.), Q (A.U.)"
+                )
 
                 file_data, file_param = file_handler.create_file_parameters('.param')
                 file_handler.save_header(file_param, header = header, mode = 'w')
