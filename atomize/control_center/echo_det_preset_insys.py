@@ -95,6 +95,8 @@ class MainWindow(QMainWindow):
             spin_box.setFixedSize(130, 26)
             spin_box.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.PlusMinus)
 
+            spin_box.setKeyboardTracking( False )
+            
             setattr(self, attr_name, spin_box)
             if isinstance(spin_box, QDoubleSpinBox):
                 setattr(self, par_name, round(float(spin_box.value()), 1))
@@ -284,12 +286,6 @@ class MainWindow(QMainWindow):
             self.exp_process.join()
         except AttributeError:
             self.message('Experimental script is not running')
-
-        if self.parent_conn.poll() == True:
-            msg_type, data = self.parent_conn.recv()
-            self.message(data)
-        else:
-            pass
 
     def start(self):
         """
@@ -487,22 +483,24 @@ class Worker(QWidget):
                     f"{'Start Field:':<{w}} {START_FIELD} G\n"
                     f"{'End Field:':<{w}} {END_FIELD} G\n"
                     f"{'Field Step:':<{w}} {FIELD_STEP} G\n"
-                    f"{general.fmt(mw.mw_bridge_att_prm())}\n"
-                    f"{general.fmt(mw.mw_bridge_att2_prm())}\n"
-                    f"{general.fmt(mw.mw_bridge_att1_prd())}\n"
-                    f"{general.fmt(mw.mw_bridge_synthesizer())}\n"
+                    f"{general.fmt(mw.mw_bridge_att_prm(), w)}\n"
+                    f"{general.fmt(mw.mw_bridge_att2_prm(), w)}\n"
+                    f"{general.fmt(mw.mw_bridge_att1_prd(), w)}\n"
+                    f"{general.fmt(mw.mw_bridge_synthesizer(), w)}\n"
                     f"{'Repetition Rate:':<{w}} {pb.pulser_repetition_rate()}\n"
                     f"{'Number of Scans:':<{w}} {SCANS}\n"
                     f"{'Averages:':<{w}} {AVERAGES}\n"
                     f"{'Window:':<{w}} {tb} ns\n"
-                    f"{'Temperature:':<{w}} {ls335.tc_temperature('B')} K\n"
+                    f"{'Temperature:':<{w}} {ls335.tc_temperature('A')} K\n"
+                    f"{'Temperature Cernox:':<{w}} {ls335.tc_temperature('B')} K\n"
                     f"{'-'*50}\n"
                     f"Pulse List:\n{pb.pulser_pulse_list()}"
+                    f"{'-'*50}\n"
                     f"Field (G), I (A.U.), Q (A.U.)"
                 )
 
                 file_data, file_param = file_handler.create_file_parameters('.param')
-                file_handler.save_header(file_param, header = header, mode = 'w')
+                #file_handler.save_header(file_param, header = header, mode = 'w')
                 file_handler.save_data(file_data, np.c_[x_axis, data[0], data[1]], header = header, mode = 'w')
 
                 conn.send( ('', f'Script {p2} finished') )

@@ -3,17 +3,13 @@
 
 import os
 import sys
-import time
-#import random
 import configparser
-from threading import Timer
-#from PyQt6.QtWidgets import QListView, QAction
-from PyQt6 import QtWidgets, uic #, QtCore, QtGui
 from PyQt6.QtGui import QIcon
-from PyQt6.QtCore import QObject, pyqtSignal
+from PyQt6.QtCore import Qt, QObject
+from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QLabel, QDoubleSpinBox, QComboBox, QPushButton, QGridLayout, QFrame
 import atomize.device_modules.Lakeshore_335 as ls
 
-class MainWindow(QtWidgets.QMainWindow):
+class MainWindow(QMainWindow):
     """
     A main window class
     """
@@ -23,66 +19,131 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         super(MainWindow, self).__init__(*args, **kwargs)
         
-        self.destroyed.connect(lambda: self._on_destroyed())         # connect some actions to exit
-        # Load the UI Page
-        path_to_main = os.path.dirname(os.path.abspath(__file__))
-        gui_path = os.path.join(path_to_main,'gui/temp_main_window.ui')
-        icon_path = os.path.join(path_to_main, 'gui/icon_temp.png')
-        self.setWindowIcon( QIcon(icon_path) )
-
         # Create a signal to emit
-        self.communicate = Communicate()
-        self.communicate.sig_lm335[list].connect(self.update_labels)
-
-        uic.loadUi(gui_path, self)                        # Design file
+        #self.communicate = Communicate()
+        #self.communicate.sig_lm335[list].connect(self.update_labels)
 
         self.ls335 = ls.Lakeshore_335()
-
-        # Connection of different action to different Menus and Buttons
-        self.button_off.clicked.connect(self.turn_off)
-        self.button_off.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97);\
-         border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }\
-          QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
-        self.button_start.clicked.connect(self.update_start)
-        self.button_start.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97);\
-         border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }\
-          QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
-        self.button_stop.clicked.connect(self.update_stop)
-        self.button_stop.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97);\
-         border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }\
-          QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
-
-        # text labels
-        self.label.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_2.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_3.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_4.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_5.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_temp2a.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_temp3a.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_heater.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-
-        # Spinboxes
-        self.Set_point.valueChanged.connect( self.set_point )
-        self.Set_point.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
-        self.point = float( self.Set_point.value() )
-
-        self.combo_range.currentIndexChanged.connect(self.heater_range)
-        self.cur_range = self.combo_range.currentText() 
-        self.combo_range.setStyleSheet("QComboBox { color : rgb(193, 202, 227); selection-color: rgb(211, 194, 78); }")
-
         self.start_flag = 0
 
         #self.ls335.tc_setpoint( self.point )
+        self.design()
+
+    def design(self):
+
+        self.destroyed.connect(lambda: self._on_destroyed())
+        self.setObjectName("MainWindow")
+        self.setWindowTitle("Temperature Control")
+        self.setStyleSheet("background-color: rgb(42,42,64);")
+
+        path_to_main = os.path.dirname(os.path.abspath(__file__))
+        icon_path = os.path.join(path_to_main, 'gui/icon_temp.png')
+        self.setWindowIcon( QIcon(icon_path) )
+
+        centralwidget = QWidget(self)
+        self.setCentralWidget(centralwidget)
+
+        gridLayout = QGridLayout()
+        gridLayout.setContentsMargins(15, 10, 10, 10)
+        gridLayout.setVerticalSpacing(4)
+        gridLayout.setHorizontalSpacing(20)
+
+        centralwidget.setLayout(gridLayout)
+
+        # ---- Labels & Inputs ----
+        labels = [("Heater Range", "label_1"), ("Set Point", "label_2")]
+
+        for name, attr_name in labels:
+            lbl = QLabel(name)
+            setattr(self, attr_name, lbl)
+            lbl.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
+
+
+        # ---- Boxes ----
+        double_boxes = [(QDoubleSpinBox, "Set_point", "point", self.set_point, 3, 320, 80, 0.1, 2, " K")
+                        ]
+
+        for widget_class, attr_name, par_name, func, v_min, v_max, cur_val, v_step, dec, suf in double_boxes:
+            spin_box = widget_class()
+            if isinstance(spin_box, QDoubleSpinBox):
+                spin_box.setRange(v_min, v_max)
+                spin_box.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")                
+            else:
+                spin_box.setRange(int(v_min), int(v_max))
+                spin_box.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")                
+            spin_box.setSingleStep(v_step)
+            spin_box.setValue(cur_val)
+            if isinstance(spin_box, QDoubleSpinBox):
+                spin_box.setDecimals(dec)
+            spin_box.setSuffix(suf)
+            spin_box.valueChanged.connect(func)
+            spin_box.setFixedSize(130, 26)
+            spin_box.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.PlusMinus)
+
+            spin_box.setKeyboardTracking( False )
+            
+            setattr(self, attr_name, spin_box)
+            if isinstance(spin_box, QDoubleSpinBox):
+                setattr(self, par_name, float(spin_box.value()))
+            else:
+                setattr(self, par_name, int(spin_box.value()))
+
+
+        # ---- Combo boxes----
+        combo_boxes = [("Off", "combo_range", "cur_range", self.heater_range, 
+                        [
+                        "Off", "High", "Medium", "Low"
+                        ])
+                      ]
+
+        for cur_text, attr_name, par_name, func, item in combo_boxes:
+            combo = QComboBox()
+            setattr(self, attr_name, combo)
+            setattr(self, par_name, combo.currentText())
+            combo.currentIndexChanged.connect(func)
+            combo.addItems(item)
+            combo.setCurrentText(cur_text)
+            combo.setFixedSize(130, 26)
+            combo.setStyleSheet("QComboBox { color : rgb(193, 202, 227); selection-color: rgb(211, 194, 78); }")
+
+
+        # ---- Buttons ----
+        buttons = [("Exit", "button_off", self.turn_off) ]
+
+        for name, attr_name, func in buttons:
+            btn = QPushButton(name)
+            btn.setFixedSize(140, 40)
+            btn.clicked.connect(func)
+            btn.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; } QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
+            setattr(self, attr_name, btn)
+
+        # ---- Separators ----
+        def hline():
+            line = QFrame()
+            line.setFrameShape(QFrame.Shape.HLine)
+            line.setFrameShadow(QFrame.Shadow.Sunken)
+            line.setLineWidth(2)
+            return line
+
+
+        # ---- Layout placement ----
+        gridLayout.addWidget(self.label_2, 0, 0)
+        gridLayout.addWidget(self.Set_point, 0, 1)
+        gridLayout.addWidget(self.label_1, 1, 0)
+        gridLayout.addWidget(self.combo_range, 1, 1)
+
+        gridLayout.addWidget(hline(), 2, 0, 1, 2)
+
+        gridLayout.addWidget(self.button_off, 3, 0)
+
+        gridLayout.setRowStretch(4, 2)
+        gridLayout.setColumnStretch(4, 2)
 
     def _on_destroyed(self):
         """
         A function to do some actions when the main window is closing.
         """
-        try:
-            self.rt.stop()
-        except AttributeError:
-            sys.exit()
+        sys.exit()
             
     def quit(self):
         """
@@ -96,17 +157,9 @@ class MainWindow(QtWidgets.QMainWindow):
         A function to set heater range
         """
         self.cur_range = self.combo_range.currentText()
-        # preventing coincidences of the commands
-        if self.start_flag == 1:
-            self.update_stop()
-            time.sleep(0.2)
-            rang = self.chose_range( self.cur_range )
-            self.ls335.tc_heater_range( rang )
-            time.sleep(0.2)
-            self.update_start()
-        else:
-            rang = self.chose_range( self.cur_range )
-            self.ls335.tc_heater_range( rang )
+
+        rang = self.chose_range( self.cur_range )
+        self.ls335.tc_heater_range( rang )
 
     def chose_range(self, text):
         if text == 'High':
@@ -124,48 +177,7 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         self.point = round( float( self.Set_point.value() ), 3 )
         
-        # preventing coincidences of the commands
-        if self.start_flag == 1:
-            self.update_stop()
-            time.sleep(0.2)
-            self.ls335.tc_setpoint( self.point )
-            time.sleep(0.2)
-            self.update_start()
-        else:
-            self.ls335.tc_setpoint( self.point )
-
-    def update_stop(self):
-        """
-        A function to stop oscilloscope
-        """
-        try:
-            self.rt.stop()
-        except AttributeError:
-            pass
-        self.start_flag = 0
-
-    def all_values(self):
-        ta = self.ls335.tc_temperature('A')
-        tb = self.ls335.tc_temperature('B')
-        heater = self.ls335.tc_heater_power( )[0]
-        data = [ta, tb, heater]
-
-        self.communicate.sig_lm335.emit( data )
-
-    def update_start(self):
-        """
-        A function to start getting data from temperature controller
-        """
-        self.start_flag = 1
-        self.rt = RepeatedTimer( 1, self.all_values )
-
-    def update_labels(self, labels):
-        """
-        A function to update QLabel if there is a signal in another thread
-        """        
-        self.label_temp2a.setText( ' ' + str( labels[0] ) )
-        self.label_temp3a.setText( ' ' + str( labels[1] ) )
-        self.label_heater.setText( ' ' + str( labels[2] ) )
+        self.ls335.tc_setpoint( self.point )
 
     def turn_off(self):
         """
@@ -173,53 +185,11 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         self.quit()
 
-    def help(self):
-        """
-        A function to open a documentation
-        """
-        pass
-
-class Communicate(QObject):
-    """
-    To update QPlainTextEdit and QLabels if there is a signal in another thread
-    """
-    sig_lm335 = pyqtSignal(list)
-
-class RepeatedTimer(object):
-    """
-    To run a function repeatedly with the specified interval
-    https://stackoverflow.com/questions/3393612/run-certain-code-every-n-seconds
-    """
-
-    def __init__(self, interval, function, *args, **kwargs):
-        self._timer     = None
-        self.interval   = interval
-        self.function   = function
-        self.args       = args
-        self.kwargs     = kwargs
-        self.is_running = False
-        self.start()
-
-    def _run(self):
-        self.is_running = False
-        self.start()
-        self.function(*self.args, **self.kwargs)
-
-    def start(self):
-        if not self.is_running:
-            self._timer = Timer(self.interval, self._run)
-            self._timer.start()
-            self.is_running = True
-
-    def stop(self):
-        self._timer.cancel()
-        self.is_running = False
-
 def main():
     """
     A function to run the main window of the programm.
     """
-    app = QtWidgets.QApplication(sys.argv)
+    app = QApplication(sys.argv)
     main = MainWindow()
     main.show()
     sys.exit(app.exec())

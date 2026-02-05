@@ -56,7 +56,7 @@ class MainWindow(QMainWindow):
         centralwidget.setLayout(gridLayout)
 
         # ---- Labels & Inputs ----
-        labels = [("Start Field", "label_1"), ("End Field", "label_2"), ("Field Step", "label_3"), ("Off-Resonance Field", "label_4"), ("Acquisitions Off-Resonance", "label_5"), ("Acquisitions", "label_6"), ("Number of Scans", "label_7"), ("Save Each Scan", "label_8"), ("Two-Side Measurement", "label_9"), ("Number of Oscilloscopes", "label_10"), ("Trigger Channel", "label_11"), ("Experiment Name", "label_12")]
+        labels = [("Start Field", "label_1"), ("End Field", "label_2"), ("Field Step", "label_3"), ("Off-Resonance Field", "label_4"), ("Off-Resonance Acquisitions", "label_5"), ("Acquisitions", "label_6"), ("Number of Scans", "label_7"), ("Save Each Scan", "label_8"), ("Two-Side Measurement", "label_9"), ("Number of Oscilloscopes", "label_10"), ("Trigger Channel", "label_11"), ("Experiment Name", "label_12")]
 
         for name, attr_name in labels:
             lbl = QLabel(name)
@@ -69,8 +69,8 @@ class MainWindow(QMainWindow):
                       (QDoubleSpinBox, "box_end_field", "cur_end_field", self.end_field, 0, 15000, 4000, 1, 1, " G"),
                       (QDoubleSpinBox, "box_step_field", "cur_step", self.step_field, 0.01, 50, 0.5, 0.1, 2, " G"),
                       (QDoubleSpinBox, "box_off_res_field", "cur_offres_field", self.offres_field, 0, 15000, 500, 1, 1, " G"),
-                      (QSpinBox, "box_ave", "cur_ave", self.ave, 2, 2000, 2, 1, 0, ""),
-                      (QSpinBox, "box_ave_offres", "cur_ave_offres", self.ave_offres, 2, 2000, 2, 1, 0, ""),
+                      (QSpinBox, "box_ave", "cur_ave", self.ave, 2, 2000, 10, 1, 0, ""),
+                      (QSpinBox, "box_ave_offres", "cur_ave_offres", self.ave_offres, 2, 2000, 10, 1, 0, ""),
                       (QSpinBox, "box_scan", "cur_scan", self.scan, 1, 100, 1, 1, 0, "")
                         ]
 
@@ -91,7 +91,8 @@ class MainWindow(QMainWindow):
             spin_box.setFixedSize(130, 26)
             spin_box.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.PlusMinus)
 
-
+            spin_box.setKeyboardTracking( False )
+            
             setattr(self, attr_name, spin_box)
             if isinstance(spin_box, QDoubleSpinBox):
                 setattr(self, par_name, float(spin_box.value()))
@@ -113,10 +114,10 @@ class MainWindow(QMainWindow):
         for cur_text, attr_name, par_name, func, item in combo_boxes:
             combo = QComboBox()
             setattr(self, attr_name, combo)
-            combo.setCurrentText(cur_text)
             setattr(self, par_name, combo.currentText())
             combo.currentIndexChanged.connect(func)
             combo.addItems(item)
+            combo.setCurrentText(cur_text)            
             combo.setFixedSize(130, 26)
             combo.setStyleSheet("QComboBox { color : rgb(193, 202, 227); selection-color: rgb(211, 194, 78); }")
 
@@ -350,7 +351,8 @@ class MainWindow(QMainWindow):
             self.parent_conn.send( 'exit' )
             self.exp_process.join()
         except AttributeError:
-            self.message('Experimental script is not running')
+            pass
+            #self.message('Experimental script is not running')
 
     def start(self):
         """
@@ -482,7 +484,7 @@ class Worker(QWidget):
             ##t_res = round( a2012.oscilloscope_timebase() / real_length, 7 )    # in us
             ##t_res_rough = round( t_res, 3 )
             t_res = a2012.oscilloscope_time_resolution()
-            t_res_rough = t_res.split(" ")
+            t_step = float(f"{pg.siEval(t_res):.4g}")
 
             ##real_length = 4000
             if p9 > 1:
@@ -495,7 +497,7 @@ class Worker(QWidget):
                 #t_res_2 = round( a2012_2.oscilloscope_timebase() / real_length, 7 ) # in us
                 #t_res_2_rough = round( t_res_2, 3 )
                 t_res_2 = a2012_2.oscilloscope_time_resolution()
-                t_res_rough_2 = t_res_2.split(" ")
+                t_step_2 = float(f"{pg.siEval(t_res_2):.4g}")
 
             # parameters for initial initialization
             field = 100
@@ -518,7 +520,7 @@ class Worker(QWidget):
                 data = np.zeros( (3, real_length, points + 1) )
                 data_2 = np.zeros( (2, real_length_2, points + 1) )
             
-            temp_start = str( ls335.tc_temperature('B') )
+            temp_start = str( ls335.tc_temperature('A') )
 
             # Oscilloscopes bugs
             #a2012.oscilloscope_number_of_averages(2)
@@ -554,6 +556,7 @@ class Worker(QWidget):
                     ##t_res = 1
 
                     now = datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")
+                    temp_end = str( ls335.tc_temperature('A') )
 
                     header = (
                         f"{'Date:':<{w}} {now}\n"
@@ -565,8 +568,9 @@ class Worker(QWidget):
                         f"{'Off Res Averages:':<{w}} {p6}\n"
                         f"{'Number of Averages:':<{w}} {p8}\n"
                         f"{'Number of Scans:':<{w}} {SCANS}\n"
-                        f"{'Temp Start Exp:':<{w}} {temp_start} K\n"
-                        f"{'Temp End Exp:':<{w}} {temp_start} K\n"
+                        f"{'Temperature Start Exp:':<{w}} {temp_start} K\n"
+                        f"{'Temperature End Exp:':<{w}} {temp_end} K\n"
+                        f"{'Temperature Cernox:':<{w}} {ls335.tc_temperature('B')} K\n"
                         f"{'Record Length:':<{w}} {real_length} Points\n"
                         f"{'Time Resolution:':<{w}} {t_res}\n"
                         f"{'Frequency:':<{w}} {ag53131a.freq_counter_frequency('CH3')}\n"
@@ -579,6 +583,7 @@ class Worker(QWidget):
                     file_save_1, file_save_2 = file_handler.create_file_parameters('_osc2.csv')
 
                     now = datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")
+                    temp_end = str( ls335.tc_temperature('A') )
 
                     header = (
                         f"{'Date:':<{w}} {now}\n"
@@ -590,8 +595,9 @@ class Worker(QWidget):
                         f"{'Off Res Averages:':<{w}} {p6}\n"
                         f"{'Number of Averages:':<{w}} {p8}\n"
                         f"{'Number of Scans:':<{w}} {SCANS}\n"
-                        f"{'Temp Start Exp:':<{w}} {temp_start} K\n"
-                        f"{'Temp End Exp:':<{w}} {temp_start} K\n"
+                        f"{'Temperature Start Exp:':<{w}} {temp_start} K\n"
+                        f"{'Temperature End Exp:':<{w}} {temp_end} K\n"
+                        f"{'Temperature Cernox:':<{w}} {ls335.tc_temperature('B')} K\n"
                         f"{'Record Length:':<{w}} {real_length} Points\n"
                         f"{'Time Resolution:':<{w}} {t_res}\n"
                         f"{'Frequency:':<{w}} {ag53131a.freq_counter_frequency('CH3')}\n"
@@ -606,11 +612,12 @@ class Worker(QWidget):
                         f"{'End Field:':<{w}} {END_FIELD} G\n"
                         f"{'Field Step:':<{w}} {FIELD_STEP} G\n"
                         f"{'Off Resonance Field:':<{w}} {OFFRES_FIELD} G\n"
-                        f"{'Number of Off Res Averages:':<{w}} {p6}\n"
+                        f"{'Off Res Averages:':<{w}} {p6}\n"
                         f"{'Number of Averages:':<{w}} {p8}\n"
                         f"{'Number of Scans:':<{w}} {SCANS}\n"
                         f"{'Temperature Start Exp:':<{w}} {temp_start} K\n"
-                        f"{'Temperature End Exp:':<{w}} {temp_start} K\n"
+                        f"{'Temperature End Exp:':<{w}} {temp_end} K\n"
+                        f"{'Temperature Cernox:':<{w}} {ls335.tc_temperature('B')} K\n"
                         f"{'Record Length:':<{w}} {real_length} Points\n"
                         f"{'Time Resolution:':<{w}} {t_res_2}\n"
                         f"{'Frequency:':<{w}} {ag53131a.freq_counter_frequency('CH3')}\n"
@@ -626,7 +633,8 @@ class Worker(QWidget):
                     file_save_3 = file_save_1.split('.csv')[0] + '_pulse.csv'
 
                     now = datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")
-                    
+                    temp_end = str( ls335.tc_temperature('A') )
+
                     header = (
                         f"{'Date:':<{w}} {now}\n"
                         f"{'Experiment:':<{w}} Time Resolved EPR Spectrum\n"
@@ -638,7 +646,8 @@ class Worker(QWidget):
                         f"{'Number of Averages:':<{w}} {p8}\n"
                         f"{'Number of Scans:':<{w}} {SCANS}\n"
                         f"{'Temp Start Exp:':<{w}} {temp_start} K\n"
-                        f"{'Temp End Exp:':<{w}} {temp_start} K\n"
+                        f"{'Temp End Exp:':<{w}} {temp_end} K\n"
+                        f"{'Temperature Cernox:':<{w}} {ls335.tc_temperature('B')} K\n"
                         f"{'Record Length:':<{w}} {real_length} Points\n"
                         f"{'Time Resolution:':<{w}} {t_res}\n"
                         f"{'Frequency:':<{w}} {ag53131a.freq_counter_frequency('CH3')}\n"
@@ -653,11 +662,12 @@ class Worker(QWidget):
                         f"{'End Field:':<{w}} {END_FIELD} G\n"
                         f"{'Field Step:':<{w}} {FIELD_STEP} G\n"
                         f"{'Off Resonance Field:':<{w}} {OFFRES_FIELD} G\n"
-                        f"{'Number of Off Res Averages:':<{w}} {p6}\n"
+                        f"{'Off Res Averages:':<{w}} {p6}\n"
                         f"{'Number of Averages:':<{w}} {p8}\n"
                         f"{'Number of Scans:':<{w}} {SCANS}\n"
                         f"{'Temperature Start Exp:':<{w}} {temp_start} K\n"
-                        f"{'Temperature End Exp:':<{w}} {temp_start} K\n"
+                        f"{'Temperature End Exp:':<{w}} {temp_end} K\n"
+                        f"{'Temperature Cernox:':<{w}} {ls335.tc_temperature('B')} K\n"
                         f"{'Record Length:':<{w}} {real_length} Points\n"
                         f"{'Time Resolution:':<{w}} {t_res_2}\n"
                         f"{'Frequency:':<{w}} {ag53131a.freq_counter_frequency('CH3')}\n"
@@ -797,15 +807,11 @@ class Worker(QWidget):
 
                         #start_time = time.time()
 
-                        process = general.plot_2d( p2, data[:,:,1:points+1],  xname='Time', start_step=( (0, round(float(t_res_rough[0]), 3)), (START_FIELD, FIELD_STEP) ),\
-                            xscale=str(t_res_rough[1]), yname='Field', yscale='G', zname='Intensity', zscale='V', pr = process, \
-                            text = 'S / F: ' + str(j) + ' / ' + str(field))
+                        process = general.plot_2d( p2, data[:,:,1:points+1],  xname='Time', start_step=( (0, t_step), (START_FIELD, FIELD_STEP) ), xscale='s', yname='Field', yscale='G', zname='Intensity', zscale='V', pr = process, text = 'S / F: ' + str(j) + ' / ' + str(field))
 
                         if p9 > 1:
 
-                            process = general.plot_2d( f"{p2}_2", data_2[:,:,1:points+1],  xname='Time', start_step=( (0, round(float(t_res_rough_2[0]), 3)), (START_FIELD, FIELD_STEP) ),\
-                                xscale=str(t_res_rough_2[1]), yname='Field', yscale='G', zname='Intensity', zscale='V', pr = process, \
-                                text = 'S / F: ' + str(j) + ' / ' + str(field))
+                            process = general.plot_2d( f"{p2}_2", data_2[:,:,1:points+1], xname='Time', start_step=( (0, t_step_2), (START_FIELD, FIELD_STEP) ), xscale='s', yname='Field', yscale='G', zname='Intensity', zscale='V', pr = process, text = 'S / F: ' + str(j) + ' / ' + str(field))
 
                         #general.message( str( time.time() - start_time ) )
 
@@ -881,15 +887,11 @@ class Worker(QWidget):
 
                             #start_time = time.time()
 
-                            process = general.plot_2d( p2, data[:,:,1:points+1],  xname='Time', start_step=( (0, round(float(t_res_rough[0]), 3)), (START_FIELD, FIELD_STEP) ),\
-                                xscale=str(t_res_rough[1]), yname='Field', yscale='G', zname='Intensity', zscale='V', pr = process, \
-                                text = 'S / F: ' + str(j) + ' / ' + str(field))
+                            process = general.plot_2d( p2, data[:,:,1:points+1],  xname='Time', start_step=( (0, t_step), (START_FIELD, FIELD_STEP) ), xscale='s', yname='Field', yscale='G', zname='Intensity', zscale='V', pr = process, text = 'S / F: ' + str(j) + ' / ' + str(field))
 
                             if p9 > 1:
 
-                                process = general.plot_2d( f"{p2}_2", data_2[:,:,1:points+1],  xname='Time', start_step=( (0, round(float(t_res_rough_2[0]), 3)), (START_FIELD, FIELD_STEP) ),\
-                                    xscale=str(t_res_rough_2[1]), yname='Field', yscale='G', zname='Intensity', zscale='V', pr = process, \
-                                    text = 'S / F: ' + str(j) + ' / ' + str(field))
+                                process = general.plot_2d( f"{p2}_2", data_2[:,:,1:points+1],  xname='Time', start_step=( (0, t_step_2), (START_FIELD, FIELD_STEP) ), xscale='s', yname='Field', yscale='G', zname='Intensity', zscale='V', pr = process, text = 'S / F: ' + str(j) + ' / ' + str(field))
 
                             #general.message( str( time.time() - start_time ) )
 
@@ -931,6 +933,7 @@ class Worker(QWidget):
                 if p9 == 1 and p11 == 0:
                     ##t_res = 1
                     now = datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")
+                    temp_end = str( ls335.tc_temperature('A') )
 
                     header = (
                         f"{'Date:':<{w}} {now}\n"
@@ -942,8 +945,9 @@ class Worker(QWidget):
                         f"{'Off Res Averages:':<{w}} {p6}\n"
                         f"{'Number of Averages:':<{w}} {p8}\n"
                         f"{'Number of Scans:':<{w}} {SCANS}\n"
-                        f"{'Temp Start Exp:':<{w}} {temp_start} K\n"
-                        f"{'Temp End Exp:':<{w}} {temp_start} K\n"
+                        f"{'Temperature Start Exp:':<{w}} {temp_start} K\n"
+                        f"{'Temperature End Exp:':<{w}} {temp_end} K\n"
+                        f"{'Temperature Cernox:':<{w}} {ls335.tc_temperature('B')} K\n"
                         f"{'Record Length:':<{w}} {real_length} Points\n"
                         f"{'Time Resolution:':<{w}} {t_res}\n"
                         f"{'Frequency:':<{w}} {ag53131a.freq_counter_frequency('CH3')}\n"
@@ -955,6 +959,7 @@ class Worker(QWidget):
                 elif p9 == 2:
 
                     now = datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")
+                    temp_end = str( ls335.tc_temperature('A') )
 
                     header = (
                         f"{'Date:':<{w}} {now}\n"
@@ -966,8 +971,9 @@ class Worker(QWidget):
                         f"{'Off Res Averages:':<{w}} {p6}\n"
                         f"{'Number of Averages:':<{w}} {p8}\n"
                         f"{'Number of Scans:':<{w}} {SCANS}\n"
-                        f"{'Temp Start Exp:':<{w}} {temp_start} K\n"
-                        f"{'Temp End Exp:':<{w}} {temp_start} K\n"
+                        f"{'Temperature Start Exp:':<{w}} {temp_start} K\n"
+                        f"{'Temperature End Exp:':<{w}} {temp_end} K\n"
+                        f"{'Temperature Cernox:':<{w}} {ls335.tc_temperature('B')} K\n"
                         f"{'Record Length:':<{w}} {real_length} Points\n"
                         f"{'Time Resolution:':<{w}} {t_res}\n"
                         f"{'Frequency:':<{w}} {ag53131a.freq_counter_frequency('CH3')}\n"
@@ -982,11 +988,12 @@ class Worker(QWidget):
                         f"{'End Field:':<{w}} {END_FIELD} G\n"
                         f"{'Field Step:':<{w}} {FIELD_STEP} G\n"
                         f"{'Off Resonance Field:':<{w}} {OFFRES_FIELD} G\n"
-                        f"{'Number of Off Res Averages:':<{w}} {p6}\n"
+                        f"{'Off Res Averages:':<{w}} {p6}\n"
                         f"{'Number of Averages:':<{w}} {p8}\n"
                         f"{'Number of Scans:':<{w}} {SCANS}\n"
                         f"{'Temperature Start Exp:':<{w}} {temp_start} K\n"
-                        f"{'Temperature End Exp:':<{w}} {temp_start} K\n"
+                        f"{'Temperature End Exp:':<{w}} {temp_end} K\n"
+                        f"{'Temperature Cernox:':<{w}} {ls335.tc_temperature('B')} K\n"
                         f"{'Record Length:':<{w}} {real_length} Points\n"
                         f"{'Time Resolution:':<{w}} {t_res_2}\n"
                         f"{'Frequency:':<{w}} {ag53131a.freq_counter_frequency('CH3')}\n"
@@ -999,6 +1006,7 @@ class Worker(QWidget):
                 elif p9 == 3:
 
                     now = datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")
+                    temp_end = str( ls335.tc_temperature('A') )
 
                     header = (
                         f"{'Date:':<{w}} {now}\n"
@@ -1010,8 +1018,9 @@ class Worker(QWidget):
                         f"{'Off Res Averages:':<{w}} {p6}\n"
                         f"{'Number of Averages:':<{w}} {p8}\n"
                         f"{'Number of Scans:':<{w}} {SCANS}\n"
-                        f"{'Temp Start Exp:':<{w}} {temp_start} K\n"
-                        f"{'Temp End Exp:':<{w}} {temp_start} K\n"
+                        f"{'Temperature Start Exp:':<{w}} {temp_start} K\n"
+                        f"{'Temperature End Exp:':<{w}} {temp_end} K\n"
+                        f"{'Temperature Cernox:':<{w}} {ls335.tc_temperature('B')} K\n"
                         f"{'Record Length:':<{w}} {real_length} Points\n"
                         f"{'Time Resolution:':<{w}} {t_res}\n"
                         f"{'Frequency:':<{w}} {ag53131a.freq_counter_frequency('CH3')}\n"
@@ -1026,11 +1035,12 @@ class Worker(QWidget):
                         f"{'End Field:':<{w}} {END_FIELD} G\n"
                         f"{'Field Step:':<{w}} {FIELD_STEP} G\n"
                         f"{'Off Resonance Field:':<{w}} {OFFRES_FIELD} G\n"
-                        f"{'Number of Off Res Averages:':<{w}} {p6}\n"
+                        f"{'Off Res Averages:':<{w}} {p6}\n"
                         f"{'Number of Averages:':<{w}} {p8}\n"
                         f"{'Number of Scans:':<{w}} {SCANS}\n"
                         f"{'Temperature Start Exp:':<{w}} {temp_start} K\n"
-                        f"{'Temperature End Exp:':<{w}} {temp_start} K\n"
+                        f"{'Temperature End Exp:':<{w}} {temp_end} K\n"
+                        f"{'Temperature Cernox:':<{w}} {ls335.tc_temperature('B')} K\n"
                         f"{'Record Length:':<{w}} {real_length} Points\n"
                         f"{'Time Resolution:':<{w}} {t_res_2}\n"
                         f"{'Frequency:':<{w}} {ag53131a.freq_counter_frequency('CH3')}\n"

@@ -104,28 +104,30 @@ data = np.zeros( ( 2, adc_wind, POINTS ) )
 # Data saving
 now = datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")
 w = 25
+
 header = (
     f"{'Date:':<{w}} {now}\n"
     f"{'Experiment:':<{w}} DEER\n"
     f"{'Field:':<{w}} {FIELD} G\n"
-    f"{general.fmt(mw.mw_bridge_att_prm())}\n"
-    f"{general.fmt(mw.mw_bridge_att2_prm())}\n"
-    f"{general.fmt(mw.mw_bridge_att1_prd())}\n"
-    f"{general.fmt(mw.mw_bridge_synthesizer())}\n"
+    f"{general.fmt(mw.mw_bridge_att_prm(), w)}\n"
+    f"{general.fmt(mw.mw_bridge_att2_prm(), w)}\n"
+    f"{general.fmt(mw.mw_bridge_att1_prd(), w)}\n"
+    f"{general.fmt(mw.mw_bridge_synthesizer(), w)}\n"
     f"{'Repetition Rate:':<{w}} {pb.pulser_repetition_rate()}\n"
     f"{'Number of Scans:':<{w}} {SCANS}\n"
     f"{'Averages:':<{w}} {AVERAGES}\n"
     f"{'Points:':<{w}} {POINTS}\n"
     f"{'Window:':<{w}} {tb} ns\n"
-    f"{'Horizontal Res:':<{w}} {f"{0.4 * DEC_COEF:.1g}"} ns\n"
-    f"{'Vertical Res:':<{w}} {STEP} ns\n"
+    f"{'Horizontal Resolution:':<{w}} {0.4 * DEC_COEF:.1g} ns\n"
+    f"{'Vertical Resolution:':<{w}} {STEP} ns\n"
     f"{'Temperature:':<{w}} {ls335.tc_temperature('B')} K\n"
     f"{'-'*50}\n"
     f"Pulse List:\n{pb.pulser_pulse_list()}"
+    f"{'-'*50}\n"
     f"2D Data"
 )
 
-###file_data, file_param = file_handler.create_file_parameters('.param')
+file_data, file_param = file_handler.create_file_parameters('.param')
 ###file_handler.save_header(file_param, header = header, mode = 'w')
 
 scan_time = 0
@@ -163,11 +165,12 @@ general.plot_2d(EXP_NAME, data, start_step = ( (0, 0.4 * DEC_COEF / 1e9), (0, ST
 
 general.message( f'AVERAGE TIME: {round(scan_time / (SCANS - 1 ), 1)} ms' )
 general.message( f'FULL TIME: {round(1000*(time.time() - st_time), 1)} ms' )
-###file_handler.save_data(file_data, data, header = header, mode = 'w')
+
+file_handler.save_data(file_data, data, header = header, mode = 'w')
 
 
 cip = pb.count_ip(PHASES)
 x = np.arange(len(cip))
 
-general.plot_1d('CIP', x, cip, xname = 'NIP', xscale = '', yname = 'Count', yscale = '', pr = 'None')
+#general.plot_1d('CIP', x, cip, xname = 'NIP', xscale = '', yname = 'Count', yscale = '', pr = 'None')
 #general.message( f"TC: {np.sum(cip)}" )

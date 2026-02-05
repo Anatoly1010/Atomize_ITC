@@ -9,16 +9,13 @@ import socket
 import configparser
 from math import exp, sqrt
 from threading import Thread
-#import time
-#import numpy as np
-#from PyQt5.QtWidgets import QListView, QAction
-from PyQt6 import QtWidgets, uic #, QtCore, QtGui
-from PyQt6.QtWidgets import QWidget 
+from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QLabel, QDoubleSpinBox, QSpinBox, QComboBox, QPushButton, QTextEdit, QGridLayout, QFrame
 from PyQt6.QtGui import QIcon
+from PyQt6.QtCore import Qt
 import atomize.general_modules.general_functions as general
 import atomize.device_modules.ECC_15K as ecc
 
-class MainWindow(QtWidgets.QMainWindow):
+class MainWindow(QMainWindow):
     """
     A main window class
     """
@@ -30,16 +27,8 @@ class MainWindow(QtWidgets.QMainWindow):
         
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) # SOCK_DGRAM is UDP
 
-        self.destroyed.connect(lambda: self._on_destroyed())         # connect some actions to exit
-        # Load the UI Page
-        path_to_main = os.path.dirname(os.path.abspath(__file__))
-        gui_path = os.path.join(path_to_main,'gui/mw_main_window.ui')
-        icon_path = os.path.join(path_to_main, 'gui/icon_mw.png')
-        self.setWindowIcon( QIcon(icon_path) )
-
-        uic.loadUi(gui_path, self)                        # Design file
-
         # configuration data
+        path_to_main = os.path.dirname(os.path.abspath(__file__))        
         path_config_file = os.path.join(path_to_main,'mw_config.ini')
         config = configparser.ConfigParser()
         config.read(path_config_file)
@@ -49,77 +38,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.UDP_IP = str(config['DEFAULT']['UDP_IP'])
         self.UDP_PORT = int(config['DEFAULT']['UDP_PORT'])
 
-        # Connection of different action to different Menus and Buttons
-        self.button_initialize.clicked.connect(self.initialize)
-        self.button_initialize.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97);\
-         border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }\
-          QPushButton:pressed {background-color: rgb(211, 194, 78); ; border-style: inset}")
-        self.button_off.clicked.connect(self.turn_off)
-        self.button_off.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97);\
-         border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }\
-          QPushButton:pressed {background-color: rgb(211, 194, 78); ; border-style: inset}")
-        self.button_telemetry.clicked.connect(self.telemetry)
-        self.button_telemetry.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97);\
-         border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }\
-          QPushButton:pressed {background-color: rgb(211, 194, 78); ; border-style: inset}")
-
-        # text labels
-        self.label.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_2.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_3.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_4.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_5.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_6.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_7.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_8.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_9.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_10.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_11.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_12.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-
-        self.telemetry_text.setStyleSheet("QPlainTextEdit { color : rgb(211, 194, 78); }") # rgb(193, 202, 227)
-        
-        # Spinboxes
-        self.Att1_prd.valueChanged.connect(self.att1_prd)
-        self.Att1_prd.lineEdit().setReadOnly( True )   # block input from keyboard
-        self.Att1_prd.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.Att2_prd.valueChanged.connect(self.att2_prd)
-        self.Att2_prd.lineEdit().setReadOnly( True )
-        self.Att2_prd.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.Fv_ctrl.valueChanged.connect(self.fv_ctrl)
-        self.Fv_ctrl.lineEdit().setReadOnly( True )
-        self.Fv_ctrl.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.Fv_prm.valueChanged.connect(self.fv_prm)
-        self.Fv_prm.lineEdit().setReadOnly( True )
-        self.Fv_prm.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.Att1_prm.valueChanged.connect(self.att1_prm)
-        self.Att1_prm.lineEdit().setReadOnly( True )
-        self.Att1_prm.setStyleSheet("QSpinBox { color : rgb(193, 202, 227);  selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.Att2_prm.valueChanged.connect(self.att2_prm)
-        self.Att2_prm.lineEdit().setReadOnly( True )
-        self.Att2_prm.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227);  selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.Synt.valueChanged.connect(self.synt)
-        self.Synt.setStyleSheet("QSpinBox { color : rgb(193, 202, 227);  selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-
-        self.Synt2.valueChanged.connect(self.synt2)
-        self.Synt2.setStyleSheet("QSpinBox { color : rgb(193, 202, 227);  selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        freq2 = int( self.Synt2.value() )
-        #self.ecc15k.synthetizer_frequency(f"{freq2} MHz")
-
-        self.Synt2_power.valueChanged.connect(self.synt2_power)
-        self.Synt2_power.setStyleSheet("QSpinBox { color : rgb(193, 202, 227);  selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        power2 = int( self.Synt2_power.value() )
-        ###self.ecc15k.synthetizer_power(power2)
-
-        self.Synt2_state.setStyleSheet("QComboBox { color : rgb(193, 202, 227); selection-color: rgb(211, 194, 78); }")
-        self.Synt2_state.currentIndexChanged.connect(self.synt2_state)
-
-        self.Rot_vane.valueChanged.connect(self.rot_vane)
-        #self.Rot_vane.lineEdit().setReadOnly( True )
-        self.Rot_vane.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227);  selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-
-        self.Cuttoff_box.setStyleSheet("QComboBox { color : rgb(193, 202, 227); selection-color: rgb(211, 194, 78); }")
-        self.Cuttoff_box.currentIndexChanged.connect(self.cutoff_changed)
+        self.design()
 
         self.curr_dB = 60
         self.prev_dB = 60
@@ -127,7 +46,180 @@ class MainWindow(QtWidgets.QMainWindow):
 
         #self.synt()
         self.initialize()
-        self.telemetry()
+        #self.telemetry()
+
+        #self.ecc15k.synthetizer_frequency(f"{freq2} MHz")
+        #self.ecc15k.synthetizer_power(power2)
+        
+        #self.telemetry_text.setStyleSheet("QPlainTextEdit { color : rgb(211, 194, 78); }")
+
+    def design(self):
+
+        self.destroyed.connect(lambda: self._on_destroyed())
+        self.setObjectName("MainWindow")
+        self.setWindowTitle("Pulsed Bridge Control")
+        self.setStyleSheet("background-color: rgb(42,42,64);")
+
+        path_to_main = os.path.dirname(os.path.abspath(__file__))
+        icon_path = os.path.join(path_to_main, 'gui/icon_mw.png')
+        self.setWindowIcon( QIcon(icon_path) )
+
+        centralwidget = QWidget(self)
+        self.setCentralWidget(centralwidget)
+
+        gridLayout = QGridLayout()
+        gridLayout.setContentsMargins(15, 10, 10, 10)
+        gridLayout.setVerticalSpacing(4)
+        gridLayout.setHorizontalSpacing(20)
+
+        centralwidget.setLayout(gridLayout)
+
+
+        # ---- Labels & Inputs ----
+        labels = [("Rotary Vane", "label_1"), ("Attenuator RECT", "label_2"), ("Attenuator AWG", "label_3"), ("Pulse Phase", "label_4"), ("Signal Phase", "label_5"), ("Video Attenuation 1", "label_6"), ("Video Attenuation 2", "label_7"), ("Frequency Synthesizer 1", "label_8"), ("Frequency Synthesizer 2", "label_9"), ("State Synthesizer 2", "label_10"), ("Power Synthesizer 2", "label_11"), ("Cut-Off Frequency", "label_12")]
+
+        for name, attr_name in labels:
+            lbl = QLabel(name)
+            setattr(self, attr_name, lbl)
+            lbl.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
+
+
+        # ---- Boxes ----
+        double_boxes = [(QDoubleSpinBox, "Rot_vane", "", self.rot_vane, 0, 60, 60, 0.1, 1, " dB"),
+                      (QDoubleSpinBox, "Att1_prd", "", self.att1_prd, 0, 31.5, 16, 0.5, 1, " dB"),
+                      (QDoubleSpinBox, "Att2_prd", "", self.att2_prd, 0, 31.5, 16, 0.5, 1, " dB"),
+                      (QDoubleSpinBox, "Fv_ctrl", "", self.fv_ctrl, -5.625, 360, 0, 5.625, 3, " deg"),
+                      (QDoubleSpinBox, "Fv_prm", "", self.fv_prm, -5.625, 360, 0, 5.625, 3, " deg"),
+                      (QSpinBox, "Att1_prm", "", self.att1_prm, 0, 30, 0, 2, 0, " dB"),
+                      (QDoubleSpinBox, "Att2_prm", "", self.att2_prm, 0, 31.5, 0, 0.5, 1, " dB"),
+                      (QSpinBox, "Synt", "", self.synt, 7000, 12000, 9700, 1, 0, " MHz"),
+                      (QSpinBox, "Synt2", "", self.synt2, 800, 12000, 1000, 1, 0, " MHz"),
+                      (QSpinBox, "Synt2_power", "", self.synt2_power, 0, 15, 15, 1, 0, "")
+                        ]
+
+
+        for widget_class, attr_name, par_name, func, v_min, v_max, cur_val, v_step, dec, suf in double_boxes:
+            spin_box = widget_class()
+            if isinstance(spin_box, QDoubleSpinBox):
+                spin_box.setRange(v_min, v_max)
+                spin_box.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")                
+            else:
+                spin_box.setRange(int(v_min), int(v_max))
+                spin_box.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")                
+            spin_box.setSingleStep(v_step)
+            spin_box.setValue(cur_val)
+            if isinstance(spin_box, QDoubleSpinBox):
+                spin_box.setDecimals(dec)
+            spin_box.setSuffix(suf)
+            spin_box.valueChanged.connect(func)
+            spin_box.setFixedSize(130, 26)
+            spin_box.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.PlusMinus)
+            spin_box.setKeyboardTracking( False )
+
+            setattr(self, attr_name, spin_box)
+
+            if attr_name in ["Att1_prd", "Att2_prd", "Fv_ctrl", "Fv_prm", "Att1_prm", "Att2_prm"]:
+                spin_box.lineEdit().setReadOnly( True )
+
+        power2 = int( self.Synt2_power.value() )
+        freq2 = int( self.Synt2.value() )
+
+        # ---- Combo boxes----
+        combo_boxes = [("Off", "Synt2_state", "", self.synt2_state, 
+                        [
+                        "Off", "On"
+                        ]),
+                      ("300 MHz", "Cuttoff_box", "", self.cutoff_changed, 
+                        [
+                        "30 MHz", "105 MHz", "300 MHz"
+                        ])
+                      ]
+
+
+        for cur_text, attr_name, par_name, func, item in combo_boxes:
+            combo = QComboBox()
+            setattr(self, attr_name, combo)
+            combo.currentIndexChanged.connect(func)
+            combo.addItems(item)
+            combo.setCurrentText(cur_text)
+            combo.setFixedSize(130, 26)
+            combo.setStyleSheet("QComboBox { color : rgb(193, 202, 227); selection-color: rgb(211, 194, 78); }")
+
+
+        # ---- Buttons ----
+        buttons = [("Reset", "button_initialize", self.initialize),
+                   ("Telemetry", "button_telemetry", self.telemetry),
+                   ("Exit", "button_off", self.turn_off) ]
+
+        for name, attr_name, func in buttons:
+            btn = QPushButton(name)
+            btn.setFixedSize(140, 40)
+            btn.clicked.connect(func)
+            btn.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; } QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
+            setattr(self, attr_name, btn)
+
+
+        # ---- Separators ----
+        def hline():
+            line = QFrame()
+            line.setFrameShape(QFrame.Shape.HLine)
+            line.setFrameShadow(QFrame.Shadow.Sunken)
+            line.setLineWidth(2)
+            return line
+
+
+        # ---- Layout placement ----
+        gridLayout.addWidget(self.label_1, 0, 0)
+        gridLayout.addWidget(self.Rot_vane, 0, 1)
+
+        gridLayout.addWidget(hline(), 1, 0, 1, 2)
+
+        gridLayout.addWidget(self.label_2, 2, 0)
+        gridLayout.addWidget(self.Att1_prd, 2, 1)
+        gridLayout.addWidget(self.label_3, 3, 0)
+        gridLayout.addWidget(self.Att2_prd, 3, 1)
+
+        gridLayout.addWidget(hline(), 4, 0, 1, 2)
+
+        gridLayout.addWidget(self.label_4, 5, 0)
+        gridLayout.addWidget(self.Fv_ctrl, 5, 1)
+        gridLayout.addWidget(self.label_5, 6, 0)
+        gridLayout.addWidget(self.Fv_prm, 6, 1)
+
+        gridLayout.addWidget(hline(), 7, 0, 1, 2)
+
+        gridLayout.addWidget(self.label_6, 8, 0)
+        gridLayout.addWidget(self.Att1_prm, 8, 1)
+        gridLayout.addWidget(self.label_7, 9, 0)
+        gridLayout.addWidget(self.Att2_prm, 9, 1)
+
+        gridLayout.addWidget(hline(), 10, 0, 1, 2)
+
+        gridLayout.addWidget(self.label_8, 11, 0)
+        gridLayout.addWidget(self.Synt, 11, 1)
+
+        gridLayout.addWidget(hline(), 12, 0, 1, 2)
+
+        gridLayout.addWidget(self.label_9, 13, 0)
+        gridLayout.addWidget(self.Synt2, 13, 1)
+        gridLayout.addWidget(self.label_10, 14, 0)
+        gridLayout.addWidget(self.Synt2_state, 14, 1)
+        gridLayout.addWidget(self.label_11, 15, 0)
+        gridLayout.addWidget(self.Synt2_power, 15, 1)
+
+        gridLayout.addWidget(hline(), 16, 0, 1, 2)
+
+        gridLayout.addWidget(self.label_12, 17, 0)
+        gridLayout.addWidget(self.Cuttoff_box, 17, 1)
+
+        gridLayout.addWidget(hline(), 18, 0, 1, 2)
+
+        gridLayout.addWidget(self.button_initialize, 19, 0)
+        gridLayout.addWidget(self.button_telemetry, 20, 0)
+        gridLayout.addWidget(self.button_off, 21, 0)
+
+        gridLayout.setRowStretch(22, 2)
+        gridLayout.setColumnStretch(22, 2)
 
     def synt2(self):
         freq2 = int( self.Synt2.value() )
@@ -195,7 +287,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.sock.sendto( MESSAGE, (self.UDP_IP, self.UDP_PORT) )
         data_raw, addr = self.sock.recvfrom(3)
 
-        self.telemetry_text.appendPlainText( 'Att. RECT: ' + str(data_raw[2] / 2) + ' dB')
+        #self.telemetry_text.appendPlainText( 'Att. RECT: ' + str(data_raw[2] / 2) + ' dB')
 
     def att2_prd(self):
         """
@@ -215,7 +307,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.sock.sendto( MESSAGE, (self.UDP_IP, self.UDP_PORT) )
         data_raw, addr = self.sock.recvfrom(3)
 
-        self.telemetry_text.appendPlainText( 'Att. AWG: ' + str(data_raw[2]/2) + ' dB')
+        #self.telemetry_text.appendPlainText( 'Att. AWG: ' + str(data_raw[2]/2) + ' dB')
 
     def fv_ctrl(self):
         """
@@ -249,7 +341,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.sock.sendto( MESSAGE, (self.UDP_IP, self.UDP_PORT) )
         data_raw, addr = self.sock.recvfrom(3)
 
-        self.telemetry_text.appendPlainText( 'Test Phase: ' + str(data_raw[2]*5.625) + ' deg')
+        #self.telemetry_text.appendPlainText( 'Test Phase: ' + str(data_raw[2]*5.625) + ' deg')
 
     def fv_prm(self):
         """
@@ -283,7 +375,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.sock.sendto( MESSAGE, (self.UDP_IP, self.UDP_PORT) )
         data_raw, addr = self.sock.recvfrom(3)
 
-        self.telemetry_text.appendPlainText( 'Phase: ' + str(data_raw[2]*5.625) + ' deg')
+        #self.telemetry_text.appendPlainText( 'Phase: ' + str(data_raw[2]*5.625) + ' deg')
 
     def att1_prm(self):
         """
@@ -303,7 +395,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.sock.sendto( MESSAGE, (self.UDP_IP, self.UDP_PORT) )
         data_raw, addr = self.sock.recvfrom(3)
 
-        self.telemetry_text.appendPlainText( 'Video Att. 1: ' + str(data_raw[2]*2) + ' dB')
+        #self.telemetry_text.appendPlainText( 'Video Att. 1: ' + str(data_raw[2]*2) + ' dB')
 
     def att2_prm(self):
         """
@@ -323,7 +415,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.sock.sendto( MESSAGE, (self.UDP_IP, self.UDP_PORT) )
         data_raw, addr = self.sock.recvfrom(3)
 
-        self.telemetry_text.appendPlainText( 'Video Att. 2: ' + str(data_raw[2]/2) + ' dB')
+        #self.telemetry_text.appendPlainText( 'Video Att. 2: ' + str(data_raw[2]/2) + ' dB')
 
     def cutoff_changed(self):
         """
@@ -350,7 +442,7 @@ class MainWindow(QtWidgets.QMainWindow):
             elif data_raw[2] == 2:
                 freq = 300
 
-            self.telemetry_text.appendPlainText( f'Cut-off: {freq} MHz')
+            #self.telemetry_text.appendPlainText( f'Cut-off: {freq} MHz')
         
         elif txt == '105 MHz':
             MESSAGE = b'\x1b' + b'\x01' + b'\x01'
@@ -371,7 +463,7 @@ class MainWindow(QtWidgets.QMainWindow):
             elif data_raw[2] == 2:
                 freq = 300
 
-            self.telemetry_text.appendPlainText( f'Cut-off: {freq} MHz')
+            #self.telemetry_text.appendPlainText( f'Cut-off: {freq} MHz')
         
         elif txt == '30 MHz':
             MESSAGE = b'\x1b' + b'\x01' + b'\x00'
@@ -392,7 +484,7 @@ class MainWindow(QtWidgets.QMainWindow):
             elif data_raw[2] == 2:
                 freq = 300
 
-            self.telemetry_text.appendPlainText(f'Cut-off: {freq} MHz')
+            #self.telemetry_text.appendPlainText(f'Cut-off: {freq} MHz')
 
     def synt(self):
         """
@@ -429,12 +521,12 @@ class MainWindow(QtWidgets.QMainWindow):
             freq = chr(data_raw[5]) + chr(data_raw[6]) + chr(data_raw[7])\
                 + chr(data_raw[8]) + chr(data_raw[9])
 
-        self.telemetry_text.appendPlainText( 'Frequency: ' + freq )
+        #self.telemetry_text.appendPlainText( 'Frequency: ' + freq )
 
     def pause_and_label(self, time):
-        self.label_9.setStyleSheet("QLabel { color : rgb(255, 0, 0); font-weight: bold; }")
+        self.label_1.setStyleSheet("QLabel { color : rgb(255, 0, 0); font-weight: bold; }")
         general.wait( time )
-        self.label_9.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
+        self.label_1.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
     
     def pause_and_label_exit(self, time):
         general.wait( time )
@@ -464,7 +556,7 @@ class MainWindow(QtWidgets.QMainWindow):
         
         data_raw, addr = self.sock.recvfrom(6)
         
-        self.telemetry_text.appendPlainText( 'Rotary Vane: ' + str( self.curr_dB ) + ' dB')
+        #self.telemetry_text.appendPlainText( 'Rotary Vane: ' + str( self.curr_dB ) + ' dB')
 
         self.prev_dB = self.curr_dB
 
@@ -521,7 +613,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.curr_dB = 60
         self.prev_dB = 60
 
-        self.telemetry_text.appendPlainText( 'Initialization done' )
+        #self.telemetry_text.appendPlainText( 'Initialization done' )
     
     def initialize_at_exit(self):
         """
@@ -570,9 +662,15 @@ class MainWindow(QtWidgets.QMainWindow):
         elif int(data[4]) == 3:
             state = 'FAIL'
 
-        self.telemetry_text.appendPlainText( str(datetime.datetime.now().strftime("%d %b %Y %H:%M:%S")) + '\n' +\
-             'Temperature: ' + str(data[8]) + '\n' \
-             + 'State: ' + state)
+        now = datetime.datetime.now().strftime("%d %b %Y %H:%M:%S")
+
+        header = (
+            f"{'Date: '} {now}\n"
+            f"{'Temp: '} {data[8]} C\n"
+            f"{'State: '} {state}\n"
+        )
+
+        general.message(header)
 
     def help(self):
         """
@@ -589,7 +687,7 @@ def main():
     """
     A function to run the main window of the programm.
     """
-    app = QtWidgets.QApplication(sys.argv)
+    app = QApplication(sys.argv)
     main = MainWindow()
     main.show()
     sys.exit(app.exec())

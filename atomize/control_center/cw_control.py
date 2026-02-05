@@ -57,7 +57,7 @@ class MainWindow(QMainWindow):
 
 
         # ---- Labels & Inputs ----
-        labels = [("Start Field", "label_1"), ("End Field", "label_2"), ("Field Step", "label_3"), ("Lock In Amplitude", "label_4"), ("Lock In Sensitivity", "label_5"), ("Lock In Time Constant", "label_6"), ("Number of Scans", "label_7"), ("Two-Side Measurement", "label_8"), ("Experiment Name", "label_9"), ("Curve Name", "label_10")]
+        labels = [("Start Field", "label_1"), ("End Field", "label_2"), ("Field Step", "label_3"), ("Lock In Amplitude", "label_4"), ("Lock In Time Constant", "label_5"), ("Lock In Sensitivity", "label_6"), ("Number of Scans", "label_7"), ("Two-Side Measurement", "label_8"), ("Experiment Name", "label_9"), ("Curve Name", "label_10")]
 
         for name, attr_name in labels:
             lbl = QLabel(name)
@@ -90,7 +90,8 @@ class MainWindow(QMainWindow):
             spin_box.setFixedSize(130, 26)
             spin_box.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.PlusMinus)
 
-
+            spin_box.setKeyboardTracking( False )
+            
             setattr(self, attr_name, spin_box)
             if isinstance(spin_box, QDoubleSpinBox):
                 setattr(self, par_name, float(spin_box.value()))
@@ -115,11 +116,11 @@ class MainWindow(QMainWindow):
 
         for cur_text, attr_name, par_name, func, item in combo_boxes:
             combo = QComboBox()
-            combo.setCurrentText(cur_text)
             setattr(self, attr_name, combo)
             setattr(self, par_name, combo.currentText())
             combo.currentIndexChanged.connect(func)
             combo.addItems(item)
+            combo.setCurrentText(cur_text)
             combo.setFixedSize(130, 26)
             combo.setStyleSheet("QComboBox { color : rgb(193, 202, 227); selection-color: rgb(211, 194, 78); }")
 
@@ -571,11 +572,11 @@ class Worker(QWidget):
                     f"{'End Field:':<{w}} {END_FIELD} G\n"
                     f"{'Field Step:':<{w}} {FIELD_STEP} G\n"
                     f"{'Number of Scans:':<{w}} {SCANS}\n"
-                    f"{'Temp Start Exp:':<{w}} {t_start} K\n"
-                    f"{'Temp End Exp:':<{w}} {ls335.tc_temperature('A')} K\n"
-                    f"{'Temp Cernox:':<{w}} {ls335.tc_temperature('B')} K\n"
+                    f"{'Temperature Start Exp:':<{w}} {t_start} K\n"
+                    f"{'Temperature End Exp:':<{w}} {ls335.tc_temperature('A')} K\n"
+                    f"{'Temperature Cernox:':<{w}} {ls335.tc_temperature('B')} K\n"
                     f"{'Time Constant:':<{w}} {p8}\n"
-                    f"{'Modulation Ampl:':<{w}} {p6}\n"
+                    f"{'Modulation Ampl:':<{w}} {p6} V\n"
                     f"{'Frequency:':<{w}} {ag53131a.freq_counter_frequency('CH3')}\n"
                     f"{'-'*50}\n"
                     f"Field (G), X (V)"
