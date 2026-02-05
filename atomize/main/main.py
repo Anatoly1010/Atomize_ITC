@@ -128,11 +128,17 @@ class MainExtended(MainWindow):
         #self.open_file( self.script )
 
         # Test ooption
-        self.checkTests = QCheckBox("Test Scripts    ")
-        gridlayout.addWidget(self.checkTests, 2, 4)
+        label_2 = QLabel("Test Scripts:")
+        label_2.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
+        label_2.setFixedWidth(100)
+        gridlayout.addWidget(label_2, 2, 4)
+
+        self.checkTests = QCheckBox("")
+        gridlayout.addWidget(self.checkTests, 2, 5)
         self.checkTests.setStyleSheet("QCheckBox { color : rgb(193, 202, 227); font-weight: bold; }")
+        self.checkTests.setFixedSize(140, 40)
         self.checkTests.setChecked(True)
-        self.checkTests.setLayoutDirection(QtCore.Qt.LayoutDirection.RightToLeft)
+        self.checkTests.setLayoutDirection(QtCore.Qt.LayoutDirection.LeftToRight)
 
 
         gridlayout.setColumnMinimumWidth(0, 20)

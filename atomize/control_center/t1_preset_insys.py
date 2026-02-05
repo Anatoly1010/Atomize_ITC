@@ -8,11 +8,12 @@ import datetime
 import socket
 import numpy as np
 from multiprocessing import Process, Pipe
-from PyQt6 import QtWidgets, uic
-from PyQt6.QtWidgets import QWidget 
+from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QLabel, QDoubleSpinBox, QSpinBox, QPushButton, QTextEdit, QGridLayout, QFrame
 from PyQt6.QtGui import QIcon
+from PyQt6.QtCore import Qt
+import atomize.control_center.status_poller as pol
 
-class MainWindow(QtWidgets.QMainWindow):
+class MainWindow(QMainWindow):
     """
     A main window class
     """
@@ -22,15 +23,6 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         super(MainWindow, self).__init__(*args, **kwargs)
         
-        self.destroyed.connect(lambda: self._on_destroyed())         # connect some actions to exit
-        # Load the UI Page
-        path_to_main = os.path.dirname(os.path.abspath(__file__))
-        gui_path = os.path.join(path_to_main,'gui/t1_main_window_insys.ui')
-        icon_path = os.path.join(path_to_main, 'gui/icon_t1.png')
-        self.setWindowIcon( QIcon(icon_path) )
-
-        uic.loadUi(gui_path, self)                        # Design file
-
         #####
         path_to_main2 = os.path.join(os.path.abspath(os.getcwd()), '..', 'libs')
         os.chdir(path_to_main2)
@@ -40,94 +32,153 @@ class MainWindow(QtWidgets.QMainWindow):
 
         """
         Create a process to interact with an experimental script that will run on a different thread.
-        We need a different thread here, since PyQt GUI applications have a main thread of execution 
-        that runs the event loop and GUI. If you launch a long-running task in this thread, then your GUI
-        will freeze until the task terminates. During that time, the user won’t be able to interact with 
-        the application
+        We need a different thread here, since PyQt GUI applications have a main thread of execution that runs the event loop and GUI. If you launch a long-running task in this thread, then your GUI will freeze until the task terminates. During that time, the user won’t be able to interact with the application
         """
         self.worker = Worker()
+        self.poller = pol.StatusPoller()
+        self.poller.status_received.connect(self.update_gui_status)
 
     def design(self):
 
-        # Connection of different action to different Menus and Buttons
-        self.button_start.clicked.connect(self.start)
-        self.button_start.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97);\
-         border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }\
-          QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
-        self.button_off.clicked.connect(self.turn_off)
-        self.button_off.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97);\
-         border-style: outset; color: rgb(193, 202, 227); font-weight: bold;  }\
-          QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
-        self.button_stop.clicked.connect(self.stop)
-        self.button_stop.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97);\
-         border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }\
-          QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
+        self.destroyed.connect(lambda: self._on_destroyed())
+        self.setObjectName("MainWindow")
+        self.setWindowTitle("T1 Measurement")
+        self.setStyleSheet("background-color: rgb(42,42,64);")
 
-        # text labels
-        self.label.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_2.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_3.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_4.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_5.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_6.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_7.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_8.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_10.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_11.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_12.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
+        path_to_main = os.path.dirname(os.path.abspath(__file__))
+        icon_path = os.path.join(path_to_main, 'gui/icon_t1.png')
+        self.setWindowIcon( QIcon(icon_path) )
 
-        # text edits
-        self.text_edit_curve.setStyleSheet("QTextEdit { color : rgb(211, 194, 78) ; selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}") # rgb(193, 202, 227)
-        self.text_edit_exp_name.setStyleSheet("QTextEdit { color : rgb(211, 194, 78) ; selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}") # rgb(193, 202, 227)
-        self.cur_curve_name = self.text_edit_curve.toPlainText()
-        self.cur_exp_name = self.text_edit_exp_name.toPlainText()
-        self.text_edit_curve.textChanged.connect(self.curve_name)
-        self.text_edit_exp_name.textChanged.connect(self.exp_name)
+        centralwidget = QWidget(self)
+        self.setCentralWidget(centralwidget)
 
-        # Spinboxes
-        self.box_delta.valueChanged.connect(self.delta)
-        self.box_delta.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.cur_delta = round(float( self.box_delta.value() ), 1)
-        #self.box_delta.lineEdit().setReadOnly( True )
+        gridLayout = QGridLayout()
+        gridLayout.setContentsMargins(15, 10, 10, 10)
+        gridLayout.setVerticalSpacing(4)
+        gridLayout.setHorizontalSpacing(20)
 
-        self.box_delta_echo.valueChanged.connect(self.delta_echo)
-        self.box_delta_echo.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.cur_delta_echo = round(float( self.box_delta_echo.value() ), 1)
-        #self.box_delta_echo.lineEdit().setReadOnly( True )
-
-        self.box_length.valueChanged.connect(self.pulse_length)
-        self.box_length.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.cur_length = round(float( self.box_length.value() ), 1)
-        #self.box_length.lineEdit().setReadOnly( True )
-
-        self.box_time_step.valueChanged.connect(self.time_step)
-        self.box_time_step.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.cur_step = round(float( self.box_time_step.value() ), 1)
-        #if self.cur_step % 2 != 0:
-        #    self.cur_step = self.cur_step + 1
-        #    self.box_time_step.setValue( self.cur_step )
-        ##self.box_time_step.lineEdit().setReadOnly( True )
-
-        self.box_rep_rate.valueChanged.connect(self.rep_rate)
-        self.box_rep_rate.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.cur_rep_rate = int( self.box_rep_rate.value() )
+        centralwidget.setLayout(gridLayout)
         
-        self.box_field.valueChanged.connect(self.field)
-        self.box_field.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.cur_field = float( self.box_field.value() )
+        # ---- Labels & Inputs ----
+        labels = [("Pi/2 Length", "label_1"), ("T", "label_2"), ("Tau", "label_3"), ("Time Step", "label_4"), ("Repetition Rate", "label_5"), ("Magnetic Field", "label_6"), ("Points", "label_7"), ("Acquisitions", "label_8"), ("Number of Scans", "label_9"), ("Experiment Name", "label_10"), ("Curve Name", "label_11")]
 
-        self.box_points.valueChanged.connect(self.points)
-        self.box_points.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.cur_points = int( self.box_points.value() )
-        
-        self.box_scan.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.box_scan.valueChanged.connect(self.scan)
-        self.box_scan.lineEdit().setReadOnly( True )
-        self.cur_scan = int( self.box_scan.value() )
-        
-        self.box_averag.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.box_averag.valueChanged.connect(self.averages)
-        self.cur_averages = int( self.box_averag.value() )
+        for name, attr_name in labels:
+            lbl = QLabel(name)
+            setattr(self, attr_name, lbl)
+            lbl.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
+
+        # ---- Boxes ----
+        double_boxes = [(QDoubleSpinBox, "box_length", "cur_length", self.pulse_length, 3.2, 1900, 19.2, 3.2, 1, " ns"),
+                      (QDoubleSpinBox, "box_delta", "cur_delta", self.delta, 44.8, 640000, 640, 3.2, 1, " ns"),
+                       (QDoubleSpinBox, "box_delta_echo", "cur_delta_echo", self.delta_echo, 44.8, 256000, 288, 3.2, 1, " ns"),
+                      (QDoubleSpinBox, "box_time_step", "cur_step", self.time_step, 6.4, 5.12e6, 6.4, 6.4, 1, " ns"),
+                      (QSpinBox, "box_rep_rate", "cur_rep_rate", self.rep_rate, 1, 50000, 500, 10, 0, " Hz"),
+                      (QDoubleSpinBox, "box_field", "cur_field", self.field, 0, 15000, 3493, 0.5, 2, " G"),
+                      (QSpinBox, "box_points", "cur_points", self.points, 1, 20000, 500, 10, 0, ""),
+                      (QSpinBox, "box_averag", "cur_averages", self.averages, 1, 5000, 10, 1, 0, ""),
+                      (QSpinBox, "box_scan", "cur_scan", self.scan, 1, 100, 1, 1, 0, "")
+                        ]
+
+        for widget_class, attr_name, par_name, func, v_min, v_max, cur_val, v_step, dec, suf in double_boxes:
+            spin_box = widget_class()
+            if isinstance(spin_box, QDoubleSpinBox):
+                spin_box.setRange(v_min, v_max)
+                spin_box.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")                
+            else:
+                spin_box.setRange(int(v_min), int(v_max))
+                spin_box.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")                
+            spin_box.setSingleStep(v_step)
+            spin_box.setValue(cur_val)
+            if isinstance(spin_box, QDoubleSpinBox):
+                spin_box.setDecimals(dec)
+            spin_box.setSuffix(suf)
+            spin_box.valueChanged.connect(func)
+            spin_box.setFixedSize(130, 26)
+            spin_box.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.PlusMinus)
+
+            setattr(self, attr_name, spin_box)
+            if isinstance(spin_box, QDoubleSpinBox):
+                setattr(self, par_name, round(float(spin_box.value()), 1))
+            else:
+                setattr(self, par_name, int(spin_box.value()))
+
+        # ---- Text Edits ----
+        text_edit = [("T1", "text_edit_exp_name", "cur_exp_name", self.exp_name),
+                     ("exp1", "text_edit_curve", "cur_curve_name", self.curve_name)
+                    ]
+
+        for text, attr_name, par_name, func in text_edit:
+            txt = QTextEdit(text)
+            setattr(self, attr_name, txt)
+            setattr(self, par_name, txt.toPlainText())
+            txt.textChanged.connect(func)
+            txt.setFixedSize(130, 26)
+            txt.setAcceptRichText(False)
+            txt.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+            txt.setStyleSheet("QTextEdit { color : rgb(211, 194, 78) ; selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
+
+
+        # ---- Buttons ----
+        buttons = [("Start", "button_start", self.start),
+                   ("Stop", "button_stop", self.stop),
+                   ("Exit", "button_off", self.turn_off) ]
+
+        for name, attr_name, func in buttons:
+            btn = QPushButton(name)
+            btn.setFixedSize(140, 40)
+            btn.clicked.connect(func)
+            btn.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; } QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
+            setattr(self, attr_name, btn)
+
+        # ---- Separators ----
+        def hline():
+            line = QFrame()
+            line.setFrameShape(QFrame.Shape.HLine)
+            line.setFrameShadow(QFrame.Shadow.Sunken)
+            line.setLineWidth(2)
+            return line
+
+        # ---- Layout placement ----
+        gridLayout.addWidget(self.label_1, 0, 0)
+        gridLayout.addWidget(self.box_length, 0, 1)
+        gridLayout.addWidget(self.label_2, 1, 0)
+        gridLayout.addWidget(self.box_delta, 1, 1)
+        gridLayout.addWidget(self.label_3, 2, 0)
+        gridLayout.addWidget(self.box_delta_echo, 2, 1)
+        gridLayout.addWidget(self.label_4, 3, 0)
+        gridLayout.addWidget(self.box_time_step, 3, 1)
+        gridLayout.addWidget(self.label_5, 4, 0)
+        gridLayout.addWidget(self.box_rep_rate, 4, 1)
+
+        gridLayout.addWidget(hline(), 5, 0, 1, 2)
+
+        gridLayout.addWidget(self.label_6, 6, 0)
+        gridLayout.addWidget(self.box_field, 6, 1)
+
+        gridLayout.addWidget(hline(), 7, 0, 1, 2)
+
+        gridLayout.addWidget(self.label_7, 8, 0)
+        gridLayout.addWidget(self.box_points, 8, 1)
+        gridLayout.addWidget(self.label_8, 9, 0)
+        gridLayout.addWidget(self.box_averag, 9, 1)
+        gridLayout.addWidget(self.label_9, 10, 0)
+        gridLayout.addWidget(self.box_scan, 10, 1)
+
+        gridLayout.addWidget(hline(), 11, 0, 1, 2)
+
+        gridLayout.addWidget(self.label_10, 12, 0)
+        gridLayout.addWidget(self.text_edit_exp_name, 12, 1)
+        gridLayout.addWidget(self.label_11, 13, 0)
+        gridLayout.addWidget(self.text_edit_curve, 13, 1)
+
+        gridLayout.addWidget(hline(), 14, 0, 1, 2)
+
+        gridLayout.addWidget(self.button_start, 15, 0)
+        gridLayout.addWidget(self.button_stop, 16, 0)
+        gridLayout.addWidget(self.button_off, 17, 0)
+
+        gridLayout.setRowStretch(17, 2)
+        gridLayout.setColumnStretch(17, 2)
     
     def round_to_closest(self, x, y):
         """
@@ -274,13 +325,16 @@ class MainWindow(QtWidgets.QMainWindow):
         self.parent_conn, self.child_conn = Pipe()
         # a process for running function script 
         # sending parameters for initial initialization
-        self.exp_process = Process( target = self.worker.exp_on, args = ( self.child_conn, self.cur_curve_name, self.cur_exp_name, \
-                                            self.cur_delta, self.cur_length, self.cur_step, self.cur_rep_rate, self.cur_scan, \
-                                            self.cur_field, self.cur_points, self.cur_averages, self.cur_delta_echo, ) )
-               
+        self.exp_process = Process( target = self.worker.exp_on, args = ( self.child_conn, self.cur_curve_name, self.cur_exp_name, self.cur_delta, self.cur_length, self.cur_step, self.cur_rep_rate, self.cur_scan, self.cur_field, self.cur_points, self.cur_averages, self.cur_delta_echo, ) )
+
+        self.button_start.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(211, 194, 78); border-style: outset; color: rgb(63, 63, 97); font-weight: bold; } ")
+
         self.exp_process.start()
         # send a command in a different thread about the current state
         self.parent_conn.send('start')
+
+        self.poller.update_command(self.parent_conn)
+        self.poller.start()
 
     def message(self, *text):
         sock = socket.socket()
@@ -291,6 +345,17 @@ class MainWindow(QtWidgets.QMainWindow):
         else:
             sock.send(str(text).encode())
             sock.close()
+
+    def update_gui_status(self, status_text):
+
+        self.poller.wait() 
+
+        if self.parent_conn.poll() == True:
+            msg_type, data = self.parent_conn.recv()
+            self.message(data)    
+            self.button_start.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; } ")
+        else:
+            pass
 
 # The worker class that run the digitizer in a different thread
 class Worker(QWidget):
@@ -382,21 +447,18 @@ class Worker(QWidget):
             while self.command != 'exit':
 
                 # Start of experiment
-                j = 1
-                while j <= SCANS:
+                for k in general.scans(SCANS):
 
                     if self.command == 'exit':
                         break
 
-                    for i in range(POINTS):
+                    for j in range(POINTS):
                         # phase cycle
-                        for k in range(PHASES):
+                        for i in range(PHASES):
 
                             pb.pulser_next_phase()
-                            data[0], data[1] = pb.digitizer_get_curve( POINTS, PHASES, integral = True )
-                            general.plot_1d(p2, x_axis, ( data[0], data[1] ), xname = 'T',\
-                                    xscale = 'ns', yname = 'Area', yscale = 'A.U.', label = p1, \
-                                    text = 'Scan / Time: ' + str(j) + ' / ' + str(round(i*STEP, 1)))
+                            process = general.plot_1d(p2, x_axis  / 1e9, ( data[0], data[1] ), xname = 'T', xscale = 's', yname = 'Area', yscale = 'A.U.', label = p1, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j*STEP, 1)), pr = process)
+                            data[0], data[1] = pb.digitizer_get_curve( POINTS, PHASES, current_scan = k, total_scan = SCANS, integral = True )
 
                         pb.pulser_shift()
 
@@ -410,14 +472,14 @@ class Worker(QWidget):
                         if conn.poll() == True:
                             self.command = conn.recv()
 
-                    j += 1
+                    process = general.plot_1d(p2, x_axis  / 1e9, ( data[0], data[1] ), xname = 'T', xscale = 's', yname = 'Area', yscale = 'A.U.', label = p1, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j*STEP, 1)), pr = process)
+
                     pb.pulser_pulse_reset()
 
                 # finish succesfully
                 self.command = 'exit'
 
             if self.command == 'exit':
-                general.message('Script finished')
                 
                 tb = pb.adc_window * 0.4 * pb.digitizer_decimation()
                 pb.pulser_close()
@@ -436,6 +498,8 @@ class Worker(QWidget):
 
                 file_handler.save_data(file_data, np.c_[x_axis, data[0], data[1]], header = header, mode = 'w')
 
+                conn.send( ('', f'Script {p2} finished') )
+
         except BaseException as e:
             exc_info = f"{type(e)} \n{str(e)} \n{traceback.format_exc()}"
             conn.send( ('Error', exc_info) )
@@ -444,7 +508,7 @@ def main():
     """
     A function to run the main window of the programm.
     """
-    app = QtWidgets.QApplication(sys.argv)
+    app = QApplication(sys.argv)
     main = MainWindow()
     main.show()
     sys.exit(app.exec())

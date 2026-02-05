@@ -8,7 +8,7 @@ import datetime
 import socket
 import numpy as np
 from multiprocessing import Process, Pipe
-from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QLabel, QDoubleSpinBox, QSpinBox, QComboBox, QPushButton, QTextEdit, QGridLayout, QFrame, QCheckBox
+from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QLabel, QDoubleSpinBox, QSpinBox, QPushButton, QTextEdit, QGridLayout, QFrame
 from PyQt6.QtGui import QIcon
 from PyQt6.QtCore import Qt
 import atomize.control_center.status_poller as pol
@@ -42,7 +42,7 @@ class MainWindow(QMainWindow):
 
         self.destroyed.connect(lambda: self._on_destroyed())
         self.setObjectName("MainWindow")
-        self.setWindowTitle("TR EPR")
+        self.setWindowTitle("T2 Measurement")
         self.setStyleSheet("background-color: rgb(42,42,64);")
 
         path_to_main = os.path.dirname(os.path.abspath(__file__))
@@ -69,12 +69,12 @@ class MainWindow(QMainWindow):
 
         # ---- Boxes ----
         double_boxes = [(QDoubleSpinBox, "box_length", "cur_length", self.pulse_length, 3.2, 1900, 19.2, 3.2, 1, " ns"),
-                      (QDoubleSpinBox, "box_delta", "cur_delta", self.delta, 44.8, 256000, 3.2, 288, 1, " ns"),
+                      (QDoubleSpinBox, "box_delta", "cur_delta", self.delta, 44.8, 256000, 288, 3.2, 1, " ns"),
                       (QDoubleSpinBox, "box_time_step", "cur_step", self.time_step, 6.4, 128000, 6.4, 6.4, 1, " ns"),
                       (QSpinBox, "box_rep_rate", "cur_rep_rate", self.rep_rate, 1, 50000, 500, 10, 0, " Hz"),
                       (QDoubleSpinBox, "box_field", "cur_field", self.field, 0, 15000, 3493, 0.5, 2, " G"),
                       (QSpinBox, "box_points", "cur_points", self.points, 1, 20000, 500, 10, 0, ""),
-                      (QSpinBox, "box_averag", "cur_averages", self.averages, 1, 5000, 10, 10, 0, ""),
+                      (QSpinBox, "box_averag", "cur_averages", self.averages, 1, 5000, 10, 1, 0, ""),
                       (QSpinBox, "box_scan", "cur_scan", self.scan, 1, 100, 1, 1, 0, "")
                         ]
 
@@ -311,9 +311,7 @@ class MainWindow(QMainWindow):
         self.parent_conn, self.child_conn = Pipe()
         # a process for running function script 
         # sending parameters for initial initialization
-        self.exp_process = Process( target = self.worker.exp_on, args = ( self.child_conn, self.cur_curve_name, self.cur_exp_name, \
-                                            self.cur_delta, self.cur_length, self.cur_step, self.cur_rep_rate, self.cur_scan, \
-                                            self.cur_field, self.cur_points, self.cur_averages, ) )
+        self.exp_process = Process( target = self.worker.exp_on, args = ( self.child_conn, self.cur_curve_name, self.cur_exp_name, self.cur_delta, self.cur_length, self.cur_step, self.cur_rep_rate, self.cur_scan, self.cur_field, self.cur_points, self.cur_averages, ) )
         
         self.button_start.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(211, 194, 78); border-style: outset; color: rgb(63, 63, 97); font-weight: bold; } ")
 
