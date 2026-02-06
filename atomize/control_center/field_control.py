@@ -4,7 +4,7 @@
 import os
 import sys
 from PyQt6.QtGui import QIcon
-from PyQt6.QtCore import Qt, QObject
+from PyQt6.QtCore import Qt, QObject, QEventLoop, QTimer, QEvent
 from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QLabel, QDoubleSpinBox, QSpinBox, QPushButton, QGridLayout, QFrame
 #import atomize.device_modules.ITC_FC as itc
 import atomize.device_modules.BH_15 as itc
@@ -24,13 +24,22 @@ class MainWindow(QMainWindow):
         self.itc_fc = itc.BH_15()
 
         self.cur_field = 0
-        self.itc_fc.magnet_setup(100, 1)
+        self.cur_field_2 = 0
+        #self.itc_fc.magnet_setup(100, 1)
 
         #self.itc_fc.device
         #self.itc_fc.act_field
         self.design()
         #print('CF: ' + str(self.cur_field))
         #print('F: ' + str(self.field))
+
+        try:
+            path_to_main_status = os.path.dirname(os.path.abspath(__file__))
+            self.path_status_file = os.path.join(path_to_main_status, '..', 'control_center/field.param')
+        except FileNotFoundError:
+            pass
+
+        self.read_field()
 
     def design(self):
 
@@ -132,20 +141,37 @@ class MainWindow(QMainWindow):
         """
         self.button_stop.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(211, 194, 78); border-style: outset; color: rgb(63, 63, 97); font-weight: bold; } ")
 
+        QApplication.processEvents()
+
         while self.cur_field > ( self.initialization_step + 1 ):
             self.cur_field = self.itc_fc.magnet_field( self.cur_field - self.initialization_step )
-            general.wait('15 ms')
-            #self.cur_field = self.cur_field - self.initialization_step
-            #print('CF: ' + str(self.cur_field))
-            #print('F: ' + str(self.field))
+
+            loop = QEventLoop()
+            QTimer.singleShot(15, loop.quit)
+            loop.exec()
+            
+            QApplication.processEvents()
 
         #self.cur_field = self.itc_fc.magnet_field( 0 )
         self.cur_field = 0
         self.field = 0
+        self.itc_fc.magnet_field( self.cur_field )
 
         self.button_stop.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; } ")
         #print('CF: ' + str(self.cur_field))
         #print('F: ' + str(self.field))
+
+    def changeEvent(self, event):
+        if event.type() == QEvent.Type.ActivationChange:
+            if self.isActiveWindow():
+                self.on_window_focused()
+        super().changeEvent(event)
+
+    def on_window_focused(self):
+        self.Set_point.blockSignals(True)
+        self.read_no_set_field()
+        self.Set_point.setValue(self.cur_field_2)
+        self.Set_point.blockSignals(False)
 
     def quit(self):
         """
@@ -164,14 +190,29 @@ class MainWindow(QMainWindow):
         """
         A function to change set point
         """
+        self.read_no_set_field()
         self.field = float( self.Set_point.value() )
+        self.write_field(self.field)
+
+        if self.cur_field_2 != self.cur_field:
+            self.itc_fc.magnet_setup( self.cur_field_2, 1 )
+            self.itc_fc.magnet_field( self.cur_field_2 )
+
+        self.cur_field = self.cur_field_2
 
         self.button_stop.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(211, 194, 78); border-style: outset; color: rgb(63, 63, 97); font-weight: bold; } ")
 
+        QApplication.processEvents()
+        
         if self.cur_field < self.field:
             while self.cur_field < self.field:
                 self.cur_field = self.itc_fc.magnet_field( self.cur_field + self.initialization_step )
-                general.wait('15 ms')
+
+                loop = QEventLoop()
+                QTimer.singleShot(15, loop.quit)
+                loop.exec()
+                
+                QApplication.processEvents()                
                 #self.cur_field = self.cur_field + self.initialization_step
                 #print('CF: ' + str(self.cur_field))
                 #print('F: ' + str(self.field))
@@ -183,7 +224,12 @@ class MainWindow(QMainWindow):
         else:
             while self.cur_field > self.field:
                 self.cur_field = self.itc_fc.magnet_field( self.cur_field - self.initialization_step )
-                general.wait('15 ms')
+
+                loop = QEventLoop()
+                QTimer.singleShot(15, loop.quit)
+                loop.exec()
+                
+                QApplication.processEvents()
                 #self.cur_field = self.cur_field - self.initialization_step
                 #print('CF: ' + str(self.cur_field))
                 #print('F: ' + str(self.field))
@@ -206,6 +252,33 @@ class MainWindow(QMainWindow):
         A function to turn off a programm.
         """
         self.quit()
+
+    def read_field(self):
+        try:
+            text = open( self.path_status_file ).read()
+            lines = text.split('\n')
+            self.cur_field = float( lines[0].split(':  ')[1] )
+            self.Set_point.setValue(self.cur_field)
+
+        except FileNotFoundError:
+            pass
+
+    def read_no_set_field(self):
+        try:
+            text = open( self.path_status_file ).read()
+            lines = text.split('\n')
+            self.cur_field_2 = float( lines[0].split(':  ')[1] )
+
+        except FileNotFoundError:
+            pass
+
+    def write_field(self, field):
+        try:
+            file_to_write = open(self.path_status_file, 'w')
+            file_to_write.write(f'Field:  {field}\n')
+            file_to_write.close()
+        except FileNotFoundError:
+            pass        
 
 def main():
     """

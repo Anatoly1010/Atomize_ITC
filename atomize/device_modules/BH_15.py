@@ -133,6 +133,19 @@ class BH_15:
         if self.max_sw > self.max_field - self.min_field:
             self.max_sw = self.max_field - self.min_field
 
+
+        try:
+            path_to_main_status = os.path.dirname(os.path.abspath(__file__))
+            self.path_status_file = os.path.join(path_to_main_status, '..', 'control_center/field.param')
+            text = open( self.path_status_file ).read()
+            lines = text.split('\n')
+            cur_field = float( lines[0].split(':  ')[1] )
+            self.magnet_setup(cur_field, 1)
+            self.magnet_field(cur_field)
+
+        except FileNotFoundError:
+            pass
+
     def magnet_name(self):
         if self.test_flag != 'test':
             answer = self.config['name']
@@ -314,6 +327,13 @@ class BH_15:
     def magnet_field(self, *field):
         if self.test_flag != 'test':
             if len(field) == 1:
+                try:
+                    file_to_write = open(self.path_status_file, 'w')
+                    file_to_write.write(f'Field:  {field[0]}\n')
+                    file_to_write.close()
+                except FileNotFoundError:
+                    pass
+
                 self.set_field(field[0])
                 return self.get_field()
             elif len(field) == 0:

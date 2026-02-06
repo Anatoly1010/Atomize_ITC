@@ -509,7 +509,7 @@ class Worker(QWidget):
             SCANS = p7
             points = int( (END_FIELD - START_FIELD) / FIELD_STEP ) + 1
 
-            bh15.magnet_setup( 100, FIELD_STEP)
+            #bh15.magnet_setup( 100, FIELD_STEP)
 
             if p9 == 1:
                 data = np.zeros( (2, real_length, points + 1) )

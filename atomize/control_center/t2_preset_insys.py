@@ -408,7 +408,7 @@ class Worker(QWidget):
             x_axis = np.linspace(0, (POINTS - 1)*STEP, num = POINTS) 
             ###
 
-            bh15.magnet_setup( FIELD, 0.5 )
+            #bh15.magnet_setup( FIELD, 0.5 )
             bh15.magnet_field(FIELD) #, calibration = 'True')
             general.wait('4000 ms')
 

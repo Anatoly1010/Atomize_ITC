@@ -385,7 +385,7 @@ class Worker(QWidget):
             import atomize.general_modules.general_functions as general
             import atomize.device_modules.Insys_FPGA as pb_pro
             import atomize.device_modules.Micran_X_band_MW_bridge_v2 as mwBridge
-            import atomize.device_modules.ITC_FC as itc
+            import atomize.device_modules.BH_15 as itc
             import atomize.device_modules.Lakeshore_335 as ls
             import atomize.general_modules.csv_opener_saver_tk_kinter as openfile
 
@@ -393,7 +393,7 @@ class Worker(QWidget):
             ls335 = ls.Lakeshore_335()
             mw = mwBridge.Micran_X_band_MW_bridge_v2()
             pb = pb_pro.Insys_FPGA()
-            bh15 = itc.ITC_FC()
+            bh15 = itc.BH_15()
 
             # parameters for initial initialization
 
@@ -421,7 +421,7 @@ class Worker(QWidget):
             x_axis = np.linspace(0, (POINTS - 1)*STEP, num = POINTS)
             ###
 
-            bh15.magnet_field(FIELD, calibration = 'True')
+            bh15.magnet_field(FIELD)#, calibration = 'True')
             general.wait('4000 ms')
 
             adc_wind = pb.digitizer_read_settings()

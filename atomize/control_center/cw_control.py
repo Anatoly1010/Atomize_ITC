@@ -433,7 +433,7 @@ class Worker(QWidget):
             SCANS = p7
             process = 'None'
 
-            itc_fc.magnet_setup( 100, FIELD_STEP)
+            #itc_fc.magnet_setup( 100, FIELD_STEP)
 
             tc_wait = 0
             raw = p8.split(" ")

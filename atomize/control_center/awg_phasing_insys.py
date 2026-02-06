@@ -1607,7 +1607,7 @@ class Worker(QWidget):
             pb = pb_pro.Insys_FPGA()
             fft = fft_module.Fast_Fourier()
             bh15 = itc.BH_15()
-            bh15.magnet_setup( p15, 0.5 )
+            #bh15.magnet_setup( p15, 0.5 )
             bh15.magnet_field( p15 ) #, calibration = 'True' )
 
             process = 'None'

@@ -85,7 +85,7 @@ class MainExtended(MainWindow):
 
         button_list = []
 
-        button_name_1 = ["CW EPR", "TR EPR", "2012A; IP x.2.21", "2012A_2; IP x.2.22", "Temperature Control", "Magnetic Field Control"]
+        button_name_1 = ["CW EPR", "TR EPR", "2012A; IP x.2.21", "2012A_2; IP x.2.22", "Set Temperature", "Set MF"]
         button_name_2 = ["Pulsed MW Bridge", "", "RECT Channel", "AWG Channel"]
         button_name_3 = ["Resonator Tuning", "T2 Measurement", "T1 Measurement", "ED Spectrum", "3pESEEM"]
 
