@@ -5,11 +5,11 @@ import os
 import sys
 import telnetlib
 import configparser
-#from PyQt6.QtWidgets import QListView, QAction
-from PyQt6 import QtWidgets, uic #, QtCore, QtGui
+from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QLabel, QDoubleSpinBox, QSpinBox, QPushButton, QTextEdit, QGridLayout, QFrame, QComboBox
 from PyQt6.QtGui import QIcon
+from PyQt6.QtCore import Qt
 
-class MainWindow(QtWidgets.QMainWindow):
+class MainWindow(QMainWindow):
     """
     A main window class
     """
@@ -18,18 +18,11 @@ class MainWindow(QtWidgets.QMainWindow):
         A function for connecting actions and creating a main window
         """
         super(MainWindow, self).__init__(*args, **kwargs)
-        
-        self.destroyed.connect(lambda: self._on_destroyed())         # connect some actions to exit
-        # Load the UI Page
-        path_to_main = os.path.dirname(os.path.abspath(__file__))
-        gui_path = os.path.join(path_to_main,'gui/osc_2_main_window.ui')
-        icon_path = os.path.join(path_to_main, 'gui/icon_o2.png')
-        self.setWindowIcon( QIcon(icon_path) )
 
-        uic.loadUi(gui_path, self)                        # Design file
+        path_to_main = os.path.dirname(os.path.abspath(__file__))
 
         # configuration data
-        path_config_file = os.path.join(path_to_main,'osc_2_config.ini')
+        path_config_file = os.path.join(path_to_main, 'osc_2_config.ini')
         config = configparser.ConfigParser()
         config.read(path_config_file)
 
@@ -37,55 +30,145 @@ class MainWindow(QtWidgets.QMainWindow):
         TCP_PORT = int(config['DEFAULT']['TCP_PORT'])
 
         self.telnet = telnetlib.Telnet(TCP_IP, TCP_PORT)
+        self.design()
 
-        # Connection of different action to different Menus and Buttons
-        self.button_off.clicked.connect(self.turn_off)
-        self.button_off.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97);\
-         border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }\
-          QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
-        self.button_stop.clicked.connect(self.osc_stop)
-        self.button_stop.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97);\
-         border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }\
-          QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
-        self.button_start.clicked.connect(self.osc_start)
-        self.button_start.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97);\
-         border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }\
-          QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
+    def design(self):
 
-        # text labels
-        self.label.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_2.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_3.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_4.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_5.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_6.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_7.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_9.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
+        self.destroyed.connect(lambda: self._on_destroyed())
+        self.setObjectName("MainWindow")
+        self.setWindowTitle("2012A; IP 192.168.2.22")
+        self.setStyleSheet("background-color: rgb(42,42,64);")
+
+        path_to_main = os.path.dirname(os.path.abspath(__file__))
+        icon_path = os.path.join(path_to_main, 'gui/icon_o2.png')
+        self.setWindowIcon( QIcon(icon_path) )
+
+        centralwidget = QWidget(self)
+        self.setCentralWidget(centralwidget)
+
+        gridLayout = QGridLayout()
+        gridLayout.setContentsMargins(15, 10, 10, 10)
+        gridLayout.setVerticalSpacing(4)
+        gridLayout.setHorizontalSpacing(20)
+
+        centralwidget.setLayout(gridLayout)
 
 
-        # Spinboxes
-        self.Hor_offset.valueChanged.connect(self.hor_offset)
-        self.Hor_offset.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
-        self.Wind.valueChanged.connect(self.wind)
-        self.Wind.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
-        self.Ch1_scale.valueChanged.connect(self.ch1_scale)
-        self.Ch1_scale.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
-        self.Ch1_offset.valueChanged.connect(self.ch1_offset)
-        self.Ch1_offset.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
-        self.Ch2_scale.valueChanged.connect(self.ch2_scale)
-        self.Ch2_scale.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
-        self.Ch2_offset.valueChanged.connect(self.ch2_offset)
-        self.Ch2_offset.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
-        self.Acq_number.valueChanged.connect(self.acq_number)
-        self.Acq_number.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
+        # ---- Labels & Inputs ----
+        labels = [("Horizontal Offset", "label_1"), ("Window", "label_2"), ("CH1 Scale", "label_3"), ("CH1 Offset", "label_4"), ("CH2 Scale", "label_5"), ("CH2 Offset", "label_6"), ("Acquisitions", "label_7"), ("Trigger Channel", "label_8")]
 
-        self.combo_trig_ch.setStyleSheet("QComboBox { color : rgb(193, 202, 227); selection-color: rgb(211, 194, 78); }")
+        for name, attr_name in labels:
+            lbl = QLabel(name)
+            setattr(self, attr_name, lbl)
+            lbl.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
+
+
+        # ---- Boxes ----
+        double_boxes = [(QDoubleSpinBox, "Hor_offset", "", self.hor_offset, -1e6, 1e6, 0, 1, 1, " us"),
+                      (QDoubleSpinBox, "Wind", "", self.wind, 0.1, 1e6, 500, 1, 1, " us"),
+                      (QSpinBox, "Ch1_scale", "", self.ch1_scale, 2, 2000,200, 5, 0, " mV"),
+                      (QSpinBox, "Ch1_offset", "", self.ch1_offset, -1e3, 1e3, 0, 1, 0, " mV"),
+                      (QSpinBox, "Ch2_scale", "", self.ch1_scale, 2, 2000,200, 5, 0, " mV"),
+                      (QSpinBox, "Ch2_offset", "", self.ch1_offset, -1e3, 1e3, 0, 1, 0, " mV"),
+                      (QSpinBox, "Acq_number", "", self.acq_number, 2, 1e3, 10, 1, 0, "")
+                        ]
+
+        for widget_class, attr_name, par_name, func, v_min, v_max, cur_val, v_step, dec, suf in double_boxes:
+            spin_box = widget_class()
+            if isinstance(spin_box, QDoubleSpinBox):
+                spin_box.setRange(v_min, v_max)
+                spin_box.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")                
+            else:
+                spin_box.setRange(int(v_min), int(v_max))
+                spin_box.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")                
+            spin_box.setSingleStep(v_step)
+            spin_box.setValue(cur_val)
+            if isinstance(spin_box, QDoubleSpinBox):
+                spin_box.setDecimals(dec)
+            spin_box.setSuffix(suf)
+            spin_box.valueChanged.connect(func)
+            spin_box.setFixedSize(130, 26)
+            spin_box.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.PlusMinus)
+
+            spin_box.setKeyboardTracking( False )
+            setattr(self, attr_name, spin_box)
+
+
+        # ---- Combo boxes----
+        combo_boxes = [("CHAN1", "combo_trig_ch", "", self.trigger_channel, 
+                        [
+                        "CHAN1", "CHAN2", "EXT", "LINE"
+                        ])
+                      ]
+
+        for cur_text, attr_name, par_name, func, item in combo_boxes:
+            combo = QComboBox()
+            setattr(self, attr_name, combo)
+            combo.currentIndexChanged.connect(func)
+            combo.addItems(item)
+            combo.setCurrentText(cur_text)
+            combo.setFixedSize(130, 26)
+            combo.setStyleSheet("QComboBox { color : rgb(193, 202, 227); selection-color: rgb(211, 194, 78); }")
         
-        cur_trig_ch = str( self.combo_trig_ch.currentText() )
-        MESSAGE = b':TRIG:EDGE:SOUR ' + cur_trig_ch.encode() + b'\n'
-        self.telnet.write( MESSAGE )
-        
-        self.combo_trig_ch.currentIndexChanged.connect(self.trigger_channel)
+            cur_trig_ch = str( combo.currentText() )
+            MESSAGE = b':TRIG:EDGE:SOUR ' + cur_trig_ch.encode() + b'\n'
+            self.telnet.write( MESSAGE )
+
+        # ---- Buttons ----
+        buttons = [("Run", "button_start", self.osc_start),
+                   ("Stop", "button_stop", self.osc_stop),
+                   ("Exit", "button_off", self.turn_off) ]
+
+        for name, attr_name, func in buttons:
+            btn = QPushButton(name)
+            btn.setFixedSize(140, 40)
+            btn.clicked.connect(func)
+            btn.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; } QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
+            setattr(self, attr_name, btn)
+
+        # ---- Separators ----
+        def hline():
+            line = QFrame()
+            line.setFrameShape(QFrame.Shape.HLine)
+            line.setFrameShadow(QFrame.Shadow.Sunken)
+            line.setLineWidth(2)
+            return line
+
+        # ---- Layout placement ----
+        gridLayout.addWidget(self.label_1, 0, 0)
+        gridLayout.addWidget(self.Hor_offset, 0, 1)
+        gridLayout.addWidget(self.label_2, 1, 0)
+        gridLayout.addWidget(self.Wind, 1, 1)
+
+        gridLayout.addWidget(hline(), 2, 0, 1, 2)
+
+        gridLayout.addWidget(self.label_3, 3, 0)
+        gridLayout.addWidget(self.Ch1_scale, 3, 1)
+        gridLayout.addWidget(self.label_4, 4, 0)
+        gridLayout.addWidget(self.Ch1_offset, 4, 1)
+
+        gridLayout.addWidget(hline(), 5, 0, 1, 2)
+
+        gridLayout.addWidget(self.label_5, 6, 0)
+        gridLayout.addWidget(self.Ch2_scale, 6, 1)
+        gridLayout.addWidget(self.label_6, 7, 0)
+        gridLayout.addWidget(self.Ch2_offset, 7, 1)
+
+        gridLayout.addWidget(hline(), 8, 0, 1, 2)
+
+        gridLayout.addWidget(self.label_7, 9, 0)
+        gridLayout.addWidget(self.Acq_number, 9, 1)
+        gridLayout.addWidget(self.label_8, 10, 0)
+        gridLayout.addWidget(self.combo_trig_ch, 10, 1)
+
+        gridLayout.addWidget(hline(), 11, 0, 1, 2)
+
+        gridLayout.addWidget(self.button_start, 12, 0)
+        gridLayout.addWidget(self.button_stop, 13, 0)
+        gridLayout.addWidget(self.button_off, 14, 0)
+
+        gridLayout.setRowStretch(15, 2)
+        gridLayout.setColumnStretch(15, 2)
 
     def _on_destroyed(self):
         """
@@ -108,7 +191,7 @@ class MainWindow(QtWidgets.QMainWindow):
         trig_ch = str( self.combo_trig_ch.currentText() )
         MESSAGE = b':TRIG:EDGE:SOUR ' + trig_ch.encode() + b'\n'
         self.telnet.write( MESSAGE )
-        
+
     def hor_offset(self):
         """
         A function to change a horizontal offset
@@ -192,17 +275,11 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         self.quit()
 
-    def help(self):
-        """
-        A function to open a documentation
-        """
-        pass
-
 def main():
     """
     A function to run the main window of the programm.
     """
-    app = QtWidgets.QApplication(sys.argv)
+    app = QApplication(sys.argv)
     main = MainWindow()
     main.show()
     sys.exit(app.exec())

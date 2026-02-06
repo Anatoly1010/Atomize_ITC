@@ -919,10 +919,10 @@ class BH_15:
                 #print(command)
                 self.device.write(command)
             except gpib.GpibError:
-                general.message("No answer")
+                general.message(f"No answer {self.__class__.__name__}")
                 sys.exit()
         else:
-            general.message("No connection BH15")
+            general.message(f"No connection {self.__class__.__name__}")
             sys.exit()
 
     def device_query(self, command):
@@ -935,10 +935,10 @@ class BH_15:
                 answer = self.device.read().decode("utf-8")
                 return answer
             except gpib.GpibError:
-                general.message("No answer")
+                general.message(f"No answer {self.__class__.__name__}")
                 sys.exit()
         else:
-            general.message("No connection BH15")
+            general.message(f"No connection {self.__class__.__name__}")
             sys.exit()
 
 def main():

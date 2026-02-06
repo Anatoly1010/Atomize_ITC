@@ -51,7 +51,7 @@ class MainWindow(QMainWindow):
         centralwidget.setLayout(gridLayout)
 
         # ---- Labels & Inputs ----
-        labels = [("Heater Range", "label_1"), ("Set Point", "label_2")]
+        labels = [("Heater Range", "label_1"), ("Set Temperature", "label_2")]
 
         for name, attr_name in labels:
             lbl = QLabel(name)

@@ -85,9 +85,9 @@ class MainExtended(MainWindow):
 
         button_list = []
 
-        button_name_1 = ["CW EPR", "TR EPR", "Oscilloscope 1", "Oscilloscope 2", "Temperature", "Magnetic Field"]
-        button_name_2 = ["MW Bridge", "", "RECT Channel", "AWG Channel"]
-        button_name_3 = ["Tuning", "T2 Measurement", "T1 Measurement", "Echo Detected", "Three Pulse ESEEM"]
+        button_name_1 = ["CW EPR", "TR EPR", "2012A; IP x.2.21", "2012A_2; IP x.2.22", "Temperature Control", "Magnetic Field Control"]
+        button_name_2 = ["Pulsed MW Bridge", "", "RECT Channel", "AWG Channel"]
+        button_name_3 = ["Resonator Tuning", "T2 Measurement", "T1 Measurement", "ED Spectrum", "3pESEEM"]
 
         actions_1 = [self.start_cw, self.start_tr_control, self.start_osc_control, self.start_osc_control_2, self.start_temp_control, self.start_field_control]
         actions_2 = [self.start_mw_control, None, self.start_rect_phasing, self.start_awg_phasing]
