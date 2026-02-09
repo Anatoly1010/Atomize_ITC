@@ -8,7 +8,7 @@ import socket
 import traceback
 import numpy as np
 from multiprocessing import Process, Pipe
-from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QLabel, QDoubleSpinBox, QSpinBox, QComboBox, QPushButton, QTextEdit, QGridLayout, QFrame, QCheckBox, QFileDialog, QVBoxLayout, QTabWidget, QScrollArea, QHBoxLayout
+from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QLabel, QDoubleSpinBox, QSpinBox, QComboBox, QPushButton, QTextEdit, QGridLayout, QFrame, QCheckBox, QFileDialog, QVBoxLayout, QTabWidget, QScrollArea, QHBoxLayout, QPlainTextEdit
 from PyQt6.QtGui import QIcon, QColor, QAction
 from PyQt6.QtCore import Qt
 import atomize.general_modules.general_functions as general
@@ -26,7 +26,7 @@ class MainWindow(QMainWindow):
         super(MainWindow, self).__init__(*args, **kwargs)
         self.menu()
         #####
-        path_to_main2 = os.path.join(os.path.abspath(os.getcwd()), '..', '..', 'libs')  #, '..', '..', 'libs'
+        path_to_main2 = os.path.join(os.path.abspath(os.getcwd()), '..', 'libs')  #, '..', '..', 'libs'
         os.chdir(path_to_main2)
         #####
 
@@ -53,7 +53,7 @@ class MainWindow(QMainWindow):
 
     def menu(self):
         menubar = self.menuBar()
-        menubar.setStyleSheet("QMenuBar { color: rgb(193, 202, 227); font-weight: bold; font-size: 12px; } QMenu::item { color: rgb(211, 194, 78); } QMenu::item:selected {color: rgb(193, 202, 227); }")
+        menubar.setStyleSheet("QMenuBar { color: rgb(193, 202, 227); font-weight: bold; font-size: 14px; } QMenu::item { color: rgb(211, 194, 78); } QMenu::item:selected {color: rgb(193, 202, 227); }")
         file_menu = menubar.addMenu("File")
         menubar.setFixedHeight(27)
 
@@ -76,9 +76,9 @@ class MainWindow(QMainWindow):
         self.setWindowIcon( QIcon(icon_path) )
         self.path = os.path.join(path_to_main, '..', '..', '..', '..', 'experimental_data')
 
-        self.setMinimumHeight(570)
-        self.setMinimumWidth(1210)
-        self.setMaximumWidth(2000)
+        self.setMinimumHeight(580)
+        self.setMinimumWidth(1360)
+        self.setMaximumWidth(2200)
 
         central_container = QWidget()
         self.setCentralWidget(central_container)
@@ -93,7 +93,7 @@ class MainWindow(QMainWindow):
         self.tab_pulse.setStyleSheet("""
             QTabBar::tab { 
                 width: 151px; 
-                height: 20px;
+                height: 25px;
                 font-weight: bold; 
                 color: rgb(193, 202, 227);
                 background: rgb(63, 63, 97);
@@ -122,6 +122,33 @@ class MainWindow(QMainWindow):
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
         scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         #scroll.setFixedHeight(383)
+
+        scroll.setStyleSheet(f"""
+            QScrollArea {{
+                border: none;
+                background-color: transparent;
+            }}
+            QScrollBar:horizontal {{
+                border: none;
+                background: rgb(43, 43, 77); 
+                height: 10px;
+                margin: 0px;
+            }}
+            QScrollBar::handle:horizontal {{
+                background: rgb(193, 202, 227); 
+                min-width: 20px;
+                border-radius: 5px;
+            }}
+            QScrollBar::handle:horizontal:hover {{
+                background: rgb(211, 194, 78); 
+            }}
+            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
+                width: 0px;
+            }}
+            QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{
+                background: none;
+            }}
+        """)
 
         container = QWidget()
         scroll.setWidget(container)
@@ -340,7 +367,9 @@ class MainWindow(QMainWindow):
             self.buttons_layout.addWidget(btn, btn_c, btn_cl)
             btn_c += 1
         
-        txt = QTextEdit()
+        txt = QPlainTextEdit()
+        txt.setReadOnly(True)
+        txt.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)        
         setattr(self, "errors", txt)
         txt.setStyleSheet("QPlainTextEdit { color : rgb(211, 194, 78); }")
         self.buttons_layout.addWidget(txt, 3, 2, 3, 10)
@@ -463,7 +492,7 @@ class MainWindow(QMainWindow):
         self.tab_pulse.tabBar().setTabTextColor(2, QColor(193, 202, 227))
 
         # ---- Labels & Inputs ----
-        labels = [("Points to Drop", "label_11"), ("Zero Order", "label_12"), ("First Order", "label_13"), ("Second Order", "label_14"), ("Live FFT", "label_15"), ("Quadrature Correction", "label_16")]
+        labels = [("Points to Drop", "label_11"), ("Zero Order", "label_12"), ("First Order", "label_13"), ("Second Order", "label_14"), ("Live FFT", "label_15"), ("Quadrature", "label_16")]
 
         for name, attr_name in labels:
             lbl = QLabel(name)

@@ -8,7 +8,7 @@ import socket
 import traceback
 import numpy as np
 from multiprocessing import Process, Pipe
-from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QLabel, QDoubleSpinBox, QSpinBox, QComboBox, QPushButton, QTextEdit, QGridLayout, QFrame, QCheckBox, QFileDialog, QVBoxLayout, QTabWidget, QScrollArea, QHBoxLayout
+from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QLabel, QDoubleSpinBox, QSpinBox, QComboBox, QPushButton, QTextEdit, QGridLayout, QFrame, QCheckBox, QFileDialog, QVBoxLayout, QTabWidget, QScrollArea, QHBoxLayout, QPlainTextEdit
 from PyQt6.QtGui import QIcon, QColor, QAction
 from PyQt6.QtCore import Qt
 import atomize.general_modules.general_functions as general
@@ -27,7 +27,7 @@ class MainWindow(QMainWindow):
         self.menu()
 
         #####
-        path_to_main2 = os.path.join(os.path.abspath(os.getcwd()), '..', '..', 'libs')  #, '..', '..', 'libs'
+        path_to_main2 = os.path.join(os.path.abspath(os.getcwd()), '..', 'libs')  #, '..', '..', 'libs'
         os.chdir(path_to_main2)
         #####
 
@@ -55,7 +55,7 @@ class MainWindow(QMainWindow):
 
     def menu(self):
         menubar = self.menuBar()
-        menubar.setStyleSheet("QMenuBar { color: rgb(193, 202, 227); font-weight: bold; font-size: 12px; } QMenu::item { color: rgb(211, 194, 78); } QMenu::item:selected {color: rgb(193, 202, 227); }")
+        menubar.setStyleSheet("QMenuBar { color: rgb(193, 202, 227); font-weight: bold; font-size: 14px; } QMenu::item { color: rgb(211, 194, 78); } QMenu::item:selected {color: rgb(193, 202, 227); }")
         file_menu = menubar.addMenu("File")
         menubar.setFixedHeight(27)
 
@@ -78,9 +78,9 @@ class MainWindow(QMainWindow):
         self.setWindowIcon( QIcon(icon_path) )
         self.path = os.path.join(path_to_main, '..', '..', '..', '..', 'experimental_data')
 
-        self.setMinimumHeight(690)
-        self.setMinimumWidth(1210)
-        self.setMaximumWidth(2000)
+        self.setMinimumHeight(700)
+        self.setMinimumWidth(1360)
+        self.setMaximumWidth(2200)
 
         central_container = QWidget()
         self.setCentralWidget(central_container)
@@ -95,7 +95,7 @@ class MainWindow(QMainWindow):
         self.tab_pulse.setStyleSheet("""
             QTabBar::tab { 
                 width: 151px; 
-                height: 20px;
+                height: 25px;
                 font-weight: bold; 
                 color: rgb(193, 202, 227);
                 background: rgb(63, 63, 97);
@@ -124,6 +124,34 @@ class MainWindow(QMainWindow):
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
         scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         #scroll.setFixedHeight(383)
+
+        scroll.setStyleSheet(f"""
+            QScrollArea {{
+                border: none;
+                background-color: transparent;
+            }}
+            QScrollBar:horizontal {{
+                border: none;
+                background: rgb(43, 43, 77); 
+                height: 10px;
+                margin: 0px;
+            }}
+            QScrollBar::handle:horizontal {{
+                background: rgb(193, 202, 227); 
+                min-width: 20px;
+                border-radius: 5px;
+            }}
+            QScrollBar::handle:horizontal:hover {{
+                background: rgb(211, 194, 78); 
+            }}
+            /* Скрываем кнопки по бокам (стрелки) */
+            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
+                width: 0px;
+            }}
+            QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{
+                background: none;
+            }}
+        """)
 
         container = QWidget()
         scroll.setWidget(container)
@@ -258,16 +286,15 @@ class MainWindow(QMainWindow):
                 
                 if pulse_set[7] == "_cf":
                     spin_box.valueChanged.connect(lambda _, idx = i: self.update_coef_param(idx))
+                    self.update_coef_param(i)
                 else:
                     prefix = "P"
                     v_name = "p" if pulse_set[7] == "_fr" else ""
                     spin_box.valueChanged.connect(
-                        lambda _, idx=i, p=prefix, s=pulse_set[7], v=pulse_set[8]: 
+                        lambda _, idx=i, p=prefix, s=pulse_set[7], v = pulse_set[8]: 
                         self.update_awg_generic(idx, s, v)
                     )
-                
-                val_name = f"p{i}{pulse_set[8]}" if pulse_set[8].startswith("_") else f"{pulse_set[8]}{i}"
-                setattr(self, val_name, spin_box.value())
+                    self.update_awg_generic(i, pulse_set[7], pulse_set[8])
 
                 self.gridLayout.addWidget(spin_box, j, i)
 
@@ -399,7 +426,9 @@ class MainWindow(QMainWindow):
             self.buttons_layout.addWidget(btn, btn_c, btn_cl)
             btn_c += 1
         
-        txt = QTextEdit()
+        txt = QPlainTextEdit()
+        txt.setReadOnly(True)
+        txt.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
         setattr(self, "errors", txt)
         txt.setStyleSheet("QPlainTextEdit { color : rgb(211, 194, 78); }")
         self.buttons_layout.addWidget(txt, 3, 2, 3, 10)
@@ -522,7 +551,7 @@ class MainWindow(QMainWindow):
         self.tab_pulse.tabBar().setTabTextColor(2, QColor(193, 202, 227))
 
         # ---- Labels & Inputs ----
-        labels = [("Points to Drop", "label_11"), ("Zero Order", "label_12"), ("First Order", "label_13"), ("Second Order", "label_14"), ("Live FFT", "label_15"), ("Quadrature Correction", "label_16")]
+        labels = [("Points to Drop", "label_11"), ("Zero Order", "label_12"), ("First Order", "label_13"), ("Second Order", "label_14"), ("Live FFT", "label_15"), ("Quadrature", "label_16")]
 
         for name, attr_name in labels:
             lbl = QLabel(name)
@@ -689,12 +718,12 @@ class MainWindow(QMainWindow):
         self.tab_pulse.tabBar().setTabTextColor(4, QColor(193, 202, 227))
 
         # ---- Labels & Inputs ----
-        labels = [("Amplitude I", "label_a1"), ("Amplitude Q", "label_a2"), ("Phase", "label_a3"), ("N [WURST; SECH/TANH]", "label_a4"), ("b [SECH/TANH]", "label_a5"), ("Resonator Correction", "label_a6")]
+        labels = [("Amplitude I", "label_a1"), ("Amplitude Q", "label_a2"), ("Phase", "label_a3"), ("N [wurst; sech/tanh]", "label_a4"), ("b [sech/tanh]", "label_a5"), ("Resonator Profile", "label_a6")]
 
         for name, attr_name in labels:
             lbl = QLabel(name)
             setattr(self, attr_name, lbl)
-            lbl.setFixedSize(130, 26)
+            lbl.setFixedSize(143, 26)
             lbl.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
 
         # ---- Boxes ----
@@ -820,7 +849,7 @@ class MainWindow(QMainWindow):
         if index == 2:
             self.laser_flag = 1 if text == 'LASER' else 0
             
-        #print(f"Pulse {index} type set to: {text}")
+        print(f"Pulse {index} type set to: {text}")
 
     def update_pulse_phase(self, index):
 

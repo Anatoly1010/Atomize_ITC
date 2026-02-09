@@ -61,7 +61,7 @@ AMPL_PUMP = 100
 EXP_NAME = 'deer'
 
 # read adc settings
-#adc_wind = pb.digitizer_read_settings()
+#adc_wind = pb.digitizer_read_settings() #816.0
 
 # Setting magnetic field
 bh15.magnet_setup(FIELD, 1)

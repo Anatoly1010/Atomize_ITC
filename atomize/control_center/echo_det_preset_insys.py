@@ -413,7 +413,7 @@ class Worker(QWidget):
 
             pb.pulser_pulse(name ='P0', channel = 'MW', start = PULSE_1_START, length = PULSE_1_LENGTH, phase_list = ['+x', '-x'])
             pb.pulser_pulse(name ='P1', channel = 'MW', start = PULSE_2_START, length = PULSE_2_LENGTH, phase_list = ['+x', '+x'])
-            pb.pulser_pulse(name ='P2', channel = 'DETECTION', start = PULSE_SIGNAL_START, length = adc_wind, phase_list = ['+x', '-x'])
+            pb.pulser_pulse(name ='P2', channel = 'DETECTION', start = PULSE_SIGNAL_START, length = f"{adc_wind} ns", phase_list = ['+x', '-x'])
 
             pb.pulser_repetition_rate( REP_RATE )
             # read integration window
@@ -470,7 +470,7 @@ class Worker(QWidget):
                 self.command = 'exit'
 
             if self.command == 'exit':
-                tb = pb.adc_window * 0.4 * pb.digitizer_decimation()
+                tb = round( pb.digitizer_window(), 1)
                 pb.pulser_close()
 
                 now = datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")

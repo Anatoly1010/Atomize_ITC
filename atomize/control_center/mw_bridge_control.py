@@ -11,7 +11,7 @@ from math import exp, sqrt
 from threading import Thread
 from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QLabel, QDoubleSpinBox, QSpinBox, QComboBox, QPushButton, QTextEdit, QGridLayout, QFrame
 from PyQt6.QtGui import QIcon
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import QEvent
 import atomize.general_modules.general_functions as general
 import atomize.device_modules.ECC_15K as ecc
 
@@ -44,16 +44,16 @@ class MainWindow(QMainWindow):
         self.prev_dB = 60
         self.p1 = 'None'
 
-        #self.synt()
-        self.initialize()
-        #self.telemetry()
-
 
         try:
             path_to_main_status = os.path.dirname(os.path.abspath(__file__))
-            self.path_status_file = os.path.join(path_to_main_status, '..', 'control_center/field.param')
+            self.path_status_file = os.path.join(path_to_main_status, '..', 'control_center/bridge.param')
         except FileNotFoundError:
             pass
+
+        #self.synt()
+        self.initialize()
+        #self.telemetry()
 
         #self.ecc15k.synthetizer_frequency(f"{freq2} MHz")
         #self.ecc15k.synthetizer_power(power2)
@@ -601,6 +601,18 @@ class MainWindow(QMainWindow):
         #self.telemetry_text.appendPlainText( 'Rotary Vane: ' + str( self.curr_dB ) + ' dB')
 
         self.prev_dB = self.curr_dB
+
+        try:
+            with open(self.path_status_file, 'r', encoding = 'utf-8') as f:
+                lines = f.readlines()
+            with open(self.path_status_file, 'w', encoding = 'utf-8') as f:
+                for line in lines:
+                    if line.startswith('Rotary Vane:'):
+                        f.write(f'Rotary Vane:  {self.curr_dB}\n')
+                    else:
+                        f.write(line)
+        except FileNotFoundError:
+            pass
 
     def initialize(self):
         """
