@@ -8,9 +8,8 @@ import socket
 import traceback
 import numpy as np
 from multiprocessing import Process, Pipe
-from PyQt6 import uic
-from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QLabel, QDoubleSpinBox, QSpinBox, QComboBox, QPushButton, QTextEdit, QGridLayout, QFrame, QCheckBox, QFileDialog
-from PyQt6.QtGui import QIcon
+from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QLabel, QDoubleSpinBox, QSpinBox, QComboBox, QPushButton, QTextEdit, QGridLayout, QFrame, QCheckBox, QFileDialog, QVBoxLayout, QTabWidget, QScrollArea, QHBoxLayout
+from PyQt6.QtGui import QIcon, QColor, QAction
 from PyQt6.QtCore import Qt
 import atomize.general_modules.general_functions as general
 import atomize.device_modules.Insys_FPGA as pb_pro
@@ -25,22 +24,11 @@ class MainWindow(QMainWindow):
         A function for connecting actions and creating a main window
         """
         super(MainWindow, self).__init__(*args, **kwargs)
-        
-        path_to_main = os.path.dirname(os.path.abspath(__file__))
-        gui_path = os.path.join(path_to_main,'gui/phasing_main_window_insys.ui')
-        icon_path = os.path.join(path_to_main, 'gui/icon_pulse.png')
-        self.setWindowIcon( QIcon(icon_path) )
-
-        self.path = os.path.join(path_to_main, '..', '..', '..', '..', 'experimental_data')
-
+        self.menu()
         #####
-        path_to_main2 = os.path.join(os.path.abspath(os.getcwd()), '..', 'libs')  #, '..', '..', 'libs'
+        path_to_main2 = os.path.join(os.path.abspath(os.getcwd()), '..', '..', 'libs')  #, '..', '..', 'libs'
         os.chdir(path_to_main2)
         #####
-
-        self.destroyed.connect(lambda: self._on_destroyed())                # connect some actions to exit
-        # Load the UI Page
-        uic.loadUi(gui_path, self)                                          # Design file
 
         self.pb = pb_pro.Insys_FPGA()
         
@@ -48,220 +36,523 @@ class MainWindow(QMainWindow):
         self.deg_rad = 57.2957795131
         self.sec_order_coef = -2*np.pi/2
 
-        # Connection of different action to different Menus and Buttons
-        self.button_off.clicked.connect(self.turn_off)
-        self.button_off.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97);\
-         border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }\
-          QPushButton:pressed {background-color: rgb(211, 194, 78); ; border-style: inset; font-weight: bold; }")
+        self.design_tab_1()
+        self.design_tab_2()
+        self.design_tab_3()
+        self.design_tab_4()
 
-        self.button_stop.clicked.connect(self.dig_stop)
-        self.button_stop.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97);\
-         border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }\
-          QPushButton:pressed {background-color: rgb(211, 194, 78); ; border-style: inset; font-weight: bold; }")
-        self.button_update.clicked.connect(self.update)
-        self.button_update.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97);\
-         border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }\
-          QPushButton:pressed {background-color: rgb(211, 194, 78); ; border-style: inset; font-weight: bold; }")
+        self.laser_q_switch_delay = 160000 # in ns
 
-        # text labels
-        self.errors.setStyleSheet("QPlainTextEdit { color : rgb(211, 194, 78); }")  # rgb(193, 202, 227)
-
-        self.label.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_2.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_3.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_4.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_5.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_6.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_7.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        #self.label_8.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_9.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_11.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_12.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_13.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_14.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_15.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_16.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_17.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_18.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_19.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-
-        # Spinboxes
-        self.P1_st.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97) }")
-        #self.P1_st.lineEdit().setReadOnly( True )   # block input from keyboard
-        self.P2_st.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.P3_st.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.P4_st.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.P5_st.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.P6_st.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.P7_st.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.Rep_rate.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.Field.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.P1_len.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.P2_len.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.P3_len.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.P4_len.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.P5_len.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.P6_len.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.P7_len.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.P1_type.setStyleSheet("QComboBox { color : rgb(193, 202, 227); selection-color: rgb(211, 194, 78); }")
-        self.P2_type.setStyleSheet("QComboBox { color : rgb(193, 202, 227); selection-color: rgb(211, 194, 78); }")
-        self.P3_type.setStyleSheet("QComboBox { color : rgb(193, 202, 227); selection-color: rgb(211, 194, 78); }")
-        self.P4_type.setStyleSheet("QComboBox { color : rgb(193, 202, 227); selection-color: rgb(211, 194, 78); }")
-        self.P5_type.setStyleSheet("QComboBox { color : rgb(193, 202, 227); selection-color: rgb(211, 194, 78); }")
-        self.P6_type.setStyleSheet("QComboBox { color : rgb(193, 202, 227); selection-color: rgb(211, 194, 78); }")
-        self.P7_type.setStyleSheet("QComboBox { color : rgb(193, 202, 227); selection-color: rgb(211, 194, 78); }")
-        self.P_to_drop.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.Zero_order.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.First_order.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.Second_order.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-
-        self.Dec.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.Dec.valueChanged.connect( self.decimat )
-        self.decimation = self.Dec.value()
-
-        self.Phase_1.setStyleSheet("QPlainTextEdit { color: rgb(211, 194, 78); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.Phase_2.setStyleSheet("QPlainTextEdit { color: rgb(211, 194, 78); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.Phase_3.setStyleSheet("QPlainTextEdit { color: rgb(211, 194, 78); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.Phase_4.setStyleSheet("QPlainTextEdit { color: rgb(211, 194, 78); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.Phase_5.setStyleSheet("QPlainTextEdit { color: rgb(211, 194, 78); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.Phase_6.setStyleSheet("QPlainTextEdit { color: rgb(211, 194, 78); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.Phase_7.setStyleSheet("QPlainTextEdit { color: rgb(211, 194, 78); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-
-        # Functions
-        self.P1_st.valueChanged.connect(self.p1_st)
-        self.p1_start = self.round_and_change( self.P1_st )
-
-        self.P2_st.valueChanged.connect(self.p2_st)
-        self.p2_start = self.round_and_change( self.P2_st )
-
-        self.P3_st.valueChanged.connect(self.p3_st)
-        self.p3_start = self.round_and_change( self.P3_st )
-
-        self.P4_st.valueChanged.connect(self.p4_st)
-        self.p4_start = self.round_and_change( self.P4_st )
-
-        self.P5_st.valueChanged.connect(self.p5_st)
-        self.p5_start = self.round_and_change( self.P5_st )
-
-        self.P6_st.valueChanged.connect(self.p6_st)
-        self.p6_start = self.round_and_change( self.P6_st )
-
-        self.P7_st.valueChanged.connect(self.p7_st)
-        self.p7_start = self.round_and_change( self.P7_st )
-
-        self.P1_len.valueChanged.connect(self.p1_len)
-        self.p1_length = self.round_and_change( self.P1_len )
-
-        self.P2_len.valueChanged.connect(self.p2_len)
-        self.p2_length = self.round_and_change( self.P2_len )
-
-        self.P3_len.valueChanged.connect(self.p3_len)
-        self.p3_length = self.round_and_change( self.P3_len )
-
-        self.P4_len.valueChanged.connect(self.p4_len)
-        self.p4_length = self.round_and_change( self.P4_len )
-
-        self.P5_len.valueChanged.connect(self.p5_len)
-        self.p5_length = self.round_and_change( self.P5_len )
-
-        self.P6_len.valueChanged.connect(self.p6_len)
-        self.p6_length = self.round_and_change( self.P6_len )
-
-        self.P7_len.valueChanged.connect(self.p7_len)
-        self.p7_length = self.round_and_change( self.P7_len )
-
-        self.Rep_rate.valueChanged.connect(self.rep_rate)
-        self.repetition_rate = str( self.Rep_rate.value() ) + ' Hz'
-
-        self.Field.valueChanged.connect(self.field)
-        self.mag_field = float( self.Field.value() )
-        
-        self.P1_type.currentIndexChanged.connect(self.p1_type)
-        self.p1_typ = str( self.P1_type.currentText() )
-        self.P2_type.currentIndexChanged.connect(self.p2_type)
-        self.p2_typ = str( self.P2_type.currentText() )
-        self.P3_type.currentIndexChanged.connect(self.p3_type)
-        self.p3_typ = str( self.P3_type.currentText() )
-        self.P4_type.currentIndexChanged.connect(self.p4_type)
-        self.p4_typ = str( self.P4_type.currentText() )
-        self.P5_type.currentIndexChanged.connect(self.p5_type)
-        self.p5_typ = str( self.P5_type.currentText() )
-        self.P6_type.currentIndexChanged.connect(self.p6_type)
-        self.p6_typ = str( self.P6_type.currentText() )
-        self.P7_type.currentIndexChanged.connect(self.p7_type)
-        self.p7_typ = str( self.P7_type.currentText() )
-
-        self.laser_flag = 0
-        self.laser_q_switch_delay = 141008 # in ns
-
-        self.Phase_1.textChanged.connect(self.phase_1)
-        self.ph_1 = self.Phase_1.toPlainText()[1:(len(self.Phase_1.toPlainText())-1)].split(',')
-        self.Phase_2.textChanged.connect(self.phase_2)
-        self.ph_2 = self.Phase_2.toPlainText()[1:(len(self.Phase_2.toPlainText())-1)].split(',')
-        self.Phase_3.textChanged.connect(self.phase_3)
-        self.ph_3 = self.Phase_3.toPlainText()[1:(len(self.Phase_3.toPlainText())-1)].split(',')
-        self.Phase_4.textChanged.connect(self.phase_4)
-        self.ph_4 = self.Phase_4.toPlainText()[1:(len(self.Phase_4.toPlainText())-1)].split(',')
-        self.Phase_5.textChanged.connect(self.phase_5)
-        self.ph_5 = self.Phase_5.toPlainText()[1:(len(self.Phase_5.toPlainText())-1)].split(',')
-        self.Phase_6.textChanged.connect(self.phase_6)
-        self.ph_6 = self.Phase_6.toPlainText()[1:(len(self.Phase_6.toPlainText())-1)].split(',')
-        self.Phase_7.textChanged.connect(self.phase_7)
-        self.ph_7 = self.Phase_7.toPlainText()[1:(len(self.Phase_7.toPlainText())-1)].split(',')
-
-        self.menu_bar_file()
-
-        # Quadrature Phase Correction
-        self.P_to_drop.valueChanged.connect(self.p_to_drop_func)
-        self.p_to_drop = int( self.P_to_drop.value() )
-
-        self.Zero_order.valueChanged.connect(self.zero_order_func)
-        self.zero_order = float( self.Zero_order.value() ) / self.deg_rad
-        
-        self.First_order.valueChanged.connect(self.first_order_func)
-        self.first_order = float( self.First_order.value() )
-
-        self.Second_order.valueChanged.connect(self.second_order_func)
-        self.second_order = float( self.Second_order.value() )
-        if self.second_order != 0.0:
-            self.second_order = self.sec_order_coef / ( float( self.Second_order.value() ) * 1000 )
-
-        self.Combo_laser.setStyleSheet("QComboBox { color : rgb(193, 202, 227); selection-color: rgb(211, 194, 78); }")
-        self.Combo_laser.currentIndexChanged.connect(self.combo_laser_fun)
-        self.combo_laser_fun()
-
-        #self.live_mode.setStyleSheet("QCheckBox { color : rgb(193, 202, 227); }")
-        #self.live_mode.stateChanged.connect( self.change_live_mode )
-        self.l_mode = 0
-
-        self.dig_part()
-
+        """
+        Create a process to interact with an experimental script that will run on a different thread.
+        We need a different thread here, since PyQt GUI applications have a main thread of execution that runs the event loop and GUI. If you launch a long-running task in this thread, then your GUI will freeze until the task terminates. During that time, the user won’t be able to interact with the application
+        """
+        self.worker = Worker()
         self.poller = pol.StatusPoller()
         self.poller.status_received.connect(self.update_gui_status)
 
-    def dig_part(self):
-        """
-        Digitizer settings
-        """
-        # time per point is fixed
-        self.time_per_point = 0.4 * self.decimation
+    def menu(self):
+        menubar = self.menuBar()
+        menubar.setStyleSheet("QMenuBar { color: rgb(193, 202, 227); font-weight: bold; font-size: 12px; } QMenu::item { color: rgb(211, 194, 78); } QMenu::item:selected {color: rgb(193, 202, 227); }")
+        file_menu = menubar.addMenu("File")
+        menubar.setFixedHeight(27)
 
-        self.Win_left.valueChanged.connect(self.win_left)
-        self.cur_win_left = int( float( self.Win_left.value() ) / self.time_per_point )
-        self.Win_left.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.Win_right.valueChanged.connect(self.win_right)
-        self.cur_win_right = int( float( self.Win_right.value() ) / self.time_per_point )
-        self.Win_right.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
+        self.action_read = QAction("Read from file", self)
+        self.action_read.triggered.connect( self.open_file_dialog )
+        file_menu.addAction(self.action_read)
 
-        self.Acq_number.valueChanged.connect(self.acq_number)
-        self.number_averages = int( self.Acq_number.value() )
-        self.Acq_number.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
+        self.action_save = QAction("Save to file", self)
+        self.action_save.triggered.connect(self.save_file_dialog)
+        file_menu.addAction(self.action_save)
 
-        self.fft_box.setStyleSheet("QCheckBox { color : rgb(193, 202, 227); }")
-        self.Quad_cor.setStyleSheet("QCheckBox { color : rgb(193, 202, 227); }")
+    def design_tab_1(self):
+        self.destroyed.connect(lambda: self._on_destroyed())
+        self.setObjectName("MainWindow")
+        self.setWindowTitle("RECT Channel Pulse Control")
+        self.setStyleSheet("background-color: rgb(42,42,64);")
 
-        self.fft_box.stateChanged.connect( self.fft_online )
-        self.Quad_cor.stateChanged.connect( self.quad_online )
+        path_to_main = os.path.dirname(os.path.abspath(__file__))
+        icon_path = os.path.join(path_to_main, 'gui/icon_pulse.png')
+        self.setWindowIcon( QIcon(icon_path) )
+        self.path = os.path.join(path_to_main, '..', '..', '..', '..', 'experimental_data')
+
+        self.setMinimumHeight(570)
+        self.setMinimumWidth(1210)
+        self.setMaximumWidth(2000)
+
+        central_container = QWidget()
+        self.setCentralWidget(central_container)
+        main_window_layout = QVBoxLayout(central_container)
+        main_window_layout.setContentsMargins(0, 0, 0, 0)
+        main_window_layout.setSpacing(0)
+
+        self.tab_pulse = QTabWidget()
+        main_window_layout.addWidget(self.tab_pulse)
+
+        self.tab_pulse.setTabShape(QTabWidget.TabShape.Rounded)
+        self.tab_pulse.setStyleSheet("""
+            QTabBar::tab { 
+                width: 151px; 
+                height: 20px;
+                font-weight: bold; 
+                color: rgb(193, 202, 227);
+                background: rgb(63, 63, 97);
+                border: 1px solid rgb(43, 43, 77);
+                border-bottom: none;
+                border-top-left-radius: 4px;
+                border-top-right-radius: 4px;
+                margin-right: 2px;
+            }
+            QTabBar::tab:selected {
+                color: rgb(211, 194, 78);
+                background: rgb(83, 83, 117);
+                border-bottom: 2px solid rgb(211, 194, 78);
+            }
+            QTabBar::tab:hover {
+                background: rgb(73, 73, 107);
+            }
+        """)
+
+        pulse_page = QWidget()
+        pulse_page_layout = QVBoxLayout(pulse_page)
+        pulse_page_layout.setContentsMargins(0, 0, 0, 0)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        #scroll.setFixedHeight(383)
+
+        container = QWidget()
+        scroll.setWidget(container)
+        tab_layout = QVBoxLayout(container)
+        
+        self.gridLayout = QGridLayout()
+        self.gridLayout.setContentsMargins(5, 5, 0, 0)
+        self.gridLayout.setVerticalSpacing(4)
+        self.gridLayout.setHorizontalSpacing(20)
+        
+        tab_layout.addLayout(self.gridLayout)
+        tab_layout.addStretch()
+
+        pulse_page_layout.addWidget(scroll)
+        self.tab_pulse.addTab(pulse_page, "Pulses")
+        self.tab_pulse.tabBar().setTabTextColor(0, QColor(193, 202, 227))
+
+        buttons_widget = QWidget()
+        self.buttons_layout = QGridLayout(buttons_widget)
+        self.buttons_layout.setContentsMargins(15, 10, 10, 10)
+        self.buttons_layout.setVerticalSpacing(6)
+        self.buttons_layout.setHorizontalSpacing(20)
+        
+        main_window_layout.addWidget(buttons_widget)
+
+        # ---- Labels & Inputs ----
+        labels = [("Start", "label_1"), ("Length", "label_2"), ("Start Increment", "label_3"), ("Length Increment", "label_4"), ("Type", "label_5"), ("Phase", "label_6"), ("Repetition Rate", "label_7"), ("Magnetic Field", "label_8")]
+
+        for name, attr_name in labels:
+            lbl = QLabel(name)
+            lbl.setFixedSize(130, 26)
+            setattr(self, attr_name, lbl)
+            lbl.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
+
+
+        # ---- Boxes ----
+        pulses = [(QDoubleSpinBox, 0, 100e6, 0, 3.2, 1, " ns", "_st", "_start"),
+                  (QDoubleSpinBox, 0, 1900, 0, 3.2, 1, " ns", "_len", "_length"),
+                  (QDoubleSpinBox, 0, 1e6, 0, 3.2, 1, " ns", "_st_inc", "_st_increment"),
+                  (QDoubleSpinBox, 0, 320, 0, 3.2, 1, " ns", "_len_inc", "_len_increment")
+                 ]
+
+        for j in range(1, 5):
+            pulse_set = pulses[j-1]
+            label_widget = getattr(self, f"label_{j}")
+            self.gridLayout.addWidget(label_widget, j + 2, 0)
+
+            for i in range(1, 10):
+                spin_box = (pulse_set[0])()
+                spin_box.setRange(pulse_set[1], pulse_set[2])
+                spin_box.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
+                spin_box.setSingleStep(pulse_set[4])
+                if (i == 1) and (j == 1):
+                    spin_box.setValue(576)
+                elif (i == 1) and (j == 2):
+                    spin_box.setRange(0, 6.4e3)
+                    spin_box.setValue(816)
+                elif (i == 2) and (j == 2):
+                    spin_box.setValue(22.4)
+                elif (i == 3) and (j == 1):
+                    spin_box.setValue(288)
+                elif (i == 3) and (j == 2):
+                    spin_box.setValue(44.8)
+                else:  
+                    spin_box.setValue(pulse_set[3])
+                spin_box.setDecimals(pulse_set[5])
+                spin_box.setSuffix(pulse_set[6])
+                spin_box.setFixedSize(130, 26)
+                spin_box.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.PlusMinus)
+
+                spin_box.setKeyboardTracking( False )
+                # widget name pulse_set[7]
+                setattr(self, f"P{i}{pulse_set[7]}", spin_box)
+                # parameter name pulse_set[8]
+                spin_box.valueChanged.connect(
+                        lambda val, idx = i, s7 = pulse_set[7], s8 = pulse_set[8]: 
+                        self.update_pulse_param(idx, s7, s8)
+                        )
+
+                start_value = self.round_and_change(spin_box)
+                setattr(self, f"p{i}{pulse_set[8]}", start_value)
+                self.gridLayout.addWidget(spin_box, j + 2, i)
+
+                if j == 1:
+                    lbl = QLabel(f"{i}")
+                    lbl.setAlignment(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
+                    lbl.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
+                    self.gridLayout.addWidget(lbl, 0, i)
+
+        # ---- Separators ----
+        def hline():
+            line = QFrame()
+            line.setFrameShape(QFrame.Shape.HLine)
+            line.setFrameShadow(QFrame.Shadow.Sunken)
+            line.setLineWidth(2)
+            return line
+
+        self.gridLayout.addWidget(hline(), 1, 0, 1, 10)
+        self.gridLayout.addWidget(hline(), 7, 0, 1, 10)
+
+        # ---- Combo boxes----
+        combo_boxes = [("DETECTION", "_type", "_type", "_typ", ["DETECTION"]),
+                       ("MW", "_type", "_type", "_typ", ["LASER", "MW"]),
+                       ("MW", "_type", "_type", "_typ", ["MW"])
+                      ]
+
+        label_widget = getattr(self, f"label_5")
+        label_widget.setFixedSize(130, 26)
+        self.gridLayout.addWidget(label_widget, 8, 0)
+
+        self.laser_flag = 0
+
+        for i in range(1, 10):
+            combo = QComboBox()
+            combo.setStyleSheet("QComboBox { color : rgb(193, 202, 227); selection-color: rgb(211, 194, 78); }")
+            combo.setFixedSize(130, 26)
+            if i == 1:
+                combo.addItems(combo_boxes[i-1][4])
+                combo.setCurrentText(combo_boxes[i][0])
+            elif i == 2:
+                combo.addItems(combo_boxes[i-1][4])
+                combo.setCurrentText(combo_boxes[i][0])
+            else:
+                combo.addItems(combo_boxes[2][4])
+                combo.setCurrentText(combo_boxes[2][0])
+
+            setattr(self, f"P{i}{combo_boxes[2][1]}", combo)
+
+            combo.currentTextChanged.connect(lambda _, idx = i: self.update_pulse_type(idx))
+            setattr(self, f"p{i}_typ", combo.currentText())
+
+            self.gridLayout.addWidget(combo, 8, i)
+
+        self.gridLayout.addWidget(hline(), 9, 0, 1, 10)
+
+        # ---- Text Edits ----
+        text_edit = ["+x,-x", "+x,-x", "+x,+x"]
+
+        for i in range(1, 10):
+            if i == 1:
+                txt = QTextEdit(text_edit[0])
+            elif i == 2:
+                txt = QTextEdit(text_edit[1])
+            else:
+                txt = QTextEdit(text_edit[2])
+            txt.setFixedSize(130, 60)
+            txt.setAcceptRichText(False)
+            #txt.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+            txt.setStyleSheet("QTextEdit { color : rgb(211, 194, 78) ; selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
+            
+            setattr(self, f"Phase_{i}", txt)
+            txt.textChanged.connect(lambda idx = i: self.update_pulse_phase(idx))
+            self.update_pulse_phase(i)
+
+            self.gridLayout.addWidget(txt, 10, i)
+
+        label_widget = getattr(self, f"label_6")
+        label_widget.setFixedSize(130, 26)
+        self.gridLayout.addWidget(label_widget, 10, 0)
+        self.gridLayout.addWidget(hline(), 11, 0, 1, 10)
+
+
+        # ---- Boxes----
+        boxes = [(QDoubleSpinBox, "Rep_rate", "repetition_rate", self.rep_rate, 0.1, 20e3, 500, 1, 1, " Hz"),
+                 (QDoubleSpinBox, "Field", "mag_field", self.field, 10, 15.1e3, 3493, 0.5, 2, " G")]
+        
+        box_c = 0
+        for widget_class, attr_name, par_name, func, v_min, v_max, cur_val, v_step, dec, suf in boxes:
+            rr_box = widget_class()
+            rr_box.setRange(v_min, v_max)
+            rr_box.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
+            rr_box.setSingleStep(v_step)
+            rr_box.setValue(cur_val)
+            rr_box.setDecimals(dec)
+            rr_box.setSuffix(suf)
+            rr_box.valueChanged.connect(func)
+            rr_box.setFixedSize(130, 26)
+            rr_box.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.PlusMinus)
+            rr_box.setKeyboardTracking( False )
+            setattr(self, attr_name, rr_box)
+            if attr_name == "Rep_rate":
+                setattr(self, par_name, str( rr_box.value() ) + ' Hz')
+            elif attr_name == 'Field':
+                setattr(self, par_name, float( rr_box.value() ))
+
+            self.buttons_layout.addWidget(rr_box, box_c, 1)
+            box_c += 1
+
+        label_widget = getattr(self, f"label_7")
+        self.buttons_layout.addWidget(label_widget, 0, 0)
+        label_widget.setFixedSize(130, 26)
+        label_widget = getattr(self, f"label_8")
+        label_widget.setFixedSize(130, 26)
+        self.buttons_layout.addWidget(label_widget, 1, 0)
+        self.buttons_layout.addWidget(hline(), 2, 0, 1, 12)
+
+        # ---- Buttons ----
+        buttons = [("Run Pulses", "button_update", self.update),
+                   ("Stop Pulses", "button_stop", self.dig_stop),
+                   ("Exit", "button_off", self.turn_off),
+                   ("Start Experiment", "button_start_exp", self.start_exp),
+                   ("Stop Experiment", "button_stop_exp", self.stop_exp)
+                    ]
+
+        btn_c = 3
+        btn_cl = 0
+        for name, attr_name, func in buttons:
+            btn = QPushButton(name)
+            btn.setFixedSize(130, 40)
+            btn.clicked.connect(func)
+            btn.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; } QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
+            setattr(self, attr_name, btn)
+            if name == "Start Experiment":
+                btn_c = 3
+                btn_cl = 1
+            self.buttons_layout.addWidget(btn, btn_c, btn_cl)
+            btn_c += 1
+        
+        txt = QTextEdit()
+        setattr(self, "errors", txt)
+        txt.setStyleSheet("QPlainTextEdit { color : rgb(211, 194, 78); }")
+        self.buttons_layout.addWidget(txt, 3, 2, 3, 10)
+
+        #self.buttons_layout.setRowStretch(6, 11)
+        #self.buttons_layout.setColumnStretch(6, 11)
+
+    def design_tab_2(self):
+        dig_setting_page = QWidget()
+        gridLayout = QGridLayout()
+        gridLayout.setContentsMargins(15, 15, 10, 10)
+        gridLayout.setVerticalSpacing(4)
+        gridLayout.setHorizontalSpacing(20)
+
+        dig_setting_page.setLayout(gridLayout)
+
+        self.tab_pulse.addTab(dig_setting_page, "Acquisition")
+        self.tab_pulse.tabBar().setTabTextColor(1, QColor(193, 202, 227))
+
+        # ---- Labels & Inputs ----
+        labels = [("Acquisitions", "label_17"), ("Integration Left", "label_18"), ("Integration Right", "label_19"), ("Decimation", "label_20")]
+
+        for name, attr_name in labels:
+            lbl = QLabel(name)
+            setattr(self, attr_name, lbl)
+            lbl.setFixedSize(130, 26)
+            lbl.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
+
+        # ---- Boxes ----
+        double_boxes = [(QSpinBox, "Acq_number", "number_averages", self.acq_number, 1, 1e4, 1, 1, 0, ""),
+                      (QSpinBox, "Dec", "decimation", self.decimat, 1, 4, 1, 1, 0, ""),
+                      (QDoubleSpinBox, "Win_left", "cur_win_left", self.win_left, 0, 6400, 0, 0.4, 1, " ns"),
+                      (QDoubleSpinBox, "Win_right", "cur_win_right", self.win_right, 0, 6400, 320, 0.4, 1, " ns")
+                        ]
+
+        for widget_class, attr_name, par_name, func, v_min, v_max, cur_val, v_step, dec, suf in double_boxes:
+            spin_box = widget_class()
+            if isinstance(spin_box, QDoubleSpinBox):
+                spin_box.setRange(v_min, v_max)
+                spin_box.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")                
+            else:
+                spin_box.setRange(int(v_min), int(v_max))
+                spin_box.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")                
+            spin_box.setSingleStep(v_step)
+            spin_box.setValue(cur_val)
+            if isinstance(spin_box, QDoubleSpinBox):
+                spin_box.setDecimals(dec)
+            spin_box.setSuffix(suf)
+            spin_box.valueChanged.connect(func)
+            spin_box.setFixedSize(130, 26)
+            spin_box.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.PlusMinus)
+
+            spin_box.setKeyboardTracking( False )
+            
+            setattr(self, attr_name, spin_box)
+            if isinstance(spin_box, QSpinBox):
+                if attr_name == 'Dec':
+                    setattr(self, par_name, int(spin_box.value()))
+                    self.time_per_point = 0.4 * self.decimation
+                else:
+                    setattr(self, par_name, int(spin_box.value()))
+            else:
+                if attr_name == 'Win_left' or attr_name == 'Win_right':
+                    setattr(self, par_name, int( float( spin_box.value() ) / self.time_per_point ))
+                else:
+                    setattr(self, par_name, float(spin_box.value()))
+
+        # ---- Separators ----
+        def hline():
+            line = QFrame()
+            line.setFrameShape(QFrame.Shape.HLine)
+            line.setFrameShadow(QFrame.Shadow.Sunken)
+            line.setLineWidth(2)
+            return line
+
+        container_layout = QHBoxLayout()
+
+        left_grid = QGridLayout()
+        left_grid.setVerticalSpacing(4)
+        left_grid.setHorizontalSpacing(20)
+        left_grid.addWidget(self.label_17, 0, 0)
+        left_grid.addWidget(self.Acq_number, 0, 1)
+        left_grid.addWidget(hline(), 1, 0, 1, 2)
+        left_grid.setRowStretch(2, 1)
+        left_grid.setColumnStretch(2, 1)
+
+        right_grid = QGridLayout()
+        right_grid.setVerticalSpacing(4)
+        right_grid.setHorizontalSpacing(20)
+        right_grid.addWidget(self.label_18, 0, 0)
+        right_grid.addWidget(self.Win_left, 0, 1)
+        right_grid.addWidget(self.label_19, 1, 0)
+        right_grid.addWidget(self.Win_right, 1, 1)
+        right_grid.addWidget(self.label_20, 2, 0)
+        right_grid.addWidget(self.Dec, 2, 1)
+        right_grid.addWidget(hline(), 3, 0, 1, 2)
+        right_grid.setRowStretch(4, 1)
+        right_grid.setColumnStretch(4, 1)
+        
+        container_layout.addLayout(left_grid)
+        container_layout.addSpacing(20)
+        container_layout.addLayout(right_grid)
+
+        container_layout.addStretch(1) 
+        gridLayout.addLayout(container_layout, 0, 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+
+        gridLayout.setColumnStretch(1, 1)
+        gridLayout.setRowStretch(1, 1)
+
+    def design_tab_3(self):
+        fft_setting_page = QWidget()
+        gridLayout = QGridLayout()
+        gridLayout.setContentsMargins(15, 15, 10, 10)
+        gridLayout.setVerticalSpacing(4)
+        gridLayout.setHorizontalSpacing(20)
+
+        fft_setting_page.setLayout(gridLayout)
+
+        self.tab_pulse.addTab(fft_setting_page, "FFT")
+        self.tab_pulse.tabBar().setTabTextColor(2, QColor(193, 202, 227))
+
+        # ---- Labels & Inputs ----
+        labels = [("Points to Drop", "label_11"), ("Zero Order", "label_12"), ("First Order", "label_13"), ("Second Order", "label_14"), ("Live FFT", "label_15"), ("Quadrature Correction", "label_16")]
+
+        for name, attr_name in labels:
+            lbl = QLabel(name)
+            setattr(self, attr_name, lbl)
+            lbl.setFixedSize(130, 26)
+            lbl.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
+
+        # ---- Boxes ----
+        double_boxes = [(QSpinBox, "P_to_drop", "p_to_drop", self.p_to_drop_func, 0, 1e4, 0, 1, 0, ""),
+                      (QDoubleSpinBox, "Zero_order", "zero_order", self.zero_order_func, -0.1, 360.1, 0, 0.1, 4, " deg"),
+                      (QDoubleSpinBox, "First_order", "first_order", self.first_order_func, -100, 100, 0, 0.001, 4, ""),
+                      (QDoubleSpinBox, "Second_order", "second_order", self.second_order_func, -100, 100, 0, 0.001, 4, " MHz/ns")
+                        ]
+
+        for widget_class, attr_name, par_name, func, v_min, v_max, cur_val, v_step, dec, suf in double_boxes:
+            spin_box = widget_class()
+            if isinstance(spin_box, QDoubleSpinBox):
+                spin_box.setRange(v_min, v_max)
+                spin_box.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")                
+            else:
+                spin_box.setRange(int(v_min), int(v_max))
+                spin_box.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")                
+            spin_box.setSingleStep(v_step)
+            spin_box.setValue(cur_val)
+            if isinstance(spin_box, QDoubleSpinBox):
+                spin_box.setDecimals(dec)
+            spin_box.setSuffix(suf)
+            spin_box.valueChanged.connect(func)
+            spin_box.setFixedSize(130, 26)
+            spin_box.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.PlusMinus)
+
+            spin_box.setKeyboardTracking( False )
+            
+            setattr(self, attr_name, spin_box)
+            if isinstance(spin_box, QDoubleSpinBox):
+                if attr_name == 'Zero_order':
+                    setattr(self, par_name, float(spin_box.value() / self.deg_rad))
+                else:
+                    setattr(self, par_name, float(spin_box.value()))
+
+            else:
+                setattr(self, par_name, int(spin_box.value()))
+
+        if self.second_order != 0.0:
+            self.second_order = self.sec_order_coef / ( float( self.Second_order.value() ) * 1000 )
+
+        self.l_mode = 0
+
+        # ---- Check Boxes ----
+        check_boxes = [("fft_box", self.fft_online),
+                       ("Quad_cor", self.quad_online)]
+
+        for attr_name, func in check_boxes:
+            check = QCheckBox("")
+            setattr(self, attr_name, check)
+            check.stateChanged.connect(func)
+            check.setStyleSheet("QCheckBox { color : rgb(193, 202, 227); }")
+            check.setFixedSize(130, 26)
+
+        # ---- Separators ----
+        def hline():
+            line = QFrame()
+            line.setFrameShape(QFrame.Shape.HLine)
+            line.setFrameShadow(QFrame.Shadow.Sunken)
+            line.setLineWidth(2)
+            return line
+
+
+        # ---- Layout placement ----
+        gridLayout.addWidget(self.label_15, 0, 0)
+        gridLayout.addWidget(self.fft_box, 0, 1)
+        gridLayout.addWidget(self.label_16, 1, 0)
+        gridLayout.addWidget(self.Quad_cor, 1, 1)
+
+        gridLayout.addWidget(hline(), 2, 0, 1, 2)
+        
+        gridLayout.addWidget(self.label_11, 3, 0)
+        gridLayout.addWidget(self.P_to_drop, 3, 1)
+        gridLayout.addWidget(self.label_12, 4, 0)
+        gridLayout.addWidget(self.Zero_order, 4, 1)
+        gridLayout.addWidget(self.label_13, 5, 0)
+        gridLayout.addWidget(self.First_order, 5, 1)
+        gridLayout.addWidget(self.label_14, 6, 0)
+        gridLayout.addWidget(self.Second_order, 6, 1)
+
+        gridLayout.addWidget(hline(), 7, 0, 1, 2)
+
+        gridLayout.setRowStretch(8, 2)
+        gridLayout.setColumnStretch(8, 2)
 
         # flag for not writing the data when digitizer is off
         self.opened = 0
@@ -269,14 +560,62 @@ class MainWindow(QMainWindow):
         self.quad = 0
         self.double_change = 0
 
-        """
-        Create a process to interact with an experimental script that will run on a different thread.
-        We need a different thread here, since PyQt GUI applications have a main thread of execution 
-        that runs the event loop and GUI. If you launch a long-running task in this thread, then your GUI
-        will freeze until the task terminates. During that time, the user won’t be able to interact with 
-        the application
-        """
-        self.worker = Worker()
+    def design_tab_4(self):
+        laser_setting_page = QWidget()
+        gridLayout = QGridLayout()
+        gridLayout.setContentsMargins(15, 15, 10, 10)
+        gridLayout.setVerticalSpacing(4)
+        gridLayout.setHorizontalSpacing(20)
+
+        laser_setting_page.setLayout(gridLayout)
+
+        self.tab_pulse.addTab(laser_setting_page, "Source / Laser")
+        self.tab_pulse.tabBar().setTabTextColor(3, QColor(193, 202, 227))
+
+        # ---- Labels & Inputs ----
+        labels = [("Laser Type", "label_0")]
+
+        for name, attr_name in labels:
+            lbl = QLabel(name)
+            setattr(self, attr_name, lbl)
+            lbl.setFixedSize(130, 26)
+            lbl.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
+
+        # ---- Combo box----
+        combo_laser = ["Nd:YaG", "Combo_laser", "", self.combo_laser_fun, ["Nd:YaG", "NovoFEL"]]
+
+        combo = QComboBox()
+        setattr(self, combo_laser[1], combo)
+        combo.currentIndexChanged.connect(combo_laser[3])
+        combo.addItems(combo_laser[4])
+        combo.setCurrentText(combo_laser[0])
+        combo.setFixedSize(130, 26)
+        combo.setStyleSheet("QComboBox { color : rgb(193, 202, 227); selection-color: rgb(211, 194, 78); }")
+
+        self.combo_laser_fun()
+
+        # ---- Separators ----
+        def hline():
+            line = QFrame()
+            line.setFrameShape(QFrame.Shape.HLine)
+            line.setFrameShadow(QFrame.Shadow.Sunken)
+            line.setLineWidth(2)
+            return line
+
+        # ---- Layout placement ----
+        gridLayout.addWidget(self.label_0, 0, 0)
+        gridLayout.addWidget(self.Combo_laser, 0, 1)
+
+        gridLayout.addWidget(hline(), 1, 0, 1, 2)
+
+        gridLayout.setRowStretch(2, 1)
+        gridLayout.setColumnStretch(2, 1)
+
+    def start_exp(self):
+        pass
+
+    def stop_exp(self):
+        pass
 
     def combo_laser_fun(self):
         """
@@ -285,10 +624,10 @@ class MainWindow(QMainWindow):
         txt = str( self.Combo_laser.currentText() )
         if txt == 'Nd:YaG':
             self.combo_laser_num = 1
-            self.laser_q_switch_delay = 141008
+            self.laser_q_switch_delay = 160000
         elif txt == 'NovoFEL':
             self.combo_laser_num = 2
-            self.laser_q_switch_delay = 3.2
+            self.laser_q_switch_delay = 0
 
     def quad_online(self):
         """
@@ -382,21 +721,6 @@ class MainWindow(QMainWindow):
         except AttributeError:
             self.message('Digitizer is not running')
 
-    def change_live_mode(self):
-        """
-        Turn on/off live mode
-        """
-
-        if self.live_mode.checkState().value == 2: # checked
-            self.l_mode = 1
-        elif self.live_mode.checkState().value == 0: # unchecked
-            self.l_mode = 0
-        
-        try:
-            self.parent_conn_dig.send( 'LM' + str( self.l_mode ) )
-        except AttributeError:
-            self.message('Digitizer is not running')
-
     def win_left(self):
         """
         A function to change left integration window
@@ -435,15 +759,6 @@ class MainWindow(QMainWindow):
                 self.parent_conn_dig.send( 'NA' + str( self.number_averages ) )
             except AttributeError:
                 self.message('Digitizer is not running')
-
-    def menu_bar_file(self):
-        """
-        Design settings for QMenuBar
-        """
-        self.menuBar.setStyleSheet("QMenuBar { color: rgb(193, 202, 227); font-weight: bold; } \
-                            QMenu::item { color: rgb(211, 194, 78); } QMenu::item:selected {color: rgb(193, 202, 227); }")
-        self.action_read.triggered.connect( self.open_file_dialog )
-        self.action_save.triggered.connect( self.save_file_dialog )
 
     def open_file_dialog(self):
         """
@@ -562,96 +877,22 @@ class MainWindow(QMainWindow):
         elif ph_str == '-y':
             return '-y'
 
-    def phase_1(self):
-        """
-        A function to change a pulse 1 phase
-        """
-        temp = self.Phase_1.toPlainText()
-        try:
-            if temp[-1] == ']' and temp[0] == '[':
-                self.ph_1 = temp[1:(len(temp)-1)].split(',')
-                if len(self.ph_1) == 1:
-                    self.ph_1.append( self.ph_1[0] )
-                #print(self.ph_1)
-        except IndexError:
-            pass
+    def update_pulse_phase(self, index):
 
-    def phase_2(self):
-        """
-        A function to change a pulse 2 phase
-        """
-        temp = self.Phase_2.toPlainText()
+        text_edit = getattr(self, f"Phase_{index}")
+        temp = text_edit.toPlainText().strip()
+        
         try:
-            if temp[-1] == ']' and temp[0] == '[':
-                self.ph_2 = temp[1:(len(temp)-1)].split(',')
-                if len(self.ph_2) == 1:
-                    self.ph_2.append( self.ph_2[0] )
-        except IndexError:
-            pass
-
-    def phase_3(self):
-        """
-        A function to change a pulse 3 phase
-        """
-        temp = self.Phase_3.toPlainText()
-        try:
-            if temp[-1] == ']' and temp[0] == '[':
-                self.ph_3 = temp[1:(len(temp)-1)].split(',')
-                if len(self.ph_3) == 1:
-                    self.ph_3.append( self.ph_3[0] )
-        except IndexError:
-            pass
-
-    def phase_4(self):
-        """
-        A function to change a pulse 4 phase
-        """
-        temp = self.Phase_4.toPlainText()
-        try:
-            if temp[-1] == ']' and temp[0] == '[':
-                self.ph_4 = temp[1:(len(temp)-1)].split(',')
-                if len(self.ph_4) == 1:
-                    self.ph_4.append( self.ph_4[0] )
-        except IndexError:
-            pass
-
-    def phase_5(self):
-        """
-        A function to change a pulse 5 phase
-        """
-        temp = self.Phase_5.toPlainText()
-        try:
-            if temp[-1] == ']' and temp[0] == '[':
-                self.ph_5 = temp[1:(len(temp)-1)].split(',')
-                if len(self.ph_5) == 1:
-                    self.ph_5.append( self.ph_5[0] )
-        except IndexError:
-            pass
-
-    def phase_6(self):
-        """
-        A function to change a pulse 6 phase
-        """
-        temp = self.Phase_6.toPlainText()
-        try:
-            if temp[-1] == ']' and temp[0] == '[':
-                self.ph_6 = temp[1:(len(temp)-1)].split(',')
-                if len(self.ph_6) == 1:
-                    self.ph_6.append( self.ph_6[0] )
-        except IndexError:
-            pass
-
-    def phase_7(self):
-        """
-        A function to change a pulse 7 phase
-        """
-        temp = self.Phase_7.toPlainText()
-        try:
-            if temp[-1] == ']' and temp[0] == '[':
-                self.ph_7 = temp[1:(len(temp)-1)].split(',')
-                if len(self.ph_7) == 1:
-                    self.ph_7.append( self.ph_7[0] )
-        except IndexError:
+            if len(temp) >= 2: #and temp[0] == '[' and temp[-1] == ']':
+                content = temp[:].split(',') #[1:-1]
+                phases = [p.strip() for p in content if p.strip()]
+                
+                if len(phases) == 1:
+                    phases.append(phases[0])
+                
+                setattr(self, f"ph_{index}", phases)
+                
+        except (IndexError, AttributeError):
             pass
 
     def remove_ns(self, string1):
@@ -679,9 +920,11 @@ class MainWindow(QMainWindow):
         try:
             self.parent_conn_dig.send('exit')
         except BrokenPipeError:
-            self.message('Digitizer is not running')
+            pass
+            #self.message('Digitizer is not running')
         except AttributeError:
-            self.message('Digitizer is not running')
+            pass
+            #self.message('Digitizer is not running')
         self.digitizer_process.join()
         self.dig_stop()
         
@@ -717,135 +960,23 @@ class MainWindow(QMainWindow):
         self.decimation = self.Dec.value()
         self.time_per_point = 0.4 * self.decimation
 
-    def p1_st(self):
-        """
-        A function to set pulse 1 start
-        """
-        self.p1_start = self.round_and_change(self.P1_st)
+    def update_pulse_param(self, index, attr_suffix, val_suffix):
+        spin_widget = getattr(self, f"P{index}{attr_suffix}")
+        new_value = self.round_and_change(spin_widget)
+        setattr(self, f"p{index}{val_suffix}", new_value)
+        #print(f"Updated: p{index}{val_suffix} = {new_value}")
 
-    def p2_st(self):
-        """
-        A function to set pulse 2 start
-        """
-        self.p2_start = self.round_and_change(self.P2_st)
+    def update_pulse_type(self, index):
 
-    def p3_st(self):
-        """
-        A function to set pulse 3 start
-        """
-        self.p3_start = self.round_and_change(self.P3_st)
-
-    def p4_st(self):
-        """
-        A function to set pulse 4 start
-        """
-        self.p4_start = self.round_and_change(self.P4_st)
-
-    def p5_st(self):
-        """
-        A function to set pulse 5 start
-        """
-        self.p5_start = self.round_and_change(self.P5_st)
-
-    def p6_st(self):
-        """
-        A function to set pulse 6 start
-        """
-        self.p6_start = self.round_and_change(self.P6_st)
-
-    def p7_st(self):
-        """
-        A function to set pulse 7 start
-        """
-        self.p7_start = self.round_and_change(self.P7_st)
-
-    def p1_len(self):
-        """
-        A function to change a pulse 1 length
-        """
-        self.p1_length = self.round_and_change(self.P1_len)
-
-    def p2_len(self):
-        """
-        A function to change a pulse 2 length
-        """
-        self.p2_length = self.round_and_change(self.P2_len)
-
-    def p3_len(self):
-        """
-        A function to change a pulse 3 length
-        """
-        self.p3_length = self.round_and_change(self.P3_len)
-
-    def p4_len(self):
-        """
-        A function to change a pulse 4 length
-        """
-        self.p4_length = self.round_and_change(self.P4_len)
-
-    def p5_len(self):
-        """
-        A function to change a pulse 5 length
-        """
-        self.p5_length = self.round_and_change(self.P5_len)
-
-    def p6_len(self):
-        """
-        A function to change a pulse 6 length
-        """
-        self.p6_length = self.round_and_change(self.P6_len)
-
-    def p7_len(self):
-        """
-        A function to change a pulse 7 length
-        """
-        self.p7_length = self.round_and_change(self.P7_len)
-
-    def p1_type(self):
-        """
-        A function to change a pulse 1 type
-        """
-        self.p1_typ = str( self.P1_type.currentText() )
-
-    def p2_type(self):
-        """
-        A function to change a pulse 2 type
-        """
-        self.p2_typ = str( self.P2_type.currentText() )
-        if self.p2_typ == 'LASER':
-            self.laser_flag = 1
-        else:
-            self.laser_flag = 0
-
-    def p3_type(self):
-        """
-        A function to change a pulse 3 type
-        """
-        self.p3_typ = str( self.P3_type.currentText() )
-
-    def p4_type(self):
-        """
-        A function to change a pulse 4 type
-        """
-        self.p4_typ = str( self.P4_type.currentText() )
-
-    def p5_type(self):
-        """
-        A function to change a pulse 5 type
-        """
-        self.p5_typ = str( self.P5_type.currentText() )
-
-    def p6_type(self):
-        """
-        A function to change a pulse 6 type
-        """
-        self.p6_typ = str( self.P6_type.currentText() )
-
-    def p7_type(self):
-        """
-        A function to change a pulse 7 type
-        """
-        self.p7_typ = str( self.P7_type.currentText() )
+        combo = getattr(self, f"P{index}_type")
+        text = combo.currentText()
+        
+        setattr(self, f"p{index}_typ", text)
+        
+        if index == 2:
+            self.laser_flag = 1 if text == 'LASER' else 0
+            
+        #print(f"Pulse {index} type set to: {text}")
 
     def rep_rate(self):
         """
@@ -1111,16 +1242,11 @@ class MainWindow(QMainWindow):
             self.parent_conn_dig.send('exit')
             self.digitizer_process.join()
         except AttributeError:
-            self.message('Digitizer is not running')
+            pass
+            #self.message('Digitizer is not running')
             sys.exit()
 
         sys.exit()
-
-    def help(self):
-        """
-        A function to open a documentation
-        """
-        pass
 
     def message(self, *text):
         sock = socket.socket()

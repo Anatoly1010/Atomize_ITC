@@ -48,6 +48,13 @@ class MainWindow(QMainWindow):
         self.initialize()
         #self.telemetry()
 
+
+        try:
+            path_to_main_status = os.path.dirname(os.path.abspath(__file__))
+            self.path_status_file = os.path.join(path_to_main_status, '..', 'control_center/field.param')
+        except FileNotFoundError:
+            pass
+
         #self.ecc15k.synthetizer_frequency(f"{freq2} MHz")
         #self.ecc15k.synthetizer_power(power2)
         
@@ -76,7 +83,7 @@ class MainWindow(QMainWindow):
 
 
         # ---- Labels & Inputs ----
-        labels = [("Rotary Vane", "label_1"), ("Attenuator RECT", "label_2"), ("Attenuator AWG", "label_3"), ("Pulse Phase", "label_4"), ("Signal Phase", "label_5"), ("Video Attenuation 1", "label_6"), ("Video Attenuation 2", "label_7"), ("Frequency Synthesizer 1", "label_8"), ("Frequency Synthesizer 2", "label_9"), ("State Synthesizer 2", "label_10"), ("Power Synthesizer 2", "label_11"), ("Cut-Off Frequency", "label_12")]
+        labels = [("Rotary Vane", "label_1"), ("Attenuator RECT", "label_2"), ("Attenuator AWG", "label_3"), ("Pulse Phase", "label_4"), ("Signal Phase", "label_5"), ("Video Attenuation 1", "label_6"), ("Video Attenuation 2", "label_7"), ("Source 1 Frequency", "label_8"), ("Source 2 Frequency", "label_9"), ("Source 2 State", "label_10"), ("Source 2 Power", "label_11"), ("Cut-Off Frequency", "label_12")]
 
         for name, attr_name in labels:
             lbl = QLabel(name)
@@ -220,6 +227,29 @@ class MainWindow(QMainWindow):
 
         gridLayout.setRowStretch(22, 2)
         gridLayout.setColumnStretch(22, 2)
+
+    def changeEvent(self, event):
+        if event.type() == QEvent.Type.ActivationChange:
+            if self.isActiveWindow():
+                self.on_window_focused()
+        super().changeEvent(event)
+
+    def on_window_focused(self):
+        self.Synt.blockSignals(True)
+        self.read_no_set_freq()
+        self.Synt.setValue(self.freq_file)
+        self.Synt.blockSignals(False)
+
+    def read_no_set_freq(self):
+        try:
+            with open(self.path_status_file, 'r', encoding='utf-8') as file:
+                for line in file:
+                    if line.startswith('Frequency:'):
+                        raw_answer = line.split(':', 1)[1].strip()
+                        break
+            self.freq_file = int( raw_answer )
+        except FileNotFoundError:
+            pass
 
     def synt2(self):
         freq2 = int( self.Synt2.value() )
@@ -520,6 +550,18 @@ class MainWindow(QMainWindow):
         else:
             freq = chr(data_raw[5]) + chr(data_raw[6]) + chr(data_raw[7])\
                 + chr(data_raw[8]) + chr(data_raw[9])
+
+        try:
+            with open(self.path_status_file, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+            with open(self.path_status_file, 'w', encoding='utf-8') as f:
+                for line in lines:
+                    if line.startswith('Frequency:'):
+                        f.write(f'Frequency:  {freq}\n')
+                    else:
+                        f.write(line)
+        except FileNotFoundError:
+            pass
 
         #self.telemetry_text.appendPlainText( 'Frequency: ' + freq )
 

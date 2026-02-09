@@ -79,7 +79,7 @@ class MainExtended(MainWindow):
         gridlayout = QGridLayout()
         main_layout.addLayout(gridlayout)
 
-        self.tabwidget.addTab(tab3, "Control Window")
+        self.tabwidget.addTab(tab3, "EPR Endstation Control")
         self.tabwidget.tabBar().setTabTextColor(2, QColor(193, 202, 227))
         self.tabwidget.tabBar().setStyleSheet(" font-weight: bold ") 
 

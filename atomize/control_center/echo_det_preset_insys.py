@@ -483,6 +483,7 @@ class Worker(QWidget):
                     f"{'Start Field:':<{w}} {START_FIELD} G\n"
                     f"{'End Field:':<{w}} {END_FIELD} G\n"
                     f"{'Field Step:':<{w}} {FIELD_STEP} G\n"
+                    f"{general.fmt(mw.mw_bridge_rotary_vane(), w)}\n"
                     f"{general.fmt(mw.mw_bridge_att_prm(), w)}\n"
                     f"{general.fmt(mw.mw_bridge_att2_prm(), w)}\n"
                     f"{general.fmt(mw.mw_bridge_att1_prd(), w)}\n"

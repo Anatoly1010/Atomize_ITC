@@ -8,16 +8,14 @@ import socket
 import traceback
 import numpy as np
 from multiprocessing import Process, Pipe
-from PyQt6 import QtWidgets, uic #, QtCore, QtGui
-from PyQt6.QtWidgets import QFileDialog, QWidget
-from PyQt6.QtGui import QIcon
+from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QLabel, QDoubleSpinBox, QSpinBox, QComboBox, QPushButton, QTextEdit, QGridLayout, QFrame, QCheckBox, QFileDialog, QVBoxLayout, QTabWidget, QScrollArea, QHBoxLayout
+from PyQt6.QtGui import QIcon, QColor, QAction
 from PyQt6.QtCore import Qt
 import atomize.general_modules.general_functions as general
 import atomize.device_modules.Insys_FPGA as pb_pro
 import atomize.control_center.status_poller as pol
-###import atomize.device_modules.BH_15 as bh
 
-class MainWindow(QtWidgets.QMainWindow):
+class MainWindow(QMainWindow):
     """
     A main window class
     """
@@ -26,419 +24,870 @@ class MainWindow(QtWidgets.QMainWindow):
         A function for connecting actions and creating a main window
         """
         super(MainWindow, self).__init__(*args, **kwargs)
-        
-        path_to_main = os.path.dirname(os.path.abspath(__file__))
-        gui_path = os.path.join(path_to_main,'gui/awg_phasing_main_window_insys.ui')
-        icon_path = os.path.join(path_to_main, 'gui/icon_pulse.png')
-        self.setWindowIcon( QIcon(icon_path) )
-        
-        self.path = os.path.join(path_to_main, '..', '..', '..', '..', 'experimental_data')
+        self.menu()
 
         #####
-        path_to_main2 = os.path.join(os.path.abspath(os.getcwd()), '..', 'libs')  #, '..', '..', 'libs'
+        path_to_main2 = os.path.join(os.path.abspath(os.getcwd()), '..', '..', 'libs')  #, '..', '..', 'libs'
         os.chdir(path_to_main2)
         #####
 
-        self.destroyed.connect(lambda: self._on_destroyed())                # connect some actions to exit
-        # Load the UI Page
-        uic.loadUi(gui_path, self)                        # Design file
-
         self.pb = pb_pro.Insys_FPGA()
         
-        #########################################################################
-        self.awg_output_shift = 0 #494 # in ns; depends on the cable length
+        self.awg_output_shift = 0 #494 # in ns
 
         # Phase correction
         self.deg_rad = 57.2957795131
         self.sec_order_coef = -2*np.pi/2
         
-        self.design()
-
-    def design(self):
-        # Connection of different action to different Menus and Buttons
-        self.button_off.clicked.connect(self.turn_off)
-        self.button_off.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97);\
-         border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }\
-          QPushButton:pressed {background-color: rgb(211, 194, 78); ; border-style: inset; font-weight: bold; }")
-        self.button_stop.clicked.connect(self.dig_stop)
-        self.button_stop.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97);\
-         border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }\
-          QPushButton:pressed {background-color: rgb(211, 194, 78); ; border-style: inset; font-weight: bold; }")
-        self.button_update.clicked.connect(self.update)
-        self.button_update.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97);\
-         border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }\
-          QPushButton:pressed {background-color: rgb(211, 194, 78); ; border-style: inset; font-weight: bold; }")
-
-        # text labels
-        self.errors.setStyleSheet("QPlainTextEdit { color : rgb(211, 194, 78); }")  # rgb(193, 202, 227)
-        self.label.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_2.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_3.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_4.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_5.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_6.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_7.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_8.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_9.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_10.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_11.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_12.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_13.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_14.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_15.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        #self.label_16.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        #self.label_17.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        #self.label_18.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_19.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_20.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_21.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_22.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_23.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_24.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_25.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_26.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_27.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_28.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_29.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.label_30.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        #self.label_31.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-
-        # Spinboxes
-        self.P1_st.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        #self.P1_st.lineEdit().setReadOnly( True )   # block input from keyboard
-        self.P2_st.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.P3_st.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.P4_st.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.P5_st.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.P6_st.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.P7_st.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.Rep_rate.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.Field.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.P1_len.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.P2_len.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.P3_len.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.P4_len.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.P5_len.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.P6_len.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.P7_len.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")        
-        self.P1_sig.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.P2_sig.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.P3_sig.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.P4_sig.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.P5_sig.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.P6_sig.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.P7_sig.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.P1_type.setStyleSheet("QComboBox { color : rgb(193, 202, 227); selection-color: rgb(211, 194, 78); }")
-        self.P2_type.setStyleSheet("QComboBox { color : rgb(193, 202, 227); selection-color: rgb(211, 194, 78); }")
-        self.P3_type.setStyleSheet("QComboBox { color : rgb(193, 202, 227); selection-color: rgb(211, 194, 78); }")
-        self.P4_type.setStyleSheet("QComboBox { color : rgb(193, 202, 227); selection-color: rgb(211, 194, 78); }")
-        self.P5_type.setStyleSheet("QComboBox { color : rgb(193, 202, 227); selection-color: rgb(211, 194, 78); }")
-        self.P6_type.setStyleSheet("QComboBox { color : rgb(193, 202, 227); selection-color: rgb(211, 194, 78); }")
-        self.P7_type.setStyleSheet("QComboBox { color : rgb(193, 202, 227); selection-color: rgb(211, 194, 78); }")
-        self.P_to_drop.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.Zero_order.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.First_order.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.Second_order.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.B_sech.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-
-        self.Phase_1.setStyleSheet("QPlainTextEdit { color: rgb(211, 194, 78); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.Phase_2.setStyleSheet("QPlainTextEdit { color: rgb(211, 194, 78); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.Phase_3.setStyleSheet("QPlainTextEdit { color: rgb(211, 194, 78); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.Phase_4.setStyleSheet("QPlainTextEdit { color: rgb(211, 194, 78); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.Phase_5.setStyleSheet("QPlainTextEdit { color: rgb(211, 194, 78); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.Phase_6.setStyleSheet("QPlainTextEdit { color: rgb(211, 194, 78); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.Phase_7.setStyleSheet("QPlainTextEdit { color: rgb(211, 194, 78); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-
-        #self.Freq.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); }")
-        self.Phase.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.Ampl_1.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.Ampl_2.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-
-        self.freq_1.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.freq_2.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.freq_3.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.freq_4.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.freq_5.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.freq_6.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.freq_7.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-
-        self.coef_1.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.coef_2.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.coef_3.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.coef_4.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.coef_5.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.coef_6.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.coef_7.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-
-        self.N_wurst.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.Wurst_sweep_1.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.Wurst_sweep_2.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.Wurst_sweep_3.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.Wurst_sweep_4.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.Wurst_sweep_5.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.Wurst_sweep_6.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.Wurst_sweep_7.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-
-        # Functions
-        self.Ampl_1.valueChanged.connect(self.ch0_amp)
-        self.ch0_ampl = self.Ampl_1.value()
-
-        self.Ampl_2.valueChanged.connect(self.ch1_amp)
-        self.ch1_ampl = self.Ampl_2.value()
-
-        #self.Freq.valueChanged.connect(self.awg_freq)
-        #self.cur_freq = str( self.Freq.value() ) + ' MHz'
-
-        self.Phase.valueChanged.connect(self.awg_phase)
-        self.cur_phase = self.Phase.value() * np.pi * 2 / 360
-
-        self.P1_st.valueChanged.connect(self.p1_st)
-        self.p1_start, self.p1_start_rect = self.round_and_change( self.P1_st )
-
-        self.P2_st.valueChanged.connect(self.p2_st)
-        self.p2_start, self.p2_start_rect = self.round_and_change( self.P2_st )
-
-        self.P3_st.valueChanged.connect(self.p3_st)
-        self.p3_start, self.p3_start_rect = self.round_and_change( self.P3_st )
-
-        self.P4_st.valueChanged.connect(self.p4_st)
-        self.p4_start, self.p4_start_rect = self.round_and_change( self.P4_st )
-
-        self.P5_st.valueChanged.connect(self.p5_st)
-        self.p5_start, self.p5_start_rect = self.round_and_change( self.P5_st )
-
-        self.P6_st.valueChanged.connect(self.p6_st)
-        self.p6_start, self.p6_start_rect = self.round_and_change( self.P6_st )
-
-        self.P7_st.valueChanged.connect(self.p7_st)
-        self.p7_start, self.p7_start_rect = self.round_and_change( self.P7_st )
-
-        self.P1_len.valueChanged.connect(self.p1_len)
-        self.p1_length, b = self.round_and_change(self.P1_len)
-
-        self.P2_len.valueChanged.connect(self.p2_len)
-        self.p2_length, b = self.round_and_change(self.P2_len)
-
-        self.P3_len.valueChanged.connect(self.p3_len)
-        self.p3_length, b = self.round_and_change(self.P3_len)
-
-        self.P4_len.valueChanged.connect(self.p4_len)
-        self.p4_length, b = self.round_and_change(self.P4_len)
-
-        self.P5_len.valueChanged.connect(self.p5_len)
-        self.p5_length, b = self.round_and_change(self.P5_len)
-
-        self.P6_len.valueChanged.connect(self.p6_len)
-        self.p6_length, b = self.round_and_change(self.P6_len)
-
-        self.P7_len.valueChanged.connect(self.p7_len)
-        self.p7_length, b = self.round_and_change(self.P7_len)
-
-
-        self.P1_sig.valueChanged.connect(self.p1_sig)
-        self.p1_sigma, b = self.round_and_change(self.P1_sig)
-
-        self.P2_sig.valueChanged.connect(self.p2_sig)
-        self.p2_sigma, b = self.round_and_change(self.P2_sig)
-
-        self.P3_sig.valueChanged.connect(self.p3_sig)
-        self.p3_sigma, b = self.round_and_change(self.P3_sig)
-
-        self.P4_sig.valueChanged.connect(self.p4_sig)
-        self.p4_sigma, b = self.round_and_change(self.P4_sig)
-
-        self.P5_sig.valueChanged.connect(self.p5_sig)
-        self.p5_sigma, b = self.round_and_change(self.P5_sig)
-
-        self.P6_sig.valueChanged.connect(self.p6_sig)
-        self.p6_sigma, b = self.round_and_change(self.P6_sig)
-
-        self.P7_sig.valueChanged.connect(self.p7_sig)
-        self.p7_sigma, b = self.round_and_change(self.P7_sig)
-
-        self.Rep_rate.valueChanged.connect(self.rep_rate)
-        self.repetition_rate = str( self.Rep_rate.value() ) + ' Hz'
-
-        self.N_wurst.valueChanged.connect(self.n_wurst)
-        self.n_wurst_cur = int( self.N_wurst.value() )
-
-        self.Wurst_sweep_1.valueChanged.connect(self.wurst_sweep_1)
-        self.wurst_sweep_cur_1 = self.add_mhz( int( self.Wurst_sweep_1.value() ) )
-
-        self.Wurst_sweep_2.valueChanged.connect(self.wurst_sweep_2)
-        self.wurst_sweep_cur_2 = self.add_mhz( int( self.Wurst_sweep_2.value() ) )
-
-        self.Wurst_sweep_3.valueChanged.connect(self.wurst_sweep_3)
-        self.wurst_sweep_cur_3 = self.add_mhz( int( self.Wurst_sweep_3.value() ) )
-
-        self.Wurst_sweep_4.valueChanged.connect(self.wurst_sweep_4)
-        self.wurst_sweep_cur_4 = self.add_mhz( int( self.Wurst_sweep_4.value() ) )
-
-        self.Wurst_sweep_5.valueChanged.connect(self.wurst_sweep_5)
-        self.wurst_sweep_cur_5 = self.add_mhz( int( self.Wurst_sweep_5.value() ) )
-
-        self.Wurst_sweep_6.valueChanged.connect(self.wurst_sweep_6)
-        self.wurst_sweep_cur_6 = self.add_mhz( int( self.Wurst_sweep_6.value() ) )
-        
-        self.Wurst_sweep_7.valueChanged.connect(self.wurst_sweep_7)
-        self.wurst_sweep_cur_7 = self.add_mhz( int( self.Wurst_sweep_7.value() ) )
-
-        self.Field.valueChanged.connect(self.field)
-        self.mag_field = float( self.Field.value() )
-        ###self.bh15.magnet_setup( self.mag_field, 0.5 )
-        
-        self.P1_type.currentIndexChanged.connect(self.p1_type)
-        self.p1_typ = str( self.P1_type.currentText() )
-        self.P2_type.currentIndexChanged.connect(self.p2_type)
-        self.p2_typ = str( self.P2_type.currentText() )
-        self.P3_type.currentIndexChanged.connect(self.p3_type)
-        self.p3_typ = str( self.P3_type.currentText() )
-        self.P4_type.currentIndexChanged.connect(self.p4_type)
-        self.p4_typ = str( self.P4_type.currentText() )
-        self.P5_type.currentIndexChanged.connect(self.p5_type)
-        self.p5_typ = str( self.P5_type.currentText() )
-        self.P6_type.currentIndexChanged.connect(self.p6_type)
-        self.p6_typ = str( self.P6_type.currentText() )
-        self.P7_type.currentIndexChanged.connect(self.p7_type)
-        self.p7_typ = str( self.P7_type.currentText() )
-        
-        self.Phase_1.textChanged.connect(self.phase_1)
-        self.ph_1 = self.Phase_1.toPlainText()[1:(len(self.Phase_1.toPlainText())-1)].split(',')
-        self.Phase_2.textChanged.connect(self.phase_2)
-        self.ph_2 = self.Phase_2.toPlainText()[1:(len(self.Phase_2.toPlainText())-1)].split(',')
-        self.Phase_3.textChanged.connect(self.phase_3)
-        self.ph_3 = self.Phase_3.toPlainText()[1:(len(self.Phase_3.toPlainText())-1)].split(',')
-        self.Phase_4.textChanged.connect(self.phase_4)
-        self.ph_4 = self.Phase_4.toPlainText()[1:(len(self.Phase_4.toPlainText())-1)].split(',')
-        self.Phase_5.textChanged.connect(self.phase_5)
-        self.ph_5 = self.Phase_5.toPlainText()[1:(len(self.Phase_5.toPlainText())-1)].split(',')
-        self.Phase_6.textChanged.connect(self.phase_6)
-        self.ph_6 = self.Phase_6.toPlainText()[1:(len(self.Phase_6.toPlainText())-1)].split(',')
-        self.Phase_7.textChanged.connect(self.phase_7)
-        self.ph_7 = self.Phase_7.toPlainText()[1:(len(self.Phase_7.toPlainText())-1)].split(',')
-
-        # freq
-        #self.freq_1.valueChanged.connect(self.p1_freq_f)
-        #self.p1_freq = self.add_mhz( self.freq_1.value() )
-
-        self.freq_2.valueChanged.connect(self.p2_freq_f)
-        self.p2_freq = self.add_mhz( int( self.freq_2.value() ) )
-
-        self.freq_3.valueChanged.connect(self.p3_freq_f)
-        self.p3_freq = self.add_mhz( int( self.freq_3.value() ) )
-
-        self.freq_4.valueChanged.connect(self.p4_freq_f)
-        self.p4_freq = self.add_mhz( int( self.freq_4.value() ) )
-
-        self.freq_5.valueChanged.connect(self.p5_freq_f)
-        self.p5_freq = self.add_mhz( int( self.freq_5.value() ) )
-
-        self.freq_6.valueChanged.connect(self.p6_freq_f)
-        self.p6_freq = self.add_mhz( int( self.freq_6.value() ) )
-
-        self.freq_7.valueChanged.connect(self.p7_freq_f)
-        self.p7_freq = self.add_mhz( int( self.freq_7.value() ) )
-
-        # coef in amplitude
-        self.coef_2.valueChanged.connect(self.p2_coef_f)
-        self.p2_coef = round( 100 / self.coef_2.value() , 2 )
-
-        self.coef_3.valueChanged.connect(self.p3_coef_f)
-        self.p3_coef = round( 100 / self.coef_3.value() , 2 )
-
-        self.coef_4.valueChanged.connect(self.p4_coef_f)
-        self.p4_coef = round( 100 / self.coef_4.value() , 2 )
-
-        self.coef_5.valueChanged.connect(self.p5_coef_f)
-        self.p5_coef = round( 100 / self.coef_5.value() , 2 )
-
-        self.coef_6.valueChanged.connect(self.p6_coef_f)
-        self.p6_coef = round( 100 / self.coef_6.value() , 2 )
-
-        self.coef_7.valueChanged.connect(self.p7_coef_f)
-        self.p7_coef = round( 100 / self.coef_7.value() , 2 )
-
-        self.menuBar.setStyleSheet("QMenuBar { color: rgb(193, 202, 227); font-weight: bold; } \
-                    QMenu::item { color: rgb(211, 194, 78); } QMenu::item:selected {color: rgb(193, 202, 227); }")
-        self.action_read.triggered.connect( self.open_file_dialog )
-        self.action_save.triggered.connect( self.save_file_dialog )
-
-        # Quadrature Phase Correction
-        self.P_to_drop.valueChanged.connect(self.p_to_drop_func)
-        self.p_to_drop = int( self.P_to_drop.value() )
-
-        self.Zero_order.valueChanged.connect(self.zero_order_func)
-        self.zero_order = float( self.Zero_order.value() ) / self.deg_rad
-        
-        self.First_order.valueChanged.connect(self.first_order_func)
-        self.first_order = float( self.First_order.value() )
-
-        self.Second_order.valueChanged.connect(self.second_order_func)
-        self.second_order = float( self.Second_order.value() )
-        if self.second_order != 0.0:
-            self.second_order = self.sec_order_coef / ( float( self.Second_order.value() ) * 1000 )
-
-        self.B_sech.valueChanged.connect(self.b_sech_func)
-        self.b_sech_cur = float( self.B_sech.value() )
-
-        self.Combo_cor.setStyleSheet("QComboBox { color : rgb(193, 202, 227); selection-color: rgb(211, 194, 78); }")
-        self.Combo_cor.currentIndexChanged.connect(self.combo_cor_fun)
-        self.combo_cor_fun()
-
-        self.Combo_synt.setStyleSheet("QComboBox { color : rgb(193, 202, 227); selection-color: rgb(211, 194, 78); }")
-        self.Combo_synt.currentIndexChanged.connect(self.combo_synt_fun)
-        self.combo_synt_fun()
-
-        self.Dec.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.Dec.valueChanged.connect( self.decimat )
-        self.decimation = self.Dec.value()
-
-        #self.live_mode.setStyleSheet("QCheckBox { color : rgb(193, 202, 227); }")
-        #self.live_mode.stateChanged.connect( self.change_live_mode )
-        self.l_mode = 0
- 
-        self.dig_part()
-
+        self.design_tab_1()
+        self.design_tab_2()
+        self.design_tab_3()
+        self.design_tab_4()
+        self.design_tab_5()
+
+        """
+        Create a process to interact with an experimental script that will run on a different thread.
+        We need a different thread here, since PyQt GUI applications have a main thread of execution that runs the event loop and GUI. If you launch a long-running task in this thread, then your GUI will freeze until the task terminates. During that time, the user won’t be able to interact with the application
+        """
+        self.worker = Worker()
         self.poller = pol.StatusPoller()
         self.poller.status_received.connect(self.update_gui_status)
 
-    def dig_part(self):
-        """
-        Digitizer settings
-        """
-        # time per point is fixed
-        self.time_per_point = 0.4 * self.decimation
+    def menu(self):
+        menubar = self.menuBar()
+        menubar.setStyleSheet("QMenuBar { color: rgb(193, 202, 227); font-weight: bold; font-size: 12px; } QMenu::item { color: rgb(211, 194, 78); } QMenu::item:selected {color: rgb(193, 202, 227); }")
+        file_menu = menubar.addMenu("File")
+        menubar.setFixedHeight(27)
 
-        self.Win_left.valueChanged.connect(self.win_left)
-        self.cur_win_left = int( float( self.Win_left.value() ) / self.time_per_point )
-        self.Win_left.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
-        self.Win_right.valueChanged.connect(self.win_right)
-        self.cur_win_right = int( float( self.Win_right.value() ) / self.time_per_point )
-        self.Win_right.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
+        self.action_read = QAction("Read from file", self)
+        self.action_read.triggered.connect( self.open_file_dialog )
+        file_menu.addAction(self.action_read)
 
-        self.Acq_number.valueChanged.connect(self.acq_number)
-        self.number_averages = int( self.Acq_number.value() )
-        self.Acq_number.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97)}")
+        self.action_save = QAction("Save to file", self)
+        self.action_save.triggered.connect(self.save_file_dialog)
+        file_menu.addAction(self.action_save)
 
-        self.fft_box.setStyleSheet("QCheckBox { color : rgb(193, 202, 227); }")
-        self.Quad_cor.setStyleSheet("QCheckBox { color : rgb(193, 202, 227); }")
+    def design_tab_1(self):
+        self.destroyed.connect(lambda: self._on_destroyed())
+        self.setObjectName("MainWindow")
+        self.setWindowTitle("AWG Channel Pulse Control")
+        self.setStyleSheet("background-color: rgb(42,42,64);")
 
-        self.fft_box.stateChanged.connect( self.fft_online )
-        self.Quad_cor.stateChanged.connect( self.quad_online )
+        path_to_main = os.path.dirname(os.path.abspath(__file__))
+        icon_path = os.path.join(path_to_main, 'gui/icon_pulse.png')
+        self.setWindowIcon( QIcon(icon_path) )
+        self.path = os.path.join(path_to_main, '..', '..', '..', '..', 'experimental_data')
+
+        self.setMinimumHeight(690)
+        self.setMinimumWidth(1210)
+        self.setMaximumWidth(2000)
+
+        central_container = QWidget()
+        self.setCentralWidget(central_container)
+        main_window_layout = QVBoxLayout(central_container)
+        main_window_layout.setContentsMargins(0, 0, 0, 0)
+        main_window_layout.setSpacing(0)
+
+        self.tab_pulse = QTabWidget()
+        main_window_layout.addWidget(self.tab_pulse)
+
+        self.tab_pulse.setTabShape(QTabWidget.TabShape.Rounded)
+        self.tab_pulse.setStyleSheet("""
+            QTabBar::tab { 
+                width: 151px; 
+                height: 20px;
+                font-weight: bold; 
+                color: rgb(193, 202, 227);
+                background: rgb(63, 63, 97);
+                border: 1px solid rgb(43, 43, 77);
+                border-bottom: none;
+                border-top-left-radius: 4px;
+                border-top-right-radius: 4px;
+                margin-right: 2px;
+            }
+            QTabBar::tab:selected {
+                color: rgb(211, 194, 78);
+                background: rgb(83, 83, 117); 
+                border-bottom: 2px solid rgb(211, 194, 78);
+            }
+            QTabBar::tab:hover {
+                background: rgb(73, 73, 107);
+            }
+        """)
+
+        pulse_page = QWidget()
+        pulse_page_layout = QVBoxLayout(pulse_page)
+        pulse_page_layout.setContentsMargins(0, 0, 0, 0)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        #scroll.setFixedHeight(383)
+
+        container = QWidget()
+        scroll.setWidget(container)
+        tab_layout = QVBoxLayout(container)
+        
+        self.gridLayout = QGridLayout()
+        self.gridLayout.setContentsMargins(5, 5, 0, 0)
+        self.gridLayout.setVerticalSpacing(4)
+        self.gridLayout.setHorizontalSpacing(20)
+        
+        tab_layout.addLayout(self.gridLayout)
+        tab_layout.addStretch()
+
+        pulse_page_layout.addWidget(scroll)
+        self.tab_pulse.addTab(pulse_page, "Pulses")
+        self.tab_pulse.tabBar().setTabTextColor(0, QColor(193, 202, 227))
+
+        buttons_widget = QWidget()
+        self.buttons_layout = QGridLayout(buttons_widget)
+        self.buttons_layout.setContentsMargins(15, 10, 10, 10)
+        self.buttons_layout.setVerticalSpacing(6)
+        self.buttons_layout.setHorizontalSpacing(20)
+        
+        main_window_layout.addWidget(buttons_widget)
+
+        # ---- Labels & Inputs ----
+        labels = [("Start", "label_1"), ("Length", "label_2"), ("Sigma", "label_3"), ("Start Increment", "label_4"), ("Length Increment", "label_5"), ("Frequency", "label_6"), ("Frequency Sweep", "label_7"), ("Amplitude", "label_8"), ("Phase", "label_9"), ("Type", "label_10"), ("Repetition Rate", "label_11"), ("Magnetic Field", "label_12")]
+
+        for name, attr_name in labels:
+            lbl = QLabel(name)
+            lbl.setFixedSize(130, 26)
+            setattr(self, attr_name, lbl)
+            lbl.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
+
+
+        # ---- Boxes ----
+        pulses = [(QDoubleSpinBox, 0, 100e6, 0, 3.2, 1, " ns", "_st", "_start"),
+                  (QDoubleSpinBox, 0, 1900, 0, 3.2, 1, " ns", "_len", "_length"),
+                  (QDoubleSpinBox, 0, 1900, 0, 3.2, 1, " ns", "_sig", "_sigma"),
+                  (QDoubleSpinBox, 0, 1e6, 0, 3.2, 1, " ns", "_st_inc", "_st_increment"),
+                  (QDoubleSpinBox, 0, 320, 0, 3.2, 1, " ns", "_len_inc", "_len_increment")
+                 ]
+
+        for j in range(1, 6):
+            pulse_set = pulses[j-1]
+            label_widget = getattr(self, f"label_{j}")
+            self.gridLayout.addWidget(label_widget, j + 2, 0)
+
+            for i in range(1, 10):
+                spin_box = (pulse_set[0])()
+                spin_box.setRange(pulse_set[1], pulse_set[2])
+                spin_box.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
+                spin_box.setSingleStep(pulse_set[4])
+                if (i == 1) and (j == 1):
+                    spin_box.setValue(576)
+                elif (i == 1) and (j == 2):
+                    spin_box.setRange(0, 6.4e3)
+                    spin_box.setValue(816)
+                elif (i == 1) and (j == 3):
+                    spin_box.setRange(0, 0)
+                elif (i == 2) and (j == 2):
+                    spin_box.setValue(22.4)
+                elif (i == 3) and (j == 1):
+                    spin_box.setValue(288)
+                elif (i == 3) and (j == 2):
+                    spin_box.setValue(44.8)
+                else:  
+                    spin_box.setValue(pulse_set[3])
+                spin_box.setDecimals(pulse_set[5])
+                spin_box.setSuffix(pulse_set[6])
+                spin_box.setFixedSize(130, 26)
+                spin_box.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.PlusMinus)
+
+                spin_box.setKeyboardTracking( False )
+                # widget name pulse_set[7]
+                setattr(self, f"P{i}{pulse_set[7]}", spin_box)
+
+                if pulse_set[7] == "_st":
+                    v2_sfx = "_start_rect"
+                elif pulse_set[7] == "_len":
+                    v2_sfx = "_b"
+                else:
+                    v2_sfx = None
+
+                spin_box.valueChanged.connect(
+                    lambda val, idx = i, s7 = pulse_set[7], s8 = pulse_set[8], v2 = v2_sfx: 
+                    self.update_pulse_value(idx, s7, s8, v2)
+                )
+                
+                self.update_pulse_value(i, pulse_set[7], pulse_set[8], v2_sfx)
+                self.gridLayout.addWidget(spin_box, j + 2, i)
+
+                if j == 1:
+                    lbl = QLabel(f"{i}")
+                    lbl.setAlignment(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
+                    lbl.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
+                    self.gridLayout.addWidget(lbl, 0, i)
+
+
+        awg_pulses = [
+            (QSpinBox, -1000, 1000, 50, 5, 0, " MHz", "_fr", "_freq"),
+            (QSpinBox, -1000, 1000, 350, 5, 0, " MHz", "_sw", "wurst_sweep_cur_"),
+            (QSpinBox, 1, 100, 100, 1, 0, " %", "_cf", "_coef")
+        ]
+
+        for j in range(9, 12):
+            pulse_set = awg_pulses[j - 9]
+            label_widget = getattr(self, f"label_{j - 3}")
+            self.gridLayout.addWidget(label_widget, j, 0)
+
+            for i in range(1, 10):
+                spin_box = pulse_set[0]()
+                spin_box.setRange(int(pulse_set[1]), int(pulse_set[2]))
+                spin_box.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
+                spin_box.setSingleStep(pulse_set[4])
+                
+                if i == 1:
+                    if j == 9 or j == 10:
+                        spin_box.setRange(0, 0)
+                    elif j == 11:
+                        spin_box.setRange(100, 100)
+                else:  
+                    spin_box.setValue(pulse_set[3])
+
+                spin_box.setSuffix(pulse_set[6])
+                spin_box.setFixedSize(130, 26)
+                spin_box.setButtonSymbols(QSpinBox.ButtonSymbols.PlusMinus)
+                spin_box.setKeyboardTracking(False)
+
+                attr_name = f"P{i}{pulse_set[7]}"
+                setattr(self, attr_name, spin_box)
+                
+                if pulse_set[7] == "_cf":
+                    spin_box.valueChanged.connect(lambda _, idx = i: self.update_coef_param(idx))
+                else:
+                    prefix = "P"
+                    v_name = "p" if pulse_set[7] == "_fr" else ""
+                    spin_box.valueChanged.connect(
+                        lambda _, idx=i, p=prefix, s=pulse_set[7], v=pulse_set[8]: 
+                        self.update_awg_generic(idx, s, v)
+                    )
+                
+                val_name = f"p{i}{pulse_set[8]}" if pulse_set[8].startswith("_") else f"{pulse_set[8]}{i}"
+                setattr(self, val_name, spin_box.value())
+
+                self.gridLayout.addWidget(spin_box, j, i)
+
+        # ---- Separators ----
+        def hline():
+            line = QFrame()
+            line.setFrameShape(QFrame.Shape.HLine)
+            line.setFrameShadow(QFrame.Shadow.Sunken)
+            line.setLineWidth(2)
+            return line
+
+        self.gridLayout.addWidget(hline(), 1, 0, 1, 10)
+        self.gridLayout.addWidget(hline(), 8, 0, 1, 10)
+        self.gridLayout.addWidget(hline(), 12, 0, 1, 10)
+
+        # ---- Combo boxes----
+        combo_boxes = [("DETECTION", "_type", "_type", "_typ", ["DETECTION"]),
+                       ("SINE", "_type", "_type", "_typ", ["SINE", "GAUSS", "SINC", "WURST", "SECH/TANH", "LASER"]),
+                       ("SINE", "_type", "_type", "_typ", ["SINE", "GAUSS", "SINC", "WURST", "SECH/TANH"])
+                      ]
+
+        label_widget = getattr(self, f"label_9")
+        label_widget.setFixedSize(130, 26)
+        self.gridLayout.addWidget(label_widget, 13, 0)
+
+        self.laser_flag = 0
+
+        for i in range(1, 10):
+            combo = QComboBox()
+            combo.setStyleSheet("QComboBox { color : rgb(193, 202, 227); selection-color: rgb(211, 194, 78); }")
+            combo.setFixedSize(130, 26)
+            if i == 1:
+                combo.addItems(combo_boxes[i-1][4])
+                combo.setCurrentText(combo_boxes[i][0])
+            elif i == 2:
+                combo.addItems(combo_boxes[i-1][4])
+                combo.setCurrentText(combo_boxes[i][0])
+            else:
+                combo.addItems(combo_boxes[2][4])
+                combo.setCurrentText(combo_boxes[2][0])
+
+            setattr(self, f"P{i}{combo_boxes[2][1]}", combo)
+
+            combo.currentTextChanged.connect(lambda _, idx = i: self.update_pulse_type(idx))
+            setattr(self, f"p{i}_typ", combo.currentText())
+
+            self.gridLayout.addWidget(combo, 13, i)
+
+        
+        label_widget = getattr(self, f"label_10")
+        label_widget.setFixedSize(130, 26)
+        self.gridLayout.addWidget(label_widget, 14, 0)
+        self.gridLayout.addWidget(hline(), 15, 0, 1, 10)
+
+        # ---- Text Edits ----
+        text_edit = ["+x,-x", "+x,-x", "+x,+x"]
+
+        for i in range(1, 10):
+            if i == 1:
+                txt = QTextEdit(text_edit[0])
+            elif i == 2:
+                txt = QTextEdit(text_edit[1])
+            else:
+                txt = QTextEdit(text_edit[2])
+            txt.setFixedSize(130, 60)
+            txt.setAcceptRichText(False)
+            #txt.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+            txt.setStyleSheet("QTextEdit { color : rgb(211, 194, 78) ; selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
+            
+            setattr(self, f"Phase_{i}", txt)
+            txt.textChanged.connect(lambda idx = i: self.update_pulse_phase(idx))
+            self.update_pulse_phase(i)
+
+            self.gridLayout.addWidget(txt, 14, i)
+
+        # ---- Boxes----
+        boxes = [(QDoubleSpinBox, "Rep_rate", "repetition_rate", self.rep_rate, 0.1, 20e3, 500, 1, 1, " Hz"),
+                 (QDoubleSpinBox, "Field", "mag_field", self.field, 10, 15.1e3, 3493, 0.5, 2, " G")]
+        
+        box_c = 0
+        for widget_class, attr_name, par_name, func, v_min, v_max, cur_val, v_step, dec, suf in boxes:
+            rr_box = widget_class()
+            rr_box.setRange(v_min, v_max)
+            rr_box.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
+            rr_box.setSingleStep(v_step)
+            rr_box.setValue(cur_val)
+            rr_box.setDecimals(dec)
+            rr_box.setSuffix(suf)
+            rr_box.valueChanged.connect(func)
+            rr_box.setFixedSize(130, 26)
+            rr_box.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.PlusMinus)
+            rr_box.setKeyboardTracking( False )
+            setattr(self, attr_name, rr_box)
+            if attr_name == "Rep_rate":
+                setattr(self, par_name, str( rr_box.value() ) + ' Hz')
+            elif attr_name == 'Field':
+                setattr(self, par_name, float( rr_box.value() ))
+
+            self.buttons_layout.addWidget(rr_box, box_c, 1)
+            box_c += 1
+
+        label_widget = getattr(self, f"label_11")
+        self.buttons_layout.addWidget(label_widget, 0, 0)
+        label_widget.setFixedSize(130, 26)
+        label_widget = getattr(self, f"label_12")
+        label_widget.setFixedSize(130, 26)
+        self.buttons_layout.addWidget(label_widget, 1, 0)
+        self.buttons_layout.addWidget(hline(), 2, 0, 1, 12)
+
+        # ---- Buttons ----
+        buttons = [("Run Pulses", "button_update", self.update),
+                   ("Stop Pulses", "button_stop", self.dig_stop),
+                   ("Exit", "button_off", self.turn_off),
+                   ("Start Experiment", "button_start_exp", self.start_exp),
+                   ("Stop Experiment", "button_stop_exp", self.stop_exp)
+                    ]
+
+        btn_c = 3
+        btn_cl = 0
+        for name, attr_name, func in buttons:
+            btn = QPushButton(name)
+            btn.setFixedSize(130, 40)
+            btn.clicked.connect(func)
+            btn.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; } QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
+            setattr(self, attr_name, btn)
+            if name == "Start Experiment":
+                btn_c = 3
+                btn_cl = 1
+            self.buttons_layout.addWidget(btn, btn_c, btn_cl)
+            btn_c += 1
+        
+        txt = QTextEdit()
+        setattr(self, "errors", txt)
+        txt.setStyleSheet("QPlainTextEdit { color : rgb(211, 194, 78); }")
+        self.buttons_layout.addWidget(txt, 3, 2, 3, 10)
+
+        #self.buttons_layout.setRowStretch(6, 11)
+        #self.buttons_layout.setColumnStretch(6, 11)
+
+    def design_tab_2(self):
+        dig_setting_page = QWidget()
+        gridLayout = QGridLayout()
+        gridLayout.setContentsMargins(15, 15, 10, 10)
+        gridLayout.setVerticalSpacing(4)
+        gridLayout.setHorizontalSpacing(20)
+
+        dig_setting_page.setLayout(gridLayout)
+
+        self.tab_pulse.addTab(dig_setting_page, "Acquisition")
+        self.tab_pulse.tabBar().setTabTextColor(1, QColor(193, 202, 227))
+
+        # ---- Labels & Inputs ----
+        labels = [("Acquisitions", "label_17"), ("Integration Left", "label_18"), ("Integration Right", "label_19"), ("Decimation", "label_20")]
+
+        for name, attr_name in labels:
+            lbl = QLabel(name)
+            setattr(self, attr_name, lbl)
+            lbl.setFixedSize(130, 26)
+            lbl.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
+
+        # ---- Boxes ----
+        double_boxes = [(QSpinBox, "Acq_number", "number_averages", self.acq_number, 1, 1e4, 1, 1, 0, ""),
+                      (QSpinBox, "Dec", "decimation", self.decimat, 1, 4, 1, 1, 0, ""),
+                      (QDoubleSpinBox, "Win_left", "cur_win_left", self.win_left, 0, 6400, 0, 0.4, 1, " ns"),
+                      (QDoubleSpinBox, "Win_right", "cur_win_right", self.win_right, 0, 6400, 320, 0.4, 1, " ns")
+                        ]
+
+        for widget_class, attr_name, par_name, func, v_min, v_max, cur_val, v_step, dec, suf in double_boxes:
+            spin_box = widget_class()
+            if isinstance(spin_box, QDoubleSpinBox):
+                spin_box.setRange(v_min, v_max)
+                spin_box.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")                
+            else:
+                spin_box.setRange(int(v_min), int(v_max))
+                spin_box.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")                
+            spin_box.setSingleStep(v_step)
+            spin_box.setValue(cur_val)
+            if isinstance(spin_box, QDoubleSpinBox):
+                spin_box.setDecimals(dec)
+            spin_box.setSuffix(suf)
+            spin_box.valueChanged.connect(func)
+            spin_box.setFixedSize(130, 26)
+            spin_box.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.PlusMinus)
+
+            spin_box.setKeyboardTracking( False )
+            
+            setattr(self, attr_name, spin_box)
+            if isinstance(spin_box, QSpinBox):
+                if attr_name == 'Dec':
+                    setattr(self, par_name, int(spin_box.value()))
+                    self.time_per_point = 0.4 * self.decimation
+                else:
+                    setattr(self, par_name, int(spin_box.value()))
+            else:
+                if attr_name == 'Win_left' or attr_name == 'Win_right':
+                    setattr(self, par_name, int( float( spin_box.value() ) / self.time_per_point ))
+                else:
+                    setattr(self, par_name, float(spin_box.value()))
+
+        # ---- Separators ----
+        def hline():
+            line = QFrame()
+            line.setFrameShape(QFrame.Shape.HLine)
+            line.setFrameShadow(QFrame.Shadow.Sunken)
+            line.setLineWidth(2)
+            return line
+
+        container_layout = QHBoxLayout()
+
+        left_grid = QGridLayout()
+        left_grid.setVerticalSpacing(4)
+        left_grid.setHorizontalSpacing(20)
+        left_grid.addWidget(self.label_17, 0, 0)
+        left_grid.addWidget(self.Acq_number, 0, 1)
+        left_grid.addWidget(hline(), 1, 0, 1, 2)
+        left_grid.setRowStretch(2, 1)
+        left_grid.setColumnStretch(2, 1)
+
+        right_grid = QGridLayout()
+        right_grid.setVerticalSpacing(4)
+        right_grid.setHorizontalSpacing(20)
+        right_grid.addWidget(self.label_18, 0, 0)
+        right_grid.addWidget(self.Win_left, 0, 1)
+        right_grid.addWidget(self.label_19, 1, 0)
+        right_grid.addWidget(self.Win_right, 1, 1)
+        right_grid.addWidget(self.label_20, 2, 0)
+        right_grid.addWidget(self.Dec, 2, 1)
+        right_grid.addWidget(hline(), 3, 0, 1, 2)
+        right_grid.setRowStretch(4, 1)
+        right_grid.setColumnStretch(4, 1)
+        
+        container_layout.addLayout(left_grid)
+        container_layout.addSpacing(20)
+        container_layout.addLayout(right_grid)
+
+        container_layout.addStretch(1) 
+        gridLayout.addLayout(container_layout, 0, 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+
+        gridLayout.setColumnStretch(1, 1)
+        gridLayout.setRowStretch(1, 1)
+
+    def design_tab_3(self):
+        fft_setting_page = QWidget()
+        gridLayout = QGridLayout()
+        gridLayout.setContentsMargins(15, 15, 10, 10)
+        gridLayout.setVerticalSpacing(4)
+        gridLayout.setHorizontalSpacing(20)
+
+        fft_setting_page.setLayout(gridLayout)
+
+        self.tab_pulse.addTab(fft_setting_page, "FFT")
+        self.tab_pulse.tabBar().setTabTextColor(2, QColor(193, 202, 227))
+
+        # ---- Labels & Inputs ----
+        labels = [("Points to Drop", "label_11"), ("Zero Order", "label_12"), ("First Order", "label_13"), ("Second Order", "label_14"), ("Live FFT", "label_15"), ("Quadrature Correction", "label_16")]
+
+        for name, attr_name in labels:
+            lbl = QLabel(name)
+            setattr(self, attr_name, lbl)
+            lbl.setFixedSize(130, 26)
+            lbl.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
+
+        # ---- Boxes ----
+        double_boxes = [(QSpinBox, "P_to_drop", "p_to_drop", self.p_to_drop_func, 0, 1e4, 0, 1, 0, ""),
+                      (QDoubleSpinBox, "Zero_order", "zero_order", self.zero_order_func, -0.1, 360.1, 0, 0.1, 4, " deg"),
+                      (QDoubleSpinBox, "First_order", "first_order", self.first_order_func, -100, 100, 0, 0.001, 4, ""),
+                      (QDoubleSpinBox, "Second_order", "second_order", self.second_order_func, -100, 100, 0, 0.001, 4, " MHz/ns")
+                        ]
+
+        for widget_class, attr_name, par_name, func, v_min, v_max, cur_val, v_step, dec, suf in double_boxes:
+            spin_box = widget_class()
+            if isinstance(spin_box, QDoubleSpinBox):
+                spin_box.setRange(v_min, v_max)
+                spin_box.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")                
+            else:
+                spin_box.setRange(int(v_min), int(v_max))
+                spin_box.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")                
+            spin_box.setSingleStep(v_step)
+            spin_box.setValue(cur_val)
+            if isinstance(spin_box, QDoubleSpinBox):
+                spin_box.setDecimals(dec)
+            spin_box.setSuffix(suf)
+            spin_box.valueChanged.connect(func)
+            spin_box.setFixedSize(130, 26)
+            spin_box.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.PlusMinus)
+
+            spin_box.setKeyboardTracking( False )
+            
+            setattr(self, attr_name, spin_box)
+            if isinstance(spin_box, QDoubleSpinBox):
+                if attr_name == 'Zero_order':
+                    setattr(self, par_name, float(spin_box.value() / self.deg_rad))
+                else:
+                    setattr(self, par_name, float(spin_box.value()))
+
+            else:
+                setattr(self, par_name, int(spin_box.value()))
+
+        if self.second_order != 0.0:
+            self.second_order = self.sec_order_coef / ( float( self.Second_order.value() ) * 1000 )
+
+        self.l_mode = 0
+
+        # ---- Check Boxes ----
+        check_boxes = [("fft_box", self.fft_online),
+                       ("Quad_cor", self.quad_online)]
+
+        for attr_name, func in check_boxes:
+            check = QCheckBox("")
+            setattr(self, attr_name, check)
+            check.stateChanged.connect(func)
+            check.setStyleSheet("QCheckBox { color : rgb(193, 202, 227); }")
+            check.setFixedSize(130, 26)
+
+        # ---- Separators ----
+        def hline():
+            line = QFrame()
+            line.setFrameShape(QFrame.Shape.HLine)
+            line.setFrameShadow(QFrame.Shadow.Sunken)
+            line.setLineWidth(2)
+            return line
+
+
+        # ---- Layout placement ----
+        gridLayout.addWidget(self.label_15, 0, 0)
+        gridLayout.addWidget(self.fft_box, 0, 1)
+        gridLayout.addWidget(self.label_16, 1, 0)
+        gridLayout.addWidget(self.Quad_cor, 1, 1)
+
+        gridLayout.addWidget(hline(), 2, 0, 1, 2)
+        
+        gridLayout.addWidget(self.label_11, 3, 0)
+        gridLayout.addWidget(self.P_to_drop, 3, 1)
+        gridLayout.addWidget(self.label_12, 4, 0)
+        gridLayout.addWidget(self.Zero_order, 4, 1)
+        gridLayout.addWidget(self.label_13, 5, 0)
+        gridLayout.addWidget(self.First_order, 5, 1)
+        gridLayout.addWidget(self.label_14, 6, 0)
+        gridLayout.addWidget(self.Second_order, 6, 1)
+
+        gridLayout.addWidget(hline(), 7, 0, 1, 2)
+
+        gridLayout.setRowStretch(8, 2)
+        gridLayout.setColumnStretch(8, 2)
 
         # flag for not writing the data when digitizer is off
         self.opened = 0
         self.fft = 0
         self.quad = 0
+        self.double_change = 0
+
+    def design_tab_4(self):
+        laser_setting_page = QWidget()
+        gridLayout = QGridLayout()
+        gridLayout.setContentsMargins(15, 15, 10, 10)
+        gridLayout.setVerticalSpacing(4)
+        gridLayout.setHorizontalSpacing(20)
+
+        laser_setting_page.setLayout(gridLayout)
+
+        self.tab_pulse.addTab(laser_setting_page, "Source / Laser")
+        self.tab_pulse.tabBar().setTabTextColor(3, QColor(193, 202, 227))
+
+        # ---- Labels & Inputs ----
+        labels = [("Laser", "label_s0"), ("MW Source", "label_s1")]
+
+        for name, attr_name in labels:
+            lbl = QLabel(name)
+            setattr(self, attr_name, lbl)
+            lbl.setFixedSize(130, 26)
+            lbl.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
+
+        # ---- Combo box----
+        combo_laser = [("Nd:YaG", "Combo_laser", "", self.combo_laser_fun, ["Nd:YaG", "NovoFEL"]),
+                       ("1", "Combo_synt", "", self.combo_synt_fun, ["1", "2"])
+                      ]
+
+        for cur_text, attr_name, par_name, func, item in combo_laser:
+            combo = QComboBox()
+            setattr(self, attr_name, combo)
+            combo.currentIndexChanged.connect(func)
+            combo.addItems(item)
+            combo.setCurrentText(cur_text)
+            combo.setFixedSize(130, 26)
+            combo.setStyleSheet("QComboBox { color : rgb(193, 202, 227); selection-color: rgb(211, 194, 78); }")
         
+        self.combo_synt_fun()
+        self.combo_laser_fun()
+
+        # ---- Separators ----
+        def hline():
+            line = QFrame()
+            line.setFrameShape(QFrame.Shape.HLine)
+            line.setFrameShadow(QFrame.Shadow.Sunken)
+            line.setLineWidth(2)
+            return line
+
+        # ---- Layout placement ----
+        gridLayout.addWidget(self.label_s1, 0, 0)
+        gridLayout.addWidget(self.Combo_synt, 0, 1)
+        gridLayout.addWidget(self.label_s0, 1, 0)
+        gridLayout.addWidget(self.Combo_laser, 1, 1)
+
+        gridLayout.addWidget(hline(), 2, 0, 1, 2)
+
+        gridLayout.setRowStretch(3, 1)
+        gridLayout.setColumnStretch(3, 1)
+
+    def design_tab_5(self):
+        dig_setting_page = QWidget()
+        gridLayout = QGridLayout()
+        gridLayout.setContentsMargins(15, 15, 10, 10)
+        gridLayout.setVerticalSpacing(4)
+        gridLayout.setHorizontalSpacing(20)
+
+        dig_setting_page.setLayout(gridLayout)
+
+        self.tab_pulse.addTab(dig_setting_page, "AWG")
+        self.tab_pulse.tabBar().setTabTextColor(4, QColor(193, 202, 227))
+
+        # ---- Labels & Inputs ----
+        labels = [("Amplitude I", "label_a1"), ("Amplitude Q", "label_a2"), ("Phase", "label_a3"), ("N [WURST; SECH/TANH]", "label_a4"), ("b [SECH/TANH]", "label_a5"), ("Resonator Correction", "label_a6")]
+
+        for name, attr_name in labels:
+            lbl = QLabel(name)
+            setattr(self, attr_name, lbl)
+            lbl.setFixedSize(130, 26)
+            lbl.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
+
+        # ---- Boxes ----
+        double_boxes = [(QSpinBox, "Ampl_1", "ch0_ampl", self.ch0_amp, 1, 260, 260, 1, 0, ""),
+                        (QSpinBox, "Ampl_2", "ch1_ampl", self.ch1_amp, 1, 260, 260, 1, 0, ""),
+                        (QDoubleSpinBox, "Phase", "cur_phase", self.awg_phase, 0, 360, 90, 0.1, 2, " deg"),
+                        (QSpinBox, "N_wurst", "n_wurst_cur", self.n_wurst, 1, 100, 10, 1, 0, ""),
+                        (QDoubleSpinBox, "B_sech", "b_sech_cur", self.b_sech_func, 0.005, 10, 0.02, 0.001, 3, " 1/ns")
+                        ]
+
+        for widget_class, attr_name, par_name, func, v_min, v_max, cur_val, v_step, dec, suf in double_boxes:
+            spin_box = widget_class()
+            if isinstance(spin_box, QDoubleSpinBox):
+                spin_box.setRange(v_min, v_max)
+                spin_box.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")                
+            else:
+                spin_box.setRange(int(v_min), int(v_max))
+                spin_box.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")                
+            spin_box.setSingleStep(v_step)
+            spin_box.setValue(cur_val)
+            if isinstance(spin_box, QDoubleSpinBox):
+                spin_box.setDecimals(dec)
+            spin_box.setSuffix(suf)
+            spin_box.valueChanged.connect(func)
+            spin_box.setFixedSize(130, 26)
+            spin_box.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.PlusMinus)
+
+            spin_box.setKeyboardTracking( False )
+            
+            setattr(self, attr_name, spin_box)
+            if isinstance(spin_box, QSpinBox):
+                    setattr(self, par_name, int(spin_box.value()))
+            else:
+                if attr_name == 'Phase':
+                    setattr(self, par_name, float( spin_box.value() * np.pi * 2 / 360 ) )
+                else:
+                    setattr(self, par_name, float(spin_box.value()))
+
+        # ---- Combo box----
+        combo_laser = [("No", "Combo_cor", "", self.combo_cor_fun, ["No", "Only Pi/2", "All"])
+                      ]
+
+        for cur_text, attr_name, par_name, func, item in combo_laser:
+            combo = QComboBox()
+            setattr(self, attr_name, combo)
+            combo.currentIndexChanged.connect(func)
+            combo.addItems(item)
+            combo.setCurrentText(cur_text)
+            combo.setFixedSize(130, 26)
+            combo.setStyleSheet("QComboBox { color : rgb(193, 202, 227); selection-color: rgb(211, 194, 78); }")
+
+        self.combo_cor_fun()
+
+        # ---- Separators ----
+        def hline():
+            line = QFrame()
+            line.setFrameShape(QFrame.Shape.HLine)
+            line.setFrameShadow(QFrame.Shadow.Sunken)
+            line.setLineWidth(2)
+            return line
+
+        container_layout = QHBoxLayout()
+
+        left_grid = QGridLayout()
+        left_grid.setVerticalSpacing(4)
+        left_grid.setHorizontalSpacing(20)
+        left_grid.addWidget(self.label_a4, 0, 0)
+        left_grid.addWidget(self.N_wurst, 0, 1)
+        left_grid.addWidget(self.label_a5, 1, 0)
+        left_grid.addWidget(self.B_sech, 1, 1)
+        left_grid.addWidget(hline(), 2, 0, 1, 2)
+        left_grid.setRowStretch(3, 1)
+        left_grid.setColumnStretch(3, 1)
+
+        right_grid = QGridLayout()
+        right_grid.setVerticalSpacing(4)
+        right_grid.setHorizontalSpacing(20)
+        right_grid.addWidget(self.label_a1, 0, 0)
+        right_grid.addWidget(self.Ampl_1, 0, 1)
+        right_grid.addWidget(self.label_a2, 1, 0)
+        right_grid.addWidget(self.Ampl_2, 1, 1)
+        right_grid.addWidget(self.label_a3, 2, 0)
+        right_grid.addWidget(self.Phase, 2, 1)
+        right_grid.addWidget(hline(), 3, 0, 1, 2)
+        right_grid.addWidget(self.label_a6, 4, 0)
+        right_grid.addWidget(self.Combo_cor, 4, 1)
+        right_grid.addWidget(hline(), 5, 0, 1, 2)
+
+        right_grid.setRowStretch(6, 1)
+        right_grid.setColumnStretch(6, 1)
+        
+        container_layout.addLayout(left_grid)
+        container_layout.addSpacing(20)
+        container_layout.addLayout(right_grid)
+
+        container_layout.addStretch(1) 
+        gridLayout.addLayout(container_layout, 0, 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+
+        gridLayout.setColumnStretch(1, 1)
+        gridLayout.setRowStretch(1, 1)
+
+    def update_coef_param(self, index):
+        attr_name = f"P{index}_cf"
+        
+        if hasattr(self, attr_name):
+            widget = getattr(self, attr_name)
+            val = widget.value()
+            value = val
+            
+            setattr(self, f"p{index}_coef", value)
+            #print(f"Updated p{index}_coef to {value}")
+        else:
+            pass
+            #print(f"Warning: {attr_name} not found")
+
+    def update_pulse_type(self, index):
+
+        combo = getattr(self, f"P{index}_type")
+        text = combo.currentText()
+        
+        setattr(self, f"p{index}_typ", text)
+        
+        if index == 2:
+            self.laser_flag = 1 if text == 'LASER' else 0
+            
+        #print(f"Pulse {index} type set to: {text}")
+
+    def update_pulse_phase(self, index):
+
+        text_edit = getattr(self, f"Phase_{index}")
+        temp = text_edit.toPlainText().strip()
+        
+        try:
+            if len(temp) >= 2: #and temp[0] == '[' and temp[-1] == ']':
+                content = temp[:].split(',') #[1:-1]
+                phases = [p.strip() for p in content if p.strip()]
+                
+                if len(phases) == 1:
+                    phases.append(phases[0])
+                
+                setattr(self, f"ph_{index}", phases)
+                
+        except (IndexError, AttributeError):
+            pass
+
+    def update_awg_generic(self, index, attr_suffix, val_suffix):
+        widget = getattr(self, f"P{index}{attr_suffix}")
+        value = self.add_mhz(widget.value()) if "_freq" in val_suffix or "wurst" in val_suffix else widget.value()
+        
+        target_attr = f"p{index}{val_suffix}" if val_suffix.startswith("_") else f"{val_suffix}{index}"
+        setattr(self, target_attr, value)
+        #print(f"Updated: {target_attr} = {value}")
+
+    def update_pulse_value(self, index, attr_suffix, val1_suffix, val2_suffix = None):
         """
-        Create a process to interact with an experimental script that will run on a different thread.
-        We need a different thread here, since PyQt GUI applications have a main thread of execution 
-        that runs the event loop and GUI. If you launch a long-running task in this thread, then your GUI
-        will freeze until the task terminates. During that time, the user won’t be able to interact with 
-        the application
+        Универсальный обработчик для Pulse Start и Pulse Length.
+        index: 1, 2, 3...
+        attr_suffix: '_st' или '_len' (имя виджета)
+        val1_suffix: '_start' или '_length' (основная переменная)
+        val2_suffix: '_start_rect' или 'b' (второстепенная переменная)
         """
-        self.worker = Worker()
+        spin_widget = getattr(self, f"P{index}{attr_suffix}")
+        val1, val2 = self.round_and_change(spin_widget)
+
+
+        if index == 1 and attr_suffix == '_st':
+            setattr(self, f"p{index}_a", val1)
+            if val2_suffix:
+                setattr(self, f"p{index}{val1_suffix}", val2)
+        else:
+            setattr(self, f"p{index}{val1_suffix}", val1)
+            if val2_suffix:
+                setattr(self, f"p{index}{val2_suffix}", val2)
+
+        #print(f"Updated: p{index}{val1_suffix} = {val1}")
+ 
+    def start_exp(self):
+        pass
+
+    def stop_exp(self):
+        pass
+
+    def combo_laser_fun(self):
+        """
+        A function to set a default laser
+        """
+        txt = str( self.Combo_laser.currentText() )
+        if txt == 'Nd:YaG':
+            self.combo_laser_num = 1
+            self.laser_q_switch_delay = 160000
+        elif txt == 'NovoFEL':
+            self.combo_laser_num = 2
+            self.laser_q_switch_delay = 0
 
     def combo_synt_fun(self):
         """
@@ -841,48 +1290,6 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         self.n_wurst_cur = int( self.N_wurst.value() )
 
-    def wurst_sweep_1(self):
-        """
-        A function to set wurst sweep for pulse 1
-        """
-        self.wurst_sweep_cur_1 = self.add_mhz( int( self.Wurst_sweep_1.value() ) )
-
-    def wurst_sweep_2(self):
-        """
-        A function to set wurst sweep for pulse 2
-        """
-        self.wurst_sweep_cur_2 = self.add_mhz( int( self.Wurst_sweep_2.value() ) )
-
-    def wurst_sweep_3(self):
-        """
-        A function to set wurst sweep for pulse 3
-        """
-        self.wurst_sweep_cur_3 = self.add_mhz( int( self.Wurst_sweep_3.value() ) )
-
-    def wurst_sweep_4(self):
-        """
-        A function to set wurst sweep for pulse 4
-        """
-        self.wurst_sweep_cur_4 = self.add_mhz( int( self.Wurst_sweep_4.value() ) )
-
-    def wurst_sweep_5(self):
-        """
-        A function to set wurst sweep for pulse 5
-        """
-        self.wurst_sweep_cur_5 = self.add_mhz( int( self.Wurst_sweep_5.value() ) )
-
-    def wurst_sweep_6(self):
-        """
-        A function to set wurst sweep for pulse 6
-        """
-        self.wurst_sweep_cur_6 = self.add_mhz( int( self.Wurst_sweep_6.value() ) )
-
-    def wurst_sweep_7(self):
-        """
-        A function to set wurst sweep for pulse 7
-        """
-        self.wurst_sweep_cur_7 = self.add_mhz( int( self.Wurst_sweep_7.value() ) )
-
     def ch0_amp(self):
         """
         A function to set AWG CH0 amplitude
@@ -907,254 +1314,6 @@ class MainWindow(QtWidgets.QMainWindow):
         ###except AttributeError:
         ###    self.message('Digitizer is not running')
 
-    def p2_coef_f(self):
-        """
-        A function to change pulse 2 coefficient
-        """
-        self.p2_coef = round( 100 / self.coef_2.value() , 2 )
-
-        #if ( self.ch0_ampl / self.p2_coef < 80 ) or ( self.ch1_ampl / self.p2_coef  < 80 ):
-        #    if self.ch0_ampl <= self.ch1_ampl:
-        #        self.p2_coef = round( ( self.ch0_ampl / 80 ), 2 )
-        #    else:
-        #        self.p2_coef = round( ( self.ch1_ampl / 80 ), 2 )
-
-        #    self.coef_2.setValue( int( 1 / self.p2_coef * 100 ) )
-
-    def p3_coef_f(self):
-        """
-        A function to change pulse 3 coefficient
-        """
-        self.p3_coef = round( 100 / self.coef_3.value() , 2 )
-        
-    def p4_coef_f(self):
-        """
-        A function to change pulse 4 coefficient
-        """
-        self.p4_coef = round( 100 / self.coef_4.value() , 2 )
-
-    def p5_coef_f(self):
-        """
-        A function to change pulse 5 coefficient
-        """
-        self.p5_coef = round( 100 / self.coef_5.value() , 2 )
-
-    def p6_coef_f(self):
-        """
-        A function to change pulse 6 coefficient
-        """
-        self.p6_coef = round( 100 / self.coef_6.value() , 2 )
-
-    def p7_coef_f(self):
-        """
-        A function to change pulse 7 coefficient
-        """
-        self.p7_coef = round( 100 / self.coef_7.value() , 2 )
-
-    def p2_freq_f(self):
-        """
-        A function to change pulse 2 frequency
-        """
-        self.p2_freq = self.add_mhz( int( self.freq_2.value() ) )
-
-    def p3_freq_f(self):
-        """
-        A function to change pulse 3 frequency
-        """
-        self.p3_freq = self.add_mhz( int( self.freq_3.value() ) )
-
-    def p4_freq_f(self):
-        """
-        A function to change pulse 4 frequency
-        """
-        self.p4_freq = self.add_mhz( int( self.freq_4.value() ) )
-
-    def p5_freq_f(self):
-        """
-        A function to change pulse 5 frequency
-        """
-        self.p5_freq = self.add_mhz( int( self.freq_5.value() ) )
-
-    def p6_freq_f(self):
-        """
-        A function to change pulse 6 frequency
-        """
-        self.p6_freq = self.add_mhz( int( self.freq_6.value() ) )
-
-    def p7_freq_f(self):
-        """
-        A function to change pulse 7 frequency
-        """
-        self.p7_freq = self.add_mhz( int( self.freq_7.value() ) )
-
-    def p1_st(self):
-        """
-        A function to set pulse 1 start
-        """
-        a, self.p1_start = self.round_and_change(self.P1_st)
-
-    def p2_st(self):
-        """
-        A function to set pulse 2 start
-        """
-        self.p2_start, self.p2_start_rect = self.round_and_change(self.P2_st)
-
-    def p3_st(self):
-        """
-        A function to set pulse 3 start
-        """
-        self.p3_start, self.p3_start_rect = self.round_and_change(self.P3_st)
-
-    def p4_st(self):
-        """
-        A function to set pulse 4 start
-        """
-        self.p4_start, self.p4_start_rect = self.round_and_change(self.P4_st)
-
-    def p5_st(self):
-        """
-        A function to set pulse 5 start
-        """
-        self.p5_start, self.p5_start_rect = self.round_and_change(self.P5_st)
-
-    def p6_st(self):
-        """
-        A function to set pulse 6 start
-        """
-        self.p6_start, self.p6_start_rect = self.round_and_change(self.P6_st)
-
-    def p7_st(self):
-        """
-        A function to set pulse 7 start
-        """
-        self.p7_start, self.p7_start_rect = self.round_and_change(self.P7_st)
-
-    def p1_len(self):
-        """
-        A function to change a pulse 1 length
-        """
-        self.p1_length, b = self.round_and_change(self.P1_len)
-
-    def p2_len(self):
-        """
-        A function to change a pulse 2 length
-        """
-        self.p2_length, b = self.round_and_change(self.P2_len)
-
-    def p3_len(self):
-        """
-        A function to change a pulse 3 length
-        """
-        self.p3_length, b = self.round_and_change(self.P3_len)
-    
-    def p4_len(self):
-        """
-        A function to change a pulse 4 length
-        """
-        self.p4_length, b = self.round_and_change(self.P4_len)
-
-    def p5_len(self):
-        """
-        A function to change a pulse 5 length
-        """
-        self.p5_length, b = self.round_and_change(self.P5_len)
-
-    def p6_len(self):
-        """
-        A function to change a pulse 6 length
-        """
-        self.p6_length, b = self.round_and_change(self.P6_len)
-
-    def p7_len(self):
-        """
-        A function to change a pulse 7 length
-        """
-        self.p7_length, b = self.round_and_change(self.P7_len)
-
-    def p1_sig(self):
-        """
-        A function to change a pulse 1 sigma
-        """
-        self.p1_sigma, b = self.round_and_change(self.P1_sig)
-
-    def p2_sig(self):
-        """
-        A function to change a pulse 2 sigma
-        """
-        self.p2_sigma, b = self.round_and_change(self.P2_sig)
-
-    def p3_sig(self):
-        """
-        A function to change a pulse 3 sigma
-        """
-        self.p3_sigma, b = self.round_and_change(self.P3_sig)
-
-    def p4_sig(self):
-        """
-        A function to change a pulse 4 sigma
-        """
-        self.p4_sigma, b = self.round_and_change(self.P4_sig)
-
-    def p5_sig(self):
-        """
-        A function to change a pulse 5 sigma
-        """
-        self.p5_sigma, b = self.round_and_change(self.P5_sig)
-
-    def p6_sig(self):
-        """
-        A function to change a pulse 6 sigma
-        """
-        self.p6_sigma, b = self.round_and_change(self.P6_sig)
-
-    def p7_sig(self):
-        """
-        A function to change a pulse 7 sigma
-        """
-        self.p7_sigma, b = self.round_and_change(self.P7_sig)
-
-    def p1_type(self):
-        """
-        A function to change a pulse 1 type
-        """
-        self.p1_typ = str( self.P1_type.currentText() )
-
-    def p2_type(self):
-        """
-        A function to change a pulse 2 type
-        """
-        self.p2_typ = str( self.P2_type.currentText() )
-
-    def p3_type(self):
-        """
-        A function to change a pulse 3 type
-        """
-        self.p3_typ = str( self.P3_type.currentText() )
-
-    def p4_type(self):
-        """
-        A function to change a pulse 4 type
-        """
-        self.p4_typ = str( self.P4_type.currentText() )
-
-    def p5_type(self):
-        """
-        A function to change a pulse 5 type
-        """
-        self.p5_typ = str( self.P5_type.currentText() )
-
-    def p6_type(self):
-        """
-        A function to change a pulse 6 type
-        """
-        self.p6_typ = str( self.P6_type.currentText() )
-
-    def p7_type(self):
-        """
-        A function to change a pulse 7 type
-        """
-        self.p7_typ = str( self.P7_type.currentText() )
-    
     def phase_converted(self, ph_str):
         if ph_str == '+x':
             return 0
@@ -1164,97 +1323,6 @@ class MainWindow(QtWidgets.QMainWindow):
             return -1.57080
         elif ph_str == '-y':
             return -4.712390
-
-    def phase_1(self):
-        """
-        A function to change a pulse 1 phase
-        """
-        temp = self.Phase_1.toPlainText()
-        try:
-            if temp[-1] == ']' and temp[0] == '[':
-                self.ph_1 = temp[1:(len(temp)-1)].split(',')
-                if len(self.ph_1) == 1:
-                    self.ph_1.append( self.ph_1[0] )
-        except IndexError:
-            pass
-
-    def phase_2(self):
-        """
-        A function to change a pulse 2 phase
-        """
-        temp = self.Phase_2.toPlainText()
-        try:
-            if temp[-1] == ']' and temp[0] == '[':
-                self.ph_2 = temp[1:(len(temp)-1)].split(',')
-                if len(self.ph_2) == 1:
-                    self.ph_2.append( self.ph_2[0] )
-        except IndexError:
-            pass
-
-    def phase_3(self):
-        """
-        A function to change a pulse 3 phase
-        """
-        temp = self.Phase_3.toPlainText()
-        try:
-            if temp[-1] == ']' and temp[0] == '[':
-                self.ph_3 = temp[1:(len(temp)-1)].split(',')
-                if len(self.ph_3) == 1:
-                    self.ph_3.append( self.ph_3[0] )
-        except IndexError:
-            pass
-
-    def phase_4(self):
-        """
-        A function to change a pulse 4 phase
-        """
-        temp = self.Phase_4.toPlainText()
-        try:
-            if temp[-1] == ']' and temp[0] == '[':
-                self.ph_4 = temp[1:(len(temp)-1)].split(',')
-                if len(self.ph_4) == 1:
-                    self.ph_4.append( self.ph_4[0] )
-        except IndexError:
-            pass
-
-    def phase_5(self):
-        """
-        A function to change a pulse 5 phase
-        """
-        temp = self.Phase_5.toPlainText()
-        try:
-            if temp[-1] == ']' and temp[0] == '[':
-                self.ph_5 = temp[1:(len(temp)-1)].split(',')
-                if len(self.ph_5) == 1:
-                    self.ph_5.append( self.ph_5[0] )
-        except IndexError:
-            pass
-
-    def phase_6(self):
-        """
-        A function to change a pulse 6 phase
-        """
-        temp = self.Phase_6.toPlainText()
-        try:
-            if temp[-1] == ']' and temp[0] == '[':
-                self.ph_6 = temp[1:(len(temp)-1)].split(',')
-                if len(self.ph_6) == 1:
-                    self.ph_6.append( self.ph_6[0] )
-        except IndexError:
-            pass
-
-    def phase_7(self):
-        """
-        A function to change a pulse 7 phase
-        """
-        temp = self.Phase_7.toPlainText()
-        try:
-            if temp[-1] == ']' and temp[0] == '[':
-                self.ph_7 = temp[1:(len(temp)-1)].split(',')
-                if len(self.ph_7) == 1:
-                    self.ph_7.append( self.ph_7[0] )
-        except IndexError:
-            pass
 
     def rep_rate(self):
         """
@@ -1293,66 +1361,54 @@ class MainWindow(QtWidgets.QMainWindow):
         if int(float( self.p2_length.split(' ')[0] )) != 0:
             # self.p2_length ROUND TO CLOSEST 2
             if self.p2_typ != 'WURST' and self.p2_typ != 'SECH/TANH':
-                self.pb.awg_pulse(name = 'P2', channel = 'CH0', func = self.p2_typ, frequency = self.p2_freq, \
-                        length = self.p2_length, sigma = self.p2_sigma, start = self.p2_start, d_coef = self.p2_coef, phase_list = self.ph_2 )
+                self.pb.awg_pulse(name = 'P2', channel = 'CH0', func = self.p2_typ, frequency = self.p2_freq, length = self.p2_length, sigma = self.p2_sigma, start = self.p2_start, amplitude = self.p2_coef, phase_list = self.ph_2 )
             else:
-                self.pb.awg_pulse(name = 'P2', channel = 'CH0', func = self.p2_typ, frequency = ( self.p2_freq, self.wurst_sweep_cur_2 ), \
-                    length = self.p2_length, sigma = self.p2_sigma, start = self.p2_start, d_coef = self.p2_coef, n = self.n_wurst_cur, phase_list = self.ph_2, b = self.b_sech_cur )
+                self.pb.awg_pulse(name = 'P2', channel = 'CH0', func = self.p2_typ, frequency = ( self.p2_freq, self.wurst_sweep_cur_2 ), length = self.p2_length, sigma = self.p2_sigma, start = self.p2_start, amplitude = self.p2_coef, n = self.n_wurst_cur, phase_list = self.ph_2, b = self.b_sech_cur )
 
             if self.p2_typ != 'BLANK':
                 self.pb.pulser_pulse(name = 'P3', channel = 'TRIGGER_AWG', start = self.p2_start_rect, length = self.p2_length ) 
 
         if int(float( self.p3_length.split(' ')[0] )) != 0:
             if self.p3_typ != 'WURST' and self.p3_typ != 'SECH/TANH':
-                self.pb.awg_pulse(name = 'P4', channel = 'CH0', func = self.p3_typ, frequency = self.p3_freq, \
-                        length = self.p3_length, sigma = self.p3_sigma, start = self.p3_start, d_coef = self.p3_coef, phase_list = self.ph_3 )
+                self.pb.awg_pulse(name = 'P4', channel = 'CH0', func = self.p3_typ, frequency = self.p3_freq, length = self.p3_length, sigma = self.p3_sigma, start = self.p3_start, amplitude = self.p3_coef, phase_list = self.ph_3 )
             else:
-                self.pb.awg_pulse(name = 'P4', channel = 'CH0', func = self.p3_typ, frequency = ( self.p3_freq, self.wurst_sweep_cur_3 ), \
-                    length = self.p3_length, sigma = self.p3_sigma, start = self.p3_start, d_coef = self.p3_coef, n = self.n_wurst_cur, phase_list = self.ph_3, b = self.b_sech_cur )
+                self.pb.awg_pulse(name = 'P4', channel = 'CH0', func = self.p3_typ, frequency = ( self.p3_freq, self.wurst_sweep_cur_3 ), length = self.p3_length, sigma = self.p3_sigma, start = self.p3_start, amplitude = self.p3_coef, n = self.n_wurst_cur, phase_list = self.ph_3, b = self.b_sech_cur )
 
             if self.p3_typ != 'BLANK':
                 self.pb.pulser_pulse(name = 'P5', channel = 'TRIGGER_AWG', start = self.p3_start_rect, length = self.p3_length )
 
         if int(float( self.p4_length.split(' ')[0] )) != 0:
             if self.p4_typ != 'WURST' and self.p4_typ != 'SECH/TANH':
-                self.pb.awg_pulse(name = 'P6', channel = 'CH0', func = self.p4_typ, frequency = self.p4_freq, \
-                        length = self.p4_length, sigma = self.p4_sigma, start = self.p4_start, d_coef = self.p4_coef, phase_list = self.ph_4 )
+                self.pb.awg_pulse(name = 'P6', channel = 'CH0', func = self.p4_typ, frequency = self.p4_freq, length = self.p4_length, sigma = self.p4_sigma, start = self.p4_start, amplitude = self.p4_coef, phase_list = self.ph_4 )
             else:
-                self.pb.awg_pulse(name = 'P6', channel = 'CH0', func = self.p4_typ, frequency = ( self.p4_freq, self.wurst_sweep_cur_4 ), \
-                    length = self.p4_length, sigma = self.p4_sigma, start = self.p4_start, d_coef = self.p4_coef, n = self.n_wurst_cur, phase_list = self.ph_4, b = self.b_sech_cur )
+                self.pb.awg_pulse(name = 'P6', channel = 'CH0', func = self.p4_typ, frequency = ( self.p4_freq, self.wurst_sweep_cur_4 ), length = self.p4_length, sigma = self.p4_sigma, start = self.p4_start, amplitude = self.p4_coef, n = self.n_wurst_cur, phase_list = self.ph_4, b = self.b_sech_cur )
 
             if self.p4_typ != 'BLANK':
                 self.pb.pulser_pulse(name = 'P7', channel = 'TRIGGER_AWG', start = self.p4_start_rect, length = self.p4_length )
 
         if int(float( self.p5_length.split(' ')[0] )) != 0:
             if self.p5_typ != 'WURST' and self.p5_typ != 'SECH/TANH':
-                self.pb.awg_pulse(name = 'P8', channel = 'CH0', func = self.p5_typ, frequency = self.p5_freq, \
-                        length = self.p5_length, sigma = self.p5_sigma, start = self.p5_start, d_coef = self.p5_coef, phase_list = self.ph_5 )
+                self.pb.awg_pulse(name = 'P8', channel = 'CH0', func = self.p5_typ, frequency = self.p5_freq, length = self.p5_length, sigma = self.p5_sigma, start = self.p5_start, amplitude = self.p5_coef, phase_list = self.ph_5 )
             else:
-                self.pb.awg_pulse(name = 'P8', channel = 'CH0', func = self.p5_typ, frequency = ( self.p5_freq, self.wurst_sweep_cur_5 ), \
-                    length = self.p5_length, sigma = self.p5_sigma, start = self.p5_start, d_coef = self.p5_coef, n = self.n_wurst_cur, phase_list = self.ph_5, b = self.b_sech_cur )
+                self.pb.awg_pulse(name = 'P8', channel = 'CH0', func = self.p5_typ, frequency = ( self.p5_freq, self.wurst_sweep_cur_5 ), length = self.p5_length, sigma = self.p5_sigma, start = self.p5_start, amplitude = self.p5_coef, n = self.n_wurst_cur, phase_list = self.ph_5, b = self.b_sech_cur )
 
             if self.p5_typ != 'BLANK':
                 self.pb.pulser_pulse(name = 'P9', channel = 'TRIGGER_AWG', start = self.p5_start_rect, length = self.p5_length )
 
         if int(float( self.p6_length.split(' ')[0] )) != 0:
             if self.p6_typ != 'WURST' and self.p6_typ != 'SECH/TANH':
-                self.pb.awg_pulse(name = 'P10', channel = 'CH0', func = self.p6_typ, frequency = self.p6_freq, \
-                        length = self.p6_length, sigma = self.p6_sigma, start = self.p6_start, d_coef = self.p6_coef, phase_list = self.ph_6 )
+                self.pb.awg_pulse(name = 'P10', channel = 'CH0', func = self.p6_typ, frequency = self.p6_freq, length = self.p6_length, sigma = self.p6_sigma, start = self.p6_start, amplitude = self.p6_coef, phase_list = self.ph_6 )
             else:
-                self.pb.awg_pulse(name = 'P10', channel = 'CH0', func = self.p6_typ, frequency = ( self.p6_freq, self.wurst_sweep_cur_6 ), \
-                    length = self.p6_length, sigma = self.p6_sigma, start = self.p6_start, d_coef = self.p6_coef, n = self.n_wurst_cur, phase_list = self.ph_6, b = self.b_sech_cur )
+                self.pb.awg_pulse(name = 'P10', channel = 'CH0', func = self.p6_typ, frequency = ( self.p6_freq, self.wurst_sweep_cur_6 ), length = self.p6_length, sigma = self.p6_sigma, start = self.p6_start, amplitude = self.p6_coef, n = self.n_wurst_cur, phase_list = self.ph_6, b = self.b_sech_cur )
 
             if self.p6_typ != 'BLANK':
                 self.pb.pulser_pulse(name = 'P11', channel = 'TRIGGER_AWG', start = self.p6_start_rect, length = self.p6_length )
 
         if int(float( self.p7_length.split(' ')[0] )) != 0:
             if self.p7_typ != 'WURST' and self.p7_typ != 'SECH/TANH':
-                self.pb.awg_pulse(name = 'P12', channel = 'CH0', func = self.p7_typ, frequency = self.p7_freq, \
-                        length = self.p7_length, sigma = self.p7_sigma, start = self.p7_start, d_coef = self.p7_coef, phase_list = self.ph_7 )
+                self.pb.awg_pulse(name = 'P12', channel = 'CH0', func = self.p7_typ, frequency = self.p7_freq, length = self.p7_length, sigma = self.p7_sigma, start = self.p7_start, amplitude = self.p7_coef, phase_list = self.ph_7 )
             else:
-                self.pb.awg_pulse(name = 'P12', channel = 'CH0', func = self.p7_typ, frequency = ( self.p7_freq, self.wurst_sweep_cur_7 ), \
-                    length = self.p7_length, sigma = self.p7_sigma, start = self.p7_start, d_coef = self.p7_coef, n = self.n_wurst_cur, phase_list = self.ph_7, b = self.b_sech_cur )
+                self.pb.awg_pulse(name = 'P12', channel = 'CH0', func = self.p7_typ, frequency = ( self.p7_freq, self.wurst_sweep_cur_7 ), length = self.p7_length, sigma = self.p7_sigma, start = self.p7_start, amplitude = self.p7_coef, n = self.n_wurst_cur, phase_list = self.ph_7, b = self.b_sech_cur )
 
             if self.p7_typ != 'BLANK':
                 self.pb.pulser_pulse(name = 'P13', channel = 'TRIGGER_AWG', start = self.p7_start_rect, length = self.p7_length )
@@ -1556,12 +1612,6 @@ class MainWindow(QtWidgets.QMainWindow):
             sock.send(str(text).encode())
             sock.close()
 
-    def help(self):
-        """
-        A function to open a documentation
-        """
-        pass
-
     def update_gui_status(self, status_text):
 
         self.poller.wait() 
@@ -1629,11 +1679,7 @@ class Worker(QWidget):
                 # ['BL: 5.92087', 'A1: 412.868', 'X1: -124.647', 'W1: 62.0069', 'A2: 420.717', 'X2: -35.8879', 
                 # 'W2: 34.4214', A3: 9893.97', 'X3: 12.4056', 'W3: 150.304', 'LOW: 16', 'LIMIT: 23', '']
 
-                coef = [float( text_from_file[0].split(' ')[1] ), float( text_from_file[1].split(' ')[1] ), \
-                        float( text_from_file[2].split(' ')[1] ), float( text_from_file[3].split(' ')[1] ), \
-                        float( text_from_file[4].split(' ')[1] ), float( text_from_file[5].split(' ')[1] ), \
-                        float( text_from_file[6].split(' ')[1] ), float( text_from_file[7].split(' ')[1] ),  \
-                        float( text_from_file[8].split(' ')[1] ), float( text_from_file[9].split(' ')[1] )]
+                coef = [float( text_from_file[0].split(' ')[1] ), float( text_from_file[1].split(' ')[1] ), float( text_from_file[2].split(' ')[1] ), float( text_from_file[3].split(' ')[1] ), float( text_from_file[4].split(' ')[1] ), float( text_from_file[5].split(' ')[1] ), float( text_from_file[6].split(' ')[1] ), float( text_from_file[7].split(' ')[1] ), float( text_from_file[8].split(' ')[1] ), float( text_from_file[9].split(' ')[1] )]
 
                 pb.awg_correction(only_pi_half = 'True', coef_array = coef, \
                                    low_level = float( text_from_file[10].split(' ')[1] ), limit = float( text_from_file[11].split(' ')[1] ))
@@ -1646,14 +1692,9 @@ class Worker(QWidget):
                 # ['BL: 5.92087', 'A1: 412.868', 'X1: -124.647', 'W1: 62.0069', 'A2: 420.717', 'X2: -35.8879', 
                 # 'W2: 34.4214', A3: 9893.97', 'X3: 12.4056', 'W3: 150.304', 'LOW: 16', 'LIMIT: 23', '']
                 
-                coef = [float( text_from_file[0].split(' ')[1] ), float( text_from_file[1].split(' ')[1] ), \
-                        float( text_from_file[2].split(' ')[1] ), float( text_from_file[3].split(' ')[1] ), \
-                        float( text_from_file[4].split(' ')[1] ), float( text_from_file[5].split(' ')[1] ), \
-                        float( text_from_file[6].split(' ')[1] ), float( text_from_file[7].split(' ')[1] ),  \
-                        float( text_from_file[8].split(' ')[1] ), float( text_from_file[9].split(' ')[1] )]
+                coef = [float( text_from_file[0].split(' ')[1] ), float( text_from_file[1].split(' ')[1] ), float( text_from_file[2].split(' ')[1] ), float( text_from_file[3].split(' ')[1] ), float( text_from_file[4].split(' ')[1] ), float( text_from_file[5].split(' ')[1] ), float( text_from_file[6].split(' ')[1] ), float( text_from_file[7].split(' ')[1] ),  float( text_from_file[8].split(' ')[1] ), float( text_from_file[9].split(' ')[1] )]
 
-                pb.awg_correction(only_pi_half = 'False', coef_array = coef, \
-                                   low_level = float( text_from_file[10].split(' ')[1] ), limit = float( text_from_file[11].split(' ')[1] ))
+                pb.awg_correction(only_pi_half = 'False', coef_array = coef, low_level = float( text_from_file[10].split(' ')[1] ), limit = float( text_from_file[11].split(' ')[1] ))
             
             pb.awg_amplitude('CH0', str(p18), 'CH1', str(p19) )
             pb.pulser_repetition_rate( str(p14) + ' Hz' )
@@ -1665,66 +1706,54 @@ class Worker(QWidget):
             
             if int(float( p7[1].split(' ')[0] )) != 0:
                 if p21[0] != 'WURST' and p21[0] != 'SECH/TANH':
-                    pb.awg_pulse(name = 'P2', channel = 'CH0', func = p21[0], frequency = p21[1], \
-                            length = p21[3], sigma = p21[4], start = p21[5], d_coef = p21[6], phase_list = p21[7] )
+                    pb.awg_pulse(name = 'P2', channel = 'CH0', func = p21[0], frequency = p21[1], length = p21[3], sigma = p21[4], start = p21[5], amplitude = p21[6], phase_list = p21[7] )
                 else:
-                    pb.awg_pulse(name = 'P2', channel = 'CH0', func = p21[0], frequency = ( p21[1], p21[2] ), \
-                        length = p21[3], sigma = p21[4], start = p21[5], d_coef = p21[6], n = p13, phase_list = p21[7], b = p32 )
+                    pb.awg_pulse(name = 'P2', channel = 'CH0', func = p21[0], frequency = ( p21[1], p21[2] ), length = p21[3], sigma = p21[4], start = p21[5], amplitude = p21[6], n = p13, phase_list = p21[7], b = p32 )
 
                 if p21[0] != 'BLANK':
                     pb.pulser_pulse(name = 'P3', channel = 'TRIGGER_AWG', start = p7[0], length = p7[1] ) #p7[1]
 
             if int(float( p8[1].split(' ')[0] )) != 0:
                 if p22[0] != 'WURST' and p22[0] != 'SECH/TANH':
-                    pb.awg_pulse(name = 'P4', channel = 'CH0', func = p22[0], frequency = p22[1], \
-                            length = p22[3], sigma = p22[4], start = p22[5], d_coef = p22[6], phase_list = p22[7] )
+                    pb.awg_pulse(name = 'P4', channel = 'CH0', func = p22[0], frequency = p22[1], length = p22[3], sigma = p22[4], start = p22[5], amplitude = p22[6], phase_list = p22[7] )
                 else:
-                    pb.awg_pulse(name = 'P4', channel = 'CH0', func = p22[0], frequency = ( p22[1], p22[2] ), \
-                        length = p22[3], sigma = p22[4], start = p22[5], d_coef = p22[6], n = p13, phase_list = p22[7], b = p32)
+                    pb.awg_pulse(name = 'P4', channel = 'CH0', func = p22[0], frequency = ( p22[1], p22[2] ), length = p22[3], sigma = p22[4], start = p22[5], amplitude = p22[6], n = p13, phase_list = p22[7], b = p32)
 
                 if p22[0] != 'BLANK':
                     pb.pulser_pulse(name = 'P5', channel = 'TRIGGER_AWG', start = p8[0], length = p8[1] ) 
 
             if int(float( p9[1].split(' ')[0] )) != 0:
                 if p23[0] != 'WURST' and p23[0] != 'SECH/TANH':
-                    pb.awg_pulse(name = 'P6', channel = 'CH0', func = p23[0], frequency = p23[1], \
-                            length = p23[3], sigma = p23[4], start = p23[5], d_coef = p23[6], phase_list = p23[7] )
+                    pb.awg_pulse(name = 'P6', channel = 'CH0', func = p23[0], frequency = p23[1], length = p23[3], sigma = p23[4], start = p23[5], amplitude = p23[6], phase_list = p23[7] )
                 else:
-                    pb.awg_pulse(name = 'P6', channel = 'CH0', func = p23[0], frequency = ( p23[1], p23[2] ), \
-                        length = p23[3], sigma = p23[4], start = p23[5], d_coef = p23[6], n = p13, phase_list = p23[7], b = p32 )
+                    pb.awg_pulse(name = 'P6', channel = 'CH0', func = p23[0], frequency = ( p23[1], p23[2] ), length = p23[3], sigma = p23[4], start = p23[5], amplitude = p23[6], n = p13, phase_list = p23[7], b = p32 )
 
                 if p23[0] != 'BLANK':
                     pb.pulser_pulse(name = 'P7', channel = 'TRIGGER_AWG', start = p9[0], length = p9[1] ) 
 
             if int(float( p10[1].split(' ')[0] )) != 0:
                 if p24[0] != 'WURST' and p24[0] != 'SECH/TANH':
-                    pb.awg_pulse(name = 'P8', channel = 'CH0', func = p24[0], frequency = p24[1], \
-                            length = p24[3], sigma = p24[4], start = p24[5], d_coef = p24[6], phase_list = p24[7] )
+                    pb.awg_pulse(name = 'P8', channel = 'CH0', func = p24[0], frequency = p24[1], length = p24[3], sigma = p24[4], start = p24[5], amplitude = p24[6], phase_list = p24[7] )
                 else:
-                    pb.awg_pulse(name = 'P8', channel = 'CH0', func = p24[0], frequency = ( p24[1], p24[2] ), \
-                        length = p24[3], sigma = p24[4], start = p24[5], d_coef = p24[6], n = p13, phase_list = p24[7], b = p32 )
+                    pb.awg_pulse(name = 'P8', channel = 'CH0', func = p24[0], frequency = ( p24[1], p24[2] ), length = p24[3], sigma = p24[4], start = p24[5], amplitude = p24[6], n = p13, phase_list = p24[7], b = p32 )
 
                 if p24[0] != 'BLANK':
                     pb.pulser_pulse(name = 'P9', channel = 'TRIGGER_AWG', start = p10[0], length = p10[1] ) 
 
             if int(float( p11[1].split(' ')[0] )) != 0:
                 if p25[0] != 'WURST' and p25[0] != 'SECH/TANH':
-                    pb.awg_pulse(name = 'P10', channel = 'CH0', func = p25[0], frequency = p25[1], \
-                            length = p25[3], sigma = p25[4], start = p25[5], d_coef = p25[6], phase_list = p25[7] )
+                    pb.awg_pulse(name = 'P10', channel = 'CH0', func = p25[0], frequency = p25[1], length = p25[3], sigma = p25[4], start = p25[5], amplitude = p25[6], phase_list = p25[7] )
                 else:
-                    pb.awg_pulse(name = 'P10', channel = 'CH0', func = p25[0], frequency = ( p25[1], p25[2] ), \
-                        length = p25[3], sigma = p25[4], start = p25[5], d_coef = p25[6], n = p13, phase_list = p25[7], b = p32 )
+                    pb.awg_pulse(name = 'P10', channel = 'CH0', func = p25[0], frequency = ( p25[1], p25[2] ), length = p25[3], sigma = p25[4], start = p25[5], amplitude = p25[6], n = p13, phase_list = p25[7], b = p32 )
 
                 if p25[0] != 'BLANK':
                     pb.pulser_pulse(name = 'P11', channel = 'TRIGGER_AWG', start = p11[0], length = p11[1] ) 
 
             if int(float( p12[1].split(' ')[0] )) != 0:
                 if p26[0] != 'WURST' and p26[0] != 'SECH/TANH':
-                    pb.awg_pulse(name = 'P12', channel = 'CH0', func = p26[0], frequency = p26[1], \
-                            length = p26[3], sigma = p26[4], start = p26[5], d_coef = p26[6], phase_list = p26[7] )
+                    pb.awg_pulse(name = 'P12', channel = 'CH0', func = p26[0], frequency = p26[1], length = p26[3], sigma = p26[4], start = p26[5], amplitude = p26[6], phase_list = p26[7] )
                 else:
-                    pb.awg_pulse(name = 'P12', channel = 'CH0', func = p26[0], frequency = ( p26[1], p26[2] ), \
-                        length = p26[3], sigma = p26[4], start = p26[5], d_coef = p26[6], n = p13, phase_list = p26[7], b = p32 )
+                    pb.awg_pulse(name = 'P12', channel = 'CH0', func = p26[0], frequency = ( p26[1], p26[2] ), length = p26[3], sigma = p26[4], start = p26[5], amplitude = p26[6], n = p13, phase_list = p26[7], b = p32 )
 
                 if p26[0] != 'BLANK':
                     pb.pulser_pulse(name = 'P13', channel = 'TRIGGER_AWG', start = p12[0], length = p12[1] )
@@ -1881,7 +1910,7 @@ def main():
     """
     A function to run the main window of the programm.
     """
-    app = QtWidgets.QApplication(sys.argv)
+    app = QApplication(sys.argv)
     main = MainWindow()
     main.show()
     sys.exit(app.exec())

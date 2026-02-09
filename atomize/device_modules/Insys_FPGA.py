@@ -531,8 +531,7 @@ class Insys_FPGA:
         NAME, CHANNEL, START, LENGTH, DELTA_START, LENGTH_INCREMENT, PHASE_SEQUENCE
         """
         if self.test_flag != 'test':
-            pulse = {'name': name, 'channel': channel, 'start': start, 'length': length, 'delta_start' : delta_start,\
-             'length_increment': length_increment, 'phase_list': phase_list}
+            pulse = {'name': name, 'channel': channel, 'start': start, 'length': length, 'delta_start' : delta_start, 'length_increment': length_increment, 'phase_list': phase_list}
 
             temp_length = length.split(" ")
             if temp_length[1] in self.timebase_dict:
@@ -551,8 +550,7 @@ class Insys_FPGA:
                     #self.win_right = self.adc_window - 1
                 elif channel == 'TRIGGER_AWG':
                     self.dac_window = int( self.dac_window + ceil(p_length / self.timebase_pulser) )
-                    pulse_awg = {'name': name + 'AWG', 'channel': 'AWG', 'start': start, 'length': length, 'delta_start' : delta_start,\
-                            'length_increment': length_increment, 'phase_list': phase_list}
+                    pulse_awg = {'name': name + 'AWG', 'channel': 'AWG', 'start': start, 'length': length, 'delta_start' : delta_start, 'length_increment': length_increment, 'phase_list': phase_list}
                     self.pulse_array_pulser.append( pulse_awg )
                     self.pulse_name_array_pulser.append( pulse['name'] )
 
@@ -2463,8 +2461,8 @@ class Insys_FPGA:
             # ['Points: 224', 'Sample Rate: 250', 'Posstriger: 16', 'Range: 500', 'CH0 Offset: 0', 'CH1 Offset: 0', 
             # 'Window Left: 0', 'Window Right: 0', '']
 
-            self.points = str( text_from_file[0].split(': ')[1] )
-            #points = int( text_from_file[0].split(' ')[1] )
+            points = str( text_from_file[0].split(': ')[1] )
+            self.points = int( points.split(' ')[0] )
             #self.digitizer_number_of_points( points )
 
             #self.sample_rate = int( text_from_file[1].split(' ')[2] )
@@ -2503,8 +2501,8 @@ class Insys_FPGA:
             # ['Points: 224', 'Sample Rate: 250', 'Posstriger: 16', 'Range: 500', 'CH0 Offset: 0', 'CH1 Offset: 0', 
             # 'Window Left: 0', 'Window Right: 0', '']
 
-            self.points = str( text_from_file[0].split(': ')[1] )
-            #points = int( text_from_file[0].split(' ')[1] )
+            points = str( text_from_file[0].split(': ')[1] )
+            self.points = int( points.split(' ')[0] )
             #self.digitizer_number_of_points( points )
 
             #sample_rate = int( text_from_file[1].split(' ')[2] )
@@ -2589,8 +2587,7 @@ class Insys_FPGA:
             else:
                 pass
     
-    def awg_pulse(self, name = 'P0', channel = 'CH0', func = 'SINE', frequency = '200 MHz', phase = 0,\
-     delta_phase = 0, phase_list = [], length = '16 ns', sigma = '0 ns', length_increment = '0 ns', start = '0 ns', delta_start = '0 ns', d_coef = 1, n = 1, b = 0.02):
+    def awg_pulse(self, name = 'P0', channel = 'CH0', func = 'SINE', frequency = '200 MHz', phase = 0, delta_phase = 0, phase_list = [], length = '16 ns', sigma = '0 ns', length_increment = '0 ns', start = '0 ns', delta_start = '0 ns', amplitude = 100, n = 1, b = 0.02):
         """
         A function for awg pulse creation;
         The possible arguments:
@@ -2605,16 +2602,16 @@ class Insys_FPGA:
         INCREMENT (in ns, us, ms; for incrementing both sigma and length)
         START (in ns, us, ms; for joined pulses in 'Single mode')
         DELTA_START (in ns, us, ms; for joined pulses in 'Single mode')
-        D_COEF (in arb u; additional coefficient to adjust pulse amplitudes)
+        AMPLITUDE (in %; additional coefficient to adjust pulse amplitudes)
         N (in arb u); special coefficient for WURST and SECH/TANH pulse determining the steepness of the amplitude function
         b (in ns^-1); special coefficient for SECH/TANH pulse determining the truncation parameter
 
         Buffer according to arguments will be filled after
         """
+        d_coef = 100 / amplitude
+
         if self.test_flag != 'test':
-            pulse = {'name': name, 'channel': channel, 'function': func, 'frequency': frequency, 'phase' : phase,\
-             'delta_phase': delta_phase, 'length': length, 'sigma': sigma, 'length_increment': length_increment, 'start': start,\
-              'delta_start': delta_start, 'amp': d_coef, 'phase_list': phase_list, 'n': n, 'b': b }
+            pulse = {'name': name, 'channel': channel, 'function': func, 'frequency': frequency, 'phase' : phase, 'delta_phase': delta_phase, 'length': length, 'sigma': sigma, 'length_increment': length_increment, 'start': start, 'delta_start': delta_start, 'amp': d_coef, 'phase_list': phase_list, 'n': n, 'b': b }
 
             # length
             temp_length = length.split(" ")
@@ -2689,9 +2686,7 @@ class Insys_FPGA:
                 self.phase_array_length_0_awg.append(len(list(phase_list)))
             
         elif self.test_flag == 'test':
-            pulse = {'name': name, 'channel': channel, 'function': func, 'frequency': frequency, 'phase' : phase,\
-             'delta_phase' : delta_phase, 'length': length, 'sigma': sigma, 'length_increment': length_increment, 'start': start,\
-              'delta_start': delta_start, 'amp': d_coef, 'phase_list': phase_list, 'n': n, 'b': b }
+            pulse = {'name': name, 'channel': channel, 'function': func, 'frequency': frequency, 'phase' : phase, 'delta_phase' : delta_phase, 'length': length, 'sigma': sigma, 'length_increment': length_increment, 'start': start, 'delta_start': delta_start, 'amp': d_coef, 'phase_list': phase_list, 'n': n, 'b': b }
 
             if channel == 'CH0':
                 # phase_list's length

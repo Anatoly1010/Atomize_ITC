@@ -40,6 +40,7 @@ PULSE_1_LENGTH = '320.0 ns'
 PULSE_2_LENGTH = '44.8 ns'
 PULSE_PUMP_LENGTH = '16 ns'
 PULSE_3_LENGTH = '44.8 ns'
+PULSE_DETECTION_LENGTH = '512 ns'
 
 PULSE_1_START = '0 ns'
 PULSE_2_START = '320 ns'
@@ -60,7 +61,7 @@ AMPL_PUMP = 100
 EXP_NAME = 'deer'
 
 # read adc settings
-adc_wind2 = pb.digitizer_read_settings()
+#adc_wind = pb.digitizer_read_settings()
 
 # Setting magnetic field
 bh15.magnet_setup(FIELD, 1)
@@ -68,38 +69,43 @@ bh15.magnet_field(FIELD)
 ###general.wait('4000 ms')
 
 # Setting pulses
-pb.pulser_pulse(name = 'P0', channel = 'TRIGGER_AWG', start = PULSE_1_START, length = PULSE_1_LENGTH)
-pb.pulser_pulse(name = 'P1', channel = 'TRIGGER_AWG', start = PULSE_2_START, length = PULSE_2_LENGTH)
-pb.pulser_pulse(name = 'P2', channel = 'TRIGGER_AWG', start = PULSE_PUMP_START, length = PULSE_PUMP_LENGTH, delta_start = str(STEP) + ' ns')
-pb.pulser_pulse(name = 'P3', channel = 'TRIGGER_AWG', start = PULSE_3_START, length = PULSE_3_LENGTH)
+pb.pulser_pulse(name = 'P0', channel = 'TRIGGER_AWG', start = PULSE_1_START, 
+            length = PULSE_1_LENGTH)
+pb.pulser_pulse(name = 'P1', channel = 'TRIGGER_AWG', start = PULSE_2_START, 
+            length = PULSE_2_LENGTH)
+pb.pulser_pulse(name = 'P2', channel = 'TRIGGER_AWG', start = PULSE_PUMP_START, 
+            length = PULSE_PUMP_LENGTH, delta_start = str(STEP) + ' ns')
+pb.pulser_pulse(name = 'P3', channel = 'TRIGGER_AWG', start = PULSE_3_START, 
+            length = PULSE_3_LENGTH)
 
 
-pb.awg_pulse(name = 'A0', channel = 'CH0', func = SHAPE, frequency = FREQ_OBSERVE, phase = 0, \
-            length = PULSE_1_LENGTH, sigma = PULSE_1_LENGTH, start = PULSE_1_START, \
-            phase_list = ['+x', '+x', '+x', '+x', '-x', '-x', '-x', '-x'], d_coef = 100/AMPL_1)
-pb.awg_pulse(name = 'A1', channel = 'CH0', func = SHAPE, frequency = FREQ_OBSERVE, phase = 0, \
-            length = PULSE_2_LENGTH, sigma = PULSE_2_LENGTH, start = PULSE_2_START, \
-            phase_list = ['+x', '+x', '+x', '+x', '+x', '+x', '+x', '+x'], d_coef = 100/AMPL_2)
-pb.awg_pulse(name = 'A2', channel = 'CH0', func = SHAPE, frequency = FREQ_PUMP, phase = 0, \
-            length = PULSE_PUMP_LENGTH, sigma = PULSE_PUMP_LENGTH, start = PULSE_PUMP_START,\
-            phase_list = ['+x', '+y', '-x', '-y', '+x', '+y', '-x', '-y'], d_coef = 100/AMPL_PUMP)
-pb.awg_pulse(name = 'A3', channel = 'CH0', func = SHAPE, frequency = FREQ_OBSERVE, phase = 0, \
-            length = PULSE_3_LENGTH, sigma = PULSE_3_LENGTH, start = PULSE_3_START, \
-            phase_list = ['+x', '+x', '+x', '+x', '+x', '+x', '+x', '+x'], d_coef = 100/AMPL_3)
+pb.awg_pulse(name = 'A0', channel = 'CH0', func = SHAPE, frequency = FREQ_OBSERVE, phase = 0, 
+            length = PULSE_1_LENGTH, sigma = PULSE_1_LENGTH, start = PULSE_1_START, 
+            phase_list = ['+x', '+x', '+x', '+x', '-x', '-x', '-x', '-x'], amplitude = AMPL_1)
+pb.awg_pulse(name = 'A1', channel = 'CH0', func = SHAPE, frequency = FREQ_OBSERVE, phase = 0, 
+            length = PULSE_2_LENGTH, sigma = PULSE_2_LENGTH, start = PULSE_2_START, 
+            phase_list = ['+x', '+x', '+x', '+x', '+x', '+x', '+x', '+x'], amplitude = AMPL_2)
+pb.awg_pulse(name = 'A2', channel = 'CH0', func = SHAPE, frequency = FREQ_PUMP, phase = 0, 
+            length = PULSE_PUMP_LENGTH, sigma = PULSE_PUMP_LENGTH, start = PULSE_PUMP_START,
+            phase_list = ['+x', '+y', '-x', '-y', '+x', '+y', '-x', '-y'], amplitude = AMPL_PUMP)
+pb.awg_pulse(name = 'A3', channel = 'CH0', func = SHAPE, frequency = FREQ_OBSERVE, phase = 0, 
+            length = PULSE_3_LENGTH, sigma = PULSE_3_LENGTH, start = PULSE_3_START, 
+            phase_list = ['+x', '+x', '+x', '+x', '+x', '+x', '+x', '+x'], amplitude = AMPL_3)
 
-pb.pulser_pulse(name = 'P4', channel = 'DETECTION', start = PULSE_DETECTION, length = adc_wind2,\
+pb.pulser_pulse(name = 'P4', channel = 'DETECTION', start = PULSE_DETECTION, 
+            length = PULSE_DETECTION_LENGTH,
             phase_list = ['+x', '+x', '+x', '+x', '-x', '-x', '-x', '-x'])
 
 
 pb.digitizer_decimation(DEC_COEF)
-adc_wind = int( pb.adc_window * 8 / DEC_COEF )
-tb = adc_wind * 0.4 * pb.digitizer_decimation()
+length_val = float(PULSE_DETECTION_LENGTH.split(' ')[0])
+points_window = int(round(length_val / 0.4 / DEC_COEF))
 pb.pulser_repetition_rate( REP_RATE )
 pb.pulser_default_synt(1)
 
 pb.pulser_open()
 pb.digitizer_number_of_averages(AVERAGES)
-data = np.zeros( ( 2, adc_wind, POINTS ) )
+data = np.zeros( ( 2, points_window, POINTS ) )
 
 # Data saving
 now = datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")
@@ -109,6 +115,7 @@ header = (
     f"{'Date:':<{w}} {now}\n"
     f"{'Experiment:':<{w}} DEER\n"
     f"{'Field:':<{w}} {FIELD} G\n"
+    f"{general.fmt(mw.mw_bridge_rotary_vane(), w)}\n"
     f"{general.fmt(mw.mw_bridge_att_prm(), w)}\n"
     f"{general.fmt(mw.mw_bridge_att2_prm(), w)}\n"
     f"{general.fmt(mw.mw_bridge_att1_prd(), w)}\n"
@@ -117,7 +124,7 @@ header = (
     f"{'Number of Scans:':<{w}} {SCANS}\n"
     f"{'Averages:':<{w}} {AVERAGES}\n"
     f"{'Points:':<{w}} {POINTS}\n"
-    f"{'Window:':<{w}} {tb} ns\n"
+    f"{'Window:':<{w}} {PULSE_DETECTION_LENGTH}\n"
     f"{'Horizontal Resolution:':<{w}} {0.4 * DEC_COEF:.1g} ns\n"
     f"{'Vertical Resolution:':<{w}} {STEP} ns\n"
     f"{'Temperature:':<{w}} {ls335.tc_temperature('B')} K\n"

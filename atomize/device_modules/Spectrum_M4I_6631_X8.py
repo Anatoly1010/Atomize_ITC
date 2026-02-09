@@ -521,7 +521,7 @@ class Spectrum_M4I_6631_X8:
             pass
 
     def awg_pulse(self, name = 'P0', channel = 'CH0', func = 'SINE', frequency = '200 MHz', phase = 0,\
-     delta_phase = 0, phase_list = [], length = '16 ns', sigma = '0 ns', length_increment = '0 ns', start = '0 ns', delta_start = '0 ns', d_coef = 1, n = 1, b = 0.02):
+     delta_phase = 0, phase_list = [], length = '16 ns', sigma = '0 ns', length_increment = '0 ns', start = '0 ns', delta_start = '0 ns', amplitude = 100, n = 1, b = 0.02):
         """
         A function for awg pulse creation;
         The possible arguments:
@@ -536,16 +536,16 @@ class Spectrum_M4I_6631_X8:
         INCREMENT (in ns, us, ms; for incrementing both sigma and length)
         START (in ns, us, ms; for joined pulses in 'Single mode')
         DELTA_START (in ns, us, ms; for joined pulses in 'Single mode')
-        D_COEF (in arb u; additional coefficient to adjust pulse amplitudes)
+        AMPLITUDE (in %; additional coefficient to adjust pulse amplitudes)
         N (in arb u); special coefficient for WURST and SECH/TANH pulse determining the steepness of the amplitude function
         b (in ns^-1); special coefficient for SECH/TANH pulse determining the truncation parameter
 
         Buffer according to arguments will be filled after
         """
+        d_coef = 100 / amplitude
+
         if self.test_flag != 'test':
-            pulse = {'name': name, 'channel': channel, 'function': func, 'frequency': frequency, 'phase' : phase,\
-             'delta_phase': delta_phase, 'length': length, 'sigma': sigma, 'length_increment': length_increment, 'start': start,\
-              'delta_start': delta_start, 'amp': d_coef, 'phase_list': phase_list, 'n': n, 'b': b }
+            pulse = {'name': name, 'channel': channel, 'function': func, 'frequency': frequency, 'phase' : phase, 'delta_phase': delta_phase, 'length': length, 'sigma': sigma, 'length_increment': length_increment, 'start': start, 'delta_start': delta_start, 'amp': d_coef, 'phase_list': phase_list, 'n': n, 'b': b }
 
             self.pulse_array.append( pulse )
             # for saving the initial pulse_array without increments
@@ -567,9 +567,7 @@ class Spectrum_M4I_6631_X8:
 
             
         elif self.test_flag == 'test':
-            pulse = {'name': name, 'channel': channel, 'function': func, 'frequency': frequency, 'phase' : phase,\
-             'delta_phase' : delta_phase, 'length': length, 'sigma': sigma, 'length_increment': length_increment, 'start': start,\
-              'delta_start': delta_start, 'amp': d_coef, 'phase_list': phase_list, 'n': n, 'b': b }
+            pulse = {'name': name, 'channel': channel, 'function': func, 'frequency': frequency, 'phase' : phase, 'delta_phase' : delta_phase, 'length': length, 'sigma': sigma, 'length_increment': length_increment, 'start': start, 'delta_start': delta_start, 'amp': d_coef, 'phase_list': phase_list, 'n': n, 'b': b }
 
             if channel == 'CH0':
                 # phase_list's length
@@ -2026,7 +2024,6 @@ class Spectrum_M4I_6631_X8:
             else:
                 assert( 1 == 2 ), 'Incorrect arguments'
 
-    # UNDOCUMENTED
     def awg_clear(self):
         """
         A special function for AWG Control module
@@ -2046,7 +2043,6 @@ class Spectrum_M4I_6631_X8:
         self.state = 0
         self.current_phase_index = 0
 
-    # UNDOCUMENTED
     def awg_clear_pulses(self):
         """
         A special function for clearing pulses and flags
@@ -2380,8 +2376,7 @@ class Spectrum_M4I_6631_X8:
             elif self.full_buffer != 0:
                 assert( 1 == 2 ), 'No pulse sequence is defined'
 
-    def awg_pulse_sequence(self, *, pulse_type, pulse_start, pulse_delta_start,\
-                            pulse_length, pulse_phase, pulse_sigma, pulse_frequency, number_of_points, loop, rep_rate, n, b_sech):
+    def awg_pulse_sequence(self, *, pulse_type, pulse_start, pulse_delta_start, pulse_length, pulse_phase, pulse_sigma, pulse_frequency, number_of_points, loop, rep_rate, n, b_sech):
         """
         A function for Sequence mode of the AWG card.
         The sequence replay mode is a special firmware mode that allows to program an output sequence by defining one or more sequences each

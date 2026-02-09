@@ -492,6 +492,7 @@ class Worker(QWidget):
                     f"{'Date:':<{w}} {now}\n"
                     f"{'Experiment:':<{w}} 3pESEEM\n"
                     f"{'Field:':<{w}} {FIELD} G\n"
+                    f"{general.fmt(mw.mw_bridge_rotary_vane(), w)}\n"
                     f"{general.fmt(mw.mw_bridge_att_prm(), w)}\n"
                     f"{general.fmt(mw.mw_bridge_att2_prm(), w)}\n"
                     f"{general.fmt(mw.mw_bridge_att1_prd(), w)}\n"
