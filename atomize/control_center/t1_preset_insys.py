@@ -454,7 +454,7 @@ class Worker(QWidget):
                         for i in range(PHASES):
 
                             pb.pulser_next_phase()
-                            process = general.plot_1d(p2, x_axis / 1e9, ( data[0], data[1] ), xname = 'T', xscale = 's', yname = 'Area', yscale = 'A.U.', label = p1, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j*STEP, 1)), pr = process)
+                            general.plot_1d(p2, x_axis / 1e9, ( data[0], data[1] ), xname = 'T', xscale = 's', yname = 'Area', yscale = 'A.U.', label = p1, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j*STEP, 1)))
                             data[0], data[1] = pb.digitizer_get_curve( POINTS, PHASES, current_scan = k, total_scan = SCANS, integral = True )
 
                         pb.pulser_shift()

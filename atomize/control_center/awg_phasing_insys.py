@@ -608,7 +608,35 @@ class MainWindow(QMainWindow):
             check = QCheckBox("")
             setattr(self, attr_name, check)
             check.stateChanged.connect(func)
-            check.setStyleSheet("QCheckBox { color : rgb(193, 202, 227); }")
+            check.setStyleSheet("""
+                QCheckBox { 
+                    color: rgb(193, 202, 227); 
+                    background-color: transparent; 
+                    font-weight: bold;
+                    spacing: 8px; 
+                }
+
+                QCheckBox::indicator {
+                    width: 14px;
+                    height: 14px;
+                    background-color: rgb(63, 63, 97);
+                    border: 1px solid rgb(83, 83, 117);
+                    border-radius: 3px;
+                }
+
+                QCheckBox::indicator:hover {
+                    border: 1px solid rgb(211, 194, 78);
+                }
+
+                QCheckBox::indicator:pressed {
+                    background-color: rgb(83, 83, 117);
+                }
+
+                QCheckBox::indicator:checked {
+                    background-color: rgb(211, 194, 78);
+                    border: 3px solid rgb(63, 63, 97); 
+                }
+            """)
             check.setFixedSize(130, 26)
 
         # ---- Separators ----
@@ -849,7 +877,7 @@ class MainWindow(QMainWindow):
         if index == 2:
             self.laser_flag = 1 if text == 'LASER' else 0
             
-        print(f"Pulse {index} type set to: {text}")
+        #print(f"Pulse {index} type set to: {text}")
 
     def update_pulse_phase(self, index):
 
@@ -1093,10 +1121,10 @@ class MainWindow(QMainWindow):
         A function to open a new window for choosing a pulse list
         """
         filedialog = QFileDialog(self, 'Open File', directory = self.path, filter = "AWG pulse phase list (*.phase_awg)",\
-            options = QtWidgets.QFileDialog.Option.DontUseNativeDialog)
+            options = QFileDialog.Option.DontUseNativeDialog)
         # use QFileDialog.DontUseNativeDialog to change directory
         filedialog.setStyleSheet("QWidget { background-color : rgb(42, 42, 64); color: rgb(211, 194, 78);}")
-        filedialog.setFileMode(QtWidgets.QFileDialog.FileMode.AnyFile)
+        filedialog.setFileMode(QFileDialog.FileMode.AnyFile)
         filedialog.fileSelected.connect(self.open_file)
         filedialog.show()
 
@@ -1105,11 +1133,11 @@ class MainWindow(QMainWindow):
         A function to open a new window for choosing a pulse list
         """
         filedialog = QFileDialog(self, 'Save File', directory = self.path, filter = "AWG pulse phase list (*.phase_awg)",\
-            options = QtWidgets.QFileDialog.Option.DontUseNativeDialog)
+            options = QFileDialog.Option.DontUseNativeDialog)
         filedialog.setAcceptMode(QFileDialog.AcceptMode.AcceptSave)
         # use QFileDialog.DontUseNativeDialog to change directory
         filedialog.setStyleSheet("QWidget { background-color : rgb(42, 42, 64); color: rgb(211, 194, 78);}")
-        filedialog.setFileMode(QtWidgets.QFileDialog.FileMode.AnyFile)
+        filedialog.setFileMode(QFileDialog.FileMode.AnyFile)
         filedialog.fileSelected.connect(self.save_file)
         filedialog.show()
 
@@ -1123,13 +1151,13 @@ class MainWindow(QMainWindow):
         text = open(filename).read()
         lines = text.split('\n')
 
-        self.setter(text, 0, self.P1_type, self.P1_st, self.P1_len, self.P1_sig, self.freq_1, self.Wurst_sweep_1, self.coef_1, self.Phase_1)
-        self.setter(text, 1, self.P2_type, self.P2_st, self.P2_len, self.P2_sig, self.freq_2, self.Wurst_sweep_2, self.coef_2, self.Phase_2)
-        self.setter(text, 2, self.P3_type, self.P3_st, self.P3_len, self.P3_sig, self.freq_3, self.Wurst_sweep_3, self.coef_3, self.Phase_3)
-        self.setter(text, 3, self.P4_type, self.P4_st, self.P4_len, self.P4_sig, self.freq_4, self.Wurst_sweep_4, self.coef_4, self.Phase_4)
-        self.setter(text, 4, self.P5_type, self.P5_st, self.P5_len, self.P5_sig, self.freq_5, self.Wurst_sweep_5, self.coef_5, self.Phase_5)
-        self.setter(text, 5, self.P6_type, self.P6_st, self.P6_len, self.P6_sig, self.freq_6, self.Wurst_sweep_6, self.coef_6, self.Phase_6)
-        self.setter(text, 6, self.P7_type, self.P7_st, self.P7_len, self.P7_sig, self.freq_7, self.Wurst_sweep_7, self.coef_7, self.Phase_7)
+        self.setter(text, 0, self.P1_type, self.P1_st, self.P1_len, self.P1_sig, self.P1_fr, self.P1_sw, self.P1_cf, self.Phase_1)
+        self.setter(text, 1, self.P2_type, self.P2_st, self.P2_len, self.P2_sig, self.P2_fr, self.P2_sw, self.P2_cf, self.Phase_2)
+        self.setter(text, 2, self.P3_type, self.P3_st, self.P3_len, self.P3_sig, self.P3_fr, self.P3_sw, self.P3_cf, self.Phase_3)
+        self.setter(text, 3, self.P4_type, self.P4_st, self.P4_len, self.P4_sig, self.P4_fr, self.P4_sw, self.P4_cf, self.Phase_4)
+        self.setter(text, 4, self.P5_type, self.P5_st, self.P5_len, self.P5_sig, self.P5_fr, self.P5_sw, self.P5_cf, self.Phase_5)
+        self.setter(text, 5, self.P6_type, self.P6_st, self.P6_len, self.P6_sig, self.P6_fr, self.P6_sw, self.P6_cf, self.Phase_6)
+        self.setter(text, 6, self.P7_type, self.P7_st, self.P7_len, self.P7_sig, self.P7_fr, self.P7_sw, self.P7_cf, self.Phase_7)
 
         self.Rep_rate.setValue( float( lines[7].split(':  ')[1] ) )
         self.Field.setValue( float( lines[8].split(':  ')[1] ) )
@@ -1182,7 +1210,7 @@ class MainWindow(QMainWindow):
         freq.setValue( int( array[4] ) )
         w_sweep.setValue( int( array[5] ) )
         coef.setValue( int( array[6] ) )
-        phase.setPlainText( str( array[7] ) )
+        phase.setPlainText( str( (array[7])[1:-1] ) )
 
     def save_file(self, filename):
         """
@@ -1193,26 +1221,26 @@ class MainWindow(QMainWindow):
             filename = filename + '.phase_awg'
         with open(filename, 'w') as file:
             file.write( 'P1:  ' + self.P1_type.currentText() + ',  ' + str(self.P1_st.value()) + ',  ' + str(self.P1_len.value()) + ',  '\
-                + str(self.P1_sig.value()) + ',  ' + str(self.freq_1.value()) + ',  ' + str(self.Wurst_sweep_1.value()) + ',  '\
-                + str(self.coef_1.value()) + ',  ' + str('[' + ','.join(self.ph_1) + ']') + '\n' )
+                + str(self.P1_sig.value()) + ',  ' + str(self.P1_fr.value()) + ',  ' + str(self.P1_sw.value()) + ',  '\
+                + str(self.P1_cf.value()) + ',  ' + str('[' + ','.join(self.ph_1) + ']') + '\n' )
             file.write( 'P2:  ' + self.P2_type.currentText() + ',  ' + str(self.P2_st.value()) + ',  ' + str(self.P2_len.value()) + ',  '\
-                + str(self.P2_sig.value()) + ',  ' + str(self.freq_2.value()) + ',  ' + str(self.Wurst_sweep_2.value()) + ',  '\
-                + str(self.coef_2.value()) + ',  ' + str('[' + ','.join(self.ph_2) + ']') + '\n' )
+                + str(self.P2_sig.value()) + ',  ' + str(self.P2_fr.value()) + ',  ' + str(self.P2_sw.value()) + ',  '\
+                + str(self.P2_cf.value()) + ',  ' + str('[' + ','.join(self.ph_2) + ']') + '\n' )
             file.write( 'P3:  ' + self.P3_type.currentText() + ',  ' + str(self.P3_st.value()) + ',  ' + str(self.P3_len.value()) + ',  '\
-                + str(self.P3_sig.value()) + ',  ' + str(self.freq_3.value()) + ',  ' + str(self.Wurst_sweep_3.value()) + ',  '\
-                + str(self.coef_3.value()) + ',  ' + str('[' + ','.join(self.ph_3) + ']') + '\n' )
+                + str(self.P3_sig.value()) + ',  ' + str(self.P3_fr.value()) + ',  ' + str(self.P3_sw.value()) + ',  '\
+                + str(self.P3_cf.value()) + ',  ' + str('[' + ','.join(self.ph_3) + ']') + '\n' )
             file.write( 'P4:  ' + self.P4_type.currentText() + ',  ' + str(self.P4_st.value()) + ',  ' + str(self.P4_len.value()) + ',  '\
-                + str(self.P4_sig.value()) + ',  ' + str(self.freq_4.value()) + ',  ' + str(self.Wurst_sweep_4.value()) + ',  '\
-                + str(self.coef_4.value()) + ',  ' + str('[' + ','.join(self.ph_4) + ']') + '\n' )
+                + str(self.P4_sig.value()) + ',  ' + str(self.P4_fr.value()) + ',  ' + str(self.P4_sw.value()) + ',  '\
+                + str(self.P4_cf.value()) + ',  ' + str('[' + ','.join(self.ph_4) + ']') + '\n' )
             file.write( 'P5:  ' + self.P5_type.currentText() + ',  ' + str(self.P5_st.value()) + ',  ' + str(self.P5_len.value()) + ',  '\
-                + str(self.P5_sig.value()) + ',  ' + str(self.freq_5.value()) + ',  ' + str(self.Wurst_sweep_5.value()) + ',  '\
-                + str(self.coef_5.value()) + ',  ' + str('[' + ','.join(self.ph_5) + ']') + '\n' )
+                + str(self.P5_sig.value()) + ',  ' + str(self.P5_fr.value()) + ',  ' + str(self.P5_sw.value()) + ',  '\
+                + str(self.P5_cf.value()) + ',  ' + str('[' + ','.join(self.ph_5) + ']') + '\n' )
             file.write( 'P6:  ' + self.P6_type.currentText() + ',  ' + str(self.P6_st.value()) + ',  ' + str(self.P6_len.value()) + ',  '\
-                + str(self.P6_sig.value()) + ',  ' + str(self.freq_6.value()) + ',  ' + str(self.Wurst_sweep_6.value()) + ',  '\
-                + str(self.coef_6.value()) + ',  ' + str('[' + ','.join(self.ph_6) + ']') + '\n' )
+                + str(self.P6_sig.value()) + ',  ' + str(self.P6_fr.value()) + ',  ' + str(self.P6_sw.value()) + ',  '\
+                + str(self.P6_cf.value()) + ',  ' + str('[' + ','.join(self.ph_6) + ']') + '\n' )
             file.write( 'P7:  ' + self.P7_type.currentText() + ',  ' + str(self.P7_st.value()) + ',  ' + str(self.P7_len.value()) + ',  '\
-                + str(self.P7_sig.value()) + ',  ' + str(self.freq_7.value()) + ',  ' + str(self.Wurst_sweep_7.value()) + ',  '\
-                + str(self.coef_7.value()) + ',  ' + str('[' + ','.join(self.ph_7) + ']') + '\n' )
+                + str(self.P7_sig.value()) + ',  ' + str(self.P7_fr.value()) + ',  ' + str(self.P7_sw.value()) + ',  '\
+                + str(self.P7_cf.value()) + ',  ' + str('[' + ','.join(self.ph_7) + ']') + '\n' )
 
             file.write( 'Rep rate:  ' + str(self.Rep_rate.value()) + '\n' )
             file.write( 'Field:  ' + str(self.Field.value()) + '\n' )
@@ -1372,7 +1400,7 @@ class MainWindow(QMainWindow):
         self.mag_field = float( self.Field.value() )
         ###self.bh15.magnet_field( self.mag_field )
         try:
-            self.errors.appendPlainText( str( self.mag_field ) )
+            #self.errors.appendPlainText( str( self.mag_field ) )
             self.parent_conn_dig.send( 'FI' + str( self.mag_field ) )
         except AttributeError:
             self.message('Digitizer is not running')

@@ -523,8 +523,8 @@ class Worker(QWidget):
                         elif p10 == 1:
                             data[i] = ( data[i] * (2*j - 2) + sr860.lock_in_get_data() ) / (2*j - 1)
 
-                        process = general.plot_1d( p2, x_axis, data, xname = 'Field',\
-                            xscale = 'G', yname = 'Intensity', yscale = 'V', label = p1, \
+                        process = general.plot_1d( p2, x_axis, data, xname = 'Field',
+                            xscale = 'G', yname = 'Intensity', yscale = 'V', label = p1, 
                             text = 'Scan / Field: ' + str(j) + ' / ' + str(field), pr = process )
 
                         field = round( (FIELD_STEP + field), 3 )
@@ -561,9 +561,10 @@ class Worker(QWidget):
                             
                             data[i] = ( data[i] * (2*j - 1) + sr860.lock_in_get_data() ) / (2*j)
 
-                            process = general.plot_1d( p2, x_axis, data, xname = 'Field',\
-                                xscale = 'G', yname = 'Intensity', yscale = 'V', label = p1, \
-                                text = 'Scan / Field: ' + str(j) + ' / ' + str(field), pr = process )
+                            process = general.plot_1d( p2, x_axis, data, xname = 'Field',
+                                xscale = 'G', yname = 'Intensity', yscale = 'V', label = p1,
+                                text = 'Scan / Field: ' + str(j) + ' / ' + str(field), 
+                                pr = process )
 
                             # check our polling data
                             if self.command[0:2] == 'SC':

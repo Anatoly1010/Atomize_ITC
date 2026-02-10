@@ -103,7 +103,7 @@ class MainWindow(QMainWindow):
                 setattr(self, par_name, int(spin_box.value()))
 
         # ---- Text Edits ----
-        text_edit = [("TUNE", "text_edit_exp_name", "cur_exp_name", self.exp_name),
+        text_edit = [("Tune", "text_edit_exp_name", "cur_exp_name", self.exp_name),
                      ("LASER -> CH2", "text_comment", "cur_comment", self.comment),
                      ("CH1", "text_comment_2", "cur_comment_2", self.comment),
                      ("192.168.2.21", "text_comment_3", "cur_comment_3", self.comment)

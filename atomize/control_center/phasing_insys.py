@@ -549,7 +549,35 @@ class MainWindow(QMainWindow):
             check = QCheckBox("")
             setattr(self, attr_name, check)
             check.stateChanged.connect(func)
-            check.setStyleSheet("QCheckBox { color : rgb(193, 202, 227); }")
+            check.setStyleSheet("""
+                QCheckBox { 
+                    color: rgb(193, 202, 227); 
+                    background-color: transparent; 
+                    font-weight: bold;
+                    spacing: 8px; 
+                }
+
+                QCheckBox::indicator {
+                    width: 14px;
+                    height: 14px;
+                    background-color: rgb(63, 63, 97);
+                    border: 1px solid rgb(83, 83, 117);
+                    border-radius: 3px;
+                }
+
+                QCheckBox::indicator:hover {
+                    border: 1px solid rgb(211, 194, 78);
+                }
+
+                QCheckBox::indicator:pressed {
+                    background-color: rgb(83, 83, 117);
+                }
+
+                QCheckBox::indicator:checked {
+                    background-color: rgb(211, 194, 78);
+                    border: 3px solid rgb(63, 63, 97); 
+                }
+            """)
             check.setFixedSize(130, 26)
 
         # ---- Separators ----
@@ -865,7 +893,7 @@ class MainWindow(QMainWindow):
         typ.setCurrentText( array[0] )
         st.setValue( float( array[1] ) )
         leng.setValue( float( array[2] ) )
-        phase.setPlainText( str( array[3] ) )
+        phase.setPlainText( str( (array[3])[1:-1] ) )
 
     def save_file(self, filename):
         """
@@ -1037,7 +1065,7 @@ class MainWindow(QMainWindow):
         self.mag_field = float( self.Field.value() )
         ###self.bh15.magnet_field( self.mag_field )
         try:
-            self.errors.appendPlainText( str( self.mag_field ) )
+            #self.errors.appendPlainText( str( self.mag_field ) )
             self.parent_conn_dig.send( 'FI' + str( self.mag_field ) )
         except AttributeError:
             self.message('Digitizer is not running')
@@ -1457,7 +1485,7 @@ class Worker(QWidget):
                     
                 elif self.command[0:2] == 'FI':
                     p15 = float( self.command[2:] )
-                    bh15.magnet_field( p15 ) #, calibration = 'True' 
+                    bh15.magnet_field( p15 ) #, calibration = 'True'
                 elif self.command[0:2] == 'FF':
                     p16 = int( self.command[2:] )
                 elif self.command[0:2] == 'QC':
@@ -1499,20 +1527,23 @@ class Worker(QWidget):
                         int_x = round( np.sum( data_x[p4:p5] ) * 1 * t_res , 1 ) #( 10**(10) * t_res )
                         int_y = round( np.sum( data_y[p4:p5] ) * 1 * t_res , 1 )
 
-                        general.plot_1d('Dig', x_axis, ( data_x, data_y ), \
-                                xscale = 'ns', yscale = 'mV', label = 'ch', vline = (p4 * t_res, p5 * t_res), text = 'I/Q ' + str(int_x) + '/' + str(int_y))
+                        general.plot_1d('Dig', x_axis, ( data_x, data_y ), 
+                            xscale = 'ns', yscale = 'mV', label = 'ch', 
+                            vline = (p4 * t_res, p5 * t_res), 
+                            text = 'I/Q ' + str(int_x) + '/' + str(int_y))
 
                     else:
                         # acquisition cycle
-                        general.plot_1d('Dig', x_axis, ( data_x, data_y ), \
-                                xscale = 'ns', yscale = 'mV', label = 'ch', vline = (p4 * t_res, p5 * t_res))
+                        general.plot_1d('Dig', x_axis, ( data_x, data_y ), xscale = 'ns', 
+                            yscale = 'mV', label = 'ch', vline = (p4 * t_res, p5 * t_res))
 
                         if p17 == 0:
                             freq_axis, abs_values = fft.fft(x_axis, data_x, data_y, t_res * 1)
                             m_val = round( np.amax( abs_values ), 2 )
                             i_max = abs(round( freq_axis[ np.argmax( abs_values ) ], 2))
-                            general.plot_1d('FFT', freq_axis, abs_values, xname = 'Offset', label = 'FFT', xscale = 'MHz', \
-                                                      yscale = 'A.U.', text = 'Max ' + str(m_val)) #str(m_val)
+                            general.plot_1d('FFT', freq_axis, abs_values, xname = 'Offset', 
+                                label = 'FFT', xscale = 'MHz', 
+                                yscale = 'A.U.', text = 'Max ' + str(m_val)) #str(m_val)
                         else:
                             if p21 > len( data_x ) - 0.4 * p1:
                                 p21 = len( data_x ) - 0.8 * p1
@@ -1520,8 +1551,9 @@ class Worker(QWidget):
                             # fixed resolution of digitizer; 0.4 ns
                             freq, fft_x, fft_y = fft.fft( x_axis[p21:], data_x[p21:], data_y[p21:], t_res * 1, re = 'True' )
                             data_fft = fft.ph_correction( freq, fft_x, fft_y, p18, p19, p20 )
-                            general.plot_1d('FFT', freq, ( data_fft[0], data_fft[1] ), xname = 'Offset', xscale = 'MHz', \
-                                                      yscale = 'A.U.', label = 'FFT')
+                            general.plot_1d('FFT', freq, ( data_fft[0], data_fft[1] ), 
+                                xname = 'Offset', xscale = 'MHz', 
+                                yscale = 'A.U.', label = 'FFT')
 
                 self.command = 'start'
                 

@@ -367,11 +367,11 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Atomize")
 
         screen_geometry = QApplication.primaryScreen().geometry()
-        width = int(screen_geometry.width() * 0.8)
-        height = int(screen_geometry.height() * 0.8)
+        width = int(screen_geometry.width() * 0.6)
+        height = int(screen_geometry.height() * 0.7)
 
         #int(screen_geometry.height() * 0.6)
-        self.setMinimumSize(int(screen_geometry.width() * 0.6), 650)
+        self.setMinimumSize(int(screen_geometry.width() * 0.5), 650)
         self.resize(width, height)
 
         x = (screen_geometry.width() - self.width()) // 2

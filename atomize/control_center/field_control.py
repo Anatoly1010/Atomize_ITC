@@ -39,7 +39,8 @@ class MainWindow(QMainWindow):
         except FileNotFoundError:
             pass
 
-        self.read_field()
+        self.read_no_set_field()
+        self.cur_field = self.cur_field_2
 
     def design(self):
 
@@ -71,7 +72,7 @@ class MainWindow(QMainWindow):
             lbl.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
 
         # ---- Boxes ----
-        double_boxes = [(QDoubleSpinBox, "Set_point", "field", self.set_field, 0, 15100, 100, 0.5, 2, " G"), 
+        double_boxes = [(QDoubleSpinBox, "Set_point", "field", self.set_field, 0, 15100, 0, 0.5, 2, " G"), 
                         (QSpinBox, "box_ini", "initialization_step", self.set_ini, 1, 100, 10, 1, 0, " G")
                         ]
 
@@ -145,7 +146,9 @@ class MainWindow(QMainWindow):
 
         while self.cur_field > ( self.initialization_step + 1 ):
             self.cur_field = self.itc_fc.magnet_field( self.cur_field - self.initialization_step )
-
+            self.Set_point.blockSignals(True)
+            self.Set_point.setValue(self.cur_field)
+            self.Set_point.blockSignals(False)
             loop = QEventLoop()
             QTimer.singleShot(15, loop.quit)
             loop.exec()
@@ -154,9 +157,10 @@ class MainWindow(QMainWindow):
 
         #self.cur_field = self.itc_fc.magnet_field( 0 )
         self.cur_field = 0
+        self.cur_field_2 = 0
         self.field = 0
         self.itc_fc.magnet_field( self.cur_field )
-
+        self.Set_point.setValue(self.cur_field)
         self.button_stop.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; } ")
         #print('CF: ' + str(self.cur_field))
         #print('F: ' + str(self.field))
@@ -207,7 +211,9 @@ class MainWindow(QMainWindow):
         if self.cur_field < self.field:
             while self.cur_field < self.field:
                 self.cur_field = self.itc_fc.magnet_field( self.cur_field + self.initialization_step )
-
+                self.Set_point.blockSignals(True)
+                self.Set_point.setValue(self.cur_field)
+                self.Set_point.blockSignals(False)
                 loop = QEventLoop()
                 QTimer.singleShot(15, loop.quit)
                 loop.exec()
@@ -224,7 +230,9 @@ class MainWindow(QMainWindow):
         else:
             while self.cur_field > self.field:
                 self.cur_field = self.itc_fc.magnet_field( self.cur_field - self.initialization_step )
-
+                self.Set_point.blockSignals(True)
+                self.Set_point.setValue(self.cur_field)
+                self.Set_point.blockSignals(False)
                 loop = QEventLoop()
                 QTimer.singleShot(15, loop.quit)
                 loop.exec()
