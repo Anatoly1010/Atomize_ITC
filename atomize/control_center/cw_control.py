@@ -77,7 +77,7 @@ class MainWindow(QMainWindow):
             spin_box = widget_class()
             if isinstance(spin_box, QDoubleSpinBox):
                 spin_box.setRange(v_min, v_max)
-                spin_box.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")                
+                spin_box.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97); }")
             else:
                 spin_box.setRange(int(v_min), int(v_max))
                 spin_box.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")                
@@ -124,7 +124,6 @@ class MainWindow(QMainWindow):
             combo.setFixedSize(130, 26)
             combo.setStyleSheet("QComboBox { color : rgb(193, 202, 227); selection-color: rgb(211, 194, 78); }")
 
-
         # ---- Text Edits ----
         text_edit = [("CW", "text_edit_exp_name", "cur_exp_name", self.curve_name),
                      ("exp1", "text_edit_curve", "cur_curve_name", self.exp_name)
@@ -148,8 +147,35 @@ class MainWindow(QMainWindow):
             check = QCheckBox("")
             setattr(self, attr_name, check)
             check.stateChanged.connect(func)
-            check.setStyleSheet("QCheckBox { color : rgb(193, 202, 227); }")
-            check.setFixedSize(130, 26)
+            check.setStyleSheet("""
+                QCheckBox { 
+                    color: rgb(193, 202, 227); 
+                    background-color: transparent; 
+                    font-weight: bold;
+                    spacing: 8px; 
+                }
+
+                QCheckBox::indicator {
+                    width: 14px;
+                    height: 14px;
+                    background-color: rgb(63, 63, 97);
+                    border: 1px solid rgb(83, 83, 117);
+                    border-radius: 3px;
+                }
+
+                QCheckBox::indicator:hover {
+                    border: 1px solid rgb(211, 194, 78);
+                }
+
+                QCheckBox::indicator:pressed {
+                    background-color: rgb(83, 83, 117);
+                }
+
+                QCheckBox::indicator:checked {
+                    background-color: rgb(211, 194, 78);
+                    border: 3px solid rgb(63, 63, 97); 
+                }
+            """)
 
         # ---- Buttons ----
         buttons = [("Start", "button_start", self.start),

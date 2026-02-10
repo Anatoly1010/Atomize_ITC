@@ -77,6 +77,7 @@ class MainExtended(MainWindow):
         tab3 = QWidget()
         main_layout = QVBoxLayout(tab3)
         gridlayout = QGridLayout()
+        gridlayout.setContentsMargins(5, 7, 5, 5)
         main_layout.addLayout(gridlayout)
 
         self.tabwidget.addTab(tab3, "EPR Endstation Control")
@@ -107,45 +108,112 @@ class MainExtended(MainWindow):
                 if actions and row_idx < len(actions) and actions[row_idx]:
                     btn.clicked.connect(actions[row_idx])
                     
-                gridlayout.addWidget(btn, row_idx + 1, col_idx)
+                gridlayout.addWidget(btn, row_idx , col_idx)
                 button_list.append(btn)
 
         # Open Script:
         label = QLabel("Open Script:")
         label.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
         label.setFixedWidth(100)
-        gridlayout.addWidget(label, 1, 4)
+        gridlayout.addWidget(label, 0, 4)
 
         combo_items = [" Tuning", " T2 Echo Shape", " ED Spectrum", " ESEEM Echo Shape"]
         self.script_chooser = QComboBox()
         self.script_chooser.addItems(combo_items)
         self.script_chooser.setFixedSize(140, 40)
-        gridlayout.addWidget(self.script_chooser, 1, 5)
-        self.script_chooser.setStyleSheet("QComboBox { color : rgb(193, 202, 227); selection-color: rgb(211, 194, 78); font-weight: bold; }")
+        gridlayout.addWidget(self.script_chooser, 0, 5)
+        self.script_chooser.setStyleSheet("""
+                QComboBox { 
+                    background-color: rgb(63, 63, 97);
+                    color: rgb(193, 202, 227); 
+                    border: 1px solid rgb(43, 43, 77);
+                    border-radius: 4px;
+                    padding: 0px 10px 0px 10px; 
+                    font-weight: bold;
+                }
+                
+                QComboBox::drop-down {
+                    subcontrol-origin: padding;
+                    subcontrol-position: top right;
+                    width: 22px;
+                    border-left: 1px solid rgb(43, 43, 77); 
+                    border-top-right-radius: 3px;
+                    border-bottom-right-radius: 3px;
+                }
+
+                QComboBox::down-arrow {
+                    border-left: 4px solid transparent;
+                    border-right: 4px solid transparent;
+                    border-top: 4px solid rgb(193, 202, 227);
+                    width: 0;
+                    height: 0;
+                    margin-top: 1px; 
+                    margin-right: 2px;
+                }
+
+                QComboBox QAbstractItemView {
+                    background-color: rgb(42, 42, 64);
+                    color: rgb(193, 202, 227);
+                    selection-background-color: rgb(63, 63, 97);
+                    selection-color: rgb(211, 194, 78);
+                    border: 1px solid rgb(63, 63, 97);
+                    outline: none;
+                }
+            """)
+
         self.script_chooser.currentIndexChanged.connect(self.script_open_combo)
         self.script = self.text_to_script_name( self.script_chooser.currentText() )
         # preopen script
         #self.open_file( self.script )
 
-        # Test ooption
+        # Test option
         label_2 = QLabel("Test Scripts:")
         label_2.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
         label_2.setFixedWidth(100)
-        gridlayout.addWidget(label_2, 2, 4)
+        gridlayout.addWidget(label_2, 1, 4)
 
         self.checkTests = QCheckBox("")
-        gridlayout.addWidget(self.checkTests, 2, 5)
-        self.checkTests.setStyleSheet("QCheckBox { color : rgb(193, 202, 227); font-weight: bold; }")
+        gridlayout.addWidget(self.checkTests, 1, 5)
+        self.checkTests.setStyleSheet("""
+                QCheckBox { 
+                    color: rgb(193, 202, 227); 
+                    background-color: transparent; 
+                    font-weight: bold;
+                    spacing: 8px; 
+                }
+
+                QCheckBox::indicator {
+                    width: 14px;
+                    height: 14px;
+                    background-color: rgb(63, 63, 97);
+                    border: 1px solid rgb(83, 83, 117);
+                    border-radius: 3px;
+                }
+
+                QCheckBox::indicator:hover {
+                    border: 1px solid rgb(211, 194, 78);
+                }
+
+                QCheckBox::indicator:pressed {
+                    background-color: rgb(83, 83, 117);
+                }
+
+                QCheckBox::indicator:checked {
+                    background-color: rgb(211, 194, 78);
+                    border: 3px solid rgb(63, 63, 97); 
+                }
+            """)
+
         self.checkTests.setFixedSize(140, 40)
         self.checkTests.setChecked(True)
         self.checkTests.setLayoutDirection(QtCore.Qt.LayoutDirection.LeftToRight)
 
 
-        gridlayout.setColumnMinimumWidth(0, 20)
-        gridlayout.setRowMinimumHeight(0, 12)
+        #gridlayout.setColumnMinimumWidth(0, 20)
+        #gridlayout.setRowMinimumHeight(0, 12)
         gridlayout.setHorizontalSpacing(15)
-        gridlayout.setColumnStretch(7, 3)
-        gridlayout.setRowStretch(7, 3)
+        gridlayout.setColumnStretch(6, 3)
+        gridlayout.setRowStretch(6, 3)
 
         bottom_label = QLabel("https://anatoly1010.github.io/atomize_docs/; Version 0.3.0; 27/01/2026")
         bottom_label.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
