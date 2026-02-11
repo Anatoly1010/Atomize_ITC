@@ -8,6 +8,7 @@ from PyQt6.QtWidgets import QWidget, QGridLayout, QLabel, QPushButton, QComboBox
 from PyQt6.QtGui import QColor
 from atomize.main.main_window import MainWindow
 import atomize.main.messenger_socket_server as socket_server
+os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "1"
 
 ###
 # All modifications can be found with # mod

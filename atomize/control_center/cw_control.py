@@ -8,9 +8,9 @@ import datetime
 import socket
 import numpy as np
 from multiprocessing import Process, Pipe
-from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QLabel, QDoubleSpinBox, QSpinBox, QComboBox, QPushButton, QTextEdit, QGridLayout, QFrame, QCheckBox
+from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QLabel, QDoubleSpinBox, QSpinBox, QComboBox, QPushButton, QTextEdit, QGridLayout, QFrame, QCheckBox, QProgressBar
 from PyQt6.QtGui import QIcon
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QTimer
 import atomize.control_center.status_poller as pol
 
 class MainWindow(QMainWindow):
@@ -31,8 +31,11 @@ class MainWindow(QMainWindow):
         We need a different thread here, since PyQt GUI applications have a main thread of execution that runs the event loop and GUI. If you launch a long-running task in this thread, then your GUI will freeze until the task terminates. During that time, the user won’t be able to interact with the application
         """
         self.worker = Worker()
-        self.poller = pol.StatusPoller()
-        self.poller.status_received.connect(self.update_gui_status)        
+        #self.poller = pol.StatusPoller()
+        #self.poller.status_received.connect(self.update_gui_status)        
+        
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.check_messages)
 
     def design(self):
 
@@ -57,7 +60,7 @@ class MainWindow(QMainWindow):
 
 
         # ---- Labels & Inputs ----
-        labels = [("Start Field", "label_1"), ("End Field", "label_2"), ("Field Step", "label_3"), ("Lock In Amplitude", "label_4"), ("Lock In Time Constant", "label_5"), ("Lock In Sensitivity", "label_6"), ("Number of Scans", "label_7"), ("Two-Side Measurement", "label_8"), ("Experiment Name", "label_9"), ("Curve Name", "label_10")]
+        labels = [("Start Field", "label_1"), ("End Field", "label_2"), ("Field Step", "label_3"), ("Lock In Amplitude", "label_4"), ("Lock In Time Constant", "label_5"), ("Lock In Sensitivity", "label_6"), ("Number of Scans", "label_7"), ("Two-Side Measurement", "label_8"), ("Experiment Name", "label_9"), ("Curve Name", "label_10"), ("Progress", "label_11")]
 
         for name, attr_name in labels:
             lbl = QLabel(name)
@@ -198,6 +201,31 @@ class MainWindow(QMainWindow):
             line.setLineWidth(2)
             return line
 
+        # ---- Progress Bar ----
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setFixedSize(130, 26)
+        self.progress_bar.setTextVisible(False)
+        self.progress_bar.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        self.progress_bar.setStyleSheet("""
+            QProgressBar {
+                border: 1px solid rgb(83, 83, 117);
+                border-radius: 4px;
+                background-color: rgb(42, 42, 64);
+                color: rgb(211, 194, 78);
+                font-weight: bold;
+                text-align: center;
+                height: 20px;
+            }
+
+            QProgressBar::chunk {
+                background-color: rgb(193, 202, 227);
+                border-radius: 2px;
+                color: rgb(42, 42, 64);
+            }
+        """)
 
         # ---- Layout placement ----
         gridLayout.addWidget(self.label_1, 0, 0)
@@ -234,12 +262,18 @@ class MainWindow(QMainWindow):
 
         gridLayout.addWidget(hline(), 13, 0, 1, 2)
 
-        gridLayout.addWidget(self.button_start, 14, 0)
-        gridLayout.addWidget(self.button_stop, 15, 0)
-        gridLayout.addWidget(self.button_off, 16, 0)
+        gridLayout.addWidget(self.label_11, 14, 0)
+        gridLayout.addWidget(self.progress_bar, 14, 1)
 
-        gridLayout.setRowStretch(17, 2)
-        gridLayout.setColumnStretch(17, 2)
+        gridLayout.addWidget(hline(), 15, 0, 1, 2)
+
+        gridLayout.addWidget(self.button_start, 16, 0)
+        gridLayout.addWidget(self.button_stop, 17, 0)
+        gridLayout.addWidget(self.button_off, 18, 0)
+
+
+        gridLayout.setRowStretch(19, 2)
+        gridLayout.setColumnStretch(19, 2)
 
     def two_side_measure(self):
         """
@@ -335,18 +369,47 @@ class MainWindow(QMainWindow):
         """
          A function to turn off a program.
         """
+        self.timer.stop()
         try:
             self.parent_conn.send('exit')
             self.exp_process.join()
         except AttributeError:
-            self.message('Experimental script is not running')
+            pass
+            #self.message('Experimental script is not running')
             sys.exit()
 
         sys.exit()
 
-    def update_gui_status(self, status_text):
+    def check_messages(self):
 
-        self.poller.wait() 
+        while self.parent_conn.poll():
+            try:
+                msg_type, data = self.parent_conn.recv()
+                
+                if msg_type == 'Status':
+                    self.progress_bar.setValue(int(data))
+                else:
+                    self.timer.stop()
+                    self.progress_bar.setValue(0)
+                    self.message(data)
+                    self.button_start.setStyleSheet("""
+                        QPushButton {
+                            border-radius: 4px; 
+                            background-color: rgb(63, 63, 97); 
+                            border-style: outset; 
+                            color: rgb(193, 202, 227); 
+                            font-weight: bold; 
+                        }
+                    """)
+            except EOFError:
+                self.timer.stop()
+                break
+            except Exception as e:
+                break
+
+    def update_gui_status(self, status_text):
+        
+        self.poller.wait()
 
         if self.parent_conn.poll() == True:
             msg_type, data = self.parent_conn.recv()
@@ -355,10 +418,13 @@ class MainWindow(QMainWindow):
         else:
             pass
 
+
     def stop(self):
         """
         A function to stop script
         """
+        self.progress_bar.setValue(0)
+        self.timer.stop()
         try:
             self.button_start.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }  ")
             self.parent_conn.send( 'exit' )
@@ -393,13 +459,16 @@ class MainWindow(QMainWindow):
         self.exp_process = Process( target = self.worker.exp_on, args = ( self.child_conn, self.cur_curve_name, self.cur_exp_name, self.cur_end_field, self.cur_start_field, self.cur_step, self.cur_lock_ampl, self.cur_scan, self.cur_tc, self.cur_sens, self.two_side, ) )
         
         self.button_start.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(211, 194, 78); border-style: outset; color: rgb(63, 63, 97); font-weight: bold; } ")
+        self.progress_bar.setValue(0)
 
         self.exp_process.start()
         # send a command in a different thread about the current state
         self.parent_conn.send('start')
 
-        self.poller.update_command(self.parent_conn)
-        self.poller.start()
+        self.timer.start(100)
+
+        #self.poller.update_command(self.parent_conn)
+        #self.poller.start()
 
     def message(self, *text):
         sock = socket.socket()
@@ -427,8 +496,8 @@ class Worker(QWidget):
         #self.cur_curve_name, self.cur_exp_name, self.cur_end_field, self.cur_start_field, 
         # [          5,                 6,              7,           8,             9,     ]
         #self.cur_step, self.cur_lock_ampl, self.cur_scan, self.cur_tc, self.cur_sens, 
-        #           10,     ]
-        #self.two_side,
+        #           10,         ]
+        #self.two_side,    
 
         # should be inside dig_on() function;
         # freezing after digitizer restart otherwise
@@ -523,6 +592,8 @@ class Worker(QWidget):
                         elif p10 == 1:
                             data[i] = ( data[i] * (2*j - 2) + sr860.lock_in_get_data() ) / (2*j - 1)
 
+                        conn.send( ('Status', int(100 * (i + 1) / points)) )
+
                         process = general.plot_1d( p2, x_axis, data, xname = 'Field',
                             xscale = 'G', yname = 'Intensity', yscale = 'V', label = p1, 
                             text = 'Scan / Field: ' + str(j) + ' / ' + str(field), pr = process )
@@ -589,7 +660,7 @@ class Worker(QWidget):
                     field = field - initialization_step 
 
                 now = datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")
-                w = 25
+                w = 30
 
                 # Data saving
                 header = (

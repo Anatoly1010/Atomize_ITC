@@ -496,7 +496,7 @@ class Worker(QWidget):
 
                 # Data saving
                 now = datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")
-                w = 25
+                w = 30
 
                 header = (
                     f"{'Date:':<{w}} {now}\n"

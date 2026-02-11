@@ -474,7 +474,7 @@ class Worker(QWidget):
             import atomize.device_modules.Agilent_53131a as ag
             import atomize.general_modules.csv_opener_saver_tk_kinter as openfile
 
-            w = 25
+            w = 30
             file_handler = openfile.Saver_Opener()
             process = 'None'
             ag53131a = ag.Agilent_53131a()

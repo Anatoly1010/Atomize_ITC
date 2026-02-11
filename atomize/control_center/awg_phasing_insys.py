@@ -1918,27 +1918,27 @@ class Worker(QWidget):
                     data_y = data[1].ravel()
 
                     if p16 == 0:                
-                        general.plot_1d('Dig', x_axis, ( data_x, data_y ), \
-                                    xscale = 'ns', yscale = 'mV', label = 'ch', vline = (p4 * t_res, p5 * t_res))
+                        general.plot_1d('Dig', x_axis / 1e9, ( data_x, data_y ), \
+                                    xscale = 's', yscale = 'mV', label = 'ch', vline = (p4 * t_res / 1e9, p5 * t_res / 1e9))
 
                     else:
                         # acquisition cycle
-                        general.plot_1d('Dig', x_axis, ( data_x, data_y ), label = 'ch', xscale = 'ns', yscale = 'mV', \
-                                            vline = (p4 * t_res, p5 * t_res) )
+                        general.plot_1d('Dig', x_axis / 1e9, ( data_x, data_y ), label = 'ch', xscale = 's', yscale = 'mV', \
+                                            vline = (p4 * t_res / 1e9, p5 * t_res / 1e9) )
 
                         if p27 == 0:
                             freq_axis, abs_values = fft.fft(x_axis, data_x, data_y, t_res * 1)
                             m_val = round( np.amax( abs_values ), 2 )
-                            general.plot_1d('FFT', freq_axis, abs_values, xname = 'Offset', label = 'FFT', \
-                                                      xscale = 'MHz', yscale = 'A.U.', text = 'Max ' + str(m_val))
+                            general.plot_1d('FFT', freq_axis * 1e6, abs_values, xname = 'Offset', label = 'FFT', \
+                                                      xscale = 'Hz', yscale = 'A.U.', text = 'Max ' + str(m_val))
                         else:
                             if p31 > len( data_x ) - 0.4 * p1:
                                 p31 = len( data_x ) - 0.8 * p1
                                 general.message('Maximum length of the data achieved. A number of drop points was corrected.')
                             # fixed resolution of digitizer; 2 ns
                             freq, fft_x, fft_y = fft.fft( x_axis[p31:], data_x[p31:], data_y[p31:], t_res * 1, re = 'True' )
-                            data_fft = fft.ph_correction( freq, fft_x, fft_y, p28, p29, p30 )
-                            general.plot_1d('FFT', freq, ( data_fft[0], data_fft[1] ), xname = 'Offset', xscale = 'MHz', \
+                            data_fft = fft.ph_correction( freq * 1e6, fft_x, fft_y, p28, p29, p30 )
+                            general.plot_1d('FFT', freq, ( data_fft[0], data_fft[1] ), xname = 'Offset', xscale = 'Hz', \
                                                        yscale = 'A.U.', label = 'FFT')
 
                 self.command = 'start'

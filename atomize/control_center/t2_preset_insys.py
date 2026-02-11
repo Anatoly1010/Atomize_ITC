@@ -471,7 +471,7 @@ class Worker(QWidget):
                 pb.pulser_close()
 
                 now = datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")
-                w = 25
+                w = 30
 
                 # Data saving
                 header = (
