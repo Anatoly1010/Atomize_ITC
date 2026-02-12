@@ -129,8 +129,8 @@ class MainWindow(QMainWindow):
             combo.setStyleSheet("QComboBox { color : rgb(193, 202, 227); selection-color: rgb(211, 194, 78); }")
 
         # ---- Text Edits ----
-        text_edit = [("CW", "text_edit_exp_name", "cur_exp_name", self.curve_name),
-                     ("exp1", "text_edit_curve", "cur_curve_name", self.exp_name)
+        text_edit = [("CW", "text_edit_exp_name", "cur_exp_name", self.exp_name),
+                     ("exp1", "text_edit_curve", "cur_curve_name", self.curve_name)
                     ]
 
         for text, attr_name, par_name, func in text_edit:

@@ -195,7 +195,7 @@ class MainWindow(QMainWindow):
         """
         A function to change set point
         """
-        #self.read_no_set_field()
+        self.read_no_set_field()
         self.field = float( self.Set_point.value() )
         self.write_field(self.field)
 
