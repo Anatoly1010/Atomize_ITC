@@ -8,10 +8,10 @@ import datetime
 import socket
 import numpy as np
 from multiprocessing import Process, Pipe
-from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QLabel, QDoubleSpinBox, QSpinBox, QPushButton, QTextEdit, QGridLayout, QFrame
+from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QLabel, QDoubleSpinBox, QSpinBox, QPushButton, QTextEdit, QGridLayout, QFrame, QProgressBar
 from PyQt6.QtGui import QIcon
-from PyQt6.QtCore import Qt
-import atomize.control_center.status_poller as pol
+from PyQt6.QtCore import Qt, QTimer
+#import atomize.control_center.status_poller as pol
 
 class MainWindow(QMainWindow):
     """
@@ -35,8 +35,11 @@ class MainWindow(QMainWindow):
         We need a different thread here, since PyQt GUI applications have a main thread of execution that runs the event loop and GUI. If you launch a long-running task in this thread, then your GUI will freeze until the task terminates. During that time, the user won’t be able to interact with the application
         """
         self.worker = Worker()
-        self.poller = pol.StatusPoller()
-        self.poller.status_received.connect(self.update_gui_status)
+        #self.poller = pol.StatusPoller()
+        #self.poller.status_received.connect(self.update_gui_status)
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.check_messages)
+
 
     def design(self):
 
@@ -60,10 +63,11 @@ class MainWindow(QMainWindow):
         centralwidget.setLayout(gridLayout)
         
         # ---- Labels & Inputs ----
-        labels = [("Pi/2 Length", "label_1"), ("Tau", "label_2"), ("T", "label_3"), ("Time Step", "label_4"), ("Repetition Rate", "label_5"), ("Magnetic Field", "label_6"), ("Points", "label_7"), ("Acquisitions", "label_8"), ("Number of Scans", "label_9"), ("Experiment Name", "label_10"), ("Curve Name", "label_11")]
+        labels = [("Pi/2 Length", "label_1"), ("Tau", "label_2"), ("T", "label_3"), ("Time Step", "label_4"), ("Repetition Rate", "label_5"), ("Magnetic Field", "label_6"), ("Points", "label_7"), ("Acquisitions", "label_8"), ("Number of Scans", "label_9"), ("Experiment Name", "label_10"), ("Curve Name", "label_11"), ("Progress", "label_12")]
 
         for name, attr_name in labels:
             lbl = QLabel(name)
+            lbl.setFixedSize(180, 26)
             setattr(self, attr_name, lbl)
             lbl.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
 
@@ -140,6 +144,34 @@ class MainWindow(QMainWindow):
             line.setLineWidth(2)
             return line
 
+        # ---- Progress Bar ----
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setFixedSize(130, 15)
+        self.progress_bar.setTextVisible(True)
+        #self.progress_bar.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.progress_bar.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+
+        self.progress_bar.setStyleSheet("""
+            QProgressBar {
+                border: 1px solid rgb(83, 83, 117);
+                border-radius: 4px;
+                background-color: rgb(42, 42, 64);
+                color: rgb(211, 194, 78);
+                font-weight: bold;
+                text-align: right; 
+                margin-right: 40px;
+                height: 20px;
+            }
+
+            QProgressBar::chunk {
+                background-color: rgb(193, 202, 227);
+                border-radius: 2px;
+            }
+        """)
+
+
         # ---- Layout placement ----
         gridLayout.addWidget(self.label_1, 0, 0)
         gridLayout.addWidget(self.box_length, 0, 1)
@@ -175,12 +207,17 @@ class MainWindow(QMainWindow):
 
         gridLayout.addWidget(hline(), 14, 0, 1, 2)
 
-        gridLayout.addWidget(self.button_start, 15, 0)
-        gridLayout.addWidget(self.button_stop, 16, 0)
-        gridLayout.addWidget(self.button_off, 17, 0)
+        gridLayout.addWidget(self.label_11, 15, 0)
+        gridLayout.addWidget(self.progress_bar, 15, 1)
 
-        gridLayout.setRowStretch(17, 2)
-        gridLayout.setColumnStretch(17, 2)
+        gridLayout.addWidget(hline(), 16, 0, 1, 2)
+
+        gridLayout.addWidget(self.button_start, 17, 0)
+        gridLayout.addWidget(self.button_stop, 18, 0)
+        gridLayout.addWidget(self.button_off, 19, 0)
+
+        gridLayout.setRowStretch(20, 2)
+        gridLayout.setColumnStretch(20, 2)
 
     def round_to_closest(self, x, y):
         """
@@ -202,11 +239,14 @@ class MainWindow(QMainWindow):
         A function to do some actions when the main window is closing.
         """
         try:
+            self.timer.stop()
             self.parent_conn.send('exit')
         except BrokenPipeError:
-            self.message('Experimental script is not running')
+            pass
+            #self.message('Experimental script is not running')
         except AttributeError:
-            self.message('Experimental script is not running')
+            pass
+            #self.message('Experimental script is not running')
         self.exp_process.join()
 
     def quit(self):
@@ -282,10 +322,12 @@ class MainWindow(QMainWindow):
          A function to turn off a program.
         """
         try:
+            self.progress_bar.setValue(0)        
+            self.timer.stop()
             self.parent_conn.send('exit')
             self.exp_process.join()
         except AttributeError:
-            self.message('Experimental script is not running')
+            #self.message('Experimental script is not running')
             sys.exit()
 
         sys.exit()
@@ -295,6 +337,8 @@ class MainWindow(QMainWindow):
         A function to stop script
         """
         try:
+            self.progress_bar.setValue(0)        
+            self.timer.stop()
             self.parent_conn.send( 'exit' )
             self.exp_process.join()
         except AttributeError:
@@ -329,13 +373,16 @@ class MainWindow(QMainWindow):
         self.exp_process = Process( target = self.worker.exp_on, args = ( self.child_conn, self.cur_curve_name, self.cur_exp_name, self.cur_delta, self.cur_length, self.cur_step, self.cur_rep_rate, self.cur_scan, self.cur_field, self.cur_points, self.cur_averages, self.cur_delta_echo, ) )
         
         self.button_start.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(211, 194, 78); border-style: outset; color: rgb(63, 63, 97); font-weight: bold; } ")
+        self.progress_bar.setValue(0)
 
         self.exp_process.start()
         # send a command in a different thread about the current state
         self.parent_conn.send('start')
 
-        self.poller.update_command(self.parent_conn)
-        self.poller.start()
+        #self.poller.update_command(self.parent_conn)
+        #self.poller.start()
+        self.timer.start(100)
+
 
     def message(self, *text):
         sock = socket.socket()
@@ -357,6 +404,34 @@ class MainWindow(QMainWindow):
             self.button_start.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; } ")
         else:
             pass
+
+    def check_messages(self):
+
+        while self.parent_conn.poll():
+            try:
+                msg_type, data = self.parent_conn.recv()
+                
+                if msg_type == 'Status':
+                    self.progress_bar.setValue(int(data))
+                else:
+                    self.timer.stop()
+                    self.progress_bar.setValue(0)
+                    self.message(data)
+                    self.button_start.setStyleSheet("""
+                        QPushButton {
+                            border-radius: 4px; 
+                            background-color: rgb(63, 63, 97); 
+                            border-style: outset; 
+                            color: rgb(193, 202, 227); 
+                            font-weight: bold; 
+                        }
+                    """)
+            except EOFError:
+                self.timer.stop()
+                break
+            except Exception as e:
+                break
+
 
 # The worker class that run the digitizer in a different thread
 class Worker(QWidget):
@@ -462,7 +537,8 @@ class Worker(QWidget):
                             data[0], data[1] = pb.digitizer_get_curve( POINTS, PHASES, current_scan = k, total_scan = SCANS, integral = True )
 
                         pb.pulser_shift()
-
+                        conn.send( ('Status', int( 100 * (( k - 1 ) * POINTS + j + 1) / POINTS / SCANS)) )
+                        
                         # check our polling data
                         if self.command[0:2] == 'SC':
                             SCANS = int( self.command[2:] )

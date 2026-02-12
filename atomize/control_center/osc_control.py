@@ -59,6 +59,7 @@ class MainWindow(QMainWindow):
 
         for name, attr_name in labels:
             lbl = QLabel(name)
+            lbl.setFixedSize(180, 26)
             setattr(self, attr_name, lbl)
             lbl.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
 

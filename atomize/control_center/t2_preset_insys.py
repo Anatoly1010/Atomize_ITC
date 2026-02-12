@@ -66,7 +66,7 @@ class MainWindow(QMainWindow):
 
         for name, attr_name in labels:
             lbl = QLabel(name)
-            lbl.setFixedHeight(26)
+            lbl.setFixedSize(180, 26)
             setattr(self, attr_name, lbl)
             lbl.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
 
@@ -519,7 +519,7 @@ class Worker(QWidget):
                             data[0], data[1] = pb.digitizer_get_curve( POINTS, PHASES, current_scan = k, total_scan = SCANS, integral = True )
 
                         pb.pulser_shift()
-                        conn.send( ('Status', int( 100 * (k * POINTS + j + 1) / POINTS / SCANS)) )
+                        conn.send( ('Status', int( 100 * (( k - 1 ) * POINTS + j + 1) / POINTS / SCANS)) )
 
                         # check our polling data
                         if self.command[0:2] == 'SC':

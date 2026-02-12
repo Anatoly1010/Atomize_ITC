@@ -66,7 +66,7 @@ class MainWindow(QMainWindow):
 
         for name, attr_name in labels:
             lbl = QLabel(name)
-            lbl.setFixedHeight(26)            
+            lbl.setFixedSize(180, 26)
             setattr(self, attr_name, lbl)
             lbl.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
 
@@ -531,7 +531,7 @@ class Worker(QWidget):
                             self.command = conn.recv()
 
                         pb.pulser_shift()
-                        conn.send( ('Status', int( 100 * (k * POINTS + j + 1) / POINTS / SCANS)) )
+                        conn.send( ('Status', int( 100 * ((k - 1) * POINTS + j + 1) / POINTS / SCANS)) )
 
                     general.plot_1d(p2, x_axis, ( data[0], data[1] ), xname = 'Field', xscale = 'G', yname = 'Area', yscale = 'A.U.', label = p1, text = 'Scan / Field: ' + str(k) + ' / ' + str(field))
 
