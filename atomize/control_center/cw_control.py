@@ -11,7 +11,7 @@ from multiprocessing import Process, Pipe
 from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QLabel, QDoubleSpinBox, QSpinBox, QComboBox, QPushButton, QTextEdit, QGridLayout, QFrame, QCheckBox, QProgressBar
 from PyQt6.QtGui import QIcon
 from PyQt6.QtCore import Qt, QTimer
-import atomize.control_center.status_poller as pol
+#import atomize.control_center.status_poller as pol
 
 class MainWindow(QMainWindow):
     """
@@ -64,6 +64,7 @@ class MainWindow(QMainWindow):
 
         for name, attr_name in labels:
             lbl = QLabel(name)
+            lbl.setFixedHeight(26)
             setattr(self, attr_name, lbl)
             lbl.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
 
@@ -205,9 +206,10 @@ class MainWindow(QMainWindow):
         self.progress_bar = QProgressBar()
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(0)
-        self.progress_bar.setFixedSize(130, 26)
-        self.progress_bar.setTextVisible(False)
-        self.progress_bar.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.progress_bar.setFixedSize(130, 15)
+        self.progress_bar.setTextVisible(True)
+        #self.progress_bar.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.progress_bar.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
         self.progress_bar.setStyleSheet("""
             QProgressBar {
@@ -216,14 +218,14 @@ class MainWindow(QMainWindow):
                 background-color: rgb(42, 42, 64);
                 color: rgb(211, 194, 78);
                 font-weight: bold;
-                text-align: center;
+                text-align: right; 
+                margin-right: 40px;
                 height: 20px;
             }
 
             QProgressBar::chunk {
                 background-color: rgb(193, 202, 227);
                 border-radius: 2px;
-                color: rgb(42, 42, 64);
             }
         """)
 
@@ -289,11 +291,14 @@ class MainWindow(QMainWindow):
         A function to do some actions when the main window is closing.
         """
         try:
+            self.timer.stop()
             self.parent_conn.send('exit')
         except BrokenPipeError:
-            self.message('Experimental script is not running')
+            pass
+            #self.message('Experimental script is not running')
         except AttributeError:
-            self.message('Experimental script is not running')
+            pass
+            #self.message('Experimental script is not running')
         self.exp_process.join()
 
     def quit(self):
@@ -369,8 +374,8 @@ class MainWindow(QMainWindow):
         """
          A function to turn off a program.
         """
-        self.timer.stop()
         try:
+            self.timer.stop()
             self.parent_conn.send('exit')
             self.exp_process.join()
         except AttributeError:
@@ -418,19 +423,20 @@ class MainWindow(QMainWindow):
         else:
             pass
 
-
     def stop(self):
         """
         A function to stop script
         """
-        self.progress_bar.setValue(0)
-        self.timer.stop()
         try:
+            self.progress_bar.setValue(0)
+            self.timer.stop()
+
             self.button_start.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }  ")
             self.parent_conn.send( 'exit' )
             self.exp_process.join()
         except AttributeError:
-            self.message('Experimental script is not running')
+            pass
+            #self.message('Experimental script is not running')
    
     def start(self):
         """
@@ -592,7 +598,10 @@ class Worker(QWidget):
                         elif p10 == 1:
                             data[i] = ( data[i] * (2*j - 2) + sr860.lock_in_get_data() ) / (2*j - 1)
 
-                        conn.send( ('Status', int(100 * (i + 1) / points)) )
+                        if p10 == 0:
+                            conn.send( ('Status', int( 100 * ((j - 1) * points + i + 1) / points / SCANS)) )
+                        elif p10 == 1:
+                            conn.send( ('Status', int( 100 * ((2*j - 2) * points + i + 1) / points / SCANS / 2)) )
 
                         process = general.plot_1d( p2, x_axis, data, xname = 'Field',
                             xscale = 'G', yname = 'Intensity', yscale = 'V', label = p1, 
@@ -630,6 +639,8 @@ class Worker(QWidget):
                             field = round( (-FIELD_STEP + field), 3 )
                             itc_fc.magnet_field(field) #, calibration = 'True')
                             
+                            conn.send( ('Status', int( 100 * ((2*j - 1) * points - i + points) / points / SCANS / 2)) )
+
                             data[i] = ( data[i] * (2*j - 1) + sr860.lock_in_get_data() ) / (2*j)
 
                             process = general.plot_1d( p2, x_axis, data, xname = 'Field',
