@@ -109,7 +109,7 @@ class CrosshairPlotWidget(pg.PlotWidget):
                 pass
 
     def toggle_search(self, mouse_event):
-        if mouse_event.double() and self.cross_section == 0:
+        if mouse_event.double():
             if self.cross_section_enabled:
                 self.hide_cross_hair()
             else:
@@ -227,6 +227,14 @@ class CrosshairPlotWidget(pg.PlotWidget):
 
         self.search_mode = True
 
+        # if cross-hair removing / adding again when from cross-section
+        if self.cross_section == 1:
+            self.search_mode = True
+            if self.click_count == 0:
+                self.image_operation = 0
+            elif self.click_count == 1:
+                self.image_operation = 1
+
     def add_cross_hair_zero(self):
         self.h_line = pg.InfiniteLine(angle=0, movable=False)
         self.v_line = pg.InfiniteLine(angle=90, movable=False)
@@ -246,6 +254,8 @@ class CrosshairPlotWidget(pg.PlotWidget):
         self.removeItem(self.h_line)
         self.removeItem(self.v_line)
         self.cross_section_enabled = False
+        if self.cross_section == 1 and self.search_mode == True:
+            self.click_count = (self.click_count + 1 ) % 2
 
     def _fourierTransform(self, x, y):
         # Perform Fourier transform. If x values are not sampled uniformly,
@@ -756,9 +766,9 @@ class CrossSectionDock(CloseableDock):
         self.v_cross_section_widget.search_mode = False
         self.v_cross_section_widget_data = self.v_cross_section_widget.plot([0,0])
 
-        #self.h_cross_section_widget.cross_section = 1
+        # for removing / adding cross-hair again
+        self.h_cross_section_widget.cross_section = 1
         self.v_cross_section_widget.cross_section = 1
-
 
     def setLabels(self, xlabel = "X", ylabel = "Y", zlabel = "Z"):
         self.plot_item.setLabels(bottom=(xlabel,), left=(ylabel,))
@@ -951,11 +961,11 @@ class CrossSectionDock(CloseableDock):
         zval = self.imageItem.image[self.x_cross_index, self.y_cross_index]
         self.h_cross_section_widget_data.setData(xdata, self.imageItem.image[:, self.y_cross_index])
         self.v_cross_section_widget_data.setData(ydata, self.imageItem.image[self.x_cross_index, :])
-
-        if self.v_cross_section_widget.image_operation == 1 and self.h_cross_section_widget.image_operation == 1:
-            self.h_cross_section_widget.v_line.setPos(xdata[self.x_cross_index])
-            self.h_cross_section_widget.h_line.setPos(zval)
+        
+        if self.v_cross_section_widget.image_operation == 1 :
             self.v_cross_section_widget.v_line.setPos(ydata[self.y_cross_index])
             self.v_cross_section_widget.h_line.setPos(zval)
 
-
+        if self.h_cross_section_widget.image_operation == 1:
+            self.h_cross_section_widget.v_line.setPos(xdata[self.x_cross_index])
+            self.h_cross_section_widget.h_line.setPos(zval)

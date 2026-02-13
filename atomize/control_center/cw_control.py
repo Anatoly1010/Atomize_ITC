@@ -623,10 +623,11 @@ class Worker(QWidget):
                         i += 1
 
                     if p10 == 0:
-
-                        while field > START_FIELD:
-                            field = itc_fc.magnet_field( field - initialization_step)
-                            field = field - initialization_step
+                        if j != SCANS:
+                            while field > START_FIELD:
+                                field = itc_fc.magnet_field( field - initialization_step)
+                                field = field - initialization_step
+                            itc_fc.magnet_field( START_FIELD )
 
                     elif p10 == 1:
                         while field > START_FIELD:
@@ -666,9 +667,6 @@ class Worker(QWidget):
             if self.command == 'exit':
                 #general.message(f'Script {p2} finished')
                 sr860.lock_in_sensitivity( '1 V' )
-                while field > START_FIELD:
-                    field = itc_fc.magnet_field( field - initialization_step )
-                    field = field - initialization_step 
 
                 now = datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")
                 w = 30
@@ -693,6 +691,11 @@ class Worker(QWidget):
 
                 file_data, file_param = file_handler.create_file_parameters('.param')
                 file_handler.save_data(file_data, np.c_[x_axis, data], header = header, mode = 'w')
+
+                while field > START_FIELD:
+                    field = itc_fc.magnet_field( field - initialization_step )
+                    field = field - initialization_step 
+                itc_fc.magnet_field( START_FIELD )
 
                 conn.send( ('', f'Script {p2} finished') )
 

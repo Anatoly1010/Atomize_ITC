@@ -1012,13 +1012,14 @@ class Worker(QWidget):
                                 self.command = conn.recv()
 
 
-                    while field > OFFRES_FIELD:
-                        field = bh15.magnet_field( field - initialization_step)
-                        field = field - initialization_step
-                        general.wait('30 ms')
+                    if j != SCANS:
+                        while field > OFFRES_FIELD:
+                            field = bh15.magnet_field( field - initialization_step)
+                            field = field - initialization_step
+                            general.wait('30 ms')
                     
-                    field = bh15.magnet_field( OFFRES_FIELD )
-                    field = OFFRES_FIELD
+                        field = bh15.magnet_field( OFFRES_FIELD )
+                        field = OFFRES_FIELD
                     
                     if p9 == 1 and p11 == 1 and p12 == 0:
                         if j == 1:
