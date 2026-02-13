@@ -84,6 +84,7 @@ class CrosshairPlotWidget(pg.PlotWidget):
         self.image_operation = 0
         self.click_count = 1
         self.axis = ['', '']
+        self.cross_section = 0
 
         self.plot_item = self.getPlotItem()
         self.plot_item.ctrl.fftCheck.toggled.connect(self.on_fft_toggled)
@@ -108,7 +109,7 @@ class CrosshairPlotWidget(pg.PlotWidget):
                 pass
 
     def toggle_search(self, mouse_event):
-        if mouse_event.double():
+        if mouse_event.double() and self.cross_section == 0:
             if self.cross_section_enabled:
                 self.hide_cross_hair()
             else:
@@ -223,6 +224,8 @@ class CrosshairPlotWidget(pg.PlotWidget):
         self.x_cross_index = 0
         self.y_cross_index = 0
         self.cross_section_enabled = True
+
+        self.search_mode = True
 
     def add_cross_hair_zero(self):
         self.h_line = pg.InfiniteLine(angle=0, movable=False)
@@ -736,6 +739,7 @@ class CrossSectionDock(CloseableDock):
         except RuntimeError:
             warnings.warn('Scene not set up, cross section signals not connected')
 
+
         self.y_cross_index = 0
         self.h_cross_section_widget = CrosshairPlotWidget()
         self.h_cross_section_widget.image_operation = 1
@@ -751,6 +755,10 @@ class CrossSectionDock(CloseableDock):
         self.v_cross_section_widget.add_cross_hair_zero()
         self.v_cross_section_widget.search_mode = False
         self.v_cross_section_widget_data = self.v_cross_section_widget.plot([0,0])
+
+        #self.h_cross_section_widget.cross_section = 1
+        self.v_cross_section_widget.cross_section = 1
+
 
     def setLabels(self, xlabel = "X", ylabel = "Y", zlabel = "Z"):
         self.plot_item.setLabels(bottom=(xlabel,), left=(ylabel,))
@@ -950,27 +958,4 @@ class CrossSectionDock(CloseableDock):
             self.v_cross_section_widget.v_line.setPos(ydata[self.y_cross_index])
             self.v_cross_section_widget.h_line.setPos(zval)
 
-
-class MoviePlotDock(CrossSectionDock):
-    def __init__(self, array, *args, **kwargs):
-        super(MoviePlotDock, self).__init__(*args, **kwargs)
-        self.setImage(array)
-        self.tpts = len(array)
-        play_button = QtWidgets.QPushButton("Play")
-        stop_button = QtWidgets.QPushButton("Stop")
-        stop_button.hide()
-        self.addWidget(play_button)
-        self.addWidget(stop_button)
-        self.play_timer = QtCore.QTimer()
-        self.play_timer.setInterval(50)
-        self.play_timer.timeout.connect(self.increment)
-        play_button.clicked.connect(self.play_timer.start)
-        play_button.clicked.connect(play_button.hide)
-        play_button.clicked.connect(stop_button.show)
-        stop_button.clicked.connect(self.play_timer.stop)
-        stop_button.clicked.connect(play_button.show)
-        stop_button.clicked.connect(stop_button.hide)
-
-    def increment(self):
-        self.img_view.setCurrentIndex((self.img_view.currentIndex + 1) % self.tpts)
 
