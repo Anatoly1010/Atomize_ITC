@@ -3,8 +3,6 @@
 
 import os
 import sys
-import time
-import socket
 import traceback
 import numpy as np
 from multiprocessing import Process, Pipe
@@ -49,7 +47,6 @@ class MainWindow(QMainWindow):
         Create a process to interact with an experimental script that will run on a different thread.
         We need a different thread here, since PyQt GUI applications have a main thread of execution that runs the event loop and GUI. If you launch a long-running task in this thread, then your GUI will freeze until the task terminates. During that time, the user won’t be able to interact with the application
         """
-        self.worker = Worker()
         self.poller = pol.StatusPoller()
         self.poller.status_received.connect(self.update_gui_status)
 
@@ -68,7 +65,6 @@ class MainWindow(QMainWindow):
         file_menu.addAction(self.action_save)
 
     def design_tab_1(self):
-        self.destroyed.connect(lambda: self._on_destroyed())
         self.setObjectName("MainWindow")
         self.setWindowTitle("AWG Channel Pulse Control")
         self.setStyleSheet("background-color: rgb(42,42,64);")
@@ -1288,35 +1284,19 @@ class MainWindow(QMainWindow):
     def round_length(self, length):
         return self.add_ns( length )
 
-    ### stop?
-    def _on_destroyed(self):
+    def closeEvent(self, event):
         """
         A function to do some actions when the main window is closing.
         """
-        try:
-            self.parent_conn_dig.send('exit')
-        except BrokenPipeError:
-            self.message('Digitizer is not running')
-        except AttributeError:
-            self.message('Digitizer is not running')
-        #self.digitizer_process.join()
+        event.ignore()
         self.dig_stop()
-
-        # ?
-        ##self.awg.awg_clear()
-        # AWG should be reinitialized after clear; it helps in test regime; self.max_pulse_length
-        ##self.pb.__init__()
-        ##self.awg.awg_setup()
-        ##self.awg.awg_stop()
-        ##self.awg.awg_close()
-        ##self.pb.pulser_stop()
         sys.exit()
 
     def quit(self):
         """
         A function to quit the programm
         """
-        self._on_destroyed()
+        self.dig_stop()
         sys.exit()
 
     def round_to_closest(self, x, y):
@@ -1528,9 +1508,9 @@ class MainWindow(QMainWindow):
         
             self.pb.pulser_clear()
             self.pb.awg_clear()
-            self.pb.pulser_test_flag('test')
-            self.pb.awg_test_flag( 'test' )
-            self.pulse_sequence()
+            ###self.pb.pulser_test_flag('test')
+            ###self.pb.awg_test_flag( 'test' )
+            ###self.pulse_sequence()
 
             self.pb.pulser_test_flag('None')
             self.pb.awg_test_flag( 'None' )
@@ -1605,6 +1585,7 @@ class MainWindow(QMainWindow):
         Create a Pipe for interaction with this thread
         self.param_i are used as parameters for script function
         """
+        worker = Worker()
 
         p1_list = [ self.p1_typ, self.p1_start, self.p1_length, self.ph_1 ]
         p2_list = [ self.p2_start_rect, self.round_length( self.P2_len.value() ) ]
@@ -1614,18 +1595,12 @@ class MainWindow(QMainWindow):
         p6_list = [ self.p6_start_rect, self.round_length( self.P6_len.value() ) ]
         p7_list = [ self.p7_start_rect, self.round_length( self.P7_len.value() ) ]
 
-        p2_awg_list = [ self.p2_typ, self.p2_freq, self.wurst_sweep_cur_2, self.p2_length, self.p2_sigma, self.p2_start, \
-                        self.p2_coef, self.ph_2 ]
-        p3_awg_list = [ self.p3_typ, self.p3_freq, self.wurst_sweep_cur_3, self.p3_length, self.p3_sigma, self.p3_start, \
-                        self.p3_coef, self.ph_3 ]
-        p4_awg_list = [ self.p4_typ, self.p4_freq, self.wurst_sweep_cur_4, self.p4_length, self.p4_sigma, self.p4_start, \
-                        self.p4_coef, self.ph_4 ]
-        p5_awg_list = [ self.p5_typ, self.p5_freq, self.wurst_sweep_cur_5, self.p5_length, self.p5_sigma, self.p5_start, \
-                        self.p5_coef, self.ph_5 ]
-        p6_awg_list = [ self.p6_typ, self.p6_freq, self.wurst_sweep_cur_6, self.p6_length, self.p6_sigma, self.p6_start, \
-                        self.p6_coef, self.ph_6 ]
-        p7_awg_list = [ self.p7_typ, self.p7_freq, self.wurst_sweep_cur_7, self.p7_length, self.p7_sigma, self.p7_start, \
-                        self.p7_coef, self.ph_7 ]
+        p2_awg_list = [ self.p2_typ, self.p2_freq, self.wurst_sweep_cur_2, self.p2_length, self.p2_sigma, self.p2_start, self.p2_coef, self.ph_2 ]
+        p3_awg_list = [ self.p3_typ, self.p3_freq, self.wurst_sweep_cur_3, self.p3_length, self.p3_sigma, self.p3_start, self.p3_coef, self.ph_3 ]
+        p4_awg_list = [ self.p4_typ, self.p4_freq, self.wurst_sweep_cur_4, self.p4_length, self.p4_sigma, self.p4_start, self.p4_coef, self.ph_4 ]
+        p5_awg_list = [ self.p5_typ, self.p5_freq, self.wurst_sweep_cur_5, self.p5_length, self.p5_sigma, self.p5_start, self.p5_coef, self.ph_5 ]
+        p6_awg_list = [ self.p6_typ, self.p6_freq, self.wurst_sweep_cur_6, self.p6_length, self.p6_sigma, self.p6_start,self.p6_coef, self.ph_6 ]
+        p7_awg_list = [ self.p7_typ, self.p7_freq, self.wurst_sweep_cur_7, self.p7_length, self.p7_sigma, self.p7_start, self.p7_coef, self.ph_7 ]
 
         # prevent running two processes
         try:
@@ -1637,12 +1612,14 @@ class MainWindow(QMainWindow):
         self.parent_conn_dig, self.child_conn_dig = Pipe()
         # a process for running function script 
         # sending parameters for initial initialization
-        self.digitizer_process = Process( target = self.worker.dig_on, args = ( self.child_conn_dig, self.decimation, self.l_mode, self.number_averages, \
-                                            self.cur_win_left, self.cur_win_right, p1_list, p2_list, p3_list, p4_list, p5_list, p6_list, p7_list, \
-                                            self.n_wurst_cur, self.repetition_rate.split(' ')[0], self.mag_field, self.fft, self.cur_phase, \
-                                            self.ch0_ampl, self.ch1_ampl, 0, p2_awg_list, p3_awg_list, p4_awg_list, p5_awg_list, \
-                                            p6_awg_list, p7_awg_list, self.quad, self.zero_order, self.first_order, self.second_order, self.p_to_drop, \
-                                            self.b_sech_cur, self.combo_cor, self.combo_synt, 0, ) )
+        self.digitizer_process = Process( target = worker.dig_on, args = ( self.child_conn_dig, 
+            self.decimation, self.l_mode, self.number_averages,  self.cur_win_left, 
+            self.cur_win_right, p1_list, p2_list, p3_list, p4_list, p5_list, p6_list, p7_list, 
+            self.n_wurst_cur, self.repetition_rate.split(' ')[0], self.mag_field, self.fft, 
+            self.cur_phase, self.ch0_ampl, self.ch1_ampl, 0, p2_awg_list, p3_awg_list, p4_awg_list, 
+            p5_awg_list, p6_awg_list, p7_awg_list, self.quad, self.zero_order, 
+            self.first_order, self.second_order, self.p_to_drop, self.b_sech_cur, 
+            self.combo_cor, self.combo_synt, 0, ) )
 
         self.button_update.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(211, 194, 78); border-style: outset; color: rgb(63, 63, 97); font-weight: bold; } ")
                
@@ -1660,20 +1637,16 @@ class MainWindow(QMainWindow):
         sys.exit()
 
     def message(self, *text):
-        sock = socket.socket()
-        sock.connect(('localhost', 9091))
         if len(text) == 1:
-            sock.send(str(text[0]).encode())
-            sock.close()
+            print(f'{text[0]}', flush=True)
         else:
-            sock.send(str(text).encode())
-            sock.close()
+            print(f'{text}', flush=True)
 
     def update_gui_status(self, status_text):
 
         self.poller.wait() 
 
-        if self.parent_conn.poll() == True:
+        if self.parent_conn_dig.poll() == True:
             msg_type, data = self.parent_conn_dig.recv()
             if data != 'Pulses are stopped':
                 self.message(data)
@@ -1684,9 +1657,9 @@ class MainWindow(QMainWindow):
             pass
 
 # The worker class that run the digitizer in a different thread
-class Worker(QWidget):
-    def __init__(self, parent = None):
-        super(Worker, self).__init__(parent)
+class Worker():
+    def __init__(self):
+        super(Worker, self).__init__()
         # initialization of the attribute we use to stop the experimental script
         # when button Stop is pressed
         #from atomize.main.client import LivePlotClient

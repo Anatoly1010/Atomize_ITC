@@ -4,10 +4,9 @@ import time
 import threading
 from pathlib import Path
 from PyQt6 import QtWidgets, uic, QtCore, QtGui
-from PyQt6.QtWidgets import QWidget, QGridLayout, QLabel, QPushButton, QComboBox, QCheckBox, QVBoxLayout
+from PyQt6.QtWidgets import QWidget, QGridLayout, QLabel, QPushButton, QComboBox, QCheckBox, QVBoxLayout, QApplication
 from PyQt6.QtGui import QColor
 from atomize.main.main_window import MainWindow
-import atomize.main.messenger_socket_server as socket_server
 os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "1"
 
 ###
@@ -23,7 +22,7 @@ class MainExtended(MainWindow):
         super().__init__(*args, **kwargs)
         path_to_main = Path(__file__).parent
         self.path_to_main = os.path.join(path_to_main, '..', '..', 'libs')
-        
+
         self.process_tr = QtCore.QProcess(self)
         self.process_osc = QtCore.QProcess(self)
         self.process_osc2 = QtCore.QProcess(self)
@@ -39,38 +38,37 @@ class MainExtended(MainWindow):
         self.process_ed = QtCore.QProcess(self)
         self.process_eseem = QtCore.QProcess(self)
 
+        self.all_processes = [self.process_tr, self.process_osc, 
+            self.process_osc2, self.process_cw, self.process_temp, 
+            self.process_field, self.process_mw, self.process_tune_preset, 
+            self.process_phasing, self.process_awg_phasing, self.process_t2, 
+            self.process_t1, self.process_ed, self.process_eseem
+        ]
+
+        for process in self.all_processes:
+            process.readyReadStandardOutput.connect(self.handle_output_control_center)
+
         if self.system == 'Windows':
-            self.process_tr.setProgram('python.exe')
-            self.process_osc.setProgram('python.exe')
-            self.process_osc2.setProgram('python.exe')
-            self.process_cw.setProgram('python.exe')
-            self.process_temp.setProgram('python.exe')
-            self.process_field.setProgram('python.exe')
-            self.process_mw.setProgram('python.exe')
-            self.process_tune_preset.setProgram('python.exe')
-            self.process_phasing.setProgram('python.exe')
-            self.process_awg_phasing.setProgram('python.exe')
-            self.process_t2.setProgram('python.exe')
-            self.process_t1.setProgram('python.exe')
-            self.process_ed.setProgram('python.exe')
-            self.process_eseem.setProgram('python.exe')
+            for process in self.all_processes:
+                process.setProgram('python.exe')
         elif self.system == 'Linux':
-            self.process_tr.setProgram('python3')
-            self.process_osc.setProgram('python3')
-            self.process_osc2.setProgram('python3')
-            self.process_cw.setProgram('python3')
-            self.process_temp.setProgram('python3')
-            self.process_field.setProgram('python3')
-            self.process_mw.setProgram('python3')
-            self.process_tune_preset.setProgram('python3')
-            self.process_phasing.setProgram('python3')
-            self.process_awg_phasing.setProgram('python3')
-            self.process_t2.setProgram('python3')
-            self.process_t1.setProgram('python3')
-            self.process_ed.setProgram('python3')
-            self.process_eseem.setProgram('python3')
+            for process in self.all_processes:
+                process.setProgram('python3')
 
         self.set_control_center()
+
+    def handle_output_control_center(self):
+
+        sending_process = self.sender()
+        if not sending_process:
+            return
+
+        raw_data = sending_process.readAllStandardOutput().data().decode()
+        if raw_data.startswith("print "):
+            msg = raw_data[6:].strip()
+            self.text_errors.appendPlainText(msg)
+        else:
+            self.text_errors.appendPlainText(raw_data[:-1])
 
     # control tab design
     def set_control_center(self):
@@ -216,56 +214,62 @@ class MainExtended(MainWindow):
         gridlayout.setColumnStretch(6, 3)
         gridlayout.setRowStretch(6, 3)
 
-        bottom_label = QLabel("https://anatoly1010.github.io/atomize_docs/; Version 0.3.0; 27/01/2026")
+        bottom_label = QLabel("https://anatoly1010.github.io/atomize_docs/; Version 0.3.1; 15/02/2026")
         bottom_label.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
         main_layout.addWidget(bottom_label)
 
     # redefined method
-    def _on_destroyed(self):
+    def closeEvent(self, event):
         """
         A function to do some actions when the main window is closing.
         """
-        self.process_python.close()
-        # mod
-        self.process_tr.close()
-        self.process_osc.close()
-        self.process_osc2.close()
-        self.process_cw.close()
-        self.process_temp.close()
-        self.process_field.close()
-        self.process_mw.close()
-        self.process_tune_preset.close()
-        self.process_phasing.close()
-        self.process_awg_phasing.close()
-        self.process_t2.close()
-        self.process_t1.close()
-        self.process_ed.close()
-        self.process_eseem.close()
-        # mod
+        processes = [
+            self.process_python, self.process_tr, self.process_osc, 
+            self.process_osc2, self.process_cw, self.process_temp, 
+            self.process_field, self.process_mw, self.process_tune_preset, 
+            self.process_phasing, self.process_awg_phasing, self.process_t2, 
+            self.process_t1, self.process_ed, self.process_eseem
+        ]
+
+        active_processes = []
+        for p in processes:
+            try:
+                if p and p.state() != QtCore.QProcess.ProcessState.NotRunning:
+                    active_processes.append(p)
+            except AttributeError:
+                pass
+
+        if active_processes:
+            event.ignore()
+            self.text_errors.appendPlainText(f"{len(active_processes)} process is still running. Please terminate it")
+        else:
+            sys.exit()
 
     # redefined method
     def quit(self):
         """
         A function to quit the programm
         """
-        self.process_python.terminate()
-        # mod
-        self.process_tr.terminate()
-        self.process_osc.terminate()
-        self.process_osc2.terminate()
-        self.process_cw.terminate()
-        self.process_temp.terminate()
-        self.process_field.terminate()
-        self.process_mw.terminate()
-        self.process_tune_preset.terminate()
-        self.process_phasing.terminate()
-        self.process_awg_phasing.terminate()
-        self.process_t2.terminate()
-        self.process_t1.terminate()
-        self.process_ed.terminate()
-        self.process_eseem.terminate()
-        # mod
-        sys.exit()
+        processes = [
+            self.process_python, self.process_tr, self.process_osc, 
+            self.process_osc2, self.process_cw, self.process_temp, 
+            self.process_field, self.process_mw, self.process_tune_preset, 
+            self.process_phasing, self.process_awg_phasing, self.process_t2, 
+            self.process_t1, self.process_ed, self.process_eseem
+        ]
+
+        active_processes = []
+        for p in processes:
+            try:
+                if p and p.state() != QtCore.QProcess.ProcessState.NotRunning:
+                    active_processes.append(p)
+            except AttributeError:
+                pass
+
+        if active_processes:
+            self.text_errors.appendPlainText(f"{len(active_processes)} process is still running. Please terminate it")
+        else:
+            sys.exit()
 
     # redefined method
     def start_experiment(self):
@@ -354,7 +358,7 @@ class MainExtended(MainWindow):
             #mod
             #self.process_python.close()
             self.process_python.terminate()
-            time.sleep(4)
+            time.sleep(2)
             self.process_python.close()
             # mod
 
@@ -485,11 +489,6 @@ def main():
     
     app = QtWidgets.QApplication(sys.argv)
     main = MainExtended(ptm = '../../libs')
-    helper = socket_server.Helper()
-    server = socket_server.Socket_server()
-    # to connect a function add_error_message when the signal from the helper will be emitted.
-    helper.changedSignal.connect( main.add_error_message, QtCore.Qt.ConnectionType.QueuedConnection )
-    threading.Thread( target = server.start_messenger_server, args = (helper,), daemon = True ).start()
     main.show()
     sys.exit( app.exec() )
 

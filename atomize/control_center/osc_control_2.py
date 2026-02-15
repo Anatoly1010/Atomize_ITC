@@ -34,7 +34,6 @@ class MainWindow(QMainWindow):
 
     def design(self):
 
-        self.destroyed.connect(lambda: self._on_destroyed())
         self.setObjectName("MainWindow")
         self.setWindowTitle("2012A; IP 192.168.2.22")
         self.setStyleSheet("background-color: rgb(42,42,64);")
@@ -171,17 +170,16 @@ class MainWindow(QMainWindow):
         gridLayout.setRowStretch(15, 2)
         gridLayout.setColumnStretch(15, 2)
 
-    def _on_destroyed(self):
-        """
-        A function to do some actions when the main window is closing.
-        """
+    def closeEvent(self, event):
+        event.ignore()
         self.telnet.close()
+        sys.exit()
 
     def quit(self):
         """
         A function to quit the programm
         """
-        self._on_destroyed()
+        self.telnet.close()
         sys.exit()
 
     def trigger_channel(self):

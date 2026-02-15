@@ -3,14 +3,12 @@
 
 import os
 import sys
-import random
-import datetime
-import socket
 import numpy as np
 from multiprocessing import Process, Pipe
 from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QLabel, QDoubleSpinBox, QSpinBox, QPushButton, QTextEdit, QGridLayout, QFrame, QProgressBar
 from PyQt6.QtGui import QIcon
 from PyQt6.QtCore import Qt, QTimer
+import atomize.general_modules.csv_opener_saver as openfile
 #import atomize.control_center.status_poller as pol
 
 class MainWindow(QMainWindow):
@@ -29,20 +27,22 @@ class MainWindow(QMainWindow):
         #####
 
         self.design()
+        self.exit_clicked = 0
 
         """
         Create a process to interact with an experimental script that will run on a different thread.
         We need a different thread here, since PyQt GUI applications have a main thread of execution that runs the event loop and GUI. If you launch a long-running task in this thread, then your GUI will freeze until the task terminates. During that time, the user won’t be able to interact with the application
         """
-        self.worker = Worker()
         #self.poller = pol.StatusPoller()
         #self.poller.status_received.connect(self.update_gui_status)
         self.timer = QTimer()
         self.timer.timeout.connect(self.check_messages)
+        self.monitor_timer = QTimer()
+        self.monitor_timer.timeout.connect(self.check_process_status)
+        self.file_handler = openfile.Saver_Opener()
 
     def design(self):
 
-        self.destroyed.connect(lambda: self._on_destroyed())
         self.setObjectName("MainWindow")
         self.setWindowTitle("T2 Measurement")
         self.setStyleSheet("background-color: rgb(42,42,64);")
@@ -230,26 +230,15 @@ class MainWindow(QMainWindow):
             doubleBox.setValue( current )
         return doubleBox.value()
 
-    def _on_destroyed(self):
-        """
-        A function to do some actions when the main window is closing.
-        """
-        try:
-            self.timer.stop()
-            self.parent_conn.send('exit')
-        except BrokenPipeError:
-            pass
-            #self.message('Experimental script is not running')
-        except AttributeError:
-            pass
-            #self.message('Experimental script is not running')
-        self.exp_process.join()
+    def closeEvent(self, event):
+        event.ignore()
+        self.turn_off()
 
     def quit(self):
         """
         A function to quit the programm
         """
-        self._on_destroyed()
+        self.turn_off()
         sys.exit()
 
     def curve_name(self):
@@ -309,26 +298,35 @@ class MainWindow(QMainWindow):
         """
          A function to turn off a program.
         """
+        self.exit_clicked = 1
         try:
-            self.progress_bar.setValue(0)
-            self.timer.stop()
-            self.parent_conn.send('exit')
-            self.exp_process.join()
+            self.parent_conn.send( 'exit' )
+            self.monitor_timer.start(200)
         except AttributeError:
-            #self.message('Experimental script is not running')
             sys.exit()
+            #self.message('Experimental script is not running')
 
-        sys.exit()
+    def check_process_status(self):
+        if self.exp_process.is_alive():
+            return
+        
+        self.monitor_timer.stop()
+        self.exp_process.join() 
+        self.timer.stop()
+        self.progress_bar.setValue(0)
+        self.button_start.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }  ")
+        
+        if self.exit_clicked == 1:
+            sys.exit()
 
     def stop(self):
         """
         A function to stop script
         """
         try:
-            self.progress_bar.setValue(0)
-            self.timer.stop()
             self.parent_conn.send( 'exit' )
-            self.exp_process.join()
+            self.monitor_timer.start(200)
+
         except AttributeError:
             pass
             #self.message('Experimental script is not running')
@@ -340,6 +338,7 @@ class MainWindow(QMainWindow):
         Create a Pipe for interaction with this thread
         self.param_i are used as parameters for script function
         """
+        worker = Worker()
         # prevent running two processes
         try:
             if self.exp_process.is_alive() == True:
@@ -357,7 +356,7 @@ class MainWindow(QMainWindow):
         self.parent_conn, self.child_conn = Pipe()
         # a process for running function script 
         # sending parameters for initial initialization
-        self.exp_process = Process( target = self.worker.exp_on, args = ( self.child_conn, self.cur_curve_name, self.cur_exp_name, self.cur_delta, self.cur_length, self.cur_step, self.cur_rep_rate, self.cur_scan, self.cur_field, self.cur_points, self.cur_averages, ) )
+        self.exp_process = Process( target = worker.exp_on, args = ( self.child_conn, self.cur_curve_name, self.cur_exp_name, self.cur_delta, self.cur_length, self.cur_step, self.cur_rep_rate, self.cur_scan, self.cur_field, self.cur_points, self.cur_averages, ) )
         
         self.button_start.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(211, 194, 78); border-style: outset; color: rgb(63, 63, 97); font-weight: bold; } ")
         self.progress_bar.setValue(0)
@@ -371,14 +370,10 @@ class MainWindow(QMainWindow):
         self.timer.start(100)
 
     def message(self, *text):
-        sock = socket.socket()
-        sock.connect(('localhost', 9091))
         if len(text) == 1:
-            sock.send(str(text[0]).encode())
-            sock.close()
+            print(f'{text[0]}', flush=True)
         else:
-            sock.send(str(text).encode())
-            sock.close()
+            print(f'{text}', flush=True)
 
     def update_gui_status(self, status_text):
 
@@ -399,6 +394,8 @@ class MainWindow(QMainWindow):
                 
                 if msg_type == 'Status':
                     self.progress_bar.setValue(int(data))
+                elif msg_type == 'Open':
+                    self.open_dialog()
                 else:
                     self.timer.stop()
                     self.progress_bar.setValue(0)
@@ -418,14 +415,22 @@ class MainWindow(QMainWindow):
             except Exception as e:
                 break
 
+    def open_dialog(self):
+        file_data = self.file_handler.create_file_dialog(multiprocessing = True)
+
+        if file_data:
+            self.parent_conn.send( 'FL' + str( file_data ) )
+        else:
+            self.parent_conn.send( 'FL' + '' )
+
 # The worker class that run the digitizer in a different thread
-class Worker(QWidget):
-    def __init__(self, parent = None):
-        super(Worker, self).__init__(parent)
+class Worker():
+    def __init__(self):
+        super(Worker, self).__init__()
         # initialization of the attribute we use to stop the experimental script
 
         self.command = 'start'
-                   
+    
     def exp_on(self, conn, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10):
         """
         function that contains experimental script
@@ -448,7 +453,7 @@ class Worker(QWidget):
             import atomize.device_modules.Micran_X_band_MW_bridge_v2 as mwBridge
             import atomize.device_modules.Lakeshore_335 as ls
             import atomize.device_modules.BH_15 as itc
-            import atomize.general_modules.csv_opener_saver_tk_kinter as openfile
+            import atomize.general_modules.csv_opener_saver as openfile
 
             file_handler = openfile.Saver_Opener()
             ls335 = ls.Lakeshore_335()
@@ -570,12 +575,21 @@ class Worker(QWidget):
                     f"2*Tau (ns), I (A.U.), Q (A.U.)"
                 )
 
-                file_data, file_param = file_handler.create_file_parameters('.param')
-                #file_handler.save_header(file_param, header = header, mode = 'w')
+                conn.send(('Open', ''))
+                
+                while True:
+                    if conn.poll():
+                        msg = conn.recv()
+                        if msg.startswith('FL'):
+                            file_data = msg[2:]
+                            break
+                    general.wait('200 ms')
+
 
                 file_handler.save_data(file_data, np.c_[x_axis, data[0], data[1]], header = header, mode = 'w')
 
                 conn.send( ('', f'Script {p2} finished') )
+                general.wait('200 ms')
 
         except BaseException as e:
             exc_info = f"{type(e)} \n{str(e)} \n{traceback.format_exc()}"

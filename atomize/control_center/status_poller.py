@@ -20,5 +20,5 @@ class StatusPoller(QThread):
                 self.status_received.emit('')
                 break
             
-            time.sleep(2) 
+            time.sleep(1) 
 

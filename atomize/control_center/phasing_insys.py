@@ -3,8 +3,6 @@
 
 import os
 import sys
-import time
-import socket
 import traceback
 import numpy as np
 from multiprocessing import Process, Pipe
@@ -47,7 +45,6 @@ class MainWindow(QMainWindow):
         Create a process to interact with an experimental script that will run on a different thread.
         We need a different thread here, since PyQt GUI applications have a main thread of execution that runs the event loop and GUI. If you launch a long-running task in this thread, then your GUI will freeze until the task terminates. During that time, the user won’t be able to interact with the application
         """
-        self.worker = Worker()
         self.poller = pol.StatusPoller()
         self.poller.status_received.connect(self.update_gui_status)
 
@@ -682,6 +679,7 @@ class MainWindow(QMainWindow):
         if txt == 'Nd:YaG':
             self.combo_laser_num = 1
             self.laser_q_switch_delay = 160000
+            self.Rep_rate.setValue(9.9)
         elif txt == 'NovoFEL':
             self.combo_laser_num = 2
             self.laser_q_switch_delay = 0
@@ -969,30 +967,19 @@ class MainWindow(QMainWindow):
 
         return length
 
-    # stop?
-    def _on_destroyed(self):
+    def closeEvent(self, event):
         """
         A function to do some actions when the main window is closing.
         """
-        try:
-            self.parent_conn_dig.send('exit')
-        except BrokenPipeError:
-            pass
-            #self.message('Digitizer is not running')
-        except AttributeError:
-            pass
-            #self.message('Digitizer is not running')
-        self.digitizer_process.join()
+        event.ignore()
         self.dig_stop()
-        
-        ##self.pb.pulser_stop()
-        #sys.exit()
+        sys.exit()
 
     def quit(self):
         """
         A function to quit the programm
         """
-        self._on_destroyed()
+        self.dig_stop()
         sys.exit()
 
     def round_to_closest(self, x, y):
@@ -1102,7 +1089,7 @@ class MainWindow(QMainWindow):
         else:
             if self.combo_laser_num == 1:
                 self.pb.pulser_repetition_rate( '9.9 Hz' )
-                self.Rep_rate.setValue(9.9)
+                ###self.Rep_rate.setValue(9.9)
             elif self.combo_laser_num == 2:
                 self.pb.pulser_repetition_rate( self.repetition_rate )
 
@@ -1161,7 +1148,7 @@ class MainWindow(QMainWindow):
         # TEST RUN
         self.errors.clear()
         self.parent_conn, self.child_conn = Pipe()
-        # a process for running test
+        # dangerous because of self
         self.test_process = Process( target = self.pulser_test, args = ( self.child_conn, 'test', ) )
 
         self.button_update.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(193, 202, 227); border-style: outset; color: rgb(63, 63, 97); font-weight: bold; } ")
@@ -1181,11 +1168,10 @@ class MainWindow(QMainWindow):
             self.errors.appendPlainText(data)
         else:
             #self.test_process.join()
-        
+            
             self.pb.pulser_clear()
-            self.pb.pulser_test_flag('test')
-            self.pulse_sequence()
-
+            ###self.pb.pulser_test_flag('test')
+            ###self.pulse_sequence()
             self.pb.pulser_test_flag('None')
 
             self.pb.adc_window = 0
@@ -1202,7 +1188,7 @@ class MainWindow(QMainWindow):
 
         except BaseException as e:
             exc_info = f"{type(e)} \n{str(e)} \n{traceback.format_exc()}"
-            conn.send( ('Error', exc_info) )        
+            conn.send( ('Error', exc_info) )
 
     def dig_stop(self):
         """
@@ -1249,7 +1235,7 @@ class MainWindow(QMainWindow):
         Create a Pipe for interaction with this thread
         self.param_i are used as parameters for script function
         """
-
+        worker = Worker()
 
         if self.laser_flag != 1:
             p1_list = [ self.p1_typ, self.p1_start, self.p1_length, self.ph_1 ]
@@ -1278,10 +1264,12 @@ class MainWindow(QMainWindow):
         self.parent_conn_dig, self.child_conn_dig = Pipe()
         # a process for running function script 
         # sending parameters for initial initialization
-        self.digitizer_process = Process( target = self.worker.dig_on, args = ( self.child_conn_dig, self.decimation, self.l_mode, self.number_averages, \
-                                            self.cur_win_left, self.cur_win_right, p1_list, p2_list, p3_list, p4_list, p5_list, p6_list, p7_list, \
-                                            self.laser_flag, self.repetition_rate.split(' ')[0], self.mag_field, self.fft, self.quad, self.zero_order, self.first_order, \
-                                            self.second_order, self.p_to_drop, self.combo_laser_num, self.laser_q_switch_delay, ) )
+        self.digitizer_process = Process( target = worker.dig_on, args = ( self.child_conn_dig,
+            self.decimation, self.l_mode, self.number_averages, self.cur_win_left, 
+            self.cur_win_right, p1_list, p2_list, p3_list, p4_list, p5_list, 
+            p6_list, p7_list, self.laser_flag, self.repetition_rate.split(' ')[0], 
+            self.mag_field, self.fft, self.quad, self.zero_order, self.first_order, 
+            self.second_order, self.p_to_drop, self.combo_laser_num, self.laser_q_switch_delay, ) )
         
         self.button_update.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(211, 194, 78); border-style: outset; color: rgb(63, 63, 97); font-weight: bold; } ")
 
@@ -1295,44 +1283,31 @@ class MainWindow(QMainWindow):
         """
         A function to turn off a programm.
         """
-        try:
-            self.parent_conn_dig.send('exit')
-            self.digitizer_process.join()
-        except AttributeError:
-            pass
-            #self.message('Digitizer is not running')
-            sys.exit()
-
+        self.quit()
         sys.exit()
 
     def message(self, *text):
-        sock = socket.socket()
-        sock.connect(('localhost', 9091))
         if len(text) == 1:
-            sock.send(str(text[0]).encode())
-            sock.close()
+            print(f'{text[0]}', flush=True)
         else:
-            sock.send(str(text).encode())
-            sock.close()
+            print(f'{text}', flush=True)
 
     def update_gui_status(self, status_text):
 
-        self.poller.wait() 
-
-        if self.parent_conn.poll() == True:
+        self.poller.wait()
+        if self.parent_conn_dig.poll() == True:    
             msg_type, data = self.parent_conn_dig.recv()
             if data != 'Pulses are stopped':
                 self.message(data)
                 self.errors.appendPlainText(data)
-            
             self.button_update.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; } ")
         else:
             pass
 
 # The worker class that run the digitizer in a different thread
-class Worker(QWidget):
-    def __init__(self, parent = None):
-        super(Worker, self).__init__(parent)
+class Worker():
+    def __init__(self):
+        super(Worker, self).__init__()
         # initialization of the attribute we use to stop the experimental script
         # when button Stop is pressed
         #from atomize.main.client import LivePlotClient
@@ -1349,6 +1324,7 @@ class Worker(QWidget):
         import traceback
 
         try:
+            import time
             import numpy as np
             import atomize.general_modules.general_functions as general
             import atomize.device_modules.Insys_FPGA as pb_pro

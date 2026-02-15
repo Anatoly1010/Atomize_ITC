@@ -3,14 +3,13 @@
 
 import os
 import sys
-import random
-import datetime
-import socket
+import time
 import numpy as np
 from multiprocessing import Process, Pipe
 from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QLabel, QDoubleSpinBox, QSpinBox, QComboBox, QPushButton, QTextEdit, QGridLayout, QFrame, QCheckBox, QProgressBar
 from PyQt6.QtGui import QIcon
 from PyQt6.QtCore import Qt, QTimer
+import atomize.general_modules.csv_opener_saver as openfile
 #import atomize.control_center.status_poller as pol
 
 class MainWindow(QMainWindow):
@@ -25,21 +24,22 @@ class MainWindow(QMainWindow):
 
         self.two_side = 0
         self.design()
-
+        self.exit_clicked = 0
         """
         Create a process to interact with an experimental script that will run on a different thread.
         We need a different thread here, since PyQt GUI applications have a main thread of execution that runs the event loop and GUI. If you launch a long-running task in this thread, then your GUI will freeze until the task terminates. During that time, the user won’t be able to interact with the application
         """
-        self.worker = Worker()
         #self.poller = pol.StatusPoller()
         #self.poller.status_received.connect(self.update_gui_status)        
         
         self.timer = QTimer()
         self.timer.timeout.connect(self.check_messages)
+        self.monitor_timer = QTimer()
+        self.monitor_timer.timeout.connect(self.check_process_status)
+        self.file_handler = openfile.Saver_Opener()
 
     def design(self):
 
-        self.destroyed.connect(lambda: self._on_destroyed())
         self.setObjectName("MainWindow")
         self.setWindowTitle("CW EPR")
         self.setStyleSheet("background-color: rgb(42,42,64);")
@@ -286,26 +286,15 @@ class MainWindow(QMainWindow):
         elif self.checkbox_back_scan.checkState().value == 0: # unchecked
             self.two_side = 0
 
-    def _on_destroyed(self):
-        """
-        A function to do some actions when the main window is closing.
-        """
-        try:
-            self.timer.stop()
-            self.parent_conn.send('exit')
-        except BrokenPipeError:
-            pass
-            #self.message('Experimental script is not running')
-        except AttributeError:
-            pass
-            #self.message('Experimental script is not running')
-        self.exp_process.join()
+    def closeEvent(self, event):
+        event.ignore()
+        self.turn_off()
 
     def quit(self):
         """
         A function to quit the programm
         """
-        self._on_destroyed()
+        self.turn_off()
         sys.exit()
 
     def curve_name(self):
@@ -374,16 +363,13 @@ class MainWindow(QMainWindow):
         """
          A function to turn off a program.
         """
+        self.exit_clicked = 1
         try:
-            self.timer.stop()
-            self.parent_conn.send('exit')
-            self.exp_process.join()
+            self.parent_conn.send( 'exit' )
+            self.monitor_timer.start(200)
         except AttributeError:
-            pass
-            #self.message('Experimental script is not running')
             sys.exit()
-
-        sys.exit()
+            #self.message('Experimental script is not running')
 
     def check_messages(self):
 
@@ -393,10 +379,13 @@ class MainWindow(QMainWindow):
                 
                 if msg_type == 'Status':
                     self.progress_bar.setValue(int(data))
+                elif msg_type == 'Open':
+                    self.open_dialog()
                 else:
                     self.timer.stop()
                     self.progress_bar.setValue(0)
-                    self.message(data)
+                    if msg_type != 'test':
+                        self.message(data)
                     self.button_start.setStyleSheet("""
                         QPushButton {
                             border-radius: 4px; 
@@ -418,22 +407,32 @@ class MainWindow(QMainWindow):
 
         if self.parent_conn.poll() == True:
             msg_type, data = self.parent_conn.recv()
-            self.message(data)            
+            self.message(data)    
             self.button_start.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; } ")   
         else:
             pass
+
+    def check_process_status(self):
+        if self.exp_process.is_alive():
+            return
+        
+        self.monitor_timer.stop()
+        self.exp_process.join()
+        self.timer.stop()
+        self.progress_bar.setValue(0)
+        self.button_start.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }  ")
+
+        if self.exit_clicked == 1:
+            sys.exit()
 
     def stop(self):
         """
         A function to stop script
         """
         try:
-            self.progress_bar.setValue(0)
-            self.timer.stop()
-
-            self.button_start.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }  ")
             self.parent_conn.send( 'exit' )
-            self.exp_process.join()
+            self.monitor_timer.start(200)
+
         except AttributeError:
             pass
             #self.message('Experimental script is not running')
@@ -445,6 +444,8 @@ class MainWindow(QMainWindow):
         Create a Pipe for interaction with this thread
         self.param_i are used as parameters for script function
         """
+        worker = Worker()
+
         # prevent running two processes
         try:
             if self.exp_process.is_alive() == True:
@@ -462,7 +463,7 @@ class MainWindow(QMainWindow):
         self.parent_conn, self.child_conn = Pipe()
         # a process for running function script 
         # sending parameters for initial initialization
-        self.exp_process = Process( target = self.worker.exp_on, args = ( self.child_conn, self.cur_curve_name, self.cur_exp_name, self.cur_end_field, self.cur_start_field, self.cur_step, self.cur_lock_ampl, self.cur_scan, self.cur_tc, self.cur_sens, self.two_side, ) )
+        self.exp_process = Process( target = worker.exp_on, args = ( self.child_conn, self.cur_curve_name, self.cur_exp_name, self.cur_end_field, self.cur_start_field, self.cur_step, self.cur_lock_ampl, self.cur_scan, self.cur_tc, self.cur_sens, self.two_side, ) )
         
         self.button_start.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(211, 194, 78); border-style: outset; color: rgb(63, 63, 97); font-weight: bold; } ")
         self.progress_bar.setValue(0)
@@ -477,23 +478,26 @@ class MainWindow(QMainWindow):
         #self.poller.start()
 
     def message(self, *text):
-        sock = socket.socket()
-        sock.connect(('localhost', 9091))
         if len(text) == 1:
-            sock.send(str(text[0]).encode())
-            sock.close()
+            print(f'{text[0]}', flush=True)
         else:
-            sock.send(str(text).encode())
-            sock.close()
+            print(f'{text}', flush=True)
+
+    def open_dialog(self):
+        file_data = self.file_handler.create_file_dialog(multiprocessing = True)        
+
+        if file_data:
+            self.parent_conn.send( 'FL' + str( file_data ) )
+        else:
+            self.parent_conn.send( 'FL' + '' )
 
 # The worker class that run the digitizer in a different thread
-class Worker(QWidget):
-    def __init__(self, parent = None):
-        super(Worker, self).__init__(parent)
+class Worker():
+    def __init__(self):
+        super(Worker, self).__init__()
         # initialization of the attribute we use to stop the experimental script
-
         self.command = 'start'
-                   
+    
     def exp_on(self, conn, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10):
         """
         function that contains experimental script
@@ -510,13 +514,14 @@ class Worker(QWidget):
         import traceback
 
         try:
+            import datetime
             import atomize.general_modules.general_functions as general
             import atomize.device_modules.SR_860 as sr
             #import atomize.device_modules.ITC_FC as itc
             import atomize.device_modules.BH_15 as itc
             import atomize.device_modules.Lakeshore_335 as ls
             import atomize.device_modules.Agilent_53131a as ag
-            import atomize.general_modules.csv_opener_saver_tk_kinter as openfile
+            import atomize.general_modules.csv_opener_saver as openfile
 
             file_handler = openfile.Saver_Opener()
             ag53131a = ag.Agilent_53131a()
@@ -564,14 +569,10 @@ class Worker(QWidget):
             while self.command != 'exit':
                 # Start of experiment
                 while field < START_FIELD:
-                    
                     field = itc_fc.magnet_field( field + initialization_step)
-                    ##field = START_FIELD
-                    general.wait('1000 ms')
+                    field = START_FIELD
 
                 field = itc_fc.magnet_field( START_FIELD )#, calibration = 'True' )
-                general.wait('4000 ms')
-
                 sr860.lock_in_sensitivity( p9 )
 
                 j = 1
@@ -667,7 +668,6 @@ class Worker(QWidget):
             if self.command == 'exit':
                 #general.message(f'Script {p2} finished')
                 sr860.lock_in_sensitivity( '1 V' )
-
                 now = datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")
                 w = 30
 
@@ -689,7 +689,16 @@ class Worker(QWidget):
                     f"Field (G), X (V)"
                 )
 
-                file_data, file_param = file_handler.create_file_parameters('.param')
+                conn.send(('Open', ''))
+                
+                while True:
+                    if conn.poll():
+                        msg = conn.recv()
+                        if msg.startswith('FL'):
+                            file_data = msg[2:]
+                            break
+                    general.wait('200 ms')
+
                 file_handler.save_data(file_data, np.c_[x_axis, data], header = header, mode = 'w')
 
                 while field > START_FIELD:
@@ -698,6 +707,225 @@ class Worker(QWidget):
                 itc_fc.magnet_field( START_FIELD )
 
                 conn.send( ('', f'Script {p2} finished') )
+                general.wait('200 ms')
+
+        except BaseException as e:
+            exc_info = f"{type(e)} \n{str(e)} \n{traceback.format_exc()}"
+            conn.send( ('Error', exc_info) )
+
+    def exp_test(self, conn, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10):
+        """
+        function that contains experimental script
+        """
+        # [                1,                 2,                  3,                    4, ]
+        #self.cur_curve_name, self.cur_exp_name, self.cur_end_field, self.cur_start_field, 
+        # [          5,                 6,              7,           8,             9,     ]
+        #self.cur_step, self.cur_lock_ampl, self.cur_scan, self.cur_tc, self.cur_sens, 
+        #           10,         ]
+        #self.two_side,    
+
+        # should be inside dig_on() function;
+        # freezing after digitizer restart otherwise
+        import traceback
+
+        sys.argv = ['', 'test']
+
+        try:
+
+            import datetime
+            import atomize.general_modules.general_functions as general
+            import atomize.device_modules.SR_860 as sr
+            #import atomize.device_modules.ITC_FC as itc
+            import atomize.device_modules.BH_15 as itc
+            import atomize.device_modules.Lakeshore_335 as ls
+            import atomize.device_modules.Agilent_53131a as ag
+            import atomize.general_modules.csv_opener_saver as openfile
+
+            file_handler = openfile.Saver_Opener()
+            ag53131a = ag.Agilent_53131a()
+            ls335 = ls.Lakeshore_335()
+            sr860 = sr.SR_860()
+            #itc_fc = itc.ITC_FC()
+            itc_fc = itc.BH_15()
+
+            # parameters for initial initialization
+            field = p4
+            START_FIELD = p4
+            END_FIELD = p3
+            FIELD_STEP = p5
+            initialization_step = 10
+            SCANS = p7
+            process = 'None'
+
+            #itc_fc.magnet_setup( 100, FIELD_STEP)
+
+            tc_wait = 0
+            raw = p8.split(" ")
+            if int( raw[0] ) > 100 or raw[1] == 's':
+                tc_wait = 1
+
+            points = int( (END_FIELD - START_FIELD) / FIELD_STEP ) + 1
+            data = np.zeros(points)
+            x_axis = np.linspace(START_FIELD, END_FIELD, num = points) 
+
+            sr860.lock_in_time_constant( p8 )
+            sr860.lock_in_sensitivity( '1 V' )
+            sr860.lock_in_ref_amplitude( f'{p6} V' )
+            sr860.lock_in_phase( 159.6 - 0 ) #159.6
+            sr860.lock_in_ref_frequency( '100 kHz' )
+
+            t_start = str( ls335.tc_temperature('A') )
+            
+            ag53131a.freq_counter_digits(8)
+            ag53131a.freq_counter_stop_mode('Digits')
+            
+            #START_FIELD = 3460.2
+            # the idea of automatic and dynamic changing is
+            # sending a new value of repetition rate via self.command
+            # in each cycle we will check the current value of self.command
+            # self.command = 'exit' will stop the digitizer
+            while self.command != 'exit':
+                # Start of experiment
+                while field < START_FIELD:
+                    field = itc_fc.magnet_field( field + initialization_step)
+                    field = START_FIELD
+
+                field = itc_fc.magnet_field( START_FIELD )#, calibration = 'True' )
+                sr860.lock_in_sensitivity( p9 )
+
+                j = 1
+                while j <= SCANS:
+
+                    i = 0
+                    field = START_FIELD
+                    if p10 == 0:
+                        general.wait('2000 ms')
+                    elif p10 == 1:
+                        pass
+
+                    if self.command == 'exit':
+                        break
+
+                    while field <= END_FIELD:
+                        
+                        #if tc_wait == 1:
+                        general.wait( p8 )
+                            #general.wait('10 ms')
+
+                        if p10 == 0:
+                            data[i] = ( data[i] * (j - 1) + sr860.lock_in_get_data() ) / j
+                        elif p10 == 1:
+                            data[i] = ( data[i] * (2*j - 2) + sr860.lock_in_get_data() ) / (2*j - 1)
+
+                        #if p10 == 0:
+                        #    conn.send( ('Status', int( 100 * ((j - 1) * points + i + 1) / points / SCANS)) )
+                        #elif p10 == 1:
+                        #    conn.send( ('Status', int( 100 * ((2*j - 2) * points + i + 1) / points / SCANS / 2)) )
+
+                        process = general.plot_1d( p2, x_axis, data, xname = 'Field',
+                            xscale = 'G', yname = 'Intensity', yscale = 'V', label = p1, 
+                            text = 'Scan / Field: ' + str(j) + ' / ' + str(field), pr = process )
+
+                        field = round( (FIELD_STEP + field), 3 )
+                        itc_fc.magnet_field(field) #, calibration = 'True')
+
+                        # check our polling data
+                        if self.command[0:2] == 'SC':
+                            SCANS = int( self.command[2:] )
+                            self.command = 'start'
+                        elif self.command == 'exit':
+                            break
+                        
+                        if conn.poll() == True:
+                            self.command = conn.recv()
+
+                        i += 1
+
+                    if p10 == 0:
+                        if j != SCANS:
+                            while field > START_FIELD:
+                                field = itc_fc.magnet_field( field - initialization_step)
+                                field = field - initialization_step
+                            itc_fc.magnet_field( START_FIELD )
+
+                    elif p10 == 1:
+                        while field > START_FIELD:
+
+                            i -= 1
+                            #if tc_wait == 1:
+                            general.wait( p8 )
+                                #general.wait('10 ms')
+                            
+                            field = round( (-FIELD_STEP + field), 3 )
+                            itc_fc.magnet_field(field) #, calibration = 'True')
+                            
+                            #conn.send( ('Status', int( 100 * ((2*j - 1) * points - i + points) / points / SCANS / 2)) )
+
+                            data[i] = ( data[i] * (2*j - 1) + sr860.lock_in_get_data() ) / (2*j)
+
+                            process = general.plot_1d( p2, x_axis, data, xname = 'Field',
+                                xscale = 'G', yname = 'Intensity', yscale = 'V', label = p1,
+                                text = 'Scan / Field: ' + str(j) + ' / ' + str(field), 
+                                pr = process )
+
+                            # check our polling data
+                            if self.command[0:2] == 'SC':
+                                SCANS = int( self.command[2:] )
+                                self.command = 'start'
+                            elif self.command == 'exit':
+                                break
+                            
+                            if conn.poll() == True:
+                                self.command = conn.recv()
+                    
+                    j += 1
+
+                # finish succesfully
+                self.command = 'exit'
+
+            if self.command == 'exit':
+                #general.message(f'Script {p2} finished')
+                sr860.lock_in_sensitivity( '1 V' )
+                now = datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")
+                w = 30
+
+                # Data saving
+                header = (
+                    f"{'Date:':<{w}} {now}\n"
+                    f"{'Experiment:':<{w}} Continuous Wave EPR Spectrum\n"
+                    f"{'Start Field:':<{w}} {START_FIELD} G\n"
+                    f"{'End Field:':<{w}} {END_FIELD} G\n"
+                    f"{'Field Step:':<{w}} {FIELD_STEP} G\n"
+                    f"{'Number of Scans:':<{w}} {SCANS}\n"
+                    f"{'Temperature Start Exp:':<{w}} {t_start} K\n"
+                    f"{'Temperature End Exp:':<{w}} {ls335.tc_temperature('A')} K\n"
+                    f"{'Temperature Cernox:':<{w}} {ls335.tc_temperature('B')} K\n"
+                    f"{'Time Constant:':<{w}} {p8}\n"
+                    f"{'Modulation Ampl:':<{w}} {p6} V\n"
+                    f"{'Frequency:':<{w}} {ag53131a.freq_counter_frequency('CH3')}\n"
+                    f"{'-'*50}\n"
+                    f"Field (G), X (V)"
+                )
+                
+                #conn.send(('Open', ''))
+                
+                #while True:
+                #    if conn.poll():
+                #        msg = conn.recv()
+                #        if msg.startswith('FL'):
+                #            file_data = msg[2:]
+                #            break
+                #    general.wait('200 ms')
+
+                #file_handler.save_data(file_data, np.c_[x_axis, data], header = header, mode = 'w')
+
+                while field > START_FIELD:
+                    field = itc_fc.magnet_field( field - initialization_step )
+                    field = field - initialization_step 
+                itc_fc.magnet_field( START_FIELD )
+
+                conn.send( ('test', f'Script {p2} finished') )
+                general.wait('200 ms')
 
         except BaseException as e:
             exc_info = f"{type(e)} \n{str(e)} \n{traceback.format_exc()}"

@@ -31,7 +31,6 @@ class MainWindow(QMainWindow):
 
     def design(self):
 
-        self.destroyed.connect(lambda: self._on_destroyed())
         self.setObjectName("MainWindow")
         self.setWindowTitle("Temperature Control")
         self.setStyleSheet("background-color: rgb(42,42,64);")
@@ -140,17 +139,13 @@ class MainWindow(QMainWindow):
         gridLayout.setRowStretch(4, 2)
         gridLayout.setColumnStretch(4, 2)
 
-    def _on_destroyed(self):
-        """
-        A function to do some actions when the main window is closing.
-        """
-        sys.exit()
+    def closeEvent(self, event):
+        event.accept()
             
     def quit(self):
         """
         A function to quit the programm
         """
-        self._on_destroyed()
         sys.exit()
 
     def heater_range(self):

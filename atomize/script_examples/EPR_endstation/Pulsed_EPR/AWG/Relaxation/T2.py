@@ -7,7 +7,7 @@ import atomize.device_modules.Insys_FPGA as pb_pro
 import atomize.device_modules.Micran_X_band_MW_bridge_v2 as mwBridge
 import atomize.device_modules.Lakeshore_335 as ls
 import atomize.device_modules.BH_15 as bh
-import atomize.general_modules.csv_opener_saver_tk_kinter as openfile
+import atomize.general_modules.csv_opener_saver as openfile
 
 # initialization of the devices
 file_handler = openfile.Saver_Opener()
@@ -158,7 +158,7 @@ header = (
 )
 
 
-file_data, file_param = file_handler.create_file_parameters('.param')
+file_data = file_handler.create_file_dialog()
 
 # Data acquisition
 for k in general.scans(SCANS):

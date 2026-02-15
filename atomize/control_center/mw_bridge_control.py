@@ -62,7 +62,6 @@ class MainWindow(QMainWindow):
 
     def design(self):
 
-        self.destroyed.connect(lambda: self._on_destroyed())
         self.setObjectName("MainWindow")
         self.setWindowTitle("Pulsed Bridge Control")
         self.setStyleSheet("background-color: rgb(42,42,64);")
@@ -267,10 +266,8 @@ class MainWindow(QMainWindow):
         #self.ecc15k.synthetizer_state(txt)
         #self.telemetry_text.appendPlainText( f'Synt2 State: {self.ecc15k.synthetizer_state()}')
 
-    def _on_destroyed(self):
-        """
-        A function to do some actions when the main window is closing.
-        """    
+    def closeEvent(self, event):
+        event.ignore()
         self.initialize_at_exit()
         self.sock.close()
         
@@ -279,8 +276,7 @@ class MainWindow(QMainWindow):
         except ( AttributeError, NameError, TypeError ):
             pass
 
-        #sock.shutdown(socket.SHUT_RDWR)
-        #sock.close()
+        sys.exit()
 
     def quit(self):
         """
@@ -726,12 +722,6 @@ class MainWindow(QMainWindow):
         )
 
         general.message(header)
-
-    def help(self):
-        """
-        A function to open a documentation
-        """
-        pass
 
     def calibration(self, x):
         # approximation curve

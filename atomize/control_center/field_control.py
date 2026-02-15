@@ -44,7 +44,6 @@ class MainWindow(QMainWindow):
 
     def design(self):
 
-        self.destroyed.connect(lambda: self._on_destroyed())
         self.setObjectName("MainWindow")
         self.setWindowTitle("Field Control")
         self.setStyleSheet("background-color: rgb(42,42,64);")
@@ -137,9 +136,51 @@ class MainWindow(QMainWindow):
         gridLayout.setRowStretch(5, 2)
         gridLayout.setColumnStretch(5, 2)
 
-    def _on_destroyed(self):
+    def closeEvent(self, event):
+        event.ignore()
+        
+        self.button_stop.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(211, 194, 78); border-style: outset; color: rgb(63, 63, 97); font-weight: bold; } ")
+
+        QApplication.processEvents()
+
+        while self.cur_field > ( self.initialization_step + 1 ):
+            self.cur_field = self.itc_fc.magnet_field( self.cur_field - self.initialization_step )
+            self.Set_point.blockSignals(True)
+            self.Set_point.setValue(self.cur_field)
+            self.Set_point.blockSignals(False)
+            loop = QEventLoop()
+            QTimer.singleShot(15, loop.quit)
+            loop.exec()
+            
+            QApplication.processEvents()
+
+        #self.cur_field = self.itc_fc.magnet_field( 0 )
+        self.cur_field = 0
+        self.cur_field_2 = 0
+        self.field = 0
+        self.itc_fc.magnet_field( self.cur_field )
+        self.Set_point.setValue(self.cur_field)
+        self.button_stop.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; } ")
+        #print('CF: ' + str(self.cur_field))
+        #print('F: ' + str(self.field))
+
+        sys.exit()
+
+    def changeEvent(self, event):
+        if event.type() == QEvent.Type.ActivationChange:
+            if self.isActiveWindow():
+                self.on_window_focused()
+        super().changeEvent(event)
+
+    def on_window_focused(self):
+        self.Set_point.blockSignals(True)
+        self.read_no_set_field()
+        self.Set_point.setValue(self.cur_field_2)
+        self.Set_point.blockSignals(False)
+
+    def quit(self):
         """
-        A function to do some actions when the main window is closing.
+        A function to quit the programm
         """
         self.button_stop.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(211, 194, 78); border-style: outset; color: rgb(63, 63, 97); font-weight: bold; } ")
 
@@ -166,23 +207,6 @@ class MainWindow(QMainWindow):
         #print('CF: ' + str(self.cur_field))
         #print('F: ' + str(self.field))
 
-    def changeEvent(self, event):
-        if event.type() == QEvent.Type.ActivationChange:
-            if self.isActiveWindow():
-                self.on_window_focused()
-        super().changeEvent(event)
-
-    def on_window_focused(self):
-        self.Set_point.blockSignals(True)
-        self.read_no_set_field()
-        self.Set_point.setValue(self.cur_field_2)
-        self.Set_point.blockSignals(False)
-
-    def quit(self):
-        """
-        A function to quit the programm
-        """
-        self._on_destroyed()
         sys.exit()
 
     def set_ini(self):
