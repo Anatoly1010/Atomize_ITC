@@ -9,6 +9,7 @@ from PyQt6.QtWidgets import QFileDialog, QDialog, QApplication, QSizeGrip, QLine
 from PyQt6 import QtCore
 from PyQt6.QtCore import QTimer
 import atomize.main.local_config as lconf
+import atomize.general_modules.general_functions as general
 
 class Saver_Opener():
     def __init__(self):
@@ -88,7 +89,7 @@ class Saver_Opener():
 
             else:
                 file_path = self.FileDialog(directory = directory, mode = 'Save', fmt = 'csv')
-                
+
                 if file_path:
                     open(file_path, "w").close()
                     return file_path
@@ -119,7 +120,7 @@ class Saver_Opener():
 
     def save_header(self, filename, header = '', mode = 'w'):
         if self.test_flag != 'test':
-            if (filename is not None) and filename != '':
+            if (filename != 'None') and (filename != ''):
                 with open(filename, mode) as file_for_save:
                     np.savetxt(
                         file_for_save, 
@@ -132,6 +133,12 @@ class Saver_Opener():
                         comments='# ', 
                         encoding=None
                     )
+            else:
+                try:
+                    os.remove( filename )
+                except (TypeError, FileNotFoundError):
+                    pass
+
         elif self.test_flag == 'test':
             file_for_save = open(filename, mode)
             file_for_save.close()
@@ -139,7 +146,7 @@ class Saver_Opener():
 
     def save_data(self, filename, data, header = '', mode = 'w'):
         if self.test_flag != 'test':
-            if (filename is not None) and filename != '':
+            if (filename != 'None') and (filename != ''):
                 if len( data.shape ) == 2:
                     with open(filename, mode) as file_for_save:
                         np.savetxt(
@@ -170,6 +177,11 @@ class Saver_Opener():
                                 header=header, 
                                 comments='# '
                             )
+            else:
+                try:
+                    os.remove( filename )
+                except (TypeError, FileNotFoundError):
+                    pass
             
             try:
                 os.remove( os.path.join(self.path_to_main, 'temp.csv') )
