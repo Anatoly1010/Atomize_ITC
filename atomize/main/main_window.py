@@ -21,7 +21,7 @@ from datetime import datetime
 from pathlib import Path
 from PyQt6.QtCore import QSharedMemory, QSize, QEventLoop
 from PyQt6.QtGui import QColor, QIcon, QStandardItem, QStandardItemModel, QAction
-from PyQt6.QtWidgets import QFileDialog, QMessageBox, QListView, QDockWidget, QVBoxLayout, QWidget, QGridLayout, QTabWidget, QMainWindow, QPlainTextEdit, QHBoxLayout, QApplication, QPushButton, QWidget, QFileDialog, QLabel, QSizePolicy, QSizeGrip, QLineEdit
+from PyQt6.QtWidgets import QFileDialog, QMessageBox, QListView, QDockWidget, QVBoxLayout, QWidget, QGridLayout, QTabWidget, QMainWindow, QPlainTextEdit, QHBoxLayout, QApplication, QPushButton, QWidget, QFileDialog, QLabel, QSizePolicy, QSizeGrip, QLineEdit, QFileIconProvider
 from PyQt6.QtNetwork import QLocalServer
 from PyQt6 import QtCore, QtGui
 from pyqtgraph.dockarea import DockArea
@@ -901,6 +901,7 @@ class MainWindow(QMainWindow):
         """
         filedialog = QFileDialog(self, 'Open File', directory = self.path, filter = "python (*.py)",options = QFileDialog.Option.DontUseNativeDialog)
 
+        filedialog.setIconProvider(QFileIconProvider())
         filedialog.resize(800, 450) 
         # use QFileDialog.Option.DontUseNativeDialog to change directory
 
@@ -925,6 +926,7 @@ class MainWindow(QMainWindow):
                 max-width: 200px;
                 background-color: rgb(35, 35, 55);
                 border-right: 1px solid rgb(63, 63, 97);
+                color: rgb(193, 202, 227);
             }
 
             QTreeView {
@@ -1049,6 +1051,23 @@ class MainWindow(QMainWindow):
                 border-top: 1px solid rgb(63, 63, 97);
                 padding: 6px;
             }
+
+            QFileDialog QLabel {
+                color: rgb(193, 202, 227);
+            }
+
+            QFileDialog QAbstractItemView {
+                color: rgb(193, 202, 227);
+            }
+
+            QFileDialog QListView {
+                color: rgb(193, 202, 227);
+            }
+
+            QHeaderView {
+                background-color: rgb(63, 63, 97);
+            }
+
         """)
 
         filedialog.setFileMode(QFileDialog.FileMode.AnyFile)
@@ -1277,6 +1296,7 @@ class NameList(QDockWidget):
         """
         filedialog = QFileDialog(self, 'Open File', directory = self.open_dir, filter = "CSV (*.csv)", options = QFileDialog.Option.DontUseNativeDialog )
 
+        filedialog.setIconProvider(QFileIconProvider())
         filedialog.resize(800, 450) 
 
         line_edit = filedialog.findChild(QLineEdit)
@@ -1300,6 +1320,7 @@ class NameList(QDockWidget):
                 max-width: 200px;
                 background-color: rgb(35, 35, 55);
                 border-right: 1px solid rgb(63, 63, 97);
+                color: rgb(193, 202, 227);
             }
 
             QTreeView {
@@ -1424,7 +1445,25 @@ class NameList(QDockWidget):
                 border-top: 1px solid rgb(63, 63, 97);
                 padding: 6px;
             }
+
+            QFileDialog QLabel {
+                color: rgb(193, 202, 227);
+            }
+
+            QFileDialog QAbstractItemView {
+                color: rgb(193, 202, 227);
+            }
+
+            QFileDialog QListView {
+                color: rgb(193, 202, 227);
+            }
+
+            QHeaderView {
+                background-color: rgb(63, 63, 97);
+            }
+
         """)
+
         filedialog.setFileMode(QFileDialog.FileMode.AnyFile)
         filedialog.fileSelected.connect(self.open_file)
         filedialog.show()
@@ -1447,6 +1486,8 @@ class NameList(QDockWidget):
         A function to open a new window for choosing 2D data
         """
         filedialog = QFileDialog(self, 'Open File', directory = self.open_dir, filter = "CSV (*.csv)", options = QFileDialog.Option.DontUseNativeDialog )
+
+        filedialog.setIconProvider(QFileIconProvider())
         filedialog.resize(800, 450) 
         # use QFileDialog.Option.DontUseNativeDialog to change directory
         size_grip = filedialog.findChild(QSizeGrip)
@@ -1470,6 +1511,7 @@ class NameList(QDockWidget):
                 max-width: 200px;
                 background-color: rgb(35, 35, 55);
                 border-right: 1px solid rgb(63, 63, 97);
+                color: rgb(193, 202, 227);
             }
 
             QTreeView {
@@ -1594,7 +1636,25 @@ class NameList(QDockWidget):
                 border-top: 1px solid rgb(63, 63, 97);
                 padding: 6px;
             }
+
+            QFileDialog QLabel {
+                color: rgb(193, 202, 227);
+            }
+
+            QFileDialog QAbstractItemView {
+                color: rgb(193, 202, 227);
+            }
+
+            QFileDialog QListView {
+                color: rgb(193, 202, 227);
+            }
+
+            QHeaderView {
+                background-color: rgb(63, 63, 97);
+            }
+
         """)
+
         filedialog.setFileMode(QFileDialog.FileMode.AnyFile)
         filedialog.fileSelected.connect(self.open_file_2d)
         filedialog.show()

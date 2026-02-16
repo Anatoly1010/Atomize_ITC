@@ -657,7 +657,7 @@ class CrosshairDock(CloseableDock):
         filedialog = QtWidgets.QFileDialog(self, 'Open File', directory = self.open_dir, filter = "CSV (*.csv)",  options = QtWidgets.QFileDialog.Option.DontUseNativeDialog ) 
         filedialog.resize(800, 450) 
         # use QFileDialog.Option.DontUseNativeDialog to change directory
-        
+        filedialog.setIconProvider(QtWidgets.QFileIconProvider())
         line_edit = filedialog.findChild(QtWidgets.QLineEdit)
 
         if line_edit:
@@ -679,6 +679,7 @@ class CrosshairDock(CloseableDock):
                 max-width: 200px;
                 background-color: rgb(35, 35, 55);
                 border-right: 1px solid rgb(63, 63, 97);
+                color: rgb(193, 202, 227);
             }
 
             QTreeView {
@@ -803,7 +804,25 @@ class CrosshairDock(CloseableDock):
                 border-top: 1px solid rgb(63, 63, 97);
                 padding: 6px;
             }
+
+            QFileDialog QLabel {
+                color: rgb(193, 202, 227);
+            }
+
+            QFileDialog QAbstractItemView {
+                color: rgb(193, 202, 227);
+            }
+
+            QFileDialog QListView {
+                color: rgb(193, 202, 227);
+            }
+
+            QHeaderView {
+                background-color: rgb(63, 63, 97);
+            }
+
         """)
+
         filedialog.setFileMode(QtWidgets.QFileDialog.FileMode.AnyFile)
         filedialog.fileSelected.connect(self.open_file)
         filedialog.show()
@@ -1017,7 +1036,7 @@ class CrossSectionDock(CloseableDock):
         self.fileDialog = QtWidgets.QFileDialog(self, 'Save File', options = QtWidgets.QFileDialog.Option.DontUseNativeDialog)
         self.fileDialog.resize(800, 450) 
         # use QFileDialog.Option.DontUseNativeDialog to change directory
-
+        self.fileDialog.setIconProvider(QtWidgets.QFileIconProvider())
         line_edit = self.fileDialog.findChild(QtWidgets.QLineEdit)
 
         if line_edit:
@@ -1039,6 +1058,7 @@ class CrossSectionDock(CloseableDock):
                 max-width: 200px;
                 background-color: rgb(35, 35, 55);
                 border-right: 1px solid rgb(63, 63, 97);
+                color: rgb(193, 202, 227);
             }
 
             QTreeView {
@@ -1163,7 +1183,25 @@ class CrossSectionDock(CloseableDock):
                 border-top: 1px solid rgb(63, 63, 97);
                 padding: 6px;
             }
+
+            QFileDialog QLabel {
+                color: rgb(193, 202, 227);
+            }
+
+            QFileDialog QAbstractItemView {
+                color: rgb(193, 202, 227);
+            }
+
+            QFileDialog QListView {
+                color: rgb(193, 202, 227);
+            }
+
+            QHeaderView {
+                background-color: rgb(63, 63, 97);
+            }
+
         """)
+
         self.fileDialog.setNameFilters(['*.csv','*.txt','*.dat'])
         self.fileDialog.setAcceptMode(QtWidgets.QFileDialog.AcceptMode.AcceptSave)
         global LastExportDirectory

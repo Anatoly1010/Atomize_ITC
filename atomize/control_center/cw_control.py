@@ -372,6 +372,20 @@ class MainWindow(QMainWindow):
             #self.message('Experimental script is not running')
 
     def check_messages(self):
+        if hasattr(self, 'exp_process') and not self.exp_process.is_alive():
+            
+            if getattr(self, 'is_testing', False):
+                self.is_testing = False
+                
+                if self.exp_process.exitcode == 0:
+                    print("Тест пройден, запускаем основной процесс...")
+                    self.run_main_experiment()
+                else:
+                    print("Ошибка в тесте, запуск отменен")
+                    self.timer.stop()
+                    # Возвращаем стиль кнопки обратно
+            else:
+                self.timer.stop()
 
         while self.parent_conn.poll():
             try:
@@ -461,21 +475,35 @@ class MainWindow(QMainWindow):
             self.box_st_field.setValue( self.cur_start_field )
 
         self.parent_conn, self.child_conn = Pipe()
-        # a process for running function script 
-        # sending parameters for initial initialization
-        self.exp_process = Process( target = worker.exp_on, args = ( self.child_conn, self.cur_curve_name, self.cur_exp_name, self.cur_end_field, self.cur_start_field, self.cur_step, self.cur_lock_ampl, self.cur_scan, self.cur_tc, self.cur_sens, self.two_side, ) )
         
+        self.exp_process = Process( target = worker.exp_test, args = ( self.child_conn, self.cur_curve_name, self.cur_exp_name, self.cur_end_field, self.cur_start_field, self.cur_step, self.cur_lock_ampl, self.cur_scan, self.cur_tc, self.cur_sens, self.two_side, ) )
+
         self.button_start.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(211, 194, 78); border-style: outset; color: rgb(63, 63, 97); font-weight: bold; } ")
         self.progress_bar.setValue(0)
-
+        
         self.exp_process.start()
-        # send a command in a different thread about the current state
         self.parent_conn.send('start')
-
+        
+        self.is_testing = True 
         self.timer.start(100)
-
+        
         #self.poller.update_command(self.parent_conn)
         #self.poller.start()
+
+    def run_main_experiment(self):
+        worker = Worker()
+        self.parent_conn, self.child_conn = Pipe()
+        
+        self.exp_process = Process(
+            target = worker.exp_on, 
+            args = (self.child_conn, self.cur_curve_name, self.cur_exp_name, 
+                  self.cur_end_field, self.cur_start_field, self.cur_step, 
+                  self.cur_lock_ampl, self.cur_scan, self.cur_tc, 
+                  self.cur_sens, self.two_side)
+        )
+        self.exp_process.start()
+        self.parent_conn.send('start')
+        self.timer.start(100)
 
     def message(self, *text):
         if len(text) == 1:
@@ -731,9 +759,10 @@ class Worker():
         sys.argv = ['', 'test']
 
         try:
-
+            
             import datetime
             import atomize.general_modules.general_functions as general
+            general.test_flag = 'test'
             import atomize.device_modules.SR_860 as sr
             #import atomize.device_modules.ITC_FC as itc
             import atomize.device_modules.BH_15 as itc
@@ -930,7 +959,6 @@ class Worker():
         except BaseException as e:
             exc_info = f"{type(e)} \n{str(e)} \n{traceback.format_exc()}"
             conn.send( ('Error', exc_info) )
-
 
 def main():
     """
