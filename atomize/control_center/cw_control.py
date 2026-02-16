@@ -931,6 +931,7 @@ class Worker():
             exc_info = f"{type(e)} \n{str(e)} \n{traceback.format_exc()}"
             conn.send( ('Error', exc_info) )
 
+
 def main():
     """
     A function to run the main window of the programm.
