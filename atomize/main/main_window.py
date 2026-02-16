@@ -905,6 +905,14 @@ class MainWindow(QMainWindow):
         filedialog.resize(800, 450) 
         # use QFileDialog.Option.DontUseNativeDialog to change directory
 
+        buttons = filedialog.findChildren(QPushButton)
+        seen_texts = []
+        for btn in buttons:
+            if btn.text() in seen_texts:
+                btn.hide()
+            else:
+                seen_texts.append(btn.text())
+    
         line_edit = filedialog.findChild(QLineEdit)
 
         if line_edit:
@@ -1068,6 +1076,17 @@ class MainWindow(QMainWindow):
                 background-color: rgb(63, 63, 97);
             }
 
+            QFileDialog QListView#sidebar:inactive, 
+            QTreeView:inactive {
+                selection-background-color: rgb(35, 35, 55);
+                selection-color: rgb(211, 194, 78);
+            }
+
+            QTreeView::item:selected:inactive, 
+            QFileDialog QListView#sidebar::item:selected:inactive {
+                selection-background-color: rgb(63, 63, 97);
+                selection-color: rgb(211, 194, 78);
+            }
         """)
 
         filedialog.setFileMode(QFileDialog.FileMode.AnyFile)
@@ -1299,6 +1318,14 @@ class NameList(QDockWidget):
         filedialog.setIconProvider(QFileIconProvider())
         filedialog.resize(800, 450) 
 
+        buttons = filedialog.findChildren(QPushButton)
+        seen_texts = []
+        for btn in buttons:
+            if btn.text() in seen_texts:
+                btn.hide()
+            else:
+                seen_texts.append(btn.text())
+
         line_edit = filedialog.findChild(QLineEdit)
 
         if line_edit:
@@ -1462,6 +1489,17 @@ class NameList(QDockWidget):
                 background-color: rgb(63, 63, 97);
             }
 
+            QFileDialog QListView#sidebar:inactive, 
+            QTreeView:inactive {
+                selection-background-color: rgb(35, 35, 55);
+                selection-color: rgb(211, 194, 78);
+            }
+
+            QTreeView::item:selected:inactive, 
+            QFileDialog QListView#sidebar::item:selected:inactive {
+                selection-background-color: rgb(63, 63, 97);
+                selection-color: rgb(211, 194, 78);
+            }
         """)
 
         filedialog.setFileMode(QFileDialog.FileMode.AnyFile)
@@ -1490,6 +1528,15 @@ class NameList(QDockWidget):
         filedialog.setIconProvider(QFileIconProvider())
         filedialog.resize(800, 450) 
         # use QFileDialog.Option.DontUseNativeDialog to change directory
+
+        buttons = filedialog.findChildren(QPushButton)
+        seen_texts = []
+        for btn in buttons:
+            if btn.text() in seen_texts:
+                btn.hide()
+            else:
+                seen_texts.append(btn.text())
+
         size_grip = filedialog.findChild(QSizeGrip)
         if size_grip:
             size_grip.setVisible(False)
@@ -1653,6 +1700,17 @@ class NameList(QDockWidget):
                 background-color: rgb(63, 63, 97);
             }
 
+            QFileDialog QListView#sidebar:inactive, 
+            QTreeView:inactive {
+                selection-background-color: rgb(35, 35, 55);
+                selection-color: rgb(211, 194, 78);
+            }
+
+            QTreeView::item:selected:inactive, 
+            QFileDialog QListView#sidebar::item:selected:inactive {
+                selection-background-color: rgb(63, 63, 97);
+                selection-color: rgb(211, 194, 78);
+            }
         """)
 
         filedialog.setFileMode(QFileDialog.FileMode.AnyFile)

@@ -368,7 +368,7 @@ class MainWindow(QMainWindow):
         txt.setReadOnly(True)
         txt.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)        
         setattr(self, "errors", txt)
-        txt.setStyleSheet("QPlainTextEdit { color : rgb(211, 194, 78); }")
+        txt.setStyleSheet("QPlainTextEdit { color : rgb(211, 194, 78) ; selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
         self.buttons_layout.addWidget(txt, 3, 2, 3, 10)
 
         #self.buttons_layout.setRowStretch(6, 11)
@@ -679,7 +679,6 @@ class MainWindow(QMainWindow):
         if txt == 'Nd:YaG':
             self.combo_laser_num = 1
             self.laser_q_switch_delay = 160000
-            self.Rep_rate.setValue(9.9)
         elif txt == 'NovoFEL':
             self.combo_laser_num = 2
             self.laser_q_switch_delay = 0
@@ -1123,13 +1122,6 @@ class MainWindow(QMainWindow):
                 self.pb.pulser_pulse( name = 'P6', channel = self.p7_typ, start = self.p7_start_sh, length = self.p7_length, \
                                         phase_list = self.ph_7 )
 
-            if self.combo_laser_num == 1:
-                self.errors.appendPlainText( str(self.laser_q_switch_delay ) + ' ns is added to all the pulses except the LASER pulse' )
-            elif self.combo_laser_num == 2:
-                self.errors.appendPlainText( str(self.laser_q_switch_delay ) + ' ns is added to all the pulses except the LASER pulse' )
-
-        self.errors.appendPlainText( self.pb.pulser_pulse_list() )
-
         # before adding pulse phases
         #self.pb.pulser_update()
         # ?
@@ -1167,11 +1159,23 @@ class MainWindow(QMainWindow):
             self.errors.clear()
             self.errors.appendPlainText(data)
         else:
-            #self.test_process.join()
             
+            # important:
             self.pb.pulser_clear()
-            ###self.pb.pulser_test_flag('test')
-            ###self.pulse_sequence()
+
+            # to not to interact with gui in Process:
+            if self.laser_flag == 1:
+                if self.combo_laser_num == 1:
+                    self.Rep_rate.setValue(9.9)
+                    self.errors.appendPlainText( str(self.laser_q_switch_delay ) + ' ns is added to all the pulses except the LASER pulse' )
+                elif self.combo_laser_num == 2:
+                    self.errors.appendPlainText( str(self.laser_q_switch_delay ) + ' ns is added to all the pulses except the LASER pulse' )
+
+            # to add pulses:
+            self.pb.pulser_test_flag('test')
+            self.pulse_sequence()
+            self.errors.appendPlainText( self.pb.pulser_pulse_list() )
+
             self.pb.pulser_test_flag('None')
 
             self.pb.adc_window = 0

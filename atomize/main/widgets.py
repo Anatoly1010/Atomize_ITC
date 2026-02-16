@@ -660,6 +660,14 @@ class CrosshairDock(CloseableDock):
         filedialog.setIconProvider(QtWidgets.QFileIconProvider())
         line_edit = filedialog.findChild(QtWidgets.QLineEdit)
 
+        buttons = filedialog.findChildren(QtWidgets.QPushButton)
+        seen_texts = []
+        for btn in buttons:
+            if btn.text() in seen_texts:
+                btn.hide()
+            else:
+                seen_texts.append(btn.text())
+    
         if line_edit:
             line_edit.setCompleter(None)
 
@@ -1039,6 +1047,14 @@ class CrossSectionDock(CloseableDock):
         self.fileDialog.setIconProvider(QtWidgets.QFileIconProvider())
         line_edit = self.fileDialog.findChild(QtWidgets.QLineEdit)
 
+        buttons = self.fileDialog.findChildren(QtWidgets.QPushButton)
+        seen_texts = []
+        for btn in buttons:
+            if btn.text() in seen_texts:
+                btn.hide()
+            else:
+                seen_texts.append(btn.text())
+    
         if line_edit:
             line_edit.setCompleter(None)
         
@@ -1200,6 +1216,17 @@ class CrossSectionDock(CloseableDock):
                 background-color: rgb(63, 63, 97);
             }
 
+            QFileDialog QListView#sidebar:inactive, 
+            QTreeView:inactive {
+                selection-background-color: rgb(35, 35, 55);
+                selection-color: rgb(211, 194, 78);
+            }
+
+            QTreeView::item:selected:inactive, 
+            QFileDialog QListView#sidebar::item:selected:inactive {
+                selection-background-color: rgb(63, 63, 97);
+                selection-color: rgb(211, 194, 78);
+            }
         """)
 
         self.fileDialog.setNameFilters(['*.csv','*.txt','*.dat'])

@@ -426,7 +426,7 @@ class MainWindow(QMainWindow):
         txt.setReadOnly(True)
         txt.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
         setattr(self, "errors", txt)
-        txt.setStyleSheet("QPlainTextEdit { color : rgb(211, 194, 78); }")
+        txt.setStyleSheet("QPlainTextEdit { color : rgb(211, 194, 78) ; selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
         self.buttons_layout.addWidget(txt, 3, 2, 3, 10)
 
         #self.buttons_layout.setRowStretch(6, 11)
@@ -1390,7 +1390,6 @@ class MainWindow(QMainWindow):
         Pulse sequence from defined pulses
         """
         self.pb.pulser_repetition_rate( self.repetition_rate )
-        #self.pb.pulser_pulse(name = 'P0', channel = 'TRIGGER_AWG', start = '0 ns', length = '30 ns')
 
         if int(float( self.p1_length.split(' ')[0] )) != 0:
             self.pb.pulser_pulse(name = 'P1', channel = self.p1_typ, start = self.p1_start, length = self.p1_length, phase_list = self.ph_1 )
@@ -1452,26 +1451,17 @@ class MainWindow(QMainWindow):
 
         #print(self.pb.adc_window)
         self.pb.pulser_default_synt(self.combo_synt)
-        ###
         self.pb.phase_shift_ch1_seq_mode_awg = self.cur_phase
         ###self.awg.phase_x = self.cur_phase
-        ###
 
         self.pb.awg_amplitude('CH0', str(self.ch0_ampl), 'CH1', str(self.ch1_ampl) )
-        #general.message( str( self.pb.pulser_pulse_list() ) )
         
-        ############# DO NOT WORK:
-        self.errors.appendPlainText( self.pb.awg_pulse_list() )
-        #############
         
         for i in range( len( self.ph_1 ) ):
             self.pb.awg_next_phase()
             self.pb.pulser_update()
 
-        # the next line gives rise to a bag with FC
-        #self.bh15.magnet_field( self.mag_field )
-        #self.pb.pb_close()
-
+        self.pb.awg_pulse_reset()
         self.pb.pulser_open()
         self.pb.pulser_close()
 
@@ -1505,12 +1495,18 @@ class MainWindow(QMainWindow):
             self.errors.appendPlainText(data)
         else:
             #self.test_process.join()
-        
+            
+            #important
             self.pb.pulser_clear()
             self.pb.awg_clear()
-            ###self.pb.pulser_test_flag('test')
-            ###self.pb.awg_test_flag( 'test' )
-            ###self.pulse_sequence()
+
+            # to not to interact with gui in Process:
+
+            # to add pulses:
+            self.pb.pulser_test_flag('test')
+            self.pb.awg_test_flag( 'test' )
+            self.pulse_sequence()
+            self.errors.appendPlainText( self.pb.awg_pulse_list() )
 
             self.pb.pulser_test_flag('None')
             self.pb.awg_test_flag( 'None' )

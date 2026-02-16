@@ -5,7 +5,7 @@ import os
 import sys
 import configparser
 import numpy as np
-from PyQt6.QtWidgets import QFileDialog, QDialog, QApplication, QSizeGrip, QLineEdit, QFileIconProvider
+from PyQt6.QtWidgets import QFileDialog, QDialog, QApplication, QSizeGrip, QLineEdit, QFileIconProvider, QPushButton
 from PyQt6 import QtCore
 from PyQt6.QtCore import QTimer
 import atomize.main.local_config as lconf
@@ -234,6 +234,14 @@ class Saver_Opener():
         self.dialog.setAcceptMode(QFileDialog.AcceptMode.AcceptOpen)\
          if mode == 'Open' else self.dialog.setAcceptMode(QFileDialog.AcceptMode.AcceptSave)
 
+        buttons = self.dialog.findChildren(QPushButton)
+        seen_texts = []
+        for btn in buttons:
+            if btn.text() in seen_texts:
+                btn.hide()
+            else:
+                seen_texts.append(btn.text())
+        
         line_edit = self.dialog.findChild(QLineEdit)
 
         if line_edit:
@@ -397,6 +405,17 @@ class Saver_Opener():
                 background-color: rgb(63, 63, 97);
             }
 
+            QFileDialog QListView#sidebar:inactive, 
+            QTreeView:inactive {
+                selection-background-color: rgb(35, 35, 55);
+                selection-color: rgb(211, 194, 78);
+            }
+
+            QTreeView::item:selected:inactive, 
+            QFileDialog QListView#sidebar::item:selected:inactive {
+                selection-background-color: rgb(63, 63, 97);
+                selection-color: rgb(211, 194, 78);
+            }
         """)
         # set format
         if fmt != '':

@@ -3,6 +3,7 @@
 
 import os
 import sys
+import time
 import numpy as np
 from multiprocessing import Process, Pipe
 from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QLabel, QDoubleSpinBox, QSpinBox, QPushButton, QTextEdit, QGridLayout, QFrame, QProgressBar
@@ -354,7 +355,7 @@ class MainWindow(QMainWindow):
         self.parent_conn, self.child_conn = Pipe()
         # a process for running function script 
         # sending parameters for initial initialization
-        self.exp_process = Process( target = worker.exp_on, args = ( self.child_conn, self.cur_exp_name, self.cur_length, self.cur_st_freq, self.cur_rep_rate, self.cur_scan, self.cur_end_freq, self.cur_step_freq, self.cur_averages, ) )
+        self.exp_process = Process( target = worker.exp_test, args = ( self.child_conn, self.cur_exp_name, self.cur_length, self.cur_st_freq, self.cur_rep_rate, self.cur_scan, self.cur_end_freq, self.cur_step_freq, self.cur_averages, ) )
 
         self.button_start.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(211, 194, 78); border-style: outset; color: rgb(63, 63, 97); font-weight: bold; } ")
         self.progress_bar.setValue(0)
@@ -362,7 +363,7 @@ class MainWindow(QMainWindow):
         self.exp_process.start()
         # send a command in a different thread about the current state
         self.parent_conn.send('start')
-        
+        self.is_testing = True
         self.timer.start(300)
 
         #self.poller.update_command(self.parent_conn)
@@ -387,6 +388,10 @@ class MainWindow(QMainWindow):
 
     def check_messages(self):
 
+
+        if not hasattr(self, 'last_error'):
+            self.last_error = False
+
         while self.parent_conn.poll():
             try:
                 msg_type, data = self.parent_conn.recv()
@@ -395,10 +400,12 @@ class MainWindow(QMainWindow):
                     self.progress_bar.setValue(int(data))
                 elif msg_type == 'Open':
                     self.open_dialog()
-                else:
+                elif msg_type == 'Error':
+                    self.last_error = True
                     self.timer.stop()
                     self.progress_bar.setValue(0)
-                    self.message(data)
+                    if msg_type != 'test':
+                        self.message(data)
                     self.button_start.setStyleSheet("""
                         QPushButton {
                             border-radius: 4px; 
@@ -407,12 +414,43 @@ class MainWindow(QMainWindow):
                             color: rgb(193, 202, 227); 
                             font-weight: bold; 
                         }
-                    """)
+                    """)                    
+                else:
+                    self.timer.stop()
+                    self.progress_bar.setValue(0)
+                    if msg_type != 'test':
+                        self.message(data)
+                        self.button_start.setStyleSheet("""
+                            QPushButton {
+                                border-radius: 4px; 
+                                background-color: rgb(63, 63, 97); 
+                                border-style: outset; 
+                                color: rgb(193, 202, 227); 
+                                font-weight: bold; 
+                            }
+                        """)
+
             except EOFError:
                 self.timer.stop()
                 break
             except Exception as e:
                 break
+
+        time.sleep(0.1)
+        if hasattr(self, 'exp_process') and not self.exp_process.is_alive():
+            if self.parent_conn.poll():
+                return
+
+            self.timer.stop()
+
+            if getattr(self, 'is_testing', False):
+                self.is_testing = False
+                if not self.last_error:
+                    self.last_error = False 
+                    time.sleep(0.1)
+                    self.run_main_experiment()
+                else:
+                    self.last_error = False
 
     def open_dialog(self):
         file_data = self.file_handler.create_file_dialog(multiprocessing = True)        
@@ -422,10 +460,21 @@ class MainWindow(QMainWindow):
         else:
             self.parent_conn.send( 'FL' + '' )
 
+    def run_main_experiment(self):
+
+        worker = Worker()
+        self.parent_conn, self.child_conn = Pipe()
+        
+        self.exp_process = Process( target = worker.exp_on, args = ( self.child_conn, self.cur_exp_name, self.cur_length, self.cur_st_freq, self.cur_rep_rate, self.cur_scan, self.cur_end_freq, self.cur_step_freq, self.cur_averages, ) )
+    
+        self.exp_process.start()
+        self.parent_conn.send('start')
+        self.timer.start(300)
+
 # The worker class that run the digitizer in a different thread
-class Worker(QWidget):
-    def __init__(self, parent = None):
-        super(Worker, self).__init__(parent)
+class Worker():
+    def __init__(self):
+        super(Worker, self).__init__()
         # initialization of the attribute we use to stop the experimental script
 
         self.command = 'start'
@@ -445,7 +494,6 @@ class Worker(QWidget):
         import traceback
 
         try:
-            import sys
             import datetime
             import numpy as np
             import pyqtgraph as pg
@@ -604,6 +652,189 @@ class Worker(QWidget):
 
                 conn.send( ('', f'Script {p2} finished') )
                 general.wait('200 ms')
+                conn.close()
+                
+        except BaseException as e:
+            exc_info = f"{type(e)} \n{str(e)} \n{traceback.format_exc()}"
+            conn.send( ('Error', exc_info) )
+
+    def exp_test(self, conn, p2, p4, p5, p6, p7, p8, p9, p10):
+        """
+        function that contains experimental script
+        """
+        # [               2,               4, ]
+        # self.cur_exp_name, self.cur_length, 
+        # [             5,                 6,             7,                 8,                  9,                10 ]
+        #self.cur_st_freq, self.cur_rep_rate, self.cur_scan, self.cur_end_freq, self.cur_step_freq, self.cur_averages
+
+        # should be inside dig_on() function;
+        # freezing after digitizer restart otherwise
+        #import random
+        import traceback
+
+        sys.argv = ['', 'test']
+
+        try:
+            import datetime
+            import numpy as np
+            import pyqtgraph as pg
+            import atomize.general_modules.general_functions as general
+            general.test_flag = 'test'
+            import atomize.device_modules.Keysight_2000_Xseries as a2012
+            import atomize.device_modules.Micran_X_band_MW_bridge_v2 as mwBridge
+            import atomize.device_modules.Insys_FPGA as pb_pro
+            import atomize.device_modules.Lakeshore_335 as ls
+            import atomize.general_modules.csv_opener_saver as openfile
+
+            file_handler = openfile.Saver_Opener()
+            a2012 = a2012.Keysight_2000_Xseries()
+            pb = pb_pro.Insys_FPGA()
+            ls335 = ls.Lakeshore_335()
+            mw = mwBridge.Micran_X_band_MW_bridge_v2()
+
+            ### Experimental parameters
+            START_FREQ = p5
+            END_FREQ = p8
+            STEP = p9
+            SCANS = p7
+            AVERAGES = p10
+            PHASES = 2
+            process = 'None'
+
+            # PULSES
+            REP_RATE = str(p6) + ' Hz'
+            PULSE_1_LENGTH = str(p4) + ' ns'
+            PULSE_1_START = '0 ns'
+
+            # setting pulses:
+            pb.pulser_pulse(name ='P0', channel = 'DETECTION', start = PULSE_1_START, length = '640 ns', phase_list = ['+x', '+x'])
+            pb.pulser_pulse(name ='P1', channel = 'MW', start = PULSE_1_START, length = PULSE_1_LENGTH, phase_list = ['+x', '+x'])
+            pb.pulser_pulse(name ='P2', channel = 'LASER', start = PULSE_1_START, length = PULSE_1_LENGTH)
+
+
+            pb.pulser_repetition_rate( REP_RATE )
+            pb.digitizer_number_of_averages(2)
+
+            pb.pulser_open()
+
+            for i in range( PHASES ):
+                pb.pulser_next_phase()
+                general.wait('200 ms')
+
+            a2012.oscilloscope_acquisition_type('Average')
+            a2012.oscilloscope_trigger_channel('CH2')
+            a2012.oscilloscope_number_of_averages(AVERAGES)
+            a2012.oscilloscope_run_stop()
+
+            a2012.oscilloscope_record_length( 2000 )
+            real_length = a2012.oscilloscope_record_length( )
+
+            t_res = a2012.oscilloscope_time_resolution()
+            t_step = float(f"{pg.siEval(t_res):.4g}")
+
+            points = int( (END_FREQ - START_FREQ) / STEP ) + 1
+            data = np.zeros( (points, real_length) )
+            ###
+
+            freq_before = int(str( mw.mw_bridge_synthesizer() ).split(' ')[1])
+            # initialize the power and skip the incorrect first point
+            mw.mw_bridge_synthesizer( START_FREQ )
+            general.wait('200 ms')
+            a2012.oscilloscope_start_acquisition()
+            a2012.oscilloscope_get_curve('CH1')
+
+            # the idea of automatic and dynamic changing is
+            # sending a new value of repetition rate via self.command
+            # in each cycle we will check the current value of self.command
+            # self.command = 'exit' will stop the digitizer
+            while self.command != 'exit':
+
+                # Start of experiment
+                for k in general.scans(SCANS):
+
+                    i = 0
+                    freq = START_FREQ
+                    mw.mw_bridge_synthesizer( freq )
+                    general.wait('300 ms')
+                    
+                    a2012.oscilloscope_start_acquisition()
+                    a2012.oscilloscope_get_curve('CH1')
+
+                    while freq <= END_FREQ:
+                        
+                        mw.mw_bridge_synthesizer( freq )
+
+                        a2012.oscilloscope_start_acquisition()
+                        y = -a2012.oscilloscope_get_curve('CH1')
+                        general.wait('300 ms')
+                        
+                        data[i] = ( data[i] * k + y ) / (k + 1)
+
+                        general.plot_2d(p2, np.transpose( data ), start_step = ( (0, t_step), (START_FREQ * 1e6, STEP * 1e6) ), xname = 'Time', xscale = 's', yname = 'Frequency', yscale = 'Hz', zname = 'Intensity', zscale = 'V', text = 'Scan / Frequency: ' + str(k) + ' / ' + str(freq))
+
+                        #conn.send( ('Status', int( 100 * ((k - 1) * points + i + 1) / points / SCANS)) )
+                        
+                        freq = round( (STEP + freq), 3 )
+                        
+                        # check our polling data
+                        if self.command[0:2] == 'SC':
+                            SCANS = int( self.command[2:] )
+                            self.command = 'start'
+                        elif self.command[0:2] == 'GR':
+                            p11 = int( self.command[2:] )
+                            self.command = 'start'
+                        elif self.command == 'exit':
+                            break
+                        
+                        if conn.poll() == True:
+                            self.command = conn.recv()
+
+                        i += 1
+
+                    mw.mw_bridge_synthesizer( START_FREQ )
+
+                # finish succesfully
+                self.command = 'exit'
+
+            if self.command == 'exit':
+
+                mw.mw_bridge_synthesizer( freq_before )
+                general.wait('300 ms')
+
+                pb.pulser_close()
+
+                # Data saving
+                now = datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")
+                w = 30
+
+                header = (
+                    f"{'Date:':<{w}} {now}\n"
+                    f"{'Experiment:':<{w}} Tune\n"
+                    f"{'Start Frequency:':<{w}} {START_FREQ} MHz\n"
+                    f"{'End Frequency:':<{w}} {END_FREQ} MHz\n"
+                    f"{'Frequency Step:':<{w}} {STEP} MHz\n"
+                    f"{'Time Resolution:':<{w}} {t_res}\n"
+                    f"{'Temperature:':<{w}} {ls335.tc_temperature('A')} K\n"
+                    f"{'Temperature Cernox:':<{w}} {ls335.tc_temperature('B')} K\n"
+                    f"{'-'*w}\n"
+                    f"2D Data"
+                )
+
+                #conn.send(('Open', ''))
+                
+                #while True:
+                #    if conn.poll():
+                #        msg = conn.recv()
+                #        if msg.startswith('FL'):
+                #            file_data = msg[2:]
+                #            break
+                #    general.wait('200 ms')
+
+                #file_handler.save_data(file_data, np.transpose( data ), header = header, mode = 'w')
+
+                conn.send( ('test', f'Script {p2} finished') )
+                general.wait('200 ms')
+                conn.close()
 
         except BaseException as e:
             exc_info = f"{type(e)} \n{str(e)} \n{traceback.format_exc()}"
