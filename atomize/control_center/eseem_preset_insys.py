@@ -67,7 +67,7 @@ class MainWindow(QMainWindow):
 
         for name, attr_name in labels:
             lbl = QLabel(name)
-            lbl.setFixedSize(180, 26)
+            lbl.setFixedSize(190, 26)
             setattr(self, attr_name, lbl)
             lbl.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
 
@@ -596,10 +596,8 @@ class Worker():
                             SCANS = int( self.command[2:] )
                             self.command = 'start'
                         elif self.command == 'exit':
-                            if np.isnan(data[0][0]):
-                                pass
-                            else:
-                                break
+                            data[0], data[1] = pb.digitizer_at_exit(integral = True)
+                            break
 
                         if conn.poll() == True:
                             self.command = conn.recv()
@@ -769,10 +767,8 @@ class Worker():
                             SCANS = int( self.command[2:] )
                             self.command = 'start'
                         elif self.command == 'exit':
-                            if np.isnan(data[0][0]):
-                                pass
-                            else:
-                                break
+                            data[0], data[1] = pb.digitizer_at_exit(integral = True)
+                            break
                                                 
                         if conn.poll() == True:
                             self.command = conn.recv()

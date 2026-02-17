@@ -16,5 +16,5 @@ data_y = np.random.normal(size = POINTS)
 file_handler.save_data(file_data, np.c_[x_axis, data_x, data_y], header = header, mode = 'w')
 
 ### OPEN
-file_path = file_handler.open_file_dialog()
-header, data = file_handler.open_1d(file_path)
+#file_path = file_handler.open_file_dialog()
+#header, data = file_handler.open_1d(file_path)

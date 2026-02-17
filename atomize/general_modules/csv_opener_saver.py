@@ -5,7 +5,7 @@ import os
 import sys
 import configparser
 import numpy as np
-from PyQt6.QtWidgets import QFileDialog, QDialog, QApplication, QSizeGrip, QLineEdit, QFileIconProvider, QPushButton
+from PyQt6.QtWidgets import QFileDialog, QDialog, QApplication, QSizeGrip, QLineEdit, QFileIconProvider, QPushButton, QTreeView, QHeaderView
 from PyQt6 import QtCore
 from PyQt6.QtCore import QTimer
 import atomize.main.local_config as lconf
@@ -234,6 +234,13 @@ class Saver_Opener():
         self.dialog.setAcceptMode(QFileDialog.AcceptMode.AcceptOpen)\
          if mode == 'Open' else self.dialog.setAcceptMode(QFileDialog.AcceptMode.AcceptSave)
 
+        tree = self.dialog.findChild(QTreeView)
+        header = tree.header()
+        for i in range(header.count()):
+            header.setSectionResizeMode(i, QHeaderView.ResizeMode.ResizeToContents)
+
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+
         buttons = self.dialog.findChildren(QPushButton)
         seen_texts = []
         for btn in buttons:
@@ -266,7 +273,7 @@ class Saver_Opener():
             }
 
             QTreeView {
-                min-width: 450px;
+                min-width: 500px;
                 background-color: rgb(35, 35, 55);
                 border: 1px solid rgb(63, 63, 97);
                 color: rgb(193, 202, 227);
@@ -358,7 +365,7 @@ class Saver_Opener():
                 padding: 4px;
                 border: none;
                 border-right: 1px solid rgb(83, 83, 117);
-                min-height: 14px;
+                min-height: 20px;
             }
 
             QScrollBar:vertical {

@@ -64,7 +64,7 @@ class MainWindow(QMainWindow):
 
         for name, attr_name in labels:
             lbl = QLabel(name)
-            lbl.setFixedSize(180, 26)
+            lbl.setFixedSize(190, 26)
             setattr(self, attr_name, lbl)
             lbl.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
 
@@ -436,7 +436,6 @@ class MainWindow(QMainWindow):
                     self.run_main_experiment()
                 else:
                     self.last_error = False
-
 
     def update_gui_status(self, status_text):
         

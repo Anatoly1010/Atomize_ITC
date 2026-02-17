@@ -21,7 +21,7 @@ from datetime import datetime
 from pathlib import Path
 from PyQt6.QtCore import QSharedMemory, QSize, QEventLoop
 from PyQt6.QtGui import QColor, QIcon, QStandardItem, QStandardItemModel, QAction
-from PyQt6.QtWidgets import QFileDialog, QMessageBox, QListView, QDockWidget, QVBoxLayout, QWidget, QGridLayout, QTabWidget, QMainWindow, QPlainTextEdit, QHBoxLayout, QApplication, QPushButton, QWidget, QFileDialog, QLabel, QSizePolicy, QSizeGrip, QLineEdit, QFileIconProvider
+from PyQt6.QtWidgets import QFileDialog, QMessageBox, QListView, QDockWidget, QVBoxLayout, QWidget, QGridLayout, QTabWidget, QMainWindow, QPlainTextEdit, QHBoxLayout, QApplication, QPushButton, QWidget, QFileDialog, QLabel, QSizePolicy, QSizeGrip, QLineEdit, QFileIconProvider, QTreeView, QHeaderView
 from PyQt6.QtNetwork import QLocalServer
 from PyQt6 import QtCore, QtGui
 from pyqtgraph.dockarea import DockArea
@@ -640,7 +640,7 @@ class MainWindow(QMainWindow):
     def stop_script(self):
         self.script_queue.clear()
         self.queue = 0
-        self.process_python.close()
+        self.process_python.terminate()
 
     def add_to_queue(self):
         key_number = str( len(self.script_queue.keys()) )
@@ -905,6 +905,13 @@ class MainWindow(QMainWindow):
         filedialog.resize(800, 450) 
         # use QFileDialog.Option.DontUseNativeDialog to change directory
 
+        tree = filedialog.findChild(QTreeView)
+        header = tree.header()
+        for i in range(header.count()):
+            header.setSectionResizeMode(i, QHeaderView.ResizeMode.ResizeToContents)
+
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+
         buttons = filedialog.findChildren(QPushButton)
         seen_texts = []
         for btn in buttons:
@@ -937,7 +944,7 @@ class MainWindow(QMainWindow):
             }
 
             QTreeView {
-                min-width: 450px;
+                min-width: 500px;
                 background-color: rgb(35, 35, 55);
                 border: 1px solid rgb(63, 63, 97);
                 color: rgb(193, 202, 227);
@@ -1029,7 +1036,7 @@ class MainWindow(QMainWindow):
                 padding: 4px;
                 border: none;
                 border-right: 1px solid rgb(83, 83, 117);
-                min-height: 14px;
+                min-height: 20px;
             }
 
             QScrollBar:vertical {
@@ -1345,6 +1352,13 @@ class NameList(QDockWidget):
         filedialog.setIconProvider(QFileIconProvider())
         filedialog.resize(800, 450) 
 
+        tree = filedialog.findChild(QTreeView)
+        header = tree.header()
+        for i in range(header.count()):
+            header.setSectionResizeMode(i, QHeaderView.ResizeMode.ResizeToContents)
+
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+
         buttons = filedialog.findChildren(QPushButton)
         seen_texts = []
         for btn in buttons:
@@ -1377,7 +1391,7 @@ class NameList(QDockWidget):
             }
 
             QTreeView {
-                min-width: 450px;
+                min-width: 500px;
                 background-color: rgb(35, 35, 55);
                 border: 1px solid rgb(63, 63, 97);
                 color: rgb(193, 202, 227);
@@ -1469,7 +1483,7 @@ class NameList(QDockWidget):
                 padding: 4px;
                 border: none;
                 border-right: 1px solid rgb(83, 83, 117);
-                min-height: 14px;
+                min-height: 20px;
             }
 
             QScrollBar:vertical {
@@ -1584,6 +1598,13 @@ class NameList(QDockWidget):
         filedialog.resize(800, 450) 
         # use QFileDialog.Option.DontUseNativeDialog to change directory
 
+        tree = filedialog.findChild(QTreeView)
+        header = tree.header()
+        for i in range(header.count()):
+            header.setSectionResizeMode(i, QHeaderView.ResizeMode.ResizeToContents)
+
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        
         buttons = filedialog.findChildren(QPushButton)
         seen_texts = []
         for btn in buttons:
@@ -1616,7 +1637,7 @@ class NameList(QDockWidget):
             }
 
             QTreeView {
-                min-width: 450px;
+                min-width: 500px;
                 background-color: rgb(35, 35, 55);
                 border: 1px solid rgb(63, 63, 97);
                 color: rgb(193, 202, 227);
@@ -1708,7 +1729,7 @@ class NameList(QDockWidget):
                 padding: 4px;
                 border: none;
                 border-right: 1px solid rgb(83, 83, 117);
-                min-height: 14px;
+                min-height: 20px;
             }
 
             QScrollBar:vertical {

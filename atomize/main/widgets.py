@@ -660,6 +660,13 @@ class CrosshairDock(CloseableDock):
         filedialog.setIconProvider(QtWidgets.QFileIconProvider())
         line_edit = filedialog.findChild(QtWidgets.QLineEdit)
 
+        tree = filedialog.findChild(QtWidgets.QTreeView)
+        header = tree.header()
+        for i in range(header.count()):
+            header.setSectionResizeMode(i, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
+
+        header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeMode.Stretch)
+
         buttons = filedialog.findChildren(QtWidgets.QPushButton)
         seen_texts = []
         for btn in buttons:
@@ -690,7 +697,7 @@ class CrosshairDock(CloseableDock):
             }
 
             QTreeView {
-                min-width: 450px;
+                min-width: 500px;
                 background-color: rgb(35, 35, 55);
                 border: 1px solid rgb(63, 63, 97);
                 color: rgb(193, 202, 227);
@@ -782,7 +789,7 @@ class CrosshairDock(CloseableDock):
                 padding: 4px;
                 border: none;
                 border-right: 1px solid rgb(83, 83, 117);
-                min-height: 14px;
+                min-height: 20px;
             }
 
             QScrollBar:vertical {
@@ -1086,6 +1093,13 @@ class CrossSectionDock(CloseableDock):
         self.fileDialog.setIconProvider(QtWidgets.QFileIconProvider())
         line_edit = self.fileDialog.findChild(QtWidgets.QLineEdit)
 
+        tree = self.fileDialog.findChild(QtWidgets.QTreeView)
+        header = tree.header()
+        for i in range(header.count()):
+            header.setSectionResizeMode(i, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
+
+        header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeMode.Stretch)
+        
         buttons = self.fileDialog.findChildren(QtWidgets.QPushButton)
         seen_texts = []
         for btn in buttons:
@@ -1116,7 +1130,7 @@ class CrossSectionDock(CloseableDock):
             }
 
             QTreeView {
-                min-width: 450px;
+                min-width: 500px;
                 background-color: rgb(35, 35, 55);
                 border: 1px solid rgb(63, 63, 97);
                 color: rgb(193, 202, 227);
@@ -1208,7 +1222,7 @@ class CrossSectionDock(CloseableDock):
                 padding: 4px;
                 border: none;
                 border-right: 1px solid rgb(83, 83, 117);
-                min-height: 14px;
+                min-height: 20px;
             }
 
             QScrollBar:vertical {

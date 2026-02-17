@@ -57,7 +57,10 @@ class MainExtended(MainWindow):
 
         self.set_control_center()
 
+        self.skip_lines = 0
+
     def handle_output_control_center(self):
+
 
         sending_process = self.sender()
         if not sending_process:
@@ -67,7 +70,14 @@ class MainExtended(MainWindow):
         if raw_data.startswith("print "):
             msg = raw_data[6:].strip()
             self.text_errors.appendPlainText(msg)
-        else:
+        # Insys stdOut
+        elif raw_data.startswith("before "):
+            self.skip_lines = 1
+        elif 'ret = 0' in raw_data:
+            self.skip_lines = 0
+        elif raw_data.startswith("closing "):
+            pass
+        elif self.skip_lines != 1:
             self.text_errors.appendPlainText(raw_data[:-1])
 
     # control tab design

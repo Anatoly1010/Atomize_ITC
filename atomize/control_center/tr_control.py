@@ -65,7 +65,7 @@ class MainWindow(QMainWindow):
 
         for name, attr_name in labels:
             lbl = QLabel(name)
-            lbl.setFixedSize(180, 26)
+            lbl.setFixedSize(190, 26)
             setattr(self, attr_name, lbl)
             lbl.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
 
@@ -530,7 +530,7 @@ class MainWindow(QMainWindow):
             except Exception as e:
                 break
         
-        time.sleep(0.1)
+        time.sleep(0.3)
 
         if hasattr(self, 'exp_process') and not self.exp_process.is_alive():
             if self.parent_conn.poll():
@@ -542,7 +542,7 @@ class MainWindow(QMainWindow):
                 self.is_testing = False
                 if not self.last_error:
                     self.last_error = False 
-                    time.sleep(0.1)
+                    time.sleep(0.3)
                     self.run_main_experiment()
                 else:
                     self.last_error = False
@@ -789,7 +789,7 @@ class Worker():
                         f"{'Record Length:':<{w}} {real_length} Points\n"
                         f"{'Time Resolution:':<{w}} {t_res_2}\n"
                         f"{'Frequency:':<{w}} {ag53131a.freq_counter_frequency('CH3')}\n"
-                        f"{'-'*w}\n"
+                        f"{'-'*50}\n"
                         f"2D Data"
                     )
 
@@ -837,7 +837,7 @@ class Worker():
                         f"{'Record Length:':<{w}} {real_length} Points\n"
                         f"{'Time Resolution:':<{w}} {t_res_2}\n"
                         f"{'Frequency:':<{w}} {ag53131a.freq_counter_frequency('CH3')}\n"
-                        f"{'-'*w}\n"
+                        f"{'-'*50}\n"
                         f"2D Data"
                     )
 
@@ -1171,7 +1171,7 @@ class Worker():
                         f"{'Record Length:':<{w}} {real_length} Points\n"
                         f"{'Time Resolution:':<{w}} {t_res_2}\n"
                         f"{'Frequency:':<{w}} {ag53131a.freq_counter_frequency('CH3')}\n"
-                        f"{'-'*w}\n"
+                        f"{'-'*50}\n"
                         f"2D Data"
                     )
 
@@ -1218,7 +1218,7 @@ class Worker():
                         f"{'Record Length:':<{w}} {real_length} Points\n"
                         f"{'Time Resolution:':<{w}} {t_res_2}\n"
                         f"{'Frequency:':<{w}} {ag53131a.freq_counter_frequency('CH3')}\n"
-                        f"{'-'*w}\n"
+                        f"{'-'*50}\n"
                         f"2D Data"
                     )
 
@@ -1457,7 +1457,7 @@ class Worker():
                         f"{'Record Length:':<{w}} {real_length} Points\n"
                         f"{'Time Resolution:':<{w}} {t_res_2}\n"
                         f"{'Frequency:':<{w}} {ag53131a.freq_counter_frequency('CH3')}\n"
-                        f"{'-'*w}\n"
+                        f"{'-'*50}\n"
                         f"2D Data"
                     )
 
@@ -1505,7 +1505,7 @@ class Worker():
                         f"{'Record Length:':<{w}} {real_length} Points\n"
                         f"{'Time Resolution:':<{w}} {t_res_2}\n"
                         f"{'Frequency:':<{w}} {ag53131a.freq_counter_frequency('CH3')}\n"
-                        f"{'-'*w}\n"
+                        f"{'-'*50}\n"
                         f"2D Data"
                     )
 
@@ -1839,7 +1839,7 @@ class Worker():
                         f"{'Record Length:':<{w}} {real_length} Points\n"
                         f"{'Time Resolution:':<{w}} {t_res_2}\n"
                         f"{'Frequency:':<{w}} {ag53131a.freq_counter_frequency('CH3')}\n"
-                        f"{'-'*w}\n"
+                        f"{'-'*50}\n"
                         f"2D Data"
                     )
 
@@ -1886,7 +1886,7 @@ class Worker():
                         f"{'Record Length:':<{w}} {real_length} Points\n"
                         f"{'Time Resolution:':<{w}} {t_res_2}\n"
                         f"{'Frequency:':<{w}} {ag53131a.freq_counter_frequency('CH3')}\n"
-                        f"{'-'*w}\n"
+                        f"{'-'*50}\n"
                         f"2D Data"
                     )
 
