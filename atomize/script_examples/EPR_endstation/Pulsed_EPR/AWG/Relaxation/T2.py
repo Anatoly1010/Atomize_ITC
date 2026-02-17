@@ -18,6 +18,7 @@ bh15 = bh.BH_15()
 
 def cleanup(*args):
     pb.pulser_close()
+    data[0], data[1] = pb.digitizer_at_exit()
     file_handler.save_data(
         file_data, 
         data, 

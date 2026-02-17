@@ -2541,6 +2541,23 @@ class Insys_FPGA:
         # self.adc_window is in pulser counts => 3.2 ns to 0.4 ns (x8)
         return int( self.adc_window * 8 / self.dec_coef )
 
+    def digitizer_at_exit(self, integral = False):
+        if self.test_flag != 'test':
+            if integral == False:
+                #self.data_i_ph, self.data_q_ph = self.pulser_acquisition_cycle(1, 1, p, ph, adc_window, acq_cycle = self.detection_phase_list)
+                return self.data_i_ph.T, self.data_q_ph.T
+            elif integral == True:
+                #self.data_i_ph, self.data_q_ph = self.pulser_acquisition_cycle(1, 1, p, ph, adc_window, acq_cycle = self.detection_phase_list)
+                return 1 * 0.4 * self.dec_coef * np.sum( (self.data_i_ph)[:, self.win_left:self.win_right], axis = 1 ), 1 * 0.4 * self.dec_coef * np.sum( (self.data_q_ph)[:, self.win_left:self.win_right], axis = 1 )
+
+        elif self.test_flag == 'test':
+            if integral == False:
+                #self.data_i_ph, self.data_q_ph = self.pulser_acquisition_cycle(1, 1, p, ph, adc_window, acq_cycle = self.detection_phase_list)
+                return self.data_i_ph.T, self.data_q_ph.T 
+            elif integral == True:
+                #self.data_i_ph, self.data_q_ph = self.pulser_acquisition_cycle(1, 1, p, ph, adc_window, acq_cycle = self.detection_phase_list)
+                return  1 * 0.4 * self.dec_coef * np.sum( (self.data_i_ph)[:, self.win_left:self.win_right], axis = 1 ),  1 * 0.4 * self.dec_coef * np.sum( (self.data_q_ph)[:, self.win_left:self.win_right], axis = 1 )
+
     ####################DAC#######################
     def awg_name(self):
         answer = 'Insys 1.25 GHz 16 bit DAC'
