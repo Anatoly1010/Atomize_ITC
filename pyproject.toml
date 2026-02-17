@@ -42,4 +42,4 @@ Documentation = "https://github.com/Anatoly1010/Atomize/tree/master/atomize/docu
     math = ["scipy>=1.15"]
 
 [tool.hatch.build.targets.wheel]
-packages = ["atomize-itc"]
+packages = ["atomize"]

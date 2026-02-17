@@ -1176,7 +1176,7 @@ class NameList(QDockWidget):
         self.setTitleBarWidget(QWidget(self))
 
         #directories
-        path_to_main = os.path.abspath(os.getcwd())
+        path_to_main = Path(__file__).parent
         # configuration data
         path_config_file = os.path.join(path_to_main, '..', 'config.ini')
         path_config_file_device = os.path.join(path_to_main, '..', 'device_modules/config')
