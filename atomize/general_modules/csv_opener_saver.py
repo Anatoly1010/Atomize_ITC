@@ -266,7 +266,11 @@ class Saver_Opener():
             }
 
             QTreeView {
-                min-width: 450px; 
+                min-width: 450px;
+                background-color: rgb(35, 35, 55);
+                border: 1px solid rgb(63, 63, 97);
+                color: rgb(193, 202, 227);
+                outline: none;
             }
 
             QFileDialog QFrame#qt_contents, QFileDialog QWidget {
@@ -309,6 +313,7 @@ class Saver_Opener():
             QLineEdit:focus, QFileDialog QComboBox:focus {
                 border: 1px solid rgb(211, 194, 78);
                 color: rgb(211, 194, 78);
+                outline: none;
             }
 
             QFileDialog QComboBox#lookInCombo {
@@ -319,6 +324,14 @@ class Saver_Opener():
                 padding-left: 5px;
                 min-height: 19px;
                 max-height: 19px;
+                selection-background-color: rgb(48, 48, 75);
+                selection-color: rgb(211, 194, 78);
+            }
+
+            QFileDialog QComboBox#lookInCombo QAbstractItemView {
+                outline: none;
+                border: 1px solid rgb(48, 48, 75);
+                background-color: rgb(42, 42, 64);
             }
 
             QFileDialog QDialogButtonBox QPushButton {
@@ -337,13 +350,6 @@ class Saver_Opener():
                 background-color: rgb(83, 83, 117);
                 border: 1px solid rgb(211, 194, 78);
                 color: rgb(211, 194, 78);
-            }
-
-            QTreeView {
-                background-color: rgb(35, 35, 55);
-                border: 1px solid rgb(63, 63, 97);
-                color: rgb(193, 202, 227);
-                outline: none;
             }
             
             QHeaderView::section {
@@ -397,11 +403,6 @@ class Saver_Opener():
                 color: rgb(193, 202, 227);
             }
 
-            QFileDialog QComboBox#lookInCombo {
-                selection-background-color: rgb(48, 48, 75);
-                selection-color: rgb(211, 194, 78);
-            }
-
             QFileDialog QListView::item:hover {
                 background-color: rgb(48, 48, 75);
                 color: rgb(211, 194, 78);
@@ -421,16 +422,14 @@ class Saver_Opener():
                 background-color: rgb(48, 48, 75);
                 color: rgb(211, 194, 78); 
                 } 
-
-            QFileDialog QListView#sidebar::item {
-                padding-left: 5px; 
-                padding-top: 5px;
-            }
-
             QTreeView::item:selected:inactive, 
             QFileDialog QListView#sidebar::item:selected:inactive {
                 selection-background-color: rgb(63, 63, 97);
                 selection-color: rgb(211, 194, 78);
+            }
+            QFileDialog QListView#sidebar::item {
+                padding-left: 5px; 
+                padding-top: 5px;
             }
 
             QMenu {
@@ -438,7 +437,6 @@ class Saver_Opener():
                 border: 1px solid rgb(63, 63, 97);
                 padding: 3px;
             }
-
             QMenu::item { color: rgb(211, 194, 78); } 
             QMenu::item:selected { 
                 background-color: rgb(48, 48, 75); 
@@ -446,6 +444,7 @@ class Saver_Opener():
                 }
 
         """)
+
         # set format
         if fmt != '':
             self.dialog.setDefaultSuffix(fmt)
