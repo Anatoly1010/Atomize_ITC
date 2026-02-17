@@ -372,20 +372,9 @@ class MainWindow(QMainWindow):
             #self.message('Experimental script is not running')
 
     def check_messages(self):
-        if hasattr(self, 'exp_process') and not self.exp_process.is_alive():
-            
-            if getattr(self, 'is_testing', False):
-                self.is_testing = False
-                
-                if self.exp_process.exitcode == 0:
-                    print("Тест пройден, запускаем основной процесс...")
-                    self.run_main_experiment()
-                else:
-                    print("Ошибка в тесте, запуск отменен")
-                    self.timer.stop()
-                    # Возвращаем стиль кнопки обратно
-            else:
-                self.timer.stop()
+
+        if not hasattr(self, 'last_error'):
+            self.last_error = False
 
         while self.parent_conn.poll():
             try:
@@ -395,7 +384,8 @@ class MainWindow(QMainWindow):
                     self.progress_bar.setValue(int(data))
                 elif msg_type == 'Open':
                     self.open_dialog()
-                else:
+                elif msg_type == 'Error':
+                    self.last_error = True
                     self.timer.stop()
                     self.progress_bar.setValue(0)
                     if msg_type != 'test':
@@ -408,12 +398,45 @@ class MainWindow(QMainWindow):
                             color: rgb(193, 202, 227); 
                             font-weight: bold; 
                         }
-                    """)
+                    """)                    
+                else:
+                    self.timer.stop()
+                    self.progress_bar.setValue(0)
+                    if msg_type != 'test':
+                        self.message(data)
+                        self.button_start.setStyleSheet("""
+                            QPushButton {
+                                border-radius: 4px; 
+                                background-color: rgb(63, 63, 97); 
+                                border-style: outset; 
+                                color: rgb(193, 202, 227); 
+                                font-weight: bold; 
+                            }
+                        """)
+
             except EOFError:
                 self.timer.stop()
                 break
             except Exception as e:
                 break
+
+        time.sleep(0.1)
+
+        if hasattr(self, 'exp_process') and not self.exp_process.is_alive():
+            if self.parent_conn.poll():
+                return
+
+            self.timer.stop()
+
+            if getattr(self, 'is_testing', False):
+                self.is_testing = False
+                if not self.last_error:
+                    self.last_error = False 
+                    time.sleep(0.1)
+                    self.run_main_experiment()
+                else:
+                    self.last_error = False
+
 
     def update_gui_status(self, status_text):
         
@@ -484,13 +507,14 @@ class MainWindow(QMainWindow):
         self.exp_process.start()
         self.parent_conn.send('start')
         
-        self.is_testing = True 
+        self.is_testing = True
         self.timer.start(100)
         
         #self.poller.update_command(self.parent_conn)
         #self.poller.start()
 
     def run_main_experiment(self):
+
         worker = Worker()
         self.parent_conn, self.child_conn = Pipe()
         
@@ -736,7 +760,8 @@ class Worker():
 
                 conn.send( ('', f'Script {p2} finished') )
                 general.wait('200 ms')
-
+                conn.close()
+                
         except BaseException as e:
             exc_info = f"{type(e)} \n{str(e)} \n{traceback.format_exc()}"
             conn.send( ('Error', exc_info) )
@@ -759,7 +784,6 @@ class Worker():
         sys.argv = ['', 'test']
 
         try:
-            
             import datetime
             import atomize.general_modules.general_functions as general
             general.test_flag = 'test'
@@ -954,7 +978,7 @@ class Worker():
                 itc_fc.magnet_field( START_FIELD )
 
                 conn.send( ('test', f'Script {p2} finished') )
-                general.wait('200 ms')
+                conn.close()
 
         except BaseException as e:
             exc_info = f"{type(e)} \n{str(e)} \n{traceback.format_exc()}"
