@@ -66,7 +66,7 @@ class MainExtended(MainWindow):
         if not sending_process:
             return
 
-        raw_data = process.readAllStandardOutput().data().decode(self.system_encoding, errors='replace')
+        raw_data = sending_process.readAllStandardOutput().data().decode(self.system_encoding, errors='replace')
         if raw_data.startswith("print "):
             msg = raw_data[6:].strip()
             self.text_errors.appendPlainText(msg)

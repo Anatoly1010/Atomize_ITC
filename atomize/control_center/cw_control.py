@@ -10,7 +10,6 @@ from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QLabel, QDoubleS
 from PyQt6.QtGui import QIcon
 from PyQt6.QtCore import Qt, QTimer
 import atomize.general_modules.csv_opener_saver as openfile
-#import atomize.control_center.status_poller as pol
 
 class MainWindow(QMainWindow):
     """
@@ -28,9 +27,7 @@ class MainWindow(QMainWindow):
         """
         Create a process to interact with an experimental script that will run on a different thread.
         We need a different thread here, since PyQt GUI applications have a main thread of execution that runs the event loop and GUI. If you launch a long-running task in this thread, then your GUI will freeze until the task terminates. During that time, the user won’t be able to interact with the application
-        """
-        #self.poller = pol.StatusPoller()
-        #self.poller.status_received.connect(self.update_gui_status)        
+        """       
         
         self.timer = QTimer()
         self.timer.timeout.connect(self.check_messages)
@@ -290,13 +287,6 @@ class MainWindow(QMainWindow):
         event.ignore()
         self.turn_off()
 
-    def quit(self):
-        """
-        A function to quit the programm
-        """
-        self.turn_off()
-        sys.exit()
-
     def curve_name(self):
         self.cur_curve_name = self.text_edit_curve.toPlainText()
         #print( self.cur_curve_name )
@@ -437,17 +427,6 @@ class MainWindow(QMainWindow):
                 else:
                     self.last_error = False
 
-    def update_gui_status(self, status_text):
-        
-        self.poller.wait()
-
-        if self.parent_conn.poll() == True:
-            msg_type, data = self.parent_conn.recv()
-            self.message(data)    
-            self.button_start.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; } ")   
-        else:
-            pass
-
     def check_process_status(self):
         if self.exp_process.is_alive():
             return
@@ -508,9 +487,6 @@ class MainWindow(QMainWindow):
         
         self.is_testing = True
         self.timer.start(100)
-        
-        #self.poller.update_command(self.parent_conn)
-        #self.poller.start()
 
     def run_main_experiment(self):
 

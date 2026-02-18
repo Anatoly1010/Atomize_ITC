@@ -10,7 +10,6 @@ from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QLabel, QDoubleS
 from PyQt6.QtGui import QIcon
 from PyQt6.QtCore import Qt, QTimer
 import atomize.general_modules.csv_opener_saver as openfile
-#import atomize.control_center.status_poller as pol
 
 class MainWindow(QMainWindow):
     """
@@ -31,8 +30,6 @@ class MainWindow(QMainWindow):
         Create a process to interact with an experimental script that will run on a different thread.
         We need a different thread here, since PyQt GUI applications have a main thread of execution that runs the event loop and GUI. If you launch a long-running task in this thread, then your GUI will freeze until the task terminates. During that time, the user won’t be able to interact with the application
         """
-        #self.poller = pol.StatusPoller()
-        #self.poller.status_received.connect(self.update_gui_status)
 
         self.timer = QTimer()
         self.timer.timeout.connect(self.check_messages)
@@ -460,25 +457,12 @@ class MainWindow(QMainWindow):
 
         self.is_testing = True 
         self.timer.start(300)
-        #self.poller.update_command(self.parent_conn)
-        #self.poller.start()
 
     def message(self, *text):
         if len(text) == 1:
             print(f'{text[0]}', flush=True)
         else:
             print(f'{text}', flush=True)
-
-    def update_gui_status(self, status_text):
-
-        self.poller.wait() 
-
-        if self.parent_conn.poll() == True:
-            msg_type, data = self.parent_conn.recv()
-            self.message(data)    
-            self.button_start.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; } ")
-        else:
-            pass
 
     def check_messages(self):
 
