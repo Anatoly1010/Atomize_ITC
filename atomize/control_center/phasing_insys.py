@@ -29,7 +29,6 @@ class MainWindow(QMainWindow):
         path_to_main2 = os.path.join(os.path.abspath(os.getcwd()), '..', 'libs')  #, '..', '..', 'libs'
         os.chdir(path_to_main2)
         #####
-
         ###self.pb = pb_pro.Insys_FPGA()
         
         # Phase correction
@@ -1334,6 +1333,7 @@ class MainWindow(QMainWindow):
                 }
             """)
 
+    ##
     def parse_message(self):
         msg_type, data = self.parent_conn_dig.recv()
         
@@ -1342,6 +1342,8 @@ class MainWindow(QMainWindow):
             #self.progress_bar.setValue(int(data))
         elif msg_type == 'Open':
             self.open_dialog()
+        elif msg_type == 'Message':
+            self.errors.appendPlainText(data)
         elif msg_type == 'Error':
             self.last_error = True
             self.timer.stop()
@@ -1587,7 +1589,7 @@ class Worker():
                     if p14 > 49:
                         pb.pulser_repetition_rate( str(p14) + ' Hz' )
                     else:
-                        general.message('For REPETITION RATE lower then 50 Hz, please, press UPDATE')
+                        conn.send( ('Message', 'For REPETITION RATE lower then 50 Hz, please, press RUN PULSES') )
                     
                 elif self.command[0:2] == 'FI':
                     p15 = float( self.command[2:] )
@@ -1829,8 +1831,8 @@ class Worker():
                     if p14 > 49:
                         pb.pulser_repetition_rate( str(p14) + ' Hz' )
                     else:
-                        general.message('For REPETITION RATE lower then 50 Hz, please, press UPDATE')
-                    
+                        conn.send( ('Message', 'For REPETITION RATE lower then 50 Hz, please, press RUN PULSES') )
+                
                 elif self.command[0:2] == 'FI':
                     p15 = float( self.command[2:] )
                     bh15.magnet_field( p15 ) #, calibration = 'True'

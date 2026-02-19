@@ -318,7 +318,13 @@ class Insys_FPGA:
         if self.test_flag != 'test':
             
             file_brdLib = 'libNvsbLib.so'
-            path_brdLib = "/".join(  (*(__file__.split("/")), )[:-3] + ("libs", ) + (file_brdLib, ) )
+            #path_brdLib = "/".join(  (*(__file__.split("/")), )[:-3] + ("libs", ) + (file_brdLib, ) )
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+
+            path_brdLib = os.path.normpath(
+                os.path.join(current_dir, "..", "..", "libs", file_brdLib)
+            )
+            
             brdLib = ctypes.cdll.LoadLibrary(path_brdLib)
             
             #===========================
