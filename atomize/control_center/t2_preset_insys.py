@@ -374,6 +374,43 @@ class MainWindow(QMainWindow):
         else:
             print(f'{text}', flush=True)
 
+    def parse_message(self):
+        msg_type, data = self.parent_conn.recv()
+            
+        if msg_type == 'Status':
+            self.progress_bar.setValue(int(data))
+        elif msg_type == 'Open':
+            self.open_dialog()
+        elif msg_type == 'Error':
+            self.last_error = True
+            self.timer.stop()
+            self.progress_bar.setValue(0)
+            if msg_type != 'test':
+                self.message(data)
+            self.button_start.setStyleSheet("""
+                QPushButton {
+                    border-radius: 4px; 
+                    background-color: rgb(63, 63, 97); 
+                    border-style: outset; 
+                    color: rgb(193, 202, 227); 
+                    font-weight: bold; 
+                }
+            """)
+        else:
+            self.timer.stop()
+            self.progress_bar.setValue(0)
+            if msg_type != 'test':
+                self.message(data)
+                self.button_start.setStyleSheet("""
+                    QPushButton {
+                        border-radius: 4px; 
+                        background-color: rgb(63, 63, 97); 
+                        border-style: outset; 
+                        color: rgb(193, 202, 227); 
+                        font-weight: bold; 
+                    }
+                """)
+
     def check_messages(self):
 
         if not hasattr(self, 'last_error'):
@@ -381,41 +418,7 @@ class MainWindow(QMainWindow):
 
         while self.parent_conn.poll():
             try:
-                msg_type, data = self.parent_conn.recv()
-                
-                if msg_type == 'Status':
-                    self.progress_bar.setValue(int(data))
-                elif msg_type == 'Open':
-                    self.open_dialog()
-                elif msg_type == 'Error':
-                    self.last_error = True
-                    self.timer.stop()
-                    self.progress_bar.setValue(0)
-                    if msg_type != 'test':
-                        self.message(data)
-                    self.button_start.setStyleSheet("""
-                        QPushButton {
-                            border-radius: 4px; 
-                            background-color: rgb(63, 63, 97); 
-                            border-style: outset; 
-                            color: rgb(193, 202, 227); 
-                            font-weight: bold; 
-                        }
-                    """)                    
-                else:
-                    self.timer.stop()
-                    self.progress_bar.setValue(0)
-                    if msg_type != 'test':
-                        self.message(data)
-                        self.button_start.setStyleSheet("""
-                            QPushButton {
-                                border-radius: 4px; 
-                                background-color: rgb(63, 63, 97); 
-                                border-style: outset; 
-                                color: rgb(193, 202, 227); 
-                                font-weight: bold; 
-                            }
-                        """)
+                self.parse_message()
 
             except EOFError:
                 self.timer.stop()
@@ -427,7 +430,8 @@ class MainWindow(QMainWindow):
 
         if hasattr(self, 'exp_process') and not self.exp_process.is_alive():
             if self.parent_conn.poll():
-                return
+                #return
+                self.parse_message()
 
             self.timer.stop()
 

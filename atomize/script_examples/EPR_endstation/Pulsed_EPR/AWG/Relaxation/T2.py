@@ -23,7 +23,8 @@ def cleanup(*args):
         file_data, 
         data, 
         header = header, 
-        mode = 'w')
+        mode = 'w'
+    )
     sys.exit(0)
 
 signal.signal(signal.SIGTERM, cleanup)
@@ -217,7 +218,9 @@ general.plot_2d(
 )
 
 
-file_handler.save_data(file_data, 
+file_handler.save_data(
+    file_data, 
     data, 
     header = header, 
-    mode = 'w')
+    mode = 'w'
+)

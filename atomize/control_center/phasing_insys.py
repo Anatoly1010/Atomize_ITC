@@ -1451,21 +1451,8 @@ class Worker():
         """
         # should be inside dig_on() function;
         # freezing after digitizer restart otherwise
-        import time
         import traceback
 
-        while self.command != 'exit':
-
-            time.sleep(0.2)
-
-            if conn.poll() == True:
-                self.command = conn.recv()
-
-            if self.command == 'exit':
-                #pb.pulser_close()
-                conn.send( ('', f'Pulses are stopped') )
-
-        """
         try:
             import time
             import numpy as np
@@ -1695,7 +1682,6 @@ class Worker():
         except BaseException as e:
             exc_info = f"{type(e)} \n{str(e)} \n{traceback.format_exc()}"
             conn.send( ('Error', exc_info) )
-        """
 
     def dig_test(self, conn, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11, p12, p13, p14, p15, p16, p17, p18, p19, p20, p21, p22, p23):
         """
