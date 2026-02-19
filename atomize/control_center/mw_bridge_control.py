@@ -150,7 +150,14 @@ class MainWindow(QMainWindow):
             combo.addItems(item)
             combo.setCurrentText(cur_text)
             combo.setFixedSize(130, 26)
-            combo.setStyleSheet("QComboBox { color : rgb(193, 202, 227); selection-color: rgb(211, 194, 78); }")
+            combo.setStyleSheet("""
+                QComboBox 
+                { color : rgb(193, 202, 227); 
+                selection-color: rgb(211, 194, 78); 
+                selection-background-color: rgb(63, 63, 97);
+                outline: none;
+                }
+                """)
 
 
         # ---- Buttons ----

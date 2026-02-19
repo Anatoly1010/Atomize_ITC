@@ -3,23 +3,20 @@
 
 import os
 import sys
-import time
 import traceback
 import numpy as np
 from multiprocessing import Process, Pipe
 from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QLabel, QDoubleSpinBox, QSpinBox, QComboBox, QPushButton, QTextEdit, QGridLayout, QFrame, QCheckBox, QFileDialog, QVBoxLayout, QTabWidget, QScrollArea, QHBoxLayout, QPlainTextEdit
 from PyQt6.QtGui import QIcon, QColor, QAction
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import Qt
 import atomize.general_modules.general_functions as general
-#import atomize.device_modules.Insys_FPGA as pb_pro
-#import atomize.control_center.status_poller as pol
-import atomize.general_modules.csv_opener_saver as openfile
+import atomize.device_modules.Insys_FPGA as pb_pro
+import atomize.control_center.status_poller as pol
 
 class MainWindow(QMainWindow):
     """
     A main window class
     """
-    ##
     def __init__(self, *args, **kwargs):
         """
         A function for connecting actions and creating a main window
@@ -31,7 +28,7 @@ class MainWindow(QMainWindow):
         os.chdir(path_to_main2)
         #####
 
-        ###self.pb = pb_pro.Insys_FPGA()
+        self.pb = pb_pro.Insys_FPGA()
         
         # Phase correction
         self.deg_rad = 57.2957795131
@@ -48,15 +45,8 @@ class MainWindow(QMainWindow):
         Create a process to interact with an experimental script that will run on a different thread.
         We need a different thread here, since PyQt GUI applications have a main thread of execution that runs the event loop and GUI. If you launch a long-running task in this thread, then your GUI will freeze until the task terminates. During that time, the user won’t be able to interact with the application
         """
-        #self.poller = pol.StatusPoller()
-        #self.poller.status_received.connect(self.update_gui_status)
-
-        self.exit_clicked = 0
-        self.timer = QTimer()
-        self.timer.timeout.connect(self.check_messages)
-        self.monitor_timer = QTimer()
-        self.monitor_timer.timeout.connect(self.check_process_status)
-        self.file_handler = openfile.Saver_Opener()
+        self.poller = pol.StatusPoller()
+        self.poller.status_received.connect(self.update_gui_status)
 
     def menu(self):
         menubar = self.menuBar()
@@ -270,7 +260,14 @@ class MainWindow(QMainWindow):
 
         for i in range(1, 10):
             combo = QComboBox()
-            combo.setStyleSheet("QComboBox { color : rgb(193, 202, 227); selection-color: rgb(211, 194, 78); }")
+            combo.setStyleSheet("""
+                QComboBox 
+                { color : rgb(193, 202, 227); 
+                selection-color: rgb(211, 194, 78); 
+                selection-background-color: rgb(63, 63, 97);
+                outline: none;
+                }
+                """)
             combo.setFixedSize(130, 26)
             if i == 1:
                 combo.addItems(combo_boxes[i-1][4])
@@ -654,7 +651,14 @@ class MainWindow(QMainWindow):
         combo.addItems(combo_laser[4])
         combo.setCurrentText(combo_laser[0])
         combo.setFixedSize(130, 26)
-        combo.setStyleSheet("QComboBox { color : rgb(193, 202, 227); selection-color: rgb(211, 194, 78); }")
+            combo.setStyleSheet("""
+                QComboBox 
+                { color : rgb(193, 202, 227); 
+                selection-color: rgb(211, 194, 78); 
+                selection-background-color: rgb(63, 63, 97);
+                outline: none;
+                }
+                """)
 
         self.combo_laser_fun()
 
@@ -984,6 +988,13 @@ class MainWindow(QMainWindow):
         self.dig_stop()
         sys.exit()
 
+    def quit(self):
+        """
+        A function to quit the programm
+        """
+        self.dig_stop()
+        sys.exit()
+
     def round_to_closest(self, x, y):
         """
         A function to round x to divisible by y
@@ -1024,7 +1035,6 @@ class MainWindow(QMainWindow):
             
         #print(f"Pulse {index} type set to: {text}")
 
-    ##
     def rep_rate(self):
         """
         A function to change a repetition rate
@@ -1032,18 +1042,16 @@ class MainWindow(QMainWindow):
         self.repetition_rate = str( self.Rep_rate.value() ) + ' Hz'
 
         if self.laser_flag != 1:
-            pass
-            ##self.pb.pulser_repetition_rate( self.repetition_rate )
-            ###self.update()
+            self.pb.pulser_repetition_rate( self.repetition_rate )
+        #    ###self.update()
         elif self.laser_flag == 1 and self.combo_laser_num == 1:
             self.repetition_rate = '9.9 Hz'
-            ###self.pb.pulser_repetition_rate( self.repetition_rate )
+            self.pb.pulser_repetition_rate( self.repetition_rate )
             self.Rep_rate.setValue(9.9)
-            ###self.update()
+        #    ###self.update()
             self.errors.appendPlainText( '9.9 Hz is a maximum repetiton rate with LASER pulse' )
         elif self.laser_flag == 1 and self.combo_laser_num == 2:
-            pass
-            #self.pb.pulser_repetition_rate( self.repetition_rate )
+            self.pb.pulser_repetition_rate( self.repetition_rate )
 
         try:
             self.parent_conn_dig.send( 'RR' + str( self.repetition_rate.split(' ')[0] ) )
@@ -1062,7 +1070,6 @@ class MainWindow(QMainWindow):
         except AttributeError:
             self.message('Digitizer is not running')
 
-    ## unused
     def pulse_sequence(self):
         """
         Pulse sequence from defined pulses
@@ -1145,42 +1152,49 @@ class MainWindow(QMainWindow):
         # Stop if necessary
         self.dig_stop()
         # TEST RUN
-        #self.errors.clear()
-        ##self.parent_conn, self.child_conn = Pipe()
-        ##self.test_process = Process( target = self.pulser_test, args = ( self.child_conn, 'test', ) )
+        self.errors.clear()
+        self.parent_conn, self.child_conn = Pipe()
+        # dangerous because of self
+        self.test_process = Process( target = self.pulser_test, args = ( self.child_conn, 'test', ) )
 
-        #self.button_update.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(193, 202, 227); border-style: outset; color: rgb(63, 63, 97); font-weight: bold; } ")
+        self.button_update.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(193, 202, 227); border-style: outset; color: rgb(63, 63, 97); font-weight: bold; } ")
 
-        ##self.test_process.start()
+        self.test_process.start()
 
-        ##if self.parent_conn.poll() == True:
-        ##    msg_type, data = self.parent_conn.recv()
-        ##    self.message(data)
+        # in order to finish a test
+        #time.sleep( 0.5 )
+        self.test_process.join()
 
-        ##    self.errors.clear()
-        ##    self.errors.appendPlainText(data)
-        ##else:
+        if self.parent_conn.poll() == True:
+            msg_type, data = self.parent_conn.recv()
+            self.message(data)
+
+            #self.test_process.join()
+            self.errors.clear()
+            self.errors.appendPlainText(data)
+        else:
             
-        ##    self.pb.pulser_clear()
+            # important:
+            self.pb.pulser_clear()
 
-        ##    if self.laser_flag == 1:
-        ##        if self.combo_laser_num == 1:
-        ##            self.Rep_rate.setValue(9.9)
-        ##            self.errors.appendPlainText( str(self.laser_q_switch_delay ) + ' ns is added to all the pulses except the LASER pulse' )
-        ##        elif self.combo_laser_num == 2:
-        ##            self.errors.appendPlainText( str(self.laser_q_switch_delay ) + ' ns is added to all the pulses except the LASER pulse' )
+            # to not to interact with gui in Process:
+            if self.laser_flag == 1:
+                if self.combo_laser_num == 1:
+                    self.Rep_rate.setValue(9.9)
+                    self.errors.appendPlainText( str(self.laser_q_switch_delay ) + ' ns is added to all the pulses except the LASER pulse' )
+                elif self.combo_laser_num == 2:
+                    self.errors.appendPlainText( str(self.laser_q_switch_delay ) + ' ns is added to all the pulses except the LASER pulse' )
 
-        ##   # to add pulses:
-        ##    self.pb.pulser_test_flag('test')
-        ##    self.pulse_sequence()
-        ##    self.errors.appendPlainText( self.pb.pulser_pulse_list() )
+            # to add pulses:
+            self.pb.pulser_test_flag('test')
+            self.pulse_sequence()
+            self.errors.appendPlainText( self.pb.pulser_pulse_list() )
 
-        ##    self.pb.pulser_test_flag('None')
+            self.pb.pulser_test_flag('None')
 
-        ##    self.pb.adc_window = 0
-        self.dig_start()
+            self.pb.adc_window = 0
+            self.dig_start()
 
-    ## unused
     def pulser_test(self, conn, flag):
         """
         Test run
@@ -1194,17 +1208,24 @@ class MainWindow(QMainWindow):
             exc_info = f"{type(e)} \n{str(e)} \n{traceback.format_exc()}"
             conn.send( ('Error', exc_info) )
 
-    ##
     def dig_stop(self):
         """
         A function to stop digitizer
         """
         path_to_main = os.path.abspath( os.getcwd() )
         path_file = os.path.join(path_to_main, '../atomize/control_center/digitizer_insys.param')
-        #path_file = os.path.join(path_to_main, 'digitizer_insys.param')
+        #path_file = os.path.join(path_to_main, '../../atomize/control_center/digitizer_insys.param')
 
-        #self.errors.clear()
-        #self.button_update.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; } ")
+        if self.opened == 0:
+            try:
+                self.parent_conn_dig.send('exit')
+                self.digitizer_process.join()
+            except AttributeError:
+                pass
+                #self.message('Digitizer is not running')
+
+        self.errors.clear()
+        self.button_update.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; } ")
 
         file_to_read = open(path_file, 'w')
         file_to_read.write('Points: ' + str( self.p1_length ) +'\n')
@@ -1224,16 +1245,7 @@ class MainWindow(QMainWindow):
         file_to_read.write('Decimation: ' + str( self.decimation ) +'\n')
 
         file_to_read.close()
-
-        if self.opened == 0:
-            try:
-                self.parent_conn_dig.send('exit')
-                self.monitor_timer.start(200)
-            except AttributeError:
-                if self.exit_clicked == 1:
-                    sys.exit()
-
-    ##
+        
     def dig_start(self):
         """
         Button Start; Run function script(pipe_addres, four parameters of the experimental script)
@@ -1244,30 +1256,21 @@ class MainWindow(QMainWindow):
         worker = Worker()
 
         if self.laser_flag != 1:
-            self.p1_list = [ self.p1_typ, self.p1_start, self.p1_length, self.ph_1 ]
-            self.p2_list = [ self.p2_typ, self.p2_start, self.p2_length, self.ph_2 ]
-            self.p3_list = [ self.p3_typ, self.p3_start, self.p3_length, self.ph_3 ]
-            self.p4_list = [ self.p4_typ, self.p4_start, self.p4_length, self.ph_4 ]
-            self.p5_list = [ self.p5_typ, self.p5_start, self.p5_length, self.ph_5 ]
-            self.p6_list = [ self.p6_typ, self.p6_start, self.p6_length, self.ph_6 ]
-            self.p7_list = [ self.p7_typ, self.p7_start, self.p7_length, self.ph_7 ]
-
-        else:
-
-            if self.combo_laser_num == 1:
-                self.Rep_rate.setValue(9.9)
-                self.errors.appendPlainText( str(self.laser_q_switch_delay ) + ' ns is added to all the pulses except the LASER pulse' )
-            elif self.combo_laser_num == 2:
-                self.errors.appendPlainText( str(self.laser_q_switch_delay ) + ' ns is added to all the pulses except the LASER pulse' )
-
-            self.p1_list = [ self.p1_typ, self.p1_start_sh, self.p1_length, self.ph_1 ]
-            self.p2_list = [ self.p2_typ, self.p2_start, self.p2_length, self.ph_2 ]
-            self.p3_list = [ self.p3_typ, self.p3_start_sh, self.p3_length, self.ph_3 ]
-            self.p4_list = [ self.p4_typ, self.p4_start_sh, self.p4_length, self.ph_4 ]
-            self.p5_list = [ self.p5_typ, self.p5_start_sh, self.p5_length, self.ph_5 ]
-            self.p6_list = [ self.p6_typ, self.p6_start_sh, self.p6_length, self.ph_6 ]
-            self.p7_list = [ self.p7_typ, self.p7_start_sh, self.p7_length, self.ph_7 ]
-
+            p1_list = [ self.p1_typ, self.p1_start, self.p1_length, self.ph_1 ]
+            p2_list = [ self.p2_typ, self.p2_start, self.p2_length, self.ph_2 ]
+            p3_list = [ self.p3_typ, self.p3_start, self.p3_length, self.ph_3 ]
+            p4_list = [ self.p4_typ, self.p4_start, self.p4_length, self.ph_4 ]
+            p5_list = [ self.p5_typ, self.p5_start, self.p5_length, self.ph_5 ]
+            p6_list = [ self.p6_typ, self.p6_start, self.p6_length, self.ph_6 ]
+            p7_list = [ self.p7_typ, self.p7_start, self.p7_length, self.ph_7 ]
+        else: 
+            p1_list = [ self.p1_typ, self.p1_start_sh, self.p1_length, self.ph_1 ]
+            p2_list = [ self.p2_typ, self.p2_start, self.p2_length, self.ph_2 ]
+            p3_list = [ self.p3_typ, self.p3_start_sh, self.p3_length, self.ph_3 ]
+            p4_list = [ self.p4_typ, self.p4_start_sh, self.p4_length, self.ph_4 ]
+            p5_list = [ self.p5_typ, self.p5_start_sh, self.p5_length, self.ph_5 ]
+            p6_list = [ self.p6_typ, self.p6_start_sh, self.p6_length, self.ph_6 ]
+            p7_list = [ self.p7_typ, self.p7_start_sh, self.p7_length, self.ph_7 ]
 
         # prevent running two processes
         try:
@@ -1279,34 +1282,27 @@ class MainWindow(QMainWindow):
         self.parent_conn_dig, self.child_conn_dig = Pipe()
         # a process for running function script 
         # sending parameters for initial initialization
-        self.digitizer_process = Process( target = worker.dig_test, args = ( self.child_conn_dig,
+        self.digitizer_process = Process( target = worker.dig_on, args = ( self.child_conn_dig,
             self.decimation, self.l_mode, self.number_averages, self.cur_win_left, 
-            self.cur_win_right, self.p1_list, self.p2_list, self.p3_list, self.p4_list, 
-            self.p5_list, self.p6_list, self.p7_list, self.laser_flag, 
-            self.repetition_rate.split(' ')[0], 
+            self.cur_win_right, p1_list, p2_list, p3_list, p4_list, p5_list, 
+            p6_list, p7_list, self.laser_flag, self.repetition_rate.split(' ')[0], 
             self.mag_field, self.fft, self.quad, self.zero_order, self.first_order, 
             self.second_order, self.p_to_drop, self.combo_laser_num, self.laser_q_switch_delay, ) )
-
-        self.button_update.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(193, 202, 227); border-style: outset; color: rgb(63, 63, 97); font-weight: bold; } ")
-
-        #self.progress_bar.setValue(0)
+        
+        self.button_update.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(211, 194, 78); border-style: outset; color: rgb(63, 63, 97); font-weight: bold; } ")
 
         self.digitizer_process.start()
         # send a command in a different thread about the current state
         self.parent_conn_dig.send('start')
-        
-        #self.poller.update_command(self.parent_conn_dig)
-        #self.poller.start()
-        self.is_testing = True
-        self.timer.start(100)
+        self.poller.update_command(self.parent_conn_dig)
+        self.poller.start()
 
-    ##
     def turn_off(self):
         """
         A function to turn off a programm.
         """
-        self.exit_clicked = 1
-        self.dig_stop()
+        self.quit()
+        sys.exit()
 
     def message(self, *text):
         if len(text) == 1:
@@ -1326,122 +1322,6 @@ class MainWindow(QMainWindow):
         else:
             pass
 
-    ##
-    def check_messages(self):
-
-        if not hasattr(self, 'last_error'):
-            self.last_error = False
-
-        while self.parent_conn_dig.poll():
-            try:
-                msg_type, data = self.parent_conn_dig.recv()
-                
-                if msg_type == 'Status':
-                    pass
-                    #self.progress_bar.setValue(int(data))
-                elif msg_type == 'Open':
-                    self.open_dialog()
-                elif msg_type == 'Error':
-                    self.last_error = True
-                    self.timer.stop()
-                    #self.progress_bar.setValue(0)
-                    if msg_type != 'test':
-                        self.message(data)
-                    #print(data)
-                    self.errors.appendPlainText(data)
-                    self.button_update.setStyleSheet("""
-                        QPushButton {
-                            border-radius: 4px; 
-                            background-color: rgb(63, 63, 97); 
-                            border-style: outset; 
-                            color: rgb(193, 202, 227); 
-                            font-weight: bold; 
-                        }
-                    """)                    
-                else:
-                    self.timer.stop()
-                    self.errors.appendPlainText(data)
-                    #self.progress_bar.setValue(0)
-                    if msg_type != 'test':
-                        self.message(data)
-                        self.button_update.setStyleSheet("""
-                            QPushButton {
-                                border-radius: 4px; 
-                                background-color: rgb(63, 63, 97); 
-                                border-style: outset; 
-                                color: rgb(193, 202, 227); 
-                                font-weight: bold; 
-                            }
-                        """)
-
-            except EOFError:
-                self.timer.stop()
-                break
-            except Exception as e:
-                break
-
-        time.sleep(0.1)
-
-        if hasattr(self, 'digitizer_process') and not self.digitizer_process.is_alive():
-            if self.parent_conn_dig.poll():
-                return
-
-            self.timer.stop()
-
-            if getattr(self, 'is_testing', False):
-                self.is_testing = False
-                if not self.last_error:
-                    self.last_error = False 
-                    time.sleep(0.1)
-                    ###self.errors.appendPlainText( self.pb.pulser_pulse_list() )
-                    self.run_main_experiment()
-                else:
-                    self.last_error = False
-
-    ##
-    def check_process_status(self):
-        if self.digitizer_process.is_alive():
-            return
-        
-        self.monitor_timer.stop()
-        self.digitizer_process.join()
-        self.timer.stop()
-        #self.progress_bar.setValue(0)
-        self.errors.clear()
-        self.button_update.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }  ")
-
-        if self.exit_clicked == 1:
-            sys.exit()
-
-    ##
-    def open_dialog(self):
-        file_data = self.file_handler.create_file_dialog(multiprocessing = True)        
-
-        if file_data:
-            self.parent_conn.send( 'FL' + str( file_data ) )
-        else:
-            self.parent_conn.send( 'FL' + '' )
-
-    ##
-    def run_main_experiment(self):
-
-        worker = Worker()
-        self.parent_conn_dig, self.child_conn_dig = Pipe()
-        
-        self.digitizer_process = Process( target = worker.dig_on, args = ( self.child_conn_dig,
-            self.decimation, self.l_mode, self.number_averages, self.cur_win_left, 
-            self.cur_win_right, self.p1_list, self.p2_list, self.p3_list, self.p4_list, 
-            self.p5_list, self.p6_list, self.p7_list, self.laser_flag, 
-            self.repetition_rate.split(' ')[0], 
-            self.mag_field, self.fft, self.quad, self.zero_order, self.first_order, 
-            self.second_order, self.p_to_drop, self.combo_laser_num, self.laser_q_switch_delay, ) )
-
-        self.button_update.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(211, 194, 78); border-style: outset; color: rgb(63, 63, 97); font-weight: bold; } ") 
-
-        self.digitizer_process.start()
-        self.parent_conn_dig.send('start')
-        self.timer.start(100)
-
 # The worker class that run the digitizer in a different thread
 class Worker():
     def __init__(self):
@@ -1458,21 +1338,9 @@ class Worker():
         """
         # should be inside dig_on() function;
         # freezing after digitizer restart otherwise
-        import time
+        #import time
         import traceback
 
-        while self.command != 'exit':
-
-            time.sleep(0.2)
-
-            if conn.poll() == True:
-                self.command = conn.recv()
-
-            if self.command == 'exit':
-                #pb.pulser_close()
-                conn.send( ('', f'Pulses are stopped') )
-
-        """
         try:
             import time
             import numpy as np
@@ -1698,250 +1566,6 @@ class Worker():
                 #print('exit')
                 pb.pulser_close()
                 conn.send( ('', f'Pulses are stopped') )
-
-        except BaseException as e:
-            exc_info = f"{type(e)} \n{str(e)} \n{traceback.format_exc()}"
-            conn.send( ('Error', exc_info) )
-        """
-
-    def dig_test(self, conn, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11, p12, p13, p14, p15, p16, p17, p18, p19, p20, p21, p22, p23):
-        """
-        function that contains updating of the digitizer
-        """
-        # should be inside dig_on() function;
-        # freezing after digitizer restart otherwise
-        #import time
-        import traceback
-
-        sys.argv = ['', 'test']
-
-        try:
-            import time
-            import numpy as np
-            import atomize.general_modules.general_functions as general
-            general.test_flag = 'test'
-            import atomize.device_modules.Insys_FPGA as pb_pro
-            import atomize.math_modules.fft as fft_module
-            import atomize.device_modules.BH_15 as itc
-
-            pb = pb_pro.Insys_FPGA()
-            
-            fft = fft_module.Fast_Fourier()
-            bh15 = itc.BH_15()
-            
-            #bh15.magnet_setup( p15, 0.5 )
-            bh15.magnet_field( p15 ) #, calibration = 'True'
-
-            process = 'None'
-            
-            # p1 decimation
-            # p2 LIVE MODE
-
-            #parameters for initial initialization
-
-            #p4 window left
-            #p5 window right
-            
-            if p13 != 1:
-                pb.pulser_repetition_rate( str(p14) + ' Hz' )
-                
-                if int(float( p6[2].split(' ')[0] )) != 0:
-                    pb.pulser_pulse( name = 'P0', channel = p6[0], start = p6[1], length = p6[2], phase_list = p6[3] )
-                if int(float( p7[2].split(' ')[0] )) != 0:
-                    pb.pulser_pulse( name = 'P1', channel = p7[0], start = p7[1], length = p7[2], phase_list = p7[3] )
-                if int(float( p8[2].split(' ')[0] )) != 0:
-                    pb.pulser_pulse( name = 'P2', channel = p8[0], start = p8[1], length = p8[2], phase_list = p8[3] )
-                if int(float( p9[2].split(' ')[0] )) != 0:
-                    pb.pulser_pulse( name = 'P3', channel = p9[0], start = p9[1], length = p9[2], phase_list = p9[3] )
-                if int(float( p10[2].split(' ')[0] )) != 0:
-                    pb.pulser_pulse( name = 'P4', channel = p10[0], start = p10[1], length = p10[2], phase_list = p10[3] )
-                if int(float( p11[2].split(' ')[0] )) != 0:
-                    pb.pulser_pulse( name = 'P5', channel = p11[0], start = p11[1], length = p11[2], phase_list = p11[3] )
-                if int(float( p12[2].split(' ')[0] )) != 0:
-                    pb.pulser_pulse( name = 'P6', channel = p12[0], start = p12[1], length = p12[2], phase_list = p12[3] )
-
-            else:
-                if p22 == 1:
-                    pb.pulser_repetition_rate( '9.9 Hz' )
-                else:
-                    pb.pulser_repetition_rate( str(p14) + ' Hz' )
-
-                if p22 == 1:
-                    # add q_switch_delay 141000 ns
-                    q_delay = p23
-                elif p22 == 2 :
-                    q_delay = p23
-
-                p6[1] = str( self.round_to_closest( float(p6[1].split(' ')[0]) + q_delay, 3.2) ) + ' ns'
-                # p7 is a laser pulser
-                p8[1] = str( self.round_to_closest( float(p8[1].split(' ')[0]) + q_delay, 3.2) ) + ' ns'
-                p9[1] = str( self.round_to_closest( float(p9[1].split(' ')[0]) + q_delay, 3.2) ) + ' ns'
-                p10[1] = str( self.round_to_closest( float(p10[1].split(' ')[0]) + q_delay, 3.2) ) + ' ns'
-                p11[1] = str( self.round_to_closest( float(p11[1].split(' ')[0]) + q_delay, 3.2) ) + ' ns'
-                p12[1] = str( self.round_to_closest( float(p12[1].split(' ')[0]) + q_delay, 3.2) ) + ' ns'
-
-                if int(float( p6[2].split(' ')[0] )) != 0:
-                    pb.pulser_pulse( name = 'P0', channel = p6[0], start = p6[1], length = p6[2], phase_list = p6[3] )
-                if int(float( p7[2].split(' ')[0] )) != 0:
-                    # p7 is a laser pulser
-                    pb.pulser_pulse( name = 'P1', channel = p7[0], start = p7[1], length = p7[2] ) #, phase_list = p7[3]
-                if int(float( p8[2].split(' ')[0] )) != 0:
-                    pb.pulser_pulse( name = 'P2', channel = p8[0], start = p8[1], length = p8[2], phase_list = p8[3] )
-                if int(float( p9[2].split(' ')[0] )) != 0:
-                    pb.pulser_pulse( name = 'P3', channel = p9[0], start = p9[1], length = p9[2], phase_list = p9[3] )
-                if int(float( p10[2].split(' ')[0] )) != 0:
-                    pb.pulser_pulse( name = 'P4', channel = p10[0], start = p10[1], length = p10[2], phase_list = p10[3] )
-                if int(float( p11[2].split(' ')[0] )) != 0:
-                    pb.pulser_pulse( name = 'P5', channel = p11[0], start = p11[1], length = p11[2], phase_list = p11[3] )
-                if int(float( p12[2].split(' ')[0] )) != 0:
-                    pb.pulser_pulse( name = 'P6', channel = p12[0], start = p12[1], length = p12[2], phase_list = p12[3] )
-
-            POINTS = 1
-            pb.digitizer_decimation(p1)
-            DETECTION_WINDOW = round( pb.adc_window * 3.2, 1 )
-            TR_ADC = round(3.2 / 8, 1)
-            WIN_ADC = int( pb.adc_window * 8 / p1 )
-
-            data = np.zeros( ( 2, WIN_ADC, 1 ) )
-            ##data = np.random.random( ( 2, WIN_ADC, 1 ) )
-            x_axis = np.linspace(0, ( DETECTION_WINDOW - TR_ADC), num = WIN_ADC) 
-
-            t_res = 0.4 * p1
-            pb.digitizer_number_of_averages(p3)
-            PHASES = len( p6[3] )
-            
-            pb.pulser_open()
-            
-            # the idea of automatic and dynamic changing is
-            # sending a new value of repetition rate via self.command
-            # in each cycle we will check the current value of self.command
-            # self.command = 'exit' will stop the digitizer
-            while self.command != 'exit':
-                # always test our self.command attribute for stopping the script when neccessary
-
-                if self.command[0:2] == 'PO':            
-                    #points_value = int( self.command[2:] )
-                    #dig.digitizer_stop()
-                    #dig.digitizer_number_of_points( points_value )
-                    pass
-
-                elif self.command[0:2] == 'HO':
-                    #posstrigger_value = int( self.command[2:] )
-                    #dig.digitizer_stop()
-                    #dig.digitizer_posttrigger( posstrigger_value )
-                    pass
-
-                elif self.command[0:2] == 'LM':
-                    pass
-                    #p2 = int( self.command[2:] )
-
-                elif self.command[0:2] == 'NA':
-                    num_ave = int( self.command[2:] )
-                    #print( num_ave )
-                    pb.digitizer_number_of_averages( num_ave )
-
-                elif self.command[0:2] == 'WL':
-                    p4 = int( self.command[2:] )
-                elif self.command[0:2] == 'WR':
-                    p5 = int( self.command[2:] )
-                elif self.command[0:2] == 'RR':
-                    p14 = float( self.command[2:] )
-                    #print( p14 )
-                    if p14 > 49:
-                        pb.pulser_repetition_rate( str(p14) + ' Hz' )
-                    else:
-                        general.message('For REPETITION RATE lower then 50 Hz, please, press UPDATE')
-                    
-                elif self.command[0:2] == 'FI':
-                    p15 = float( self.command[2:] )
-                    bh15.magnet_field( p15 ) #, calibration = 'True'
-                elif self.command[0:2] == 'FF':
-                    p16 = int( self.command[2:] )
-                elif self.command[0:2] == 'QC':
-                    p17 = int( self.command[2:] )
-                elif self.command[0:2] == 'ZO':
-                    p18 = float( self.command[2:] )
-                elif self.command[0:2] == 'FO':
-                    p19 = float( self.command[2:] )
-                elif self.command[0:2] == 'SO':
-                    p20 = float( self.command[2:] )
-                elif self.command[0:2] == 'PD':
-                    p21 = int( self.command[2:] )
-
-                # check integration window
-                if p4 > WIN_ADC:
-                    p4 = WIN_ADC
-                if p5 > WIN_ADC:
-                    p5 = WIN_ADC
-
-                # phase cycle
-                PHASES = len( p6[3] )
-
-                #pb.pulser_visualize()
-
-                for i in range( PHASES ):
-                    pb.pulser_next_phase()
-                    if p2 == 0:
-                        data[0], data[1] = pb.digitizer_get_curve(POINTS, PHASES, live_mode = 1)
-                    elif p2 == 1:
-                        data[0], data[1] = pb.digitizer_get_curve(POINTS, PHASES, live_mode = 0)
-                    ##general.wait('100 ms')
-                    ##data = np.random.random( ( 2, WIN_ADC, 1 ) )
-
-                    data_x = data[0].ravel()
-                    data_y = data[1].ravel()
-
-                    if p16 == 0:
-                        # acquisition cycle
-                        int_x = round( np.sum( data_x[p4:p5] ) * 1 * t_res , 1 ) #( 10**(10) * t_res )
-                        int_y = round( np.sum( data_y[p4:p5] ) * 1 * t_res , 1 )
-
-                        general.plot_1d('Dig', x_axis / 1e9, ( data_x, data_y ), 
-                            xscale = 's', yscale = 'mV', label = 'ch', 
-                            vline = (p4 * t_res / 1e9, p5 * t_res / 1e9), 
-                            text = 'I/Q ' + str(int_x) + '/' + str(int_y))
-
-                    else:
-                        # acquisition cycle
-                        general.plot_1d('Dig', x_axis / 1e9, ( data_x, data_y ), xscale = 's', 
-                            yscale = 'mV', label = 'ch', vline = (p4 * t_res / 1e9, p5 * t_res / 1e9))
-
-                        if p17 == 0:
-                            freq_axis, abs_values = fft.fft(x_axis, data_x, data_y, t_res * 1)
-                            m_val = round( np.amax( abs_values ), 2 )
-                            i_max = abs(round( freq_axis[ np.argmax( abs_values ) ], 2))
-                            general.plot_1d('FFT', freq_axis * 1e6, abs_values, xname = 'Offset', 
-                                label = 'FFT', xscale = 'Hz', 
-                                yscale = 'A.U.', text = 'Max ' + str(m_val)) #str(m_val)
-                        else:
-                            if p21 > len( data_x ) - 0.4 * p1:
-                                p21 = len( data_x ) - 0.8 * p1
-                                general.message('Maximum length of the data achieved. A number of drop points was corrected.')
-                            # fixed resolution of digitizer; 0.4 ns
-                            freq, fft_x, fft_y = fft.fft( x_axis[p21:] , data_x[p21:], data_y[p21:], t_res * 1, re = 'True' )
-                            data_fft = fft.ph_correction( freq * 1e6, fft_x, fft_y, p18, p19, p20 )
-                            general.plot_1d('FFT', freq, ( data_fft[0], data_fft[1] ), 
-                                xname = 'Offset', xscale = 'Hz', 
-                                yscale = 'A.U.', label = 'FFT')
-
-                if PHASES != 1:
-                    pb.pulser_pulse_reset()
-                else:
-                    pass
-                
-                self.command = 'exit'
-
-                # poll() checks whether there is data in the Pipe to read
-                # we use it to stop the script if the exit command was sent from the main window
-                # we read data by conn.recv() only when there is the data to read
-                if conn.poll() == True:
-                    self.command = conn.recv()
-
-            if self.command == 'exit':
-                #print('exit')
-                pb.pulser_close()
-                #pb.pulser_pulse_list()
-                conn.send( ('test', f'{pb.pulser_pulse_list()}') )
 
         except BaseException as e:
             exc_info = f"{type(e)} \n{str(e)} \n{traceback.format_exc()}"

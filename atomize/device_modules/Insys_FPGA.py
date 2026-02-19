@@ -1893,9 +1893,9 @@ class Insys_FPGA:
             lines = text.split('\n')
             assert( str( lines[0].split(':  ')[1] ) != 'On' ), "Insys FPGA card is already opened. Please, close it."
 
-            file_to_read = open(self.path_status_file, 'w')
-            file_to_read.write('Status:  On' + '\n')
-            file_to_read.close()
+            #file_to_read = open(self.path_status_file, 'w')
+            #file_to_read.write('Status:  On' + '\n')
+            #file_to_read.close()
 
     def pulser_close(self):
         if self.test_flag != 'test':
@@ -1911,9 +1911,10 @@ class Insys_FPGA:
 
         elif self.test_flag == 'test':
             
-            file_to_read = open(self.path_status_file, 'w')
-            file_to_read.write('Status:  Off' + '\n')
-            file_to_read.close()
+            pass
+            #file_to_read = open(self.path_status_file, 'w')
+            #file_to_read.write('Status:  Off' + '\n')
+            #file_to_read.close()
 
     def pulser_default_synt(self, num):
         """
@@ -4273,7 +4274,7 @@ class Insys_FPGA:
                     sorted_np_array = np.delete(sorted_np_array, index + 1, 0)
 
                     if self.mes == 0:
-                        general.message(f'Overlapping pulses or two pulses with less than {self.min_pulse_length_pulser} ns distance')
+                        general.message_test(f'Overlapping pulses or two pulses with less than {self.min_pulse_length_pulser} ns distance')
                         self.mes = 1
                     
                     index = 0
@@ -4302,7 +4303,7 @@ class Insys_FPGA:
                         sorted_np_array = np.delete(sorted_np_array, index + 1, 0)
 
                         if self.mes == 0:
-                            general.message(f'Overlapping pulses or two pulses with less than {self.min_pulse_length_pulser} ns distance')
+                            general.message_test(f'Overlapping pulses or two pulses with less than {self.min_pulse_length_pulser} ns distance')
                             self.mes = 1
                         
                         index = 0 
