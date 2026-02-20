@@ -1520,12 +1520,15 @@ class MainWindow(QMainWindow):
         # sending parameters for initial initialization
         self.digitizer_process = Process( target = worker.dig_test, args = ( self.child_conn_dig, 
             self.decimation, self.l_mode, self.number_averages,  self.cur_win_left, 
-            self.cur_win_right, p1_list, p2_list, p3_list, p4_list, p5_list, p6_list, p7_list, 
+            self.cur_win_right, self.p1_list, self.p2_list, self.p3_list, 
+            self.p4_list, self.p5_list, self.p6_list, self.p7_list, 
             self.n_wurst_cur, self.repetition_rate.split(' ')[0], self.mag_field, self.fft, 
-            self.cur_phase, self.ch0_ampl, self.ch1_ampl, 0, p2_awg_list, p3_awg_list, p4_awg_list, 
-            p5_awg_list, p6_awg_list, p7_awg_list, self.quad, self.zero_order, 
+            self.cur_phase, self.ch0_ampl, self.ch1_ampl, 0, self.p2_awg_list, self.p3_awg_list, 
+            self.p4_awg_list, 
+            self.p5_awg_list, self.p6_awg_list, self.p7_awg_list, self.quad, self.zero_order, 
             self.first_order, self.second_order, self.p_to_drop, self.b_sech_cur, 
-            self.combo_cor, self.combo_synt, 0, p8_list, p9_list, p8_awg_list, p9_awg_list, 
+            self.combo_cor, self.combo_synt, 0, self.p8_list, self.p9_list, self.p8_awg_list, 
+            self.p9_awg_list, 
             self.laser_flag, self.combo_laser_num, self.laser_q_switch_delay ) )
 
         self.button_update.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(193, 202, 227); border-style: outset; color: rgb(63, 63, 97); font-weight: bold; } ")
@@ -1534,7 +1537,7 @@ class MainWindow(QMainWindow):
         # send a command in a different thread about the current state
         self.parent_conn_dig.send('start')
         self.is_testing = True
-        self.timer.start(100)
+        self.timer.start(200)
 
     def turn_off(self):
         """
@@ -1600,7 +1603,7 @@ class MainWindow(QMainWindow):
             except Exception as e:
                 break
 
-        time.sleep(0.1)
+        #time.sleep(0.1)
 
         if hasattr(self, 'digitizer_process') and not self.digitizer_process.is_alive():
             if self.parent_conn_dig.poll():
@@ -1647,19 +1650,22 @@ class MainWindow(QMainWindow):
 
         self.digitizer_process = Process( target = worker.dig_on, args = ( self.child_conn_dig, 
             self.decimation, self.l_mode, self.number_averages,  self.cur_win_left, 
-            self.cur_win_right, p1_list, p2_list, p3_list, p4_list, p5_list, p6_list, p7_list, 
+            self.cur_win_right, self.p1_list, self.p2_list, self.p3_list, 
+            self.p4_list, self.p5_list, self.p6_list, self.p7_list, 
             self.n_wurst_cur, self.repetition_rate.split(' ')[0], self.mag_field, self.fft, 
-            self.cur_phase, self.ch0_ampl, self.ch1_ampl, 0, p2_awg_list, p3_awg_list, p4_awg_list, 
-            p5_awg_list, p6_awg_list, p7_awg_list, self.quad, self.zero_order, 
+            self.cur_phase, self.ch0_ampl, self.ch1_ampl, 0, self.p2_awg_list, self.p3_awg_list, 
+            self.p4_awg_list, 
+            self.p5_awg_list, self.p6_awg_list, self.p7_awg_list, self.quad, self.zero_order, 
             self.first_order, self.second_order, self.p_to_drop, self.b_sech_cur, 
-            self.combo_cor, self.combo_synt, 0, p8_list, p9_list, p8_awg_list, p9_awg_list, 
+            self.combo_cor, self.combo_synt, 0, self.p8_list, self.p9_list, self.p8_awg_list, 
+            self.p9_awg_list, 
             self.laser_flag, self.combo_laser_num, self.laser_q_switch_delay ) )
 
         self.button_update.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(211, 194, 78); border-style: outset; color: rgb(63, 63, 97); font-weight: bold; } ") 
 
         self.digitizer_process.start()
         self.parent_conn_dig.send('start')
-        self.timer.start(100)
+        self.timer.start(200)
 
 # The worker class that run the digitizer in a different thread
 class Worker():
@@ -1679,6 +1685,7 @@ class Worker():
         # freezing after digitizer restart otherwise
         #import time
         import traceback
+
 
         try:
             import time
@@ -1759,48 +1766,109 @@ class Worker():
                     )
             
             pb.awg_amplitude('CH0', str(p18), 'CH1', str(p19) )
-            pb.pulser_repetition_rate( str(p14) + ' Hz' )
 
-            #pb.pulser_pulse(name = 'P0', channel = 'TRIGGER_AWG', start = '0 ns', length = '30 ns')
-
+            # DETECTION pulse
             if int(float(p6[2].split(' ')[0])) != 0:
                 pb.pulser_pulse(name='P1', channel=p6[0], start=p6[1], length=p6[2], phase_list=p6[3])
 
-            trigger_pulses = [p7, p8, p9, p10, p11, p12, p36, p37]
-            awg_params = [p21, p22, p23, p24, p25, p26, p38, p39]
+            #Laser flag
+            if p40 != 1:
+                pb.pulser_repetition_rate( str(p14) + ' Hz' )
 
-            for i, (tp, ap) in enumerate(zip(trigger_pulses, awg_params)):
-                if int(float(tp[1].split(' ')[0])) != 0:
-                    
-                    is_complex = ap[0] in ['WURST', 'SECH/TANH']
-                    freq = (ap[1], ap[2]) if is_complex else ap[1]
-                    
-                    awg_kwargs = {
-                        'name': f'P{2*i + 2}',
-                        'channel': 'CH0',
-                        'func': ap[0],
-                        'frequency': freq,
-                        'length': ap[3],
-                        'sigma': ap[4],
-                        'start': ap[5],
-                        'amplitude': ap[6],
-                        'phase_list': ap[7]
-                    }
-                    
-                    if is_complex:
-                        awg_kwargs.update({'n': p13, 'b': p32})
+                trigger_pulses = [p7, p8, p9, p10, p11, p12, p36, p37]
+                awg_params = [p21, p22, p23, p24, p25, p26, p38, p39]
+
+                for i, (tp, ap) in enumerate(zip(trigger_pulses, awg_params)):
+                    if int(float(tp[1].split(' ')[0])) != 0:
                         
-                    pb.awg_pulse(**awg_kwargs)
+                        is_complex = ap[0] in ['WURST', 'SECH/TANH']
+                        freq = (ap[1], ap[2]) if is_complex else ap[1]
+                        
+                        awg_kwargs = {
+                            'name': f'P{2*i + 2}',
+                            'channel': 'CH0',
+                            'func': ap[0],
+                            'frequency': freq,
+                            'length': ap[3],
+                            'sigma': ap[4],
+                            'start': ap[5],
+                            'amplitude': ap[6],
+                            'phase_list': ap[7]
+                        }
+                        
+                        if is_complex:
+                            awg_kwargs.update({'n': p13, 'b': p32})
+                            
+                        pb.awg_pulse(**awg_kwargs)
 
-                    if ap[0] != 'BLANK':
-                        pb.pulser_pulse(
-                            name=f'P{2*i + 3}',
-                            channel='TRIGGER_AWG', 
-                            start=tp[0], 
-                            length=tp[1]
-                        )
+                        if ap[0] != 'BLANK':
+                            pb.pulser_pulse(
+                                name=f'P{2*i + 3}',
+                                channel='TRIGGER_AWG', 
+                                start=tp[0], 
+                                length=tp[1]
+                            )
+
+            else:
+                if p41 == 1:
+                    pb.pulser_repetition_rate( '9.9 Hz' )
+                    q_delay = p42
+                elif p41 == 2:
+                    pb.pulser_repetition_rate( str(p14) + ' Hz' )
+                    q_delay = p42
+                else:
+                    pb.pulser_repetition_rate( str(p14) + ' Hz' )
+
+                #p7 is LASER pulse
+                pb.pulser_pulse(
+                    name=f'L1',
+                    channel='LASER', 
+                    start=p7[0], 
+                    length=p7[1]
+                )
+
+                trigger_pulses = [p8, p9, p10, p11, p12, p36, p37]
+                awg_params = [p22, p23, p24, p25, p26, p38, p39]
+
+                for i, (tp, ap) in enumerate(zip(trigger_pulses, awg_params)):
+
+                    if int(float(tp[1].split(' ')[0])) != 0:
+                        # add q_delay
+                        start_val = float(tp[0].split(' ')[0]) + q_delay
+                        tp[0] = f"{self.round_to_closest(start_val, 3.2)} ns"
+                        start_val_awg = float(ap[5].split(' ')[0]) + q_delay
+                        ap[5] = f"{self.round_to_closest(start_val_awg, 3.2)} ns"
+
+                        is_complex = ap[0] in ['WURST', 'SECH/TANH']
+                        freq = (ap[1], ap[2]) if is_complex else ap[1]
+                        
+                        awg_kwargs = {
+                            'name': f'P{2*i + 2}',
+                            'channel': 'CH0',
+                            'func': ap[0],
+                            'frequency': freq,
+                            'length': ap[3],
+                            'sigma': ap[4],
+                            'start': ap[5],
+                            'amplitude': ap[6],
+                            'phase_list': ap[7]
+                        }
+                        
+                        if is_complex:
+                            awg_kwargs.update({'n': p13, 'b': p32})
+                            
+                        pb.awg_pulse(**awg_kwargs)
+
+                        if ap[0] != 'BLANK':
+                            pb.pulser_pulse(
+                                name=f'P{2*i + 3}',
+                                channel='TRIGGER_AWG', 
+                                start=tp[0], 
+                                length=tp[1]
+                            )                
 
             pb.pulser_default_synt(p34)
+
             
             POINTS = 1
             pb.digitizer_decimation(p1)
@@ -1957,6 +2025,7 @@ class Worker():
             exc_info = f"{type(e)} \n{str(e)} \n{traceback.format_exc()}"
             conn.send( ('Error', exc_info) )            
 
+
     def dig_test(self, conn, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11, p12, p13, p14, p15, p16, p17, p18, p19, p20, p21, p22, p23, p24, p25, p26, p27, p28, p29, p30, p31, p32, p33, p34, p35, p36, p37, p38, p39, p40, p41, p42):
         """
         function that contains updating of the digitizer
@@ -2103,10 +2172,10 @@ class Worker():
 
                 #p7 is LASER pulse
                 pb.pulser_pulse(
-                    name=f'P3',
-                    channel=p7[0], 
-                    start=p7[1], 
-                    length=p7[2]
+                    name=f'L1',
+                    channel='LASER', 
+                    start=p7[0], 
+                    length=p7[1]
                 )
 
                 trigger_pulses = [p8, p9, p10, p11, p12, p36, p37]

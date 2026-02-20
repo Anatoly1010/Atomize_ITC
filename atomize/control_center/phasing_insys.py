@@ -1178,7 +1178,7 @@ class MainWindow(QMainWindow):
         self.parent_conn_dig.send('start')
         
         self.is_testing = True
-        self.timer.start(100)
+        self.timer.start(200)
 
     def turn_off(self):
         """
@@ -1244,7 +1244,7 @@ class MainWindow(QMainWindow):
             except Exception as e:
                 break
 
-        time.sleep(0.1)
+        #time.sleep(0.1)
 
         if hasattr(self, 'digitizer_process') and not self.digitizer_process.is_alive():
             if self.parent_conn_dig.poll():
@@ -1302,7 +1302,7 @@ class MainWindow(QMainWindow):
 
         self.digitizer_process.start()
         self.parent_conn_dig.send('start')
-        self.timer.start(100)
+        self.timer.start(200)
 
 # The worker class that run the digitizer in a different thread
 class Worker():

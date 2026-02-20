@@ -420,7 +420,7 @@ class MainWindow(QMainWindow):
             except Exception as e:
                 break
 
-        time.sleep(0.1)
+        #time.sleep(0.1)
 
         if hasattr(self, 'exp_process') and not self.exp_process.is_alive():
             if self.parent_conn.poll():
@@ -497,7 +497,7 @@ class MainWindow(QMainWindow):
         self.parent_conn.send('start')
         
         self.is_testing = True
-        self.timer.start(100)
+        self.timer.start(200)
 
     def run_main_experiment(self):
 
@@ -513,7 +513,7 @@ class MainWindow(QMainWindow):
         )
         self.exp_process.start()
         self.parent_conn.send('start')
-        self.timer.start(100)
+        self.timer.start(200)
 
     def message(self, *text):
         if len(text) == 1:

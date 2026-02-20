@@ -524,7 +524,7 @@ class MainWindow(QMainWindow):
             except Exception as e:
                 break
         
-        time.sleep(0.3)
+        #time.sleep(0.3)
 
         if hasattr(self, 'exp_process') and not self.exp_process.is_alive():
             if self.parent_conn.poll():
