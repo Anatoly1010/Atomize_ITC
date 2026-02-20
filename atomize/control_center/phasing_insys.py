@@ -11,14 +11,12 @@ from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QLabel, QDoubleS
 from PyQt6.QtGui import QIcon, QColor, QAction
 from PyQt6.QtCore import Qt, QTimer
 import atomize.general_modules.general_functions as general
-#import atomize.device_modules.Insys_FPGA as pb_pro
 import atomize.general_modules.csv_opener_saver as openfile
 
 class MainWindow(QMainWindow):
     """
     A main window class
     """
-    ##
     def __init__(self, *args, **kwargs):
         """
         A function for connecting actions and creating a main window
@@ -29,7 +27,6 @@ class MainWindow(QMainWindow):
         path_to_main2 = os.path.join(os.path.abspath(os.getcwd()), '..', 'libs')  #, '..', '..', 'libs'
         os.chdir(path_to_main2)
         #####
-        ###self.pb = pb_pro.Insys_FPGA()
         
         # Phase correction
         self.deg_rad = 57.2957795131
@@ -68,12 +65,10 @@ class MainWindow(QMainWindow):
         self.action_save.triggered.connect(self.save_file_dialog)
         file_menu.addAction(self.action_save)
 
-    ##
     def closeEvent(self, event):
         event.ignore()
         self.turn_off()
 
-    ##
     def design_tab_1(self):
         self.setObjectName("MainWindow")
         self.setWindowTitle("RECT Channel Pulse Control")
@@ -1040,7 +1035,6 @@ class MainWindow(QMainWindow):
             
         #print(f"Pulse {index} type set to: {text}")
 
-    ##
     def rep_rate(self):
         """
         A function to change a repetition rate
@@ -1049,17 +1043,13 @@ class MainWindow(QMainWindow):
 
         if self.laser_flag != 1:
             pass
-            ##self.pb.pulser_repetition_rate( self.repetition_rate )
-            ###self.update()
         elif self.laser_flag == 1 and self.combo_laser_num == 1:
             self.repetition_rate = '9.9 Hz'
             ###self.pb.pulser_repetition_rate( self.repetition_rate )
             self.Rep_rate.setValue(9.9)
-            ###self.update()
             self.errors.appendPlainText( '9.9 Hz is a maximum repetiton rate with LASER pulse' )
         elif self.laser_flag == 1 and self.combo_laser_num == 2:
             pass
-            #self.pb.pulser_repetition_rate( self.repetition_rate )
 
         try:
             self.parent_conn_dig.send( 'RR' + str( self.repetition_rate.split(' ')[0] ) )
@@ -1078,140 +1068,13 @@ class MainWindow(QMainWindow):
         except AttributeError:
             self.message('Digitizer is not running')
 
-    ## unused
-    def pulse_sequence(self):
-        """
-        Pulse sequence from defined pulses
-        """
-        if self.laser_flag != 1:
-            self.pb.pulser_repetition_rate( self.repetition_rate )
-            
-            if int(float( self.p1_length.split(' ')[0] )) != 0:
-                self.pb.pulser_pulse( name = 'P0', channel = self.p1_typ, start = self.p1_start, length = self.p1_length, \
-                                        phase_list = self.ph_1)
-            if int(float( self.p2_length.split(' ')[0] )) != 0:
-                self.pb.pulser_pulse( name = 'P1', channel = self.p2_typ, start = self.p2_start, length = self.p2_length, \
-                                        phase_list = self.ph_2 )
-            if int(float( self.p3_length.split(' ')[0] )) != 0:
-                self.pb.pulser_pulse( name = 'P2', channel = self.p3_typ, start = self.p3_start, length = self.p3_length, \
-                                        phase_list = self.ph_3 )
-            if int(float( self.p4_length.split(' ')[0] )) != 0:
-                self.pb.pulser_pulse( name = 'P3', channel = self.p4_typ, start = self.p4_start, length = self.p4_length, \
-                                        phase_list = self.ph_4  )
-            if int(float( self.p5_length.split(' ')[0] )) != 0:
-                self.pb.pulser_pulse( name = 'P4', channel = self.p5_typ, start = self.p5_start, length = self.p5_length, \
-                                        phase_list = self.ph_5 )
-            if int(float( self.p6_length.split(' ')[0] )) != 0:
-                self.pb.pulser_pulse( name = 'P5', channel = self.p6_typ, start = self.p6_start, length = self.p6_length, \
-                                        phase_list = self.ph_6  )
-            if int(float( self.p7_length.split(' ')[0] )) != 0:
-                self.pb.pulser_pulse( name = 'P6', channel = self.p7_typ, start = self.p7_start, length = self.p7_length, \
-                                        phase_list = self.ph_7  )
-
-        else:
-            if self.combo_laser_num == 1:
-                self.pb.pulser_repetition_rate( '9.9 Hz' )
-                ###self.Rep_rate.setValue(9.9)
-            elif self.combo_laser_num == 2:
-                self.pb.pulser_repetition_rate( self.repetition_rate )
-
-            # add q_switch_delay
-            self.p1_start_sh = self.add_ns( self.round_to_closest( float(self.remove_ns( self.p1_start )) + self.laser_q_switch_delay, 3.2) )
-            self.p3_start_sh = self.add_ns( self.round_to_closest( float(self.remove_ns( self.p3_start )) + self.laser_q_switch_delay, 3.2)  )
-            self.p4_start_sh = self.add_ns( self.round_to_closest( float(self.remove_ns( self.p4_start )) + self.laser_q_switch_delay, 3.2)  )
-            self.p5_start_sh = self.add_ns( self.round_to_closest( float(self.remove_ns( self.p5_start )) + self.laser_q_switch_delay, 3.2)  )
-            self.p6_start_sh = self.add_ns( self.round_to_closest( float(self.remove_ns( self.p6_start )) + self.laser_q_switch_delay, 3.2)  )
-            self.p7_start_sh = self.add_ns( self.round_to_closest( float(self.remove_ns( self.p7_start )) + self.laser_q_switch_delay, 3.2)  )
-
-            if int(float( self.p1_length.split(' ')[0] )) != 0:
-                self.pb.pulser_pulse( name = 'P0', channel = self.p1_typ, start = self.p1_start_sh, length = self.p1_length, \
-                                        phase_list = self.ph_1)
-            if int(float( self.p2_length.split(' ')[0] )) != 0:
-                self.pb.pulser_pulse( name = 'P1', channel = self.p2_typ, start = self.p2_start, length = self.p2_length, \
-                                        phase_list = self.ph_2 )
-            if int(float( self.p3_length.split(' ')[0] )) != 0:
-                self.pb.pulser_pulse( name = 'P2', channel = self.p3_typ, start = self.p3_start_sh, length = self.p3_length, \
-                                        phase_list = self.ph_3 )
-            if int(float( self.p4_length.split(' ')[0] )) != 0:
-                self.pb.pulser_pulse( name = 'P3', channel = self.p4_typ, start = self.p4_start_sh, length = self.p4_length, \
-                                        phase_list = self.ph_4 )
-            if int(float( self.p5_length.split(' ')[0] )) != 0:
-                self.pb.pulser_pulse( name = 'P4', channel = self.p5_typ, start = self.p5_start_sh, length = self.p5_length, \
-                                        phase_list = self.ph_5 )
-            if int(float( self.p6_length.split(' ')[0] )) != 0:
-                self.pb.pulser_pulse( name = 'P5', channel = self.p6_typ, start = self.p6_start_sh, length = self.p6_length, \
-                                        phase_list = self.ph_6 )
-            if int(float( self.p7_length.split(' ')[0] )) != 0:
-                self.pb.pulser_pulse( name = 'P6', channel = self.p7_typ, start = self.p7_start_sh, length = self.p7_length, \
-                                        phase_list = self.ph_7 )
-
-        # before adding pulse phases
-        #self.pb.pulser_update()
-        # ?
-        for i in range( len( self.ph_1 ) ):
-            self.pb.pulser_next_phase()
-
-        self.pb.pulser_open()
-        self.pb.pulser_close()
-
     def update(self):
         """
         A function to run pulses
         """
-        # Stop if necessary
         self.dig_stop()
-
-        # TEST RUN
-        #self.errors.clear()
-        ##self.parent_conn, self.child_conn = Pipe()
-        ##self.test_process = Process( target = self.pulser_test, args = ( self.child_conn, 'test', ) )
-
-        #self.button_update.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(193, 202, 227); border-style: outset; color: rgb(63, 63, 97); font-weight: bold; } ")
-
-        ##self.test_process.start()
-
-        ##if self.parent_conn.poll() == True:
-        ##    msg_type, data = self.parent_conn.recv()
-        ##    self.message(data)
-
-        ##    self.errors.clear()
-        ##    self.errors.appendPlainText(data)
-        ##else:
-            
-        ##    self.pb.pulser_clear()
-
-        ##    if self.laser_flag == 1:
-        ##        if self.combo_laser_num == 1:
-        ##            self.Rep_rate.setValue(9.9)
-        ##            self.errors.appendPlainText( str(self.laser_q_switch_delay ) + ' ns is added to all the pulses except the LASER pulse' )
-        ##        elif self.combo_laser_num == 2:
-        ##            self.errors.appendPlainText( str(self.laser_q_switch_delay ) + ' ns is added to all the pulses except the LASER pulse' )
-
-        ##   # to add pulses:
-        ##    self.pb.pulser_test_flag('test')
-        ##    self.pulse_sequence()
-        ##    self.errors.appendPlainText( self.pb.pulser_pulse_list() )
-
-        ##    self.pb.pulser_test_flag('None')
-
-        ##    self.pb.adc_window = 0
         self.dig_start()
 
-    ## unused
-    def pulser_test(self, conn, flag):
-        """
-        Test run
-        """
-        try:
-            self.pb.pulser_clear()
-            self.pb.pulser_test_flag( flag )
-            self.pulse_sequence()
-
-        except BaseException as e:
-            exc_info = f"{type(e)} \n{str(e)} \n{traceback.format_exc()}"
-            conn.send( ('Error', exc_info) )
-
-    ##
     def dig_stop(self):
         """
         A function to stop digitizer
@@ -1219,9 +1082,6 @@ class MainWindow(QMainWindow):
         path_to_main = os.path.abspath( os.getcwd() )
         path_file = os.path.join(path_to_main, '../atomize/control_center/digitizer_insys.param')
         #path_file = os.path.join(path_to_main, 'digitizer_insys.param')
-
-        #self.errors.clear()
-        #self.button_update.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; } ")
 
         file_to_read = open(path_file, 'w')
         file_to_read.write('Points: ' + str( self.p1_length ) +'\n')
@@ -1252,7 +1112,20 @@ class MainWindow(QMainWindow):
                 if self.exit_clicked == 1:
                     sys.exit()
 
-    ##
+    def dig_start_exp(self):
+        worker = Worker()
+
+        for i in range(1, 10):
+            data = [
+                getattr(self, f'p{i}_typ'),
+                getattr(self, f'p{i}_start'),
+                getattr(self, f'p{i}_length'),
+                getattr(self, f'ph_{i}'),
+                getattr(self, f'p{i}_st_increment'),
+                getattr(self, f'p{i}_len_increment')
+            ]
+            setattr(self, f'p{i}_exp', data)
+
     def dig_start(self):
         """
         Button Start; Run function script(pipe_addres, four parameters of the experimental script)
@@ -1262,21 +1135,20 @@ class MainWindow(QMainWindow):
         """
         worker = Worker()
 
-        self.p1_list = [ self.p1_typ, self.p1_start, self.p1_length, self.ph_1 ]
-        self.p2_list = [ self.p2_typ, self.p2_start, self.p2_length, self.ph_2 ]
-        self.p3_list = [ self.p3_typ, self.p3_start, self.p3_length, self.ph_3 ]
-        self.p4_list = [ self.p4_typ, self.p4_start, self.p4_length, self.ph_4 ]
-        self.p5_list = [ self.p5_typ, self.p5_start, self.p5_length, self.ph_5 ]
-        self.p6_list = [ self.p6_typ, self.p6_start, self.p6_length, self.ph_6 ]
-        self.p7_list = [ self.p7_typ, self.p7_start, self.p7_length, self.ph_7 ]
+        for i in range(1, 10):
+            data = [
+                getattr(self, f'p{i}_typ'),
+                getattr(self, f'p{i}_start'),
+                getattr(self, f'p{i}_length'),
+                getattr(self, f'ph_{i}')
+            ]
+            setattr(self, f'p{i}_list', data)
 
         if self.laser_flag == 1:
             if self.combo_laser_num == 1:
                 self.Rep_rate.setValue(9.9)
-                #self.errors.appendPlainText( str(self.laser_q_switch_delay ) + ' ns is added to all the pulses except the LASER pulse' )
             elif self.combo_laser_num == 2:
                 pass
-                #self.errors.appendPlainText( str(self.laser_q_switch_delay ) + ' ns is added to all the pulses except the LASER pulse' )
 
         # prevent running two processes
         try:
@@ -1294,7 +1166,8 @@ class MainWindow(QMainWindow):
             self.p5_list, self.p6_list, self.p7_list, self.laser_flag, 
             self.repetition_rate.split(' ')[0], 
             self.mag_field, self.fft, self.quad, self.zero_order, self.first_order, 
-            self.second_order, self.p_to_drop, self.combo_laser_num, self.laser_q_switch_delay, ) )
+            self.second_order, self.p_to_drop, self.combo_laser_num, self.laser_q_switch_delay, 
+            self.p8_list, self.p9_list ) )
 
         self.button_update.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(193, 202, 227); border-style: outset; color: rgb(63, 63, 97); font-weight: bold; } ")
 
@@ -1307,7 +1180,6 @@ class MainWindow(QMainWindow):
         self.is_testing = True
         self.timer.start(100)
 
-    ##
     def turn_off(self):
         """
         A function to turn off a programm.
@@ -1321,7 +1193,6 @@ class MainWindow(QMainWindow):
         else:
             print(f'{text}', flush=True)
 
-    ##
     def button_blue(self):
         self.button_update.setStyleSheet("""
                 QPushButton {
@@ -1333,7 +1204,6 @@ class MainWindow(QMainWindow):
                 }
             """)
 
-    ##
     def parse_message(self):
         msg_type, data = self.parent_conn_dig.recv()
         
@@ -1360,7 +1230,6 @@ class MainWindow(QMainWindow):
                 self.message(data)
                 self.button_blue()
 
-    ##
     def check_messages(self):
 
         if not hasattr(self, 'last_error'):
@@ -1393,7 +1262,6 @@ class MainWindow(QMainWindow):
                 else:
                     self.last_error = False
 
-    ##
     def check_process_status(self):
         if self.digitizer_process.is_alive():
             return
@@ -1408,7 +1276,6 @@ class MainWindow(QMainWindow):
         if self.exit_clicked == 1:
             sys.exit()
 
-    ##
     def open_dialog(self):
         file_data = self.file_handler.create_file_dialog(multiprocessing = True)        
 
@@ -1417,7 +1284,6 @@ class MainWindow(QMainWindow):
         else:
             self.parent_conn.send( 'FL' + '' )
 
-    ##
     def run_main_experiment(self):
 
         worker = Worker()
@@ -1429,7 +1295,8 @@ class MainWindow(QMainWindow):
             self.p5_list, self.p6_list, self.p7_list, self.laser_flag, 
             self.repetition_rate.split(' ')[0], 
             self.mag_field, self.fft, self.quad, self.zero_order, self.first_order, 
-            self.second_order, self.p_to_drop, self.combo_laser_num, self.laser_q_switch_delay, ) )
+            self.second_order, self.p_to_drop, self.combo_laser_num, self.laser_q_switch_delay,
+            self.p8_list, self.p9_list ) )
 
         self.button_update.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(211, 194, 78); border-style: outset; color: rgb(63, 63, 97); font-weight: bold; } ") 
 
@@ -1447,7 +1314,7 @@ class Worker():
 
         self.command = 'start'
     
-    def dig_on(self, conn, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11, p12, p13, p14, p15, p16, p17, p18, p19, p20, p21, p22, p23):
+    def dig_on(self, conn, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11, p12, p13, p14, p15, p16, p17, p18, p19, p20, p21, p22, p23, p24, p25):
         """
         function that contains updating of the digitizer
         """
@@ -1483,57 +1350,49 @@ class Worker():
             
             if p13 != 1:
                 pb.pulser_repetition_rate( str(p14) + ' Hz' )
-                
-                if int(float( p6[2].split(' ')[0] )) != 0:
-                    pb.pulser_pulse( name = 'P0', channel = p6[0], start = p6[1], length = p6[2], phase_list = p6[3] )
-                if int(float( p7[2].split(' ')[0] )) != 0:
-                    pb.pulser_pulse( name = 'P1', channel = p7[0], start = p7[1], length = p7[2], phase_list = p7[3] )
-                if int(float( p8[2].split(' ')[0] )) != 0:
-                    pb.pulser_pulse( name = 'P2', channel = p8[0], start = p8[1], length = p8[2], phase_list = p8[3] )
-                if int(float( p9[2].split(' ')[0] )) != 0:
-                    pb.pulser_pulse( name = 'P3', channel = p9[0], start = p9[1], length = p9[2], phase_list = p9[3] )
-                if int(float( p10[2].split(' ')[0] )) != 0:
-                    pb.pulser_pulse( name = 'P4', channel = p10[0], start = p10[1], length = p10[2], phase_list = p10[3] )
-                if int(float( p11[2].split(' ')[0] )) != 0:
-                    pb.pulser_pulse( name = 'P5', channel = p11[0], start = p11[1], length = p11[2], phase_list = p11[3] )
-                if int(float( p12[2].split(' ')[0] )) != 0:
-                    pb.pulser_pulse( name = 'P6', channel = p12[0], start = p12[1], length = p12[2], phase_list = p12[3] )
+                pulses = [p6, p7, p8, p9, p10, p11, p12, p24, p25]
+
+                for i, p in enumerate(pulses):
+                    length_str = p[2].split(' ')[0]
+                    if int(float(length_str)) != 0:
+                        pb.pulser_pulse(
+                            name=f'P{i}',
+                            channel=p[0],
+                            start=p[1],
+                            length=p[2],
+                            phase_list=p[3]
+                        )
 
             else:
                 if p22 == 1:
                     pb.pulser_repetition_rate( '9.9 Hz' )
+                    q_delay = p23
+                elif p22 == 2:
+                    pb.pulser_repetition_rate( str(p14) + ' Hz' )
+                    q_delay = p23
                 else:
                     pb.pulser_repetition_rate( str(p14) + ' Hz' )
 
-                if p22 == 1:
-                    # add q_switch_delay 141000 ns
-                    q_delay = p23
-                elif p22 == 2 :
-                    q_delay = p23
+                pulses = [p6, p7, p8, p9, p10, p11, p12, p24, p25]
 
-                p6[1] = str( self.round_to_closest( float(p6[1].split(' ')[0]) + q_delay, 3.2) ) + ' ns'
-                # p7 is a laser pulser
-                p8[1] = str( self.round_to_closest( float(p8[1].split(' ')[0]) + q_delay, 3.2) ) + ' ns'
-                p9[1] = str( self.round_to_closest( float(p9[1].split(' ')[0]) + q_delay, 3.2) ) + ' ns'
-                p10[1] = str( self.round_to_closest( float(p10[1].split(' ')[0]) + q_delay, 3.2) ) + ' ns'
-                p11[1] = str( self.round_to_closest( float(p11[1].split(' ')[0]) + q_delay, 3.2) ) + ' ns'
-                p12[1] = str( self.round_to_closest( float(p12[1].split(' ')[0]) + q_delay, 3.2) ) + ' ns'
+                for i, p in enumerate(pulses):
+                    if i != 1:
+                        start_val = float(p[1].split(' ')[0]) + q_delay
+                        p[1] = f"{self.round_to_closest(start_val, 3.2)} ns"
 
-                if int(float( p6[2].split(' ')[0] )) != 0:
-                    pb.pulser_pulse( name = 'P0', channel = p6[0], start = p6[1], length = p6[2], phase_list = p6[3] )
-                if int(float( p7[2].split(' ')[0] )) != 0:
-                    # p7 is a laser pulser
-                    pb.pulser_pulse( name = 'P1', channel = p7[0], start = p7[1], length = p7[2] ) #, phase_list = p7[3]
-                if int(float( p8[2].split(' ')[0] )) != 0:
-                    pb.pulser_pulse( name = 'P2', channel = p8[0], start = p8[1], length = p8[2], phase_list = p8[3] )
-                if int(float( p9[2].split(' ')[0] )) != 0:
-                    pb.pulser_pulse( name = 'P3', channel = p9[0], start = p9[1], length = p9[2], phase_list = p9[3] )
-                if int(float( p10[2].split(' ')[0] )) != 0:
-                    pb.pulser_pulse( name = 'P4', channel = p10[0], start = p10[1], length = p10[2], phase_list = p10[3] )
-                if int(float( p11[2].split(' ')[0] )) != 0:
-                    pb.pulser_pulse( name = 'P5', channel = p11[0], start = p11[1], length = p11[2], phase_list = p11[3] )
-                if int(float( p12[2].split(' ')[0] )) != 0:
-                    pb.pulser_pulse( name = 'P6', channel = p12[0], start = p12[1], length = p12[2], phase_list = p12[3] )
+                    length_val = int(float(p[2].split(' ')[0]))
+                    if length_val != 0:
+                        kwargs = {
+                            'name': f'P{i}',
+                            'channel': p[0],
+                            'start': p[1],
+                            'length': p[2]
+                        }
+                        
+                        if i != 1:
+                            kwargs['phase_list'] = p[3]
+                            
+                        pb.pulser_pulse(**kwargs)
 
             POINTS = 1
             pb.digitizer_decimation(p1)
@@ -1638,12 +1497,15 @@ class Worker():
                         general.plot_1d('Dig', x_axis / 1e9, ( data_x, data_y ), 
                             xscale = 's', yscale = 'mV', label = 'ch', 
                             vline = (p4 * t_res / 1e9, p5 * t_res / 1e9), 
-                            text = 'I/Q ' + str(int_x) + '/' + str(int_y))
+                            text = 'I/Q ' + str(int_x) + '/' + str(int_y)
+                            )
 
                     else:
                         # acquisition cycle
                         general.plot_1d('Dig', x_axis / 1e9, ( data_x, data_y ), xscale = 's', 
-                            yscale = 'mV', label = 'ch', vline = (p4 * t_res / 1e9, p5 * t_res / 1e9))
+                            yscale = 'mV', label = 'ch', 
+                            vline = (p4 * t_res / 1e9, p5 * t_res / 1e9)
+                            )
 
                         if p17 == 0:
                             freq_axis, abs_values = fft.fft(x_axis, data_x, data_y, t_res * 1)
@@ -1651,7 +1513,8 @@ class Worker():
                             i_max = abs(round( freq_axis[ np.argmax( abs_values ) ], 2))
                             general.plot_1d('FFT', freq_axis * 1e6, abs_values, xname = 'Offset', 
                                 label = 'FFT', xscale = 'Hz', 
-                                yscale = 'A.U.', text = 'Max ' + str(m_val)) #str(m_val)
+                                yscale = 'A.U.', text = 'Max ' + str(m_val)
+                                ) #str(m_val)
                         else:
                             if p21 > len( data_x ) - 0.4 * p1:
                                 p21 = len( data_x ) - 0.8 * p1
@@ -1661,7 +1524,8 @@ class Worker():
                             data_fft = fft.ph_correction( freq * 1e6, fft_x, fft_y, p18, p19, p20 )
                             general.plot_1d('FFT', freq, ( data_fft[0], data_fft[1] ), 
                                 xname = 'Offset', xscale = 'Hz', 
-                                yscale = 'A.U.', label = 'FFT')
+                                yscale = 'A.U.', label = 'FFT'
+                                )
 
                 self.command = 'start'
                 
@@ -1685,7 +1549,7 @@ class Worker():
             exc_info = f"{type(e)} \n{str(e)} \n{traceback.format_exc()}"
             conn.send( ('Error', exc_info) )
 
-    def dig_test(self, conn, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11, p12, p13, p14, p15, p16, p17, p18, p19, p20, p21, p22, p23):
+    def dig_test(self, conn, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11, p12, p13, p14, p15, p16, p17, p18, p19, p20, p21, p22, p23, p24, p25):
         """
         function that contains updating of the digitizer
         """
@@ -1725,57 +1589,49 @@ class Worker():
             
             if p13 != 1:
                 pb.pulser_repetition_rate( str(p14) + ' Hz' )
-                
-                if int(float( p6[2].split(' ')[0] )) != 0:
-                    pb.pulser_pulse( name = 'P0', channel = p6[0], start = p6[1], length = p6[2], phase_list = p6[3] )
-                if int(float( p7[2].split(' ')[0] )) != 0:
-                    pb.pulser_pulse( name = 'P1', channel = p7[0], start = p7[1], length = p7[2], phase_list = p7[3] )
-                if int(float( p8[2].split(' ')[0] )) != 0:
-                    pb.pulser_pulse( name = 'P2', channel = p8[0], start = p8[1], length = p8[2], phase_list = p8[3] )
-                if int(float( p9[2].split(' ')[0] )) != 0:
-                    pb.pulser_pulse( name = 'P3', channel = p9[0], start = p9[1], length = p9[2], phase_list = p9[3] )
-                if int(float( p10[2].split(' ')[0] )) != 0:
-                    pb.pulser_pulse( name = 'P4', channel = p10[0], start = p10[1], length = p10[2], phase_list = p10[3] )
-                if int(float( p11[2].split(' ')[0] )) != 0:
-                    pb.pulser_pulse( name = 'P5', channel = p11[0], start = p11[1], length = p11[2], phase_list = p11[3] )
-                if int(float( p12[2].split(' ')[0] )) != 0:
-                    pb.pulser_pulse( name = 'P6', channel = p12[0], start = p12[1], length = p12[2], phase_list = p12[3] )
+                pulses = [p6, p7, p8, p9, p10, p11, p12, p24, p25]
+
+                for i, p in enumerate(pulses):
+                    length_str = p[2].split(' ')[0]
+                    if int(float(length_str)) != 0:
+                        pb.pulser_pulse(
+                            name=f'P{i}',
+                            channel=p[0],
+                            start=p[1],
+                            length=p[2],
+                            phase_list=p[3]
+                        )
 
             else:
                 if p22 == 1:
                     pb.pulser_repetition_rate( '9.9 Hz' )
+                    q_delay = p23
+                elif p22 == 2:
+                    pb.pulser_repetition_rate( str(p14) + ' Hz' )
+                    q_delay = p23
                 else:
                     pb.pulser_repetition_rate( str(p14) + ' Hz' )
 
-                if p22 == 1:
-                    # add q_switch_delay 141000 ns
-                    q_delay = p23
-                elif p22 == 2 :
-                    q_delay = p23
+                pulses = [p6, p7, p8, p9, p10, p11, p12, p24, p25]
 
-                p6[1] = str( self.round_to_closest( float(p6[1].split(' ')[0]) + q_delay, 3.2) ) + ' ns'
-                # p7 is a laser pulser
-                p8[1] = str( self.round_to_closest( float(p8[1].split(' ')[0]) + q_delay, 3.2) ) + ' ns'
-                p9[1] = str( self.round_to_closest( float(p9[1].split(' ')[0]) + q_delay, 3.2) ) + ' ns'
-                p10[1] = str( self.round_to_closest( float(p10[1].split(' ')[0]) + q_delay, 3.2) ) + ' ns'
-                p11[1] = str( self.round_to_closest( float(p11[1].split(' ')[0]) + q_delay, 3.2) ) + ' ns'
-                p12[1] = str( self.round_to_closest( float(p12[1].split(' ')[0]) + q_delay, 3.2) ) + ' ns'
+                for i, p in enumerate(pulses):
+                    if i != 1:
+                        start_val = float(p[1].split(' ')[0]) + q_delay
+                        p[1] = f"{self.round_to_closest(start_val, 3.2)} ns"
 
-                if int(float( p6[2].split(' ')[0] )) != 0:
-                    pb.pulser_pulse( name = 'P0', channel = p6[0], start = p6[1], length = p6[2], phase_list = p6[3] )
-                if int(float( p7[2].split(' ')[0] )) != 0:
-                    # p7 is a laser pulser
-                    pb.pulser_pulse( name = 'P1', channel = p7[0], start = p7[1], length = p7[2] ) #, phase_list = p7[3]
-                if int(float( p8[2].split(' ')[0] )) != 0:
-                    pb.pulser_pulse( name = 'P2', channel = p8[0], start = p8[1], length = p8[2], phase_list = p8[3] )
-                if int(float( p9[2].split(' ')[0] )) != 0:
-                    pb.pulser_pulse( name = 'P3', channel = p9[0], start = p9[1], length = p9[2], phase_list = p9[3] )
-                if int(float( p10[2].split(' ')[0] )) != 0:
-                    pb.pulser_pulse( name = 'P4', channel = p10[0], start = p10[1], length = p10[2], phase_list = p10[3] )
-                if int(float( p11[2].split(' ')[0] )) != 0:
-                    pb.pulser_pulse( name = 'P5', channel = p11[0], start = p11[1], length = p11[2], phase_list = p11[3] )
-                if int(float( p12[2].split(' ')[0] )) != 0:
-                    pb.pulser_pulse( name = 'P6', channel = p12[0], start = p12[1], length = p12[2], phase_list = p12[3] )
+                    length_val = int(float(p[2].split(' ')[0]))
+                    if length_val != 0:
+                        kwargs = {
+                            'name': f'P{i}',
+                            'channel': p[0],
+                            'start': p[1],
+                            'length': p[2]
+                        }
+                        
+                        if i != 1:
+                            kwargs['phase_list'] = p[3]
+                            
+                        pb.pulser_pulse(**kwargs)
 
             POINTS = 1
             pb.digitizer_decimation(p1)
@@ -1831,7 +1687,8 @@ class Worker():
                     if p14 > 49:
                         pb.pulser_repetition_rate( str(p14) + ' Hz' )
                     else:
-                        conn.send( ('Message', 'For REPETITION RATE lower then 50 Hz, please, press RUN PULSES') )
+                        pass
+                        #conn.send( ('Message', 'For REPETITION RATE lower then 50 Hz, please, press RUN PULSES') )
                 
                 elif self.command[0:2] == 'FI':
                     p15 = float( self.command[2:] )
@@ -1880,12 +1737,15 @@ class Worker():
                         general.plot_1d('Dig', x_axis / 1e9, ( data_x, data_y ), 
                             xscale = 's', yscale = 'mV', label = 'ch', 
                             vline = (p4 * t_res / 1e9, p5 * t_res / 1e9), 
-                            text = 'I/Q ' + str(int_x) + '/' + str(int_y))
+                            text = 'I/Q ' + str(int_x) + '/' + str(int_y)
+                            )
 
                     else:
                         # acquisition cycle
                         general.plot_1d('Dig', x_axis / 1e9, ( data_x, data_y ), xscale = 's', 
-                            yscale = 'mV', label = 'ch', vline = (p4 * t_res / 1e9, p5 * t_res / 1e9))
+                            yscale = 'mV', label = 'ch', 
+                            vline = (p4 * t_res / 1e9, p5 * t_res / 1e9)
+                            )
 
                         if p17 == 0:
                             freq_axis, abs_values = fft.fft(x_axis, data_x, data_y, t_res * 1)
@@ -1893,7 +1753,8 @@ class Worker():
                             i_max = abs(round( freq_axis[ np.argmax( abs_values ) ], 2))
                             general.plot_1d('FFT', freq_axis * 1e6, abs_values, xname = 'Offset', 
                                 label = 'FFT', xscale = 'Hz', 
-                                yscale = 'A.U.', text = 'Max ' + str(m_val)) #str(m_val)
+                                yscale = 'A.U.', text = 'Max ' + str(m_val))
+                                 #str(m_val)
                         else:
                             if p21 > len( data_x ) - 0.4 * p1:
                                 p21 = len( data_x ) - 0.8 * p1
@@ -1903,7 +1764,8 @@ class Worker():
                             data_fft = fft.ph_correction( freq * 1e6, fft_x, fft_y, p18, p19, p20 )
                             general.plot_1d('FFT', freq, ( data_fft[0], data_fft[1] ), 
                                 xname = 'Offset', xscale = 'Hz', 
-                                yscale = 'A.U.', label = 'FFT')
+                                yscale = 'A.U.', label = 'FFT'
+                                )
 
                 if PHASES != 1:
                     pb.pulser_pulse_reset()

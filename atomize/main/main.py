@@ -1,6 +1,7 @@
 import os
 import sys
 import time
+import ctypes
 import threading
 from pathlib import Path
 from PyQt6 import QtWidgets, uic, QtCore, QtGui
@@ -492,7 +493,7 @@ def main():
     """
     # Windows taskbar
     try:
-        myappid = 'atomize-itc' 
+        myappid = 'atomize'
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
     except Exception:
         pass
