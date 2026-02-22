@@ -7,7 +7,7 @@ import time
 import traceback
 import numpy as np
 from multiprocessing import Process, Pipe
-from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QLabel, QDoubleSpinBox, QSpinBox, QComboBox, QPushButton, QTextEdit, QGridLayout, QFrame, QCheckBox, QFileDialog, QVBoxLayout, QTabWidget, QScrollArea, QHBoxLayout, QPlainTextEdit
+from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QLabel, QDoubleSpinBox, QSpinBox, QComboBox, QPushButton, QTextEdit, QGridLayout, QFrame, QCheckBox, QFileDialog, QVBoxLayout, QTabWidget, QScrollArea, QHBoxLayout, QPlainTextEdit, QProgressBar,  QTreeView, QHeaderView, QSizeGrip, QLineEdit, QFileIconProvider
 from PyQt6.QtGui import QIcon, QColor, QAction
 from PyQt6.QtCore import Qt, QTimer
 import atomize.general_modules.general_functions as general
@@ -24,8 +24,12 @@ class MainWindow(QMainWindow):
         super(MainWindow, self).__init__(*args, **kwargs)
         self.menu()
         #####
-        path_to_main2 = os.path.join(os.path.abspath(os.getcwd()), '..', 'libs')  #, '..', '..', 'libs'
-        os.chdir(path_to_main2)
+        try:
+            path_to_main2 = os.path.join(os.path.abspath(os.getcwd()), '..', 'libs')
+            os.chdir(path_to_main2) 
+        except FileNotFoundError:
+            path_to_main2 = os.path.join(os.path.abspath(os.getcwd()), '..', '..', 'libs')
+            os.chdir(path_to_main2)
         #####
         
         # Phase correction
@@ -44,12 +48,17 @@ class MainWindow(QMainWindow):
         We need a different thread here, since PyQt GUI applications have a main thread of execution that runs the event loop and GUI. If you launch a long-running task in this thread, then your GUI will freeze until the task terminates. During that time, the user won’t be able to interact with the application
         """
 
+        self.is_experiment = False
         self.exit_clicked = 0
         self.timer = QTimer()
         self.timer.timeout.connect(self.check_messages)
-        #self.monitor_timer = QTimer()
-        #self.monitor_timer.timeout.connect(self.check_process_status)
+        self.monitor_timer = QTimer()
+        self.monitor_timer.timeout.connect(self.check_process_status)
         self.file_handler = openfile.Saver_Opener()
+
+    def closeEvent(self, event):
+        event.ignore()
+        self.turn_off()
 
     def menu(self):
         menubar = self.menuBar()
@@ -64,10 +73,6 @@ class MainWindow(QMainWindow):
         self.action_save = QAction("Save to file", self)
         self.action_save.triggered.connect(self.save_file_dialog)
         file_menu.addAction(self.action_save)
-
-    def closeEvent(self, event):
-        event.ignore()
-        self.turn_off()
 
     def design_tab_1(self):
         self.setObjectName("MainWindow")
@@ -178,7 +183,7 @@ class MainWindow(QMainWindow):
         main_window_layout.addWidget(buttons_widget)
 
         # ---- Labels & Inputs ----
-        labels = [("Start", "label_1"), ("Length", "label_2"), ("Start Increment", "label_3"), ("Length Increment", "label_4"), ("Type", "label_5"), ("Phase", "label_6"), ("Repetition Rate", "label_7"), ("Magnetic Field", "label_8")]
+        labels = [("Start", "label_1"), ("Length", "label_2"), ("Start Increment", "label_3"), ("Length Increment", "label_4"), ("Type", "label_5"), ("Phase", "label_6"), ("Repetition Rate", "label_7"), ("Magnetic Field", "label_8"), ("Experiment Progress", "label_p1")]
 
         for name, attr_name in labels:
             lbl = QLabel(name)
@@ -356,14 +361,46 @@ class MainWindow(QMainWindow):
         self.buttons_layout.addWidget(label_widget, 1, 0)
         self.buttons_layout.addWidget(hline(), 2, 0, 1, 12)
 
+
+        #---- Progress Bar ----
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setFixedSize(130, 15)
+        self.progress_bar.setTextVisible(True)
+        self.progress_bar.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+
+        self.progress_bar.setStyleSheet("""
+            QProgressBar {
+                border: 1px solid rgb(83, 83, 117);
+                border-radius: 4px;
+                background-color: rgb(42, 42, 64);
+                color: rgb(211, 194, 78);
+                font-weight: bold;
+                text-align: right; 
+                margin-right: 40px;
+                height: 20px;
+            }
+
+            QProgressBar::chunk {
+                background-color: rgb(193, 202, 227);
+                border-radius: 2px;
+            }
+        """)
+
+        label_widget = getattr(self, f"label_p1")
+        self.buttons_layout.addWidget(label_widget, 0, 2)
+        self.buttons_layout.addWidget(self.progress_bar, 0, 3)
+
         # ---- Buttons ----
         buttons = [("Run Pulses", "button_update", self.update),
-                   ("Stop Pulses", "button_stop", self.dig_stop),
+                   ("Stop", "button_stop", self.dig_stop),
                    ("Exit", "button_off", self.turn_off),
-                   ("Start Experiment", "button_start_exp", self.start_exp),
-                   ("Stop Experiment", "button_stop_exp", self.stop_exp)
+                   ("Start Experiment", "button_start_exp", self.start_exp)
                     ]
 
+        #("Stop Experiment", "button_stop_exp", self.stop_exp)
+        
         btn_c = 3
         btn_cl = 0
         for name, attr_name, func in buttons:
@@ -401,7 +438,7 @@ class MainWindow(QMainWindow):
         self.tab_pulse.tabBar().setTabTextColor(1, QColor(193, 202, 227))
 
         # ---- Labels & Inputs ----
-        labels = [("Acquisitions", "label_17"), ("Integration Left", "label_18"), ("Integration Right", "label_19"), ("Decimation", "label_20")]
+        labels = [("Acquisitions", "label_17"), ("Integration Left", "label_18"), ("Integration Right", "label_19"), ("Decimation", "label_20"), ("Points", "label_e1"), ("Scans", "label_e2"), ("Experiment Name", "label_e3"), ("Curve Name", "label_e4"), ("Start Field", "label_f1"), ("End Field", "label_f2"), ("Field Step", "label_f3"), ("Sweep Type", "label_c1"), ("Log[Start Time]", "label_e5"), ("Log[End Time]", "label_e6")]
 
         for name, attr_name in labels:
             lbl = QLabel(name)
@@ -413,17 +450,24 @@ class MainWindow(QMainWindow):
         double_boxes = [(QSpinBox, "Acq_number", "number_averages", self.acq_number, 1, 1e4, 1, 1, 0, ""),
                       (QSpinBox, "Dec", "decimation", self.decimat, 1, 4, 1, 1, 0, ""),
                       (QDoubleSpinBox, "Win_left", "cur_win_left", self.win_left, 0, 6400, 0, 0.4, 1, " ns"),
-                      (QDoubleSpinBox, "Win_right", "cur_win_right", self.win_right, 0, 6400, 320, 0.4, 1, " ns")
+                      (QDoubleSpinBox, "Win_right", "cur_win_right", self.win_right, 0, 6400, 320, 0.4, 1, " ns"),
+                      (QSpinBox, "box_points", "cur_points", self.points, 1, 20000, 500, 10, 0, ""),
+                      (QSpinBox, "box_scan", "cur_scan", self.scan, 1, 100, 1, 1, 0, ""),
+                      (QDoubleSpinBox, "box_st_field", "cur_start_field", self.st_field, 0, 15000, 3000, 1, 1, " G"),
+                      (QDoubleSpinBox, "box_end_field", "cur_end_field", self.end_field, 0, 15000, 4000, 1, 1, " G"),
+                      (QDoubleSpinBox, "box_step_field", "cur_step", self.step_field, 0.01, 50, 0.5, 0.1, 2, " G"),
+                      (QDoubleSpinBox, "Log_start", "cur_log_start", self.log_start, 0, 10, 1, 0.01, 3, ""),
+                      (QDoubleSpinBox, "Log_end", "cur_log_end", self.log_end, 0, 10, 7, 0.01, 3, "")
                         ]
 
         for widget_class, attr_name, par_name, func, v_min, v_max, cur_val, v_step, dec, suf in double_boxes:
             spin_box = widget_class()
             if isinstance(spin_box, QDoubleSpinBox):
                 spin_box.setRange(v_min, v_max)
-                spin_box.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")                
+                spin_box.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
             else:
                 spin_box.setRange(int(v_min), int(v_max))
-                spin_box.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")                
+                spin_box.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
             spin_box.setSingleStep(v_step)
             spin_box.setValue(cur_val)
             if isinstance(spin_box, QDoubleSpinBox):
@@ -448,6 +492,46 @@ class MainWindow(QMainWindow):
                 else:
                     setattr(self, par_name, float(spin_box.value()))
 
+        # ---- Text Edits ----
+        text_edit = [("EXP", "text_edit_exp_name", "cur_exp_name", self.exp_name),
+                     ("c1", "text_edit_curve", "cur_curve_name", self.curve_name)
+                    ]
+
+        for text, attr_name, par_name, func in text_edit:
+            txt = QTextEdit(text)
+            setattr(self, attr_name, txt)
+            setattr(self, par_name, txt.toPlainText())
+            txt.textChanged.connect(func)
+            txt.setFixedSize(130, 26)
+            txt.setAcceptRichText(False)
+            txt.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+            txt.setStyleSheet("QTextEdit { color : rgb(211, 194, 78) ; selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
+
+        # ---- Combo boxes----
+        combo_boxes = [("Linear Time", "combo_sweep", "cur_sweep", self.sweep_type, 
+                        [
+                        "Linear Time", "Field", "Log Time"
+                        ])
+                      ]
+
+        for cur_text, attr_name, par_name, func, item in combo_boxes:
+            combo = QComboBox()
+            setattr(self, attr_name, combo)
+            setattr(self, par_name, combo.currentText())
+            combo.currentIndexChanged.connect(func)
+            combo.addItems(item)
+            combo.setCurrentText(cur_text)
+            combo.setFixedSize(130, 26)
+            combo.setStyleSheet("""
+                QComboBox 
+                { color : rgb(193, 202, 227); 
+                selection-color: rgb(211, 194, 78); 
+                selection-background-color: rgb(63, 63, 97);
+                outline: none;
+                }
+                """)
+
+
         # ---- Separators ----
         def hline():
             line = QFrame()
@@ -464,8 +548,29 @@ class MainWindow(QMainWindow):
         left_grid.addWidget(self.label_17, 0, 0)
         left_grid.addWidget(self.Acq_number, 0, 1)
         left_grid.addWidget(hline(), 1, 0, 1, 2)
-        left_grid.setRowStretch(2, 1)
-        left_grid.setColumnStretch(2, 1)
+
+        left_grid.addWidget(self.label_e1, 2, 0)
+        left_grid.addWidget(self.box_points, 2, 1)
+        left_grid.addWidget(self.label_e2, 3, 0)
+        left_grid.addWidget(self.box_scan, 3, 1)
+        left_grid.addWidget(hline(), 4, 0, 1, 2)
+
+        left_grid.addWidget(self.label_e5, 5, 0)
+        left_grid.addWidget(self.Log_start, 5, 1)
+        left_grid.addWidget(self.label_e6, 6, 0)
+        left_grid.addWidget(self.Log_end, 6, 1)
+
+        left_grid.addWidget(hline(), 7, 0, 1, 2)
+
+        left_grid.addWidget(self.label_e3, 8, 0)
+        left_grid.addWidget(self.text_edit_exp_name, 8, 1)
+        left_grid.addWidget(self.label_e4, 9, 0)
+        left_grid.addWidget(self.text_edit_curve, 9, 1)
+
+        left_grid.addWidget(hline(), 10, 0, 1, 2)
+
+        left_grid.setRowStretch(11, 1)
+        left_grid.setColumnStretch(11, 1)
 
         right_grid = QGridLayout()
         right_grid.setVerticalSpacing(4)
@@ -479,10 +584,36 @@ class MainWindow(QMainWindow):
         right_grid.addWidget(hline(), 3, 0, 1, 2)
         right_grid.setRowStretch(4, 1)
         right_grid.setColumnStretch(4, 1)
-        
+
+        third_grid = QGridLayout()
+        third_grid.setVerticalSpacing(4)
+        third_grid.setHorizontalSpacing(20)
+        third_grid.addWidget(self.label_f1, 0, 0)
+        third_grid.addWidget(self.box_st_field, 0, 1)
+        third_grid.addWidget(self.label_f2, 1, 0)
+        third_grid.addWidget(self.box_end_field, 1, 1)
+        third_grid.addWidget(self.label_f3, 2, 0)
+        third_grid.addWidget(self.box_step_field, 2, 1)
+        third_grid.addWidget(hline(), 3, 0, 1, 2)
+        third_grid.setRowStretch(4, 1)
+        third_grid.setColumnStretch(4, 1)
+
+        forth_grid = QGridLayout()
+        forth_grid.setVerticalSpacing(4)
+        forth_grid.setHorizontalSpacing(20)
+        forth_grid.addWidget(self.label_c1, 0, 0)
+        forth_grid.addWidget(self.combo_sweep, 0, 1)
+        forth_grid.addWidget(hline(), 1, 0, 1, 2)
+        forth_grid.setRowStretch(2, 1)
+        forth_grid.setColumnStretch(2, 1)
+
         container_layout.addLayout(left_grid)
         container_layout.addSpacing(20)
         container_layout.addLayout(right_grid)
+        container_layout.addSpacing(20)
+        container_layout.addLayout(third_grid)
+        container_layout.addSpacing(20)
+        container_layout.addLayout(forth_grid)
 
         container_layout.addStretch(1) 
         gridLayout.addLayout(container_layout, 0, 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
@@ -686,11 +817,65 @@ class MainWindow(QMainWindow):
         gridLayout.setRowStretch(2, 1)
         gridLayout.setColumnStretch(2, 1)
 
+    def log_start(self):
+        self.cur_log_start = round( float( self.Log_start.value() ), 3 )
+
+    def log_end(self):
+        self.cur_log_end = round( float( self.Log_end.value() ), 3 )
+
+    def end_field(self):
+        """
+        A function to send an end field value
+        """
+        self.cur_end_field = round( float( self.box_end_field.value() ), 3 )
+
+    def st_field(self, value):
+        """
+        A function to send a start field value
+        """
+        self.cur_start_field = round( float( value ), 3 )
+
+    def step_field(self):
+        """
+        A function to send a step field value
+        """
+        self.cur_step = round( float( self.box_step_field.value() ), 3 )
+
+    def sweep_type(self):
+        self.cur_sweep = self.combo_sweep.currentText()
+        #Linear Time; Field; Log Time
+
+    def curve_name(self):
+        self.cur_curve_name = self.text_edit_curve.toPlainText()
+        #print( self.cur_curve_name )
+
+    def exp_name(self):
+        self.cur_exp_name = self.text_edit_exp_name.toPlainText()
+        #print( self.cur_exp_name )
+
+    def scan(self):
+        """
+        A function to send a number of scans
+        """
+        self.cur_scan = int( self.box_scan.value() )
+        try:
+            self.parent_conn_dig.send( 'SC' + str( self.cur_scan ) )
+        except AttributeError:
+            pass
+
+    def points(self):
+        self.cur_points = int( self.box_points.value() )
+        #print(self.cur_start_field)
+
     def start_exp(self):
-        pass
+        if self.is_experiment == True:
+            return
+
+        self.dig_stop()
+        self.dig_start_exp()
 
     def stop_exp(self):
-        pass
+        self.dig_stop()
 
     def combo_laser_fun(self):
         """
@@ -839,10 +1024,226 @@ class MainWindow(QMainWindow):
         """
         A function to open a new window for choosing a pulse list
         """
-        filedialog = QFileDialog(self, 'Open File', directory = self.path, filter = "Pulse Phase List (*.phase)",\
-            options = QFileDialog.Option.DontUseNativeDialog)
-        # use QFileDialog.DontUseNativeDialog to change directory
-        filedialog.setStyleSheet("QWidget { background-color : rgb(42, 42, 64); color: rgb(211, 194, 78);}")
+        filedialog = QFileDialog(self, 'Open File', directory = self.path, filter = "Pulse Phase List (*.phase)", options = QFileDialog.Option.DontUseNativeDialog)
+        
+        tree = filedialog.findChild(QTreeView)
+        header = tree.header()
+        for i in range(header.count()):
+            header.setSectionResizeMode(i, QHeaderView.ResizeMode.ResizeToContents)
+
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+
+        buttons = filedialog.findChildren(QPushButton)
+        seen_texts = []
+        for btn in buttons:
+            if btn.text() in seen_texts:
+                btn.hide()
+            else:
+                seen_texts.append(btn.text())
+        
+        line_edit = filedialog.findChild(QLineEdit)
+
+        if line_edit:
+            line_edit.setCompleter(None)
+
+        size_grip = filedialog.findChild(QSizeGrip)
+        if size_grip:
+            size_grip.setVisible(False)
+
+        filedialog.setStyleSheet("""
+            QFileDialog, QDialog { 
+                background-color: rgb(42, 42, 64); 
+                color: rgb(193, 202, 227);
+                font-size: 11px;
+            }
+
+            QFileDialog QListView {
+                min-width: 150px; 
+                background-color: rgb(35, 35, 55);
+                border: 1px solid rgb(63, 63, 97);
+                color: rgb(193, 202, 227);
+            }
+
+            QTreeView {
+                min-width: 500px;
+                background-color: rgb(35, 35, 55);
+                border: 1px solid rgb(63, 63, 97);
+                color: rgb(193, 202, 227);
+                outline: none;
+            }
+
+            QFileDialog QFrame#qt_contents, QFileDialog QWidget {
+                background-color: rgb(42, 42, 64);
+            }
+            
+            QFileDialog QToolBar {
+                background-color: rgb(42, 42, 64);
+                border-bottom: 1px solid rgb(63, 63, 97);
+                min-height: 34px; 
+                padding: 2px;
+            }
+
+            QToolButton {
+                background-color: rgb(63, 63, 97);
+                border: 1px solid rgb(83, 83, 117);
+                border-radius: 4px;
+                min-height: 23px; 
+                max-height: 23px;
+                min-width: 23px;
+                qproperty-iconSize: 14px 14px; 
+                margin: 0px 2px;
+                vertical-align: middle;
+            }
+
+            QToolButton:hover {
+                border: 1px solid rgb(211, 194, 78);
+                background-color: rgb(83, 83, 117);
+            }
+
+            QLineEdit, QComboBox {
+                background-color: rgb(63, 63, 97);
+                color: rgb(193, 202, 227);
+                border: 1px solid rgb(83, 83, 117);
+                border-radius: 3px;
+                padding: 2px 5px;
+                min-height: 16px; 
+            }
+
+            QLineEdit:focus, QFileDialog QComboBox:focus {
+                border: 1px solid rgb(211, 194, 78);
+                color: rgb(211, 194, 78);
+                outline: none;
+            }
+
+            QFileDialog QComboBox#lookInCombo {
+                background-color: rgb(42, 42, 64);
+                color: rgb(193, 202, 227);
+                border: 1px solid rgb(83, 83, 117);
+                border-radius: 3px;
+                padding-left: 5px;
+                min-height: 19px;
+                max-height: 19px;
+                selection-background-color: rgb(48, 48, 75);
+                selection-color: rgb(211, 194, 78);
+            }
+
+            QFileDialog QComboBox#lookInCombo QAbstractItemView {
+                outline: none;
+                border: 1px solid rgb(48, 48, 75);
+                background-color: rgb(42, 42, 64);
+            }
+
+            QFileDialog QDialogButtonBox QPushButton {
+                background-color: rgb(63, 63, 97);
+                color: rgb(193, 202, 227);
+                border: 1px solid rgb(83, 83, 117);
+                border-radius: 4px;
+                font-weight: bold;
+                min-height: 23px;
+                max-height: 23px;
+                min-width: 75px;
+                padding: 0px 12px;
+            }
+
+            QFileDialog QDialogButtonBox QPushButton:hover {
+                background-color: rgb(83, 83, 117);
+                border: 1px solid rgb(211, 194, 78);
+                color: rgb(211, 194, 78);
+            }
+            
+            QHeaderView::section {
+                background-color: rgb(63, 63, 97);
+                color: rgb(193, 202, 227);
+                padding: 4px;
+                border: none;
+                border-right: 1px solid rgb(83, 83, 117);
+                min-height: 20px;
+            }
+
+            QScrollBar:vertical {
+                border: none; background: rgb(43, 43, 77); 
+                width: 10px; margin: 0px;
+            }
+            QScrollBar::handle:vertical {
+                background: rgb(193, 202, 227); min-height: 20px; border-radius: 5px;
+            }
+            QScrollBar::handle:vertical:hover { background: rgb(211, 194, 78); }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: none; }
+
+            QScrollBar:horizontal {
+                border: none; 
+                background: rgb(43, 43, 77); 
+                height: 10px; 
+                margin: 0px;
+            }
+            QScrollBar::handle:horizontal {
+                background: rgb(193, 202, 227); 
+                min-width: 20px; 
+                border-radius: 5px;
+            }
+            QScrollBar::handle:horizontal:hover { 
+                background: rgb(211, 194, 78); 
+            }
+            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { 
+                width: 0px; 
+            }
+            QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal { 
+                background: none; 
+            }
+
+            QFileDialog QDialogButtonBox {
+                background-color: rgb(42, 42, 64);
+                border-top: 1px solid rgb(63, 63, 97);
+                padding: 6px;
+            }
+
+            QFileDialog QLabel {
+                color: rgb(193, 202, 227);
+            }
+
+            QFileDialog QListView::item:hover {
+                background-color: rgb(48, 48, 75);
+                color: rgb(211, 194, 78);
+            }
+
+            QHeaderView {
+                background-color: rgb(63, 63, 97);
+            }
+
+            QFileDialog QListView#sidebar:inactive, 
+            QTreeView:inactive {
+                selection-background-color: rgb(35, 35, 55);
+                selection-color: rgb(211, 194, 78);
+            }
+
+            QTreeView::item:hover { 
+                background-color: rgb(48, 48, 75);
+                color: rgb(211, 194, 78); 
+                } 
+            QTreeView::item:selected:inactive, 
+            QFileDialog QListView#sidebar::item:selected:inactive {
+                selection-background-color: rgb(63, 63, 97);
+                selection-color: rgb(211, 194, 78);
+            }
+            QFileDialog QListView#sidebar::item {
+                padding-left: 5px; 
+                padding-top: 5px;
+            }
+
+            QMenu {
+                background-color: rgb(42, 42, 64);
+                border: 1px solid rgb(63, 63, 97);
+                padding: 3px;
+            }
+            QMenu::item { color: rgb(211, 194, 78); } 
+            QMenu::item:selected { 
+                background-color: rgb(48, 48, 75); 
+                color: rgb(211, 194, 78);
+                }
+
+        """)
+        
         filedialog.setFileMode(QFileDialog.FileMode.AnyFile)
         filedialog.fileSelected.connect(self.open_file)
         filedialog.show()
@@ -851,11 +1252,227 @@ class MainWindow(QMainWindow):
         """
         A function to open a new window for choosing a pulse list
         """
-        filedialog = QFileDialog(self, 'Save File', directory = self.path, filter = "Pulse Phase List (*.phase)",\
-            options = QFileDialog.Option.DontUseNativeDialog)
+        filedialog = QFileDialog(self, 'Save File', directory = self.path, filter = "Pulse Phase List (*.phase)", options = QFileDialog.Option.DontUseNativeDialog)
         filedialog.setAcceptMode(QFileDialog.AcceptMode.AcceptSave)
-        # use QFileDialog.DontUseNativeDialog to change directory
-        filedialog.setStyleSheet("QWidget { background-color : rgb(42, 42, 64); color: rgb(211, 194, 78);}")
+
+        tree = filedialog.findChild(QTreeView)
+        header = tree.header()
+        for i in range(header.count()):
+            header.setSectionResizeMode(i, QHeaderView.ResizeMode.ResizeToContents)
+
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+
+        buttons = filedialog.findChildren(QPushButton)
+        seen_texts = []
+        for btn in buttons:
+            if btn.text() in seen_texts:
+                btn.hide()
+            else:
+                seen_texts.append(btn.text())
+        
+        line_edit = filedialog.findChild(QLineEdit)
+
+        if line_edit:
+            line_edit.setCompleter(None)
+
+        size_grip = filedialog.findChild(QSizeGrip)
+        if size_grip:
+            size_grip.setVisible(False)
+
+        filedialog.setStyleSheet("""
+            QFileDialog, QDialog { 
+                background-color: rgb(42, 42, 64); 
+                color: rgb(193, 202, 227);
+                font-size: 11px;
+            }
+
+            QFileDialog QListView {
+                min-width: 150px; 
+                background-color: rgb(35, 35, 55);
+                border: 1px solid rgb(63, 63, 97);
+                color: rgb(193, 202, 227);
+            }
+
+            QTreeView {
+                min-width: 500px;
+                background-color: rgb(35, 35, 55);
+                border: 1px solid rgb(63, 63, 97);
+                color: rgb(193, 202, 227);
+                outline: none;
+            }
+
+            QFileDialog QFrame#qt_contents, QFileDialog QWidget {
+                background-color: rgb(42, 42, 64);
+            }
+            
+            QFileDialog QToolBar {
+                background-color: rgb(42, 42, 64);
+                border-bottom: 1px solid rgb(63, 63, 97);
+                min-height: 34px; 
+                padding: 2px;
+            }
+
+            QToolButton {
+                background-color: rgb(63, 63, 97);
+                border: 1px solid rgb(83, 83, 117);
+                border-radius: 4px;
+                min-height: 23px; 
+                max-height: 23px;
+                min-width: 23px;
+                qproperty-iconSize: 14px 14px; 
+                margin: 0px 2px;
+                vertical-align: middle;
+            }
+
+            QToolButton:hover {
+                border: 1px solid rgb(211, 194, 78);
+                background-color: rgb(83, 83, 117);
+            }
+
+            QLineEdit, QComboBox {
+                background-color: rgb(63, 63, 97);
+                color: rgb(193, 202, 227);
+                border: 1px solid rgb(83, 83, 117);
+                border-radius: 3px;
+                padding: 2px 5px;
+                min-height: 16px; 
+            }
+
+            QLineEdit:focus, QFileDialog QComboBox:focus {
+                border: 1px solid rgb(211, 194, 78);
+                color: rgb(211, 194, 78);
+                outline: none;
+            }
+
+            QFileDialog QComboBox#lookInCombo {
+                background-color: rgb(42, 42, 64);
+                color: rgb(193, 202, 227);
+                border: 1px solid rgb(83, 83, 117);
+                border-radius: 3px;
+                padding-left: 5px;
+                min-height: 19px;
+                max-height: 19px;
+                selection-background-color: rgb(48, 48, 75);
+                selection-color: rgb(211, 194, 78);
+            }
+
+            QFileDialog QComboBox#lookInCombo QAbstractItemView {
+                outline: none;
+                border: 1px solid rgb(48, 48, 75);
+                background-color: rgb(42, 42, 64);
+            }
+
+            QFileDialog QDialogButtonBox QPushButton {
+                background-color: rgb(63, 63, 97);
+                color: rgb(193, 202, 227);
+                border: 1px solid rgb(83, 83, 117);
+                border-radius: 4px;
+                font-weight: bold;
+                min-height: 23px;
+                max-height: 23px;
+                min-width: 75px;
+                padding: 0px 12px;
+            }
+
+            QFileDialog QDialogButtonBox QPushButton:hover {
+                background-color: rgb(83, 83, 117);
+                border: 1px solid rgb(211, 194, 78);
+                color: rgb(211, 194, 78);
+            }
+            
+            QHeaderView::section {
+                background-color: rgb(63, 63, 97);
+                color: rgb(193, 202, 227);
+                padding: 4px;
+                border: none;
+                border-right: 1px solid rgb(83, 83, 117);
+                min-height: 20px;
+            }
+
+            QScrollBar:vertical {
+                border: none; background: rgb(43, 43, 77); 
+                width: 10px; margin: 0px;
+            }
+            QScrollBar::handle:vertical {
+                background: rgb(193, 202, 227); min-height: 20px; border-radius: 5px;
+            }
+            QScrollBar::handle:vertical:hover { background: rgb(211, 194, 78); }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: none; }
+
+            QScrollBar:horizontal {
+                border: none; 
+                background: rgb(43, 43, 77); 
+                height: 10px; 
+                margin: 0px;
+            }
+            QScrollBar::handle:horizontal {
+                background: rgb(193, 202, 227); 
+                min-width: 20px; 
+                border-radius: 5px;
+            }
+            QScrollBar::handle:horizontal:hover { 
+                background: rgb(211, 194, 78); 
+            }
+            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { 
+                width: 0px; 
+            }
+            QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal { 
+                background: none; 
+            }
+
+            QFileDialog QDialogButtonBox {
+                background-color: rgb(42, 42, 64);
+                border-top: 1px solid rgb(63, 63, 97);
+                padding: 6px;
+            }
+
+            QFileDialog QLabel {
+                color: rgb(193, 202, 227);
+            }
+
+            QFileDialog QListView::item:hover {
+                background-color: rgb(48, 48, 75);
+                color: rgb(211, 194, 78);
+            }
+
+            QHeaderView {
+                background-color: rgb(63, 63, 97);
+            }
+
+            QFileDialog QListView#sidebar:inactive, 
+            QTreeView:inactive {
+                selection-background-color: rgb(35, 35, 55);
+                selection-color: rgb(211, 194, 78);
+            }
+
+            QTreeView::item:hover { 
+                background-color: rgb(48, 48, 75);
+                color: rgb(211, 194, 78); 
+                } 
+            QTreeView::item:selected:inactive, 
+            QFileDialog QListView#sidebar::item:selected:inactive {
+                selection-background-color: rgb(63, 63, 97);
+                selection-color: rgb(211, 194, 78);
+            }
+            QFileDialog QListView#sidebar::item {
+                padding-left: 5px; 
+                padding-top: 5px;
+            }
+
+            QMenu {
+                background-color: rgb(42, 42, 64);
+                border: 1px solid rgb(63, 63, 97);
+                padding: 3px;
+            }
+            QMenu::item { color: rgb(211, 194, 78); } 
+            QMenu::item:selected { 
+                background-color: rgb(48, 48, 75); 
+                color: rgb(211, 194, 78);
+                }
+
+        """)
+
         filedialog.setFileMode(QFileDialog.FileMode.AnyFile)
         filedialog.fileSelected.connect(self.save_file)
         filedialog.show()
@@ -870,31 +1487,43 @@ class MainWindow(QMainWindow):
         lines = text.split('\n')
 
         try:
-            self.P_to_drop.setValue( int( lines[14].split(':  ')[1] ) )
-            self.Zero_order.setValue( float( lines[15].split(':  ')[1] ) )
-            self.First_order.setValue( float( lines[16].split(':  ')[1] ) )
-            self.Second_order.setValue( float( lines[17].split(':  ')[1] ) )
-            self.Combo_laser.setCurrentText( str( lines[18].split(':  ')[1] ) )
+            self.P_to_drop.setValue( int( lines[16].split(':  ')[1] ) )
+            self.Zero_order.setValue( float( lines[17].split(':  ')[1] ) )
+            self.First_order.setValue( float( lines[18].split(':  ')[1] ) )
+            self.Second_order.setValue( float( lines[19].split(':  ')[1] ) )
+            self.Combo_laser.setCurrentText( str( lines[20].split(':  ')[1] ) )
 
         except IndexError:
             pass
-        self.setter(text, 0, self.P1_type, self.P1_st, self.P1_len, self.Phase_1)
-        self.setter(text, 1, self.P2_type, self.P2_st, self.P2_len, self.Phase_2)
-        self.setter(text, 2, self.P3_type, self.P3_st, self.P3_len, self.Phase_3)
-        self.setter(text, 3, self.P4_type, self.P4_st, self.P4_len, self.Phase_4)
-        self.setter(text, 4, self.P5_type, self.P5_st, self.P5_len, self.Phase_5)
-        self.setter(text, 5, self.P6_type, self.P6_st, self.P6_len, self.Phase_6)
-        self.setter(text, 6, self.P7_type, self.P7_st, self.P7_len, self.Phase_7)
-        self.Rep_rate.setValue( float( lines[7].split(':  ')[1] ) )
-        self.Field.setValue( float( lines[8].split(':  ')[1] ) )
+        self.setter(text, 0, self.P1_type, self.P1_st, self.P1_len, self.Phase_1, self.P1_st_inc, self.P1_len_inc)
+        self.setter(text, 1, self.P2_type, self.P2_st, self.P2_len, self.Phase_2, self.P2_st_inc, self.P2_len_inc)
+        self.setter(text, 2, self.P3_type, self.P3_st, self.P3_len, self.Phase_3, self.P3_st_inc, self.P3_len_inc)
+        self.setter(text, 3, self.P4_type, self.P4_st, self.P4_len, self.Phase_4, self.P4_st_inc, self.P4_len_inc)
+        self.setter(text, 4, self.P5_type, self.P5_st, self.P5_len, self.Phase_5, self.P5_st_inc, self.P5_len_inc)
+        self.setter(text, 5, self.P6_type, self.P6_st, self.P6_len, self.Phase_6, self.P6_st_inc, self.P6_len_inc)
+        self.setter(text, 6, self.P7_type, self.P7_st, self.P7_len, self.Phase_7, self.P7_st_inc, self.P7_len_inc)
+        self.setter(text, 7, self.P8_type, self.P8_st, self.P8_len, self.Phase_8, self.P8_st_inc, self.P8_len_inc)
+        self.setter(text, 8, self.P9_type, self.P9_st, self.P9_len, self.Phase_9, self.P9_st_inc, self.P9_len_inc)
+
+        self.Rep_rate.setValue( float( lines[9].split(':  ')[1] ) )
+        self.Field.setValue( float( lines[10].split(':  ')[1] ) )
 
         #self.live_mode.setCheckState(Qt.CheckState.Unchecked)
         self.fft_box.setCheckState(Qt.CheckState.Unchecked)
         self.Quad_cor.setCheckState(Qt.CheckState.Unchecked)
-        self.Win_left.setValue( round(float( lines[11].split(':  ')[1] ), 1) )
-        self.Win_right.setValue( round(float( lines[12].split(':  ')[1] ), 1) )
-        self.Acq_number.setValue( int( lines[13].split(':  ')[1] ) )
-        self.Dec.setValue( int( lines[19].split(':  ')[1] ) )
+        self.Win_left.setValue( round(float( lines[13].split(':  ')[1] ), 1) )
+        self.Win_right.setValue( round(float( lines[14].split(':  ')[1] ), 1) )
+        self.Acq_number.setValue( int( lines[15].split(':  ')[1] ) )
+        self.Dec.setValue( int( lines[21].split(':  ')[1] ) )
+
+        self.box_points.setValue( int( lines[22].split(':  ')[1] ) )
+        self.box_scan.setValue( int( lines[23].split(':  ')[1] ) )
+        self.Log_start.setValue( float( lines[24].split(':  ')[1] ) )
+        self.Log_end.setValue( float( lines[25].split(':  ')[1] ) )
+        self.box_st_field.setValue( float( lines[26].split(':  ')[1] ) )
+        self.box_end_field.setValue( float( lines[27].split(':  ')[1] ) )
+        self.box_step_field.setValue( float( lines[28].split(':  ')[1] ) )
+        self.combo_sweep.setCurrentText( str( lines[29].split(':  ')[1] ) )
 
         self.dig_stop()
 
@@ -902,7 +1531,7 @@ class MainWindow(QMainWindow):
         self.quad = 0
         self.opened = 0
 
-    def setter(self, text, index, typ, st, leng, phase):
+    def setter(self, text, index, typ, st, leng, phase, d_start, len_inc):
         """
         Auxiliary function to set all the values from *.pulse file
         """
@@ -912,6 +1541,8 @@ class MainWindow(QMainWindow):
         st.setValue( float( array[1] ) )
         leng.setValue( float( array[2] ) )
         phase.setPlainText( str( (array[3])[1:-1] ) )
+        d_start.setValue( float( array[4] ) )
+        len_inc.setValue( float( array[5] ) )
 
     def save_file(self, filename):
         """
@@ -921,13 +1552,18 @@ class MainWindow(QMainWindow):
         if filename[-5:] != 'phase':
             filename = filename + '.phase'
         with open(filename, 'w') as file:
-            file.write( 'P1:  ' + self.P1_type.currentText() + ',  ' + str(self.P1_st.value()) + ',  ' + str(self.P1_len.value()) + ',  ' + str('[' + ','.join(self.ph_1) + ']') + '\n' )
-            file.write( 'P2:  ' + self.P2_type.currentText() + ',  ' + str(self.P2_st.value()) + ',  ' + str(self.P2_len.value()) + ',  ' + str('[' + ','.join(self.ph_2) + ']') + '\n' )
-            file.write( 'P3:  ' + self.P3_type.currentText() + ',  ' + str(self.P3_st.value()) + ',  ' + str(self.P3_len.value()) + ',  ' + str('[' + ','.join(self.ph_3) + ']') + '\n' )
-            file.write( 'P4:  ' + self.P4_type.currentText() + ',  ' + str(self.P4_st.value()) + ',  ' + str(self.P4_len.value()) + ',  ' + str('[' + ','.join(self.ph_4) + ']') + '\n' )
-            file.write( 'P5:  ' + self.P5_type.currentText() + ',  ' + str(self.P5_st.value()) + ',  ' + str(self.P5_len.value()) + ',  ' + str('[' + ','.join(self.ph_5) + ']') + '\n' )
-            file.write( 'P6:  ' + self.P6_type.currentText() + ',  ' + str(self.P6_st.value()) + ',  ' + str(self.P6_len.value()) + ',  ' + str('[' + ','.join(self.ph_6) + ']') + '\n' )
-            file.write( 'P7:  ' + self.P7_type.currentText() + ',  ' + str(self.P7_st.value()) + ',  ' + str(self.P7_len.value()) + ',  ' + str('[' + ','.join(self.ph_7) + ']') + '\n' )
+            for i in range(1, 10):
+
+                p_type = getattr(self, f'P{i}_type').currentText()
+                p_st = getattr(self, f'P{i}_st').value()
+                p_len = getattr(self, f'P{i}_len').value()
+                ph_list = getattr(self, f'ph_{i}')
+                d_start = getattr(self, f'P{i}_st_inc').value()
+                len_inc = getattr(self, f'P{i}_len_inc').value()
+                
+                ph_str = f"[{','.join(ph_list)}]"
+                file.write(f"P{i}:  {p_type},  {p_st},  {p_len},  {ph_str},  {d_start},  {len_inc}\n")
+
             file.write( 'Rep rate:  ' + str(self.Rep_rate.value()) + '\n' )
             file.write( 'Field:  ' + str(self.Field.value()) + '\n' )
             file.write( 'Points:  ' + str(2016) + '\n' )
@@ -941,6 +1577,15 @@ class MainWindow(QMainWindow):
             file.write( 'Second order:  ' + str(self.Second_order.value()) + '\n' )
             file.write( 'Laser:  ' + str( self.Combo_laser.currentText() ) + '\n' )
             file.write( 'Decimation:  ' + str( self.Dec.value() ) + '\n' )
+
+            file.write( 'Points:  ' + str( self.box_points.value() ) + '\n' )
+            file.write( 'Scans:  ' + str( self.box_scan.value() ) + '\n' )
+            file.write( 'Log Start:  ' + str( self.Log_start.value() ) + '\n' )
+            file.write( 'Log End:  ' + str( self.Log_end.value() ) + '\n' )
+            file.write( 'Start Field:  ' + str( self.box_st_field.value() ) + '\n' )
+            file.write( 'End Field:  ' + str( self.box_end_field.value() ) + '\n' )
+            file.write( 'Field Step:  ' + str( self.box_step_field.value() ) + '\n' )
+            file.write( 'Sweep Type:  ' + self.combo_sweep.currentText() + '\n' )
 
     def phase_converted(self, ph_str):
         if ph_str == '+x':
@@ -986,14 +1631,6 @@ class MainWindow(QMainWindow):
             self.errors.appendPlainText( 'Pulse should be longer than 12 ns' )
 
         return length
-
-    def closeEvent(self, event):
-        """
-        A function to do some actions when the main window is closing.
-        """
-        event.ignore()
-        self.dig_stop()
-        sys.exit()
 
     def round_to_closest(self, x, y):
         """
@@ -1072,6 +1709,9 @@ class MainWindow(QMainWindow):
         """
         A function to run pulses
         """
+        if self.is_experiment == True:
+            return
+
         self.dig_stop()
         self.dig_start()
 
@@ -1105,9 +1745,12 @@ class MainWindow(QMainWindow):
         if self.opened == 0:
             try:
                 self.parent_conn_dig.send('exit')
-                #self.monitor_timer.start(200)
-                self.digitizer_process.join()
-                self.check_process_status()
+                if self.is_experiment == False:
+                    self.digitizer_process.join()
+                    self.check_process_status()
+                else:
+                    self.monitor_timer.start(200)
+                    
             except AttributeError:
                 if self.exit_clicked == 1:
                     sys.exit()
@@ -1125,6 +1768,69 @@ class MainWindow(QMainWindow):
                 getattr(self, f'p{i}_len_increment')
             ]
             setattr(self, f'p{i}_exp', data)
+
+        if self.laser_flag == 1:
+            if self.combo_laser_num == 1:
+                self.Rep_rate.setValue(9.9)
+            elif self.combo_laser_num == 2:
+                pass
+
+        # prevent running two processes
+        try:
+            if ( self.digitizer_process.is_alive() == True ):
+                return
+        except AttributeError:
+            pass
+
+        self.parent_conn_dig, self.child_conn_dig = Pipe()
+        # a process for running function script 
+        # sending parameters for initial initialization
+
+        if self.cur_sweep == 'Linear Time':
+            self.digitizer_process = Process( target = worker.exp_test, args = ( 
+                self.child_conn_dig,
+                self.decimation, self.number_averages, self.cur_scan, self.cur_points,
+                self.cur_win_left, self.cur_exp_name, self.cur_curve_name,
+                self.cur_win_right, self.p1_exp, self.p2_exp, self.p3_exp, self.p4_exp, 
+                self.p5_exp, self.p6_exp, self.p7_exp, self.p8_exp, self.p9_exp, self.laser_flag, 
+                self.repetition_rate.split(' ')[0], 
+                self.mag_field, self.combo_laser_num, self.laser_q_switch_delay
+                ) 
+            )
+        elif self.cur_sweep == 'Field':
+            self.digitizer_process = Process( target = worker.exp_field_test, args = ( 
+                self.child_conn_dig,
+                self.decimation, self.number_averages, self.cur_scan, self.cur_start_field,
+                self.cur_end_field, self.cur_step,
+                self.cur_win_left, self.cur_exp_name, self.cur_curve_name,
+                self.cur_win_right, self.p1_exp, self.p2_exp, self.p3_exp, self.p4_exp, 
+                self.p5_exp, self.p6_exp, self.p7_exp, self.p8_exp, self.p9_exp, self.laser_flag, 
+                self.repetition_rate.split(' ')[0], 
+                self.combo_laser_num, self.laser_q_switch_delay
+                ) 
+            )
+        elif self.cur_sweep == 'Log Time':
+            self.digitizer_process = Process( target = worker.exp_log_test, args = ( 
+                self.child_conn_dig,
+                self.decimation, self.number_averages, self.cur_scan, self.cur_points,
+                self.cur_log_start, self.cur_log_end,
+                self.cur_win_left, self.cur_exp_name, self.cur_curve_name,
+                self.cur_win_right, self.p1_exp, self.p2_exp, self.p3_exp, self.p4_exp, 
+                self.p5_exp, self.p6_exp, self.p7_exp, self.p8_exp, self.p9_exp, self.laser_flag, 
+                self.repetition_rate.split(' ')[0], self.mag_field,
+                self.combo_laser_num, self.laser_q_switch_delay
+                ) 
+            )
+
+        self.button_start_exp.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(193, 202, 227); border-style: outset; color: rgb(63, 63, 97); font-weight: bold; } QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
+
+        self.digitizer_process.start()
+        # send a command in a different thread about the current state
+        self.parent_conn_dig.send('start')
+        
+        self.is_testing = True
+        self.is_experiment = True
+        self.timer.start(200)
 
     def dig_start(self):
         """
@@ -1169,7 +1875,7 @@ class MainWindow(QMainWindow):
             self.second_order, self.p_to_drop, self.combo_laser_num, self.laser_q_switch_delay, 
             self.p8_list, self.p9_list ) )
 
-        self.button_update.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(193, 202, 227); border-style: outset; color: rgb(63, 63, 97); font-weight: bold; } ")
+        self.button_update.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(193, 202, 227); border-style: outset; color: rgb(63, 63, 97); font-weight: bold; } QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
 
         #self.progress_bar.setValue(0)
 
@@ -1202,14 +1908,32 @@ class MainWindow(QMainWindow):
                     color: rgb(193, 202, 227); 
                     font-weight: bold; 
                 }
+                QPushButton:pressed {
+                background-color: rgb(211, 194, 78); 
+                border-style: inset; 
+                font-weight: bold; 
+                }
+            """)
+        self.button_start_exp.setStyleSheet("""
+                QPushButton {
+                    border-radius: 4px; 
+                    background-color: rgb(63, 63, 97); 
+                    border-style: outset; 
+                    color: rgb(193, 202, 227); 
+                    font-weight: bold; 
+                }
+                QPushButton:pressed {
+                    background-color: rgb(211, 194, 78); 
+                    border-style: inset; 
+                    font-weight: bold; 
+                }
             """)
 
     def parse_message(self):
         msg_type, data = self.parent_conn_dig.recv()
-        
+
         if msg_type == 'Status':
-            pass
-            #self.progress_bar.setValue(int(data))
+            self.progress_bar.setValue(int(data))
         elif msg_type == 'Open':
             self.open_dialog()
         elif msg_type == 'Message':
@@ -1217,21 +1941,27 @@ class MainWindow(QMainWindow):
         elif msg_type == 'Error':
             self.last_error = True
             self.timer.stop()
-            #self.progress_bar.setValue(0)
-            if msg_type != 'test':
-                self.message(data)
+            self.is_experiment = False
+            self.progress_bar.setValue(0)
+            self.message(data)
             self.errors.appendPlainText(data)
             self.button_blue()                   
         else:
             self.timer.stop()
-            self.errors.appendPlainText(data)
-            #self.progress_bar.setValue(0)
+            if ( data.startswith('Exp') ) and (msg_type == 'test'):
+                pass
+            else:
+                self.errors.appendPlainText(data)
             if msg_type != 'test':
                 self.message(data)
                 self.button_blue()
+                self.progress_bar.setValue(0)
+                if self.monitor_timer.isActive():
+                    pass
+                else:
+                    self.is_experiment = False
 
     def check_messages(self):
-
         if not hasattr(self, 'last_error'):
             self.last_error = False
 
@@ -1257,21 +1987,30 @@ class MainWindow(QMainWindow):
                 self.is_testing = False
                 if not self.last_error:
                     self.last_error = False 
-                    time.sleep(0.1)
-                    self.run_main_experiment()
+                    time.sleep(0.2)
+                    if self.is_experiment == False:
+                        self.run_main_experiment()
+                    else:
+                        self.run_experiment()
                 else:
                     self.last_error = False
 
     def check_process_status(self):
         if self.digitizer_process.is_alive():
             return
+
+        self.monitor_timer.stop()
+
+        if self.is_experiment == True:
+            self.digitizer_process.join()
+            self.progress_bar.setValue(0)
+            self.button_start_exp.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }  QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
+        else:
+            self.errors.clear()
+            self.button_update.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }  QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
         
-        #self.monitor_timer.stop()
-        #self.digitizer_process.join()
-        self.timer.stop()
-        #self.progress_bar.setValue(0)
-        self.errors.clear()
-        self.button_update.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }  ")
+        #self.timer.stop()
+        self.is_experiment = False
 
         if self.exit_clicked == 1:
             sys.exit()
@@ -1280,9 +2019,9 @@ class MainWindow(QMainWindow):
         file_data = self.file_handler.create_file_dialog(multiprocessing = True)        
 
         if file_data:
-            self.parent_conn.send( 'FL' + str( file_data ) )
+            self.parent_conn_dig.send( 'FL' + str( file_data ) )
         else:
-            self.parent_conn.send( 'FL' + '' )
+            self.parent_conn_dig.send( 'FL' + '' )
 
     def run_main_experiment(self):
 
@@ -1298,7 +2037,54 @@ class MainWindow(QMainWindow):
             self.second_order, self.p_to_drop, self.combo_laser_num, self.laser_q_switch_delay,
             self.p8_list, self.p9_list ) )
 
-        self.button_update.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(211, 194, 78); border-style: outset; color: rgb(63, 63, 97); font-weight: bold; } ") 
+        self.button_update.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(211, 194, 78); border-style: outset; color: rgb(63, 63, 97); font-weight: bold; } QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }") 
+
+        self.digitizer_process.start()
+        self.parent_conn_dig.send('start')
+        self.timer.start(200)
+
+    def run_experiment(self):
+
+        worker = Worker()
+        self.parent_conn_dig, self.child_conn_dig = Pipe()
+        
+        if self.cur_sweep == 'Linear Time':
+            self.digitizer_process = Process( target = worker.exp, args = ( 
+                self.child_conn_dig,
+                self.decimation, self.number_averages, self.cur_scan, self.cur_points,
+                self.cur_win_left, self.cur_exp_name, self.cur_curve_name,
+                self.cur_win_right, self.p1_exp, self.p2_exp, self.p3_exp, self.p4_exp, 
+                self.p5_exp, self.p6_exp, self.p7_exp, self.p8_exp, self.p9_exp, self.laser_flag, 
+                self.repetition_rate.split(' ')[0], 
+                self.mag_field, self.combo_laser_num, self.laser_q_switch_delay
+                ) 
+            )
+        elif self.cur_sweep == 'Field':
+            self.digitizer_process = Process( target = worker.exp_field, args = ( 
+                self.child_conn_dig,
+                self.decimation, self.number_averages, self.cur_scan, self.cur_start_field,
+                self.cur_end_field, self.cur_step,
+                self.cur_win_left, self.cur_exp_name, self.cur_curve_name,
+                self.cur_win_right, self.p1_exp, self.p2_exp, self.p3_exp, self.p4_exp, 
+                self.p5_exp, self.p6_exp, self.p7_exp, self.p8_exp, self.p9_exp, self.laser_flag, 
+                self.repetition_rate.split(' ')[0], 
+                self.combo_laser_num, self.laser_q_switch_delay
+                ) 
+            )
+        elif self.cur_sweep == 'Log Time':
+            self.digitizer_process = Process( target = worker.exp_log, args = ( 
+                self.child_conn_dig,
+                self.decimation, self.number_averages, self.cur_scan, self.cur_points,
+                self.cur_log_start, self.cur_log_end,
+                self.cur_win_left, self.cur_exp_name, self.cur_curve_name,
+                self.cur_win_right, self.p1_exp, self.p2_exp, self.p3_exp, self.p4_exp, 
+                self.p5_exp, self.p6_exp, self.p7_exp, self.p8_exp, self.p9_exp, self.laser_flag, 
+                self.repetition_rate.split(' ')[0], self.mag_field,
+                self.combo_laser_num, self.laser_q_switch_delay
+                ) 
+            )
+
+        self.button_start_exp.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(211, 194, 78); border-style: outset; color: rgb(63, 63, 97); font-weight: bold; } QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }") 
 
         self.digitizer_process.start()
         self.parent_conn_dig.send('start')
@@ -1620,6 +2406,9 @@ class Worker():
                         p[1] = f"{self.round_to_closest(start_val, 3.2)} ns"
 
                     length_val = int(float(p[2].split(' ')[0]))
+                    if i == 1 and length_val == 0:
+                        raise ValueError(f"LASER pulse has zero length")
+
                     if length_val != 0:
                         kwargs = {
                             'name': f'P{i}',
@@ -1785,6 +2574,7 @@ class Worker():
                 pb.pulser_close()
                 #pb.pulser_pulse_list()
                 conn.send( ('test', f'{pb.pulser_pulse_list()}') )
+                conn.close()
 
         except BaseException as e:
             exc_info = f"{type(e)} \n{str(e)} \n{traceback.format_exc()}"
@@ -1796,6 +2586,1364 @@ class Worker():
         """
         return round(( y * ( ( x // y ) + (round(x % y, 2) > 0) ) ), 1)
 
+    def exp(self, conn, decimation, num_ave, scans, points,
+            win_left, exp_name, curve_name,
+            win_right, p1_exp, p2_exp, p3_exp, p4_exp, 
+            p5_exp, p6_exp, p7_exp, p8_exp, p9_exp, laser_flag, 
+            rep_rate, field, laser_num, q_switch_delay):
+        
+        import traceback
+
+        try:
+            #import random
+            import time
+            import datetime
+            import numpy as np
+            import atomize.general_modules.general_functions as general
+            import atomize.device_modules.Insys_FPGA as pb_pro
+            import atomize.device_modules.Lakeshore_335 as ls
+            import atomize.device_modules.BH_15 as bh
+            import atomize.device_modules.Micran_X_band_MW_bridge_v2 as mwBridge
+            import atomize.general_modules.csv_opener_saver as openfile
+
+            pb = pb_pro.Insys_FPGA()
+            file_handler = openfile.Saver_Opener()
+            bh15 = bh.BH_15()
+            ls335 = ls.Lakeshore_335()
+            mw = mwBridge.Micran_X_band_MW_bridge_v2()
+
+            pb.win_left = win_left
+            pb.win_right = win_right
+
+            #p1_exp DETECTION
+            if p1_exp[4] != '0.0 ns':
+                #delta_start
+                step = round( float( p1_exp[4].split(' ')[0] ), 1)
+            elif p1_exp[5] != '0.0 ns':
+                #length_increment
+                step = round( float( p1_exp[5].split(' ')[0] ), 1)
+            else:
+                #prevent no increment
+                step = 1
+                conn.send( ('Message', 'No START or LENGTH increment; the time axis corresponds to the number of points in the experiment') )
+            
+            general.plot_remove(exp_name)
+
+            POINTS = points
+            STEP = step
+            FIELD = field
+            AVERAGES = num_ave
+            SCANS = scans
+            PHASES = len(p1_exp[3])
+            DEC_COEF = decimation
+            process = 'None'
+            REP_RATE = f'{rep_rate} Hz'
+            EXP_NAME = exp_name
+            CURVE_NAME = curve_name
+
+            bh15.magnet_field( field )
+            general.wait('2000 ms')
+
+            if laser_flag != 1:
+                pb.pulser_repetition_rate( REP_RATE )
+                pulses = [
+                        p1_exp, p2_exp, p3_exp, p4_exp, 
+                        p5_exp, p6_exp, p7_exp, p8_exp, 
+                        p9_exp
+                        ]
+
+                for i, p in enumerate(pulses):
+                    length_str = p[2].split(' ')[0]
+                    if int(float(length_str)) != 0:
+                        pb.pulser_pulse(
+                            name=f'P{i}',
+                            channel=p[0],
+                            start=p[1],
+                            length=p[2],
+                            phase_list=p[3],
+                            delta_start=p[4],
+                            length_increment=p[5]
+                        )
+
+            else:
+                if laser_num == 1:
+                    pb.pulser_repetition_rate( '9.9 Hz' )
+                elif laser_num == 2:
+                    pb.pulser_repetition_rate( REP_RATE )
+                else:
+                    pb.pulser_repetition_rate( REP_RATE )
+
+                pulses = [
+                        p1_exp, p2_exp, p3_exp, p4_exp, 
+                        p5_exp, p6_exp, p7_exp, p8_exp, 
+                        p9_exp
+                        ]
+
+                for i, p in enumerate(pulses):
+                    if i != 1:
+                        start_val = float(p[1].split(' ')[0]) + q_switch_delay
+                        p[1] = f"{self.round_to_closest(start_val, 3.2)} ns"
+
+                    length_val = int(float(p[2].split(' ')[0]))
+                    if length_val != 0:
+                        kwargs = {
+                            'name': f'P{i}',
+                            'channel': p[0],
+                            'start': p[1],
+                            'length': p[2],
+                            'delta_start': p[4],
+                            'length_increment': p[5]
+
+                        }
+                        
+                        if i != 1:
+                            kwargs['phase_list'] = p[3]
+                            
+                        pb.pulser_pulse(**kwargs)
+
+            pb.digitizer_decimation(DEC_COEF)
+            #points_window = pb.digitizer_window_points()
+
+            pb.pulser_open()
+            pb.digitizer_number_of_averages(AVERAGES)
+            data = np.zeros( ( 2, POINTS ) )
+            x_axis = np.linspace(0, (POINTS - 1)*STEP, num = POINTS) 
+
+            while self.command != 'exit':
+
+                k = 1
+                while k <= SCANS:
+
+                    if self.command == 'exit':
+                        break
+
+                    for j in range(POINTS):
+                        for i in range(PHASES):
+                            #r_data = np.random.random( 2 )
+                            #data[0, j] = r_data[0]
+                            #data[1, j] = r_data[1]
+                            
+                            if step != 1:
+                                process = general.plot_1d(exp_name, x_axis / 1e9, ( data[0], data[1] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j*STEP, 1)), pr = process)
+                            else:
+                                process = general.plot_1d(exp_name, x_axis, ( data[0], data[1] ), xname = 'Point', xscale = '', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j, 1)), pr = process)
+
+                                pb.pulser_next_phase()
+
+                                data[0], data[1] = pb.digitizer_get_curve( POINTS, PHASES, current_scan = k, total_scan = SCANS, integral = True )
+
+                        pb.pulser_shift()
+                        pb.pulser_increment()
+
+                        conn.send( ('Status', int( 100 * (( k - 1 ) * POINTS + j + 1) / POINTS / SCANS)) )
+
+                        # check our polling data
+                        if self.command[0:2] == 'SC':
+                            SCANS = int( self.command[2:] )
+                            self.command = 'start'
+                        elif self.command == 'exit':
+                            data[0], data[1] = pb.digitizer_at_exit(integral = True)
+                            break
+                        
+                        if conn.poll() == True:
+                            self.command = conn.recv()
+
+                    pb.pulser_pulse_reset()
+                    k += 1
+
+                self.command = 'exit'
+
+            if self.command == 'exit':
+                tb = round( pb.digitizer_window(), 1)
+                pb.pulser_close()
+
+                if step != 1:
+                    general.plot_1d(exp_name, x_axis / 1e9, ( data[0], data[1] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j*STEP, 1)))
+                else:
+                    general.plot_1d(exp_name, x_axis, ( data[0], data[1] ), xname = 'Point', xscale = '', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j, 1)))
+
+                now = datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")
+                w = 30
+
+                # Data saving
+                header = (
+                    f"{'Date:':<{w}} {now}\n"
+                    f"{'Experiment:':<{w}} Pulsed EPR Experiment\n"
+                    f"{'Field:':<{w}} {FIELD} G\n"
+                    f"{general.fmt(mw.mw_bridge_rotary_vane(), w)}\n"
+                    f"{general.fmt(mw.mw_bridge_att_prm(), w)}\n"
+                    f"{general.fmt(mw.mw_bridge_att2_prm(), w)}\n"
+                    f"{general.fmt(mw.mw_bridge_att1_prd(), w)}\n"
+                    f"{general.fmt(mw.mw_bridge_synthesizer(), w)}\n"
+                    f"{'Repetition Rate:':<{w}} {pb.pulser_repetition_rate()}\n"
+                    f"{'Number of Scans:':<{w}} {SCANS}\n"
+                    f"{'Averages:':<{w}} {AVERAGES}\n"
+                    f"{'Points:':<{w}} {POINTS}\n"
+                    f"{'Window:':<{w}} {tb} ns\n"
+                    f"{'Horizontal Resolution:':<{w}} {STEP} ns\n"
+                    f"{'Temperature:':<{w}} {ls335.tc_temperature('A')} K\n"
+                    f"{'Temperature Cernox:':<{w}} {ls335.tc_temperature('B')} K\n"
+                    f"{'-'*50}\n"
+                    f"Pulse List:\n{pb.pulser_pulse_list()}"
+                    f"{'-'*50}\n"
+                    f"Time (ns), I (A.U.), Q (A.U.)"
+                )
+
+                conn.send(('Open', ''))
+                
+                while True:
+                    if conn.poll():
+                        msg = conn.recv()
+                        if msg.startswith('FL'):
+                            file_data = msg[2:]
+                            break
+                    general.wait('200 ms')
+
+
+                file_handler.save_data(file_data, np.c_[x_axis, data[0], data[1]], header = header, mode = 'w')
+
+                conn.send( ('', f'Experiment {exp_name} finished') )
+
+        except BaseException as e:
+            exc_info = f"{type(e)} \n{str(e)} \n{traceback.format_exc()}"
+            conn.send( ('Error', exc_info) )
+    
+    def exp_test(self, conn, decimation, num_ave, scans, points,
+            win_left, exp_name, curve_name,
+            win_right, p1_exp, p2_exp, p3_exp, p4_exp, 
+            p5_exp, p6_exp, p7_exp, p8_exp, p9_exp, laser_flag, 
+            rep_rate, field, laser_num, q_switch_delay):
+        
+        import traceback
+
+        sys.argv = ['', 'test']
+
+        try:
+            import time
+            import datetime
+            import numpy as np
+            import atomize.general_modules.general_functions as general
+            general.test_flag = 'test'
+            import atomize.device_modules.Insys_FPGA as pb_pro
+            import atomize.device_modules.Lakeshore_335 as ls
+            import atomize.device_modules.BH_15 as bh
+            import atomize.device_modules.Micran_X_band_MW_bridge_v2 as mwBridge
+            import atomize.general_modules.csv_opener_saver as openfile
+
+            file_handler = openfile.Saver_Opener()
+            pb = pb_pro.Insys_FPGA()
+            bh15 = bh.BH_15()
+            ls335 = ls.Lakeshore_335()
+            mw = mwBridge.Micran_X_band_MW_bridge_v2()
+
+            pb.win_left = win_left
+            pb.win_right = win_right
+
+            #p1_exp DETECTION
+            if p1_exp[4] != '0.0 ns':
+                #delta_start
+                step = round( float( p1_exp[4].split(' ')[0] ), 1)
+            elif p1_exp[5] != '0.0 ns':
+                #length_increment
+                step = round( float( p1_exp[5].split(' ')[0] ), 1)
+            else:
+                #prevent no increment
+                step = 1
+                #conn.send( ('Message', 'No START or LENGTH increment; the time axis corresponds to the number of points in the experiment') )
+
+            POINTS = points
+            STEP = step
+            FIELD = field
+            AVERAGES = num_ave
+            SCANS = scans
+            PHASES = len(p1_exp[3])
+            DEC_COEF = decimation
+            process = 'None'
+            REP_RATE = f'{rep_rate} Hz'
+            EXP_NAME = exp_name
+            CURVE_NAME = curve_name
+
+            bh15.magnet_field( field )
+            general.wait('2000 ms')
+
+            if laser_flag != 1:
+                pb.pulser_repetition_rate( REP_RATE )
+                pulses = [
+                        p1_exp, p2_exp, p3_exp, p4_exp, 
+                        p5_exp, p6_exp, p7_exp, p8_exp, 
+                        p9_exp
+                        ]
+
+                for i, p in enumerate(pulses):
+                    length_str = p[2].split(' ')[0]
+                    if int(float(length_str)) != 0:
+                        pb.pulser_pulse(
+                            name=f'P{i}',
+                            channel=p[0],
+                            start=p[1],
+                            length=p[2],
+                            phase_list=p[3],
+                            delta_start=p[4],
+                            length_increment=p[5]
+                        )
+
+            else:
+                if laser_num == 1:
+                    pb.pulser_repetition_rate( '9.9 Hz' )
+                elif laser_num == 2:
+                    pb.pulser_repetition_rate( REP_RATE )
+                else:
+                    pb.pulser_repetition_rate( REP_RATE )
+
+                pulses = [
+                        p1_exp, p2_exp, p3_exp, p4_exp, 
+                        p5_exp, p6_exp, p7_exp, p8_exp, 
+                        p9_exp
+                        ]
+
+                for i, p in enumerate(pulses):
+                    if i != 1:
+                        start_val = float(p[1].split(' ')[0]) + q_switch_delay
+                        p[1] = f"{self.round_to_closest(start_val, 3.2)} ns"
+
+                    length_val = int(float(p[2].split(' ')[0]))
+                    if i == 1 and length_val == 0:
+                        raise ValueError(f"LASER pulse has zero length")
+
+                    if length_val != 0:
+                        kwargs = {
+                            'name': f'P{i}',
+                            'channel': p[0],
+                            'start': p[1],
+                            'length': p[2],
+                            'delta_start': p[4],
+                            'length_increment': p[5]
+
+                        }
+                        
+                        if i != 1:
+                            kwargs['phase_list'] = p[3]
+                            
+                        pb.pulser_pulse(**kwargs)
+
+            pb.digitizer_decimation(DEC_COEF)
+            #points_window = pb.digitizer_window_points()
+
+            pb.pulser_open()
+            pb.digitizer_number_of_averages(AVERAGES)
+            data = np.zeros( ( 2, POINTS ) )
+            x_axis = np.linspace(0, (POINTS - 1)*STEP, num = POINTS) 
+
+            while self.command != 'exit':
+
+                for k in general.scans(SCANS):
+
+                    if self.command == 'exit':
+                        break
+
+                    for j in range(POINTS):
+                        for i in range(PHASES):
+                            
+                            ##data = np.random.random( ( 2, POINTS ) )
+                            if step != 1:
+                                process = general.plot_1d(exp_name, x_axis / 1e9, ( data[0], data[1] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j*STEP, 1)), pr = process)
+                            else:
+                                process = general.plot_1d(exp_name, x_axis, ( data[0], data[1] ), xname = 'Point', xscale = '', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j, 1)), pr = process)
+
+                            pb.pulser_next_phase()
+
+                            data[0], data[1] = pb.digitizer_get_curve( POINTS, PHASES, current_scan = k, total_scan = SCANS, integral = True )
+
+                        pb.pulser_shift()
+                        pb.pulser_increment()
+
+                        #conn.send( ('Status', int( 100 * (( k - 1 ) * POINTS + j + 1) / POINTS / SCANS)) )
+
+                        # check our polling data
+                        if self.command[0:2] == 'SC':
+                            SCANS = int( self.command[2:] )
+                            self.command = 'start'
+                        elif self.command == 'exit':
+                            data[0], data[1] = pb.digitizer_at_exit(integral = True)
+                            break
+                        
+                        if conn.poll() == True:
+                            self.command = conn.recv()
+
+                    pb.pulser_pulse_reset()
+
+                self.command = 'exit'
+
+            if self.command == 'exit':
+                tb = round( pb.digitizer_window(), 1)
+                pb.pulser_close()
+
+                if step != 1:
+                    general.plot_1d(exp_name, x_axis / 1e9, ( data[0], data[1] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j*STEP, 1)))
+                else:
+                    general.plot_1d(exp_name, x_axis, ( data[0], data[1] ), xname = 'Point', xscale = '', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j, 1)))
+
+                now = datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")
+                w = 30
+
+                # Data saving
+                header = (
+                    f"{'Date:':<{w}} {now}\n"
+                    f"{'Experiment:':<{w}} Pulsed EPR Experiment\n"
+                    f"{'Field:':<{w}} {FIELD} G\n"
+                    f"{general.fmt(mw.mw_bridge_rotary_vane(), w)}\n"
+                    f"{general.fmt(mw.mw_bridge_att_prm(), w)}\n"
+                    f"{general.fmt(mw.mw_bridge_att2_prm(), w)}\n"
+                    f"{general.fmt(mw.mw_bridge_att1_prd(), w)}\n"
+                    f"{general.fmt(mw.mw_bridge_synthesizer(), w)}\n"
+                    f"{'Repetition Rate:':<{w}} {pb.pulser_repetition_rate()}\n"
+                    f"{'Number of Scans:':<{w}} {SCANS}\n"
+                    f"{'Averages:':<{w}} {AVERAGES}\n"
+                    f"{'Points:':<{w}} {POINTS}\n"
+                    f"{'Window:':<{w}} {tb} ns\n"
+                    f"{'Horizontal Resolution:':<{w}} {STEP} ns\n"
+                    f"{'Temperature:':<{w}} {ls335.tc_temperature('A')} K\n"
+                    f"{'Temperature Cernox:':<{w}} {ls335.tc_temperature('B')} K\n"
+                    f"{'-'*50}\n"
+                    f"Pulse List:\n{pb.pulser_pulse_list()}"
+                    f"{'-'*50}\n"
+                    f"Time (ns), I (A.U.), Q (A.U.)"
+                )
+
+                #conn.send(('Open', ''))
+                
+                #while True:
+                #    if conn.poll():
+                #        msg = conn.recv()
+                #        if msg.startswith('FL'):
+                #            file_data = msg[2:]
+                #            break
+                #    general.wait('200 ms')
+
+
+                #file_handler.save_data(file_data, np.c_[x_axis, data[0], data[1]], header = header, mode = 'w')
+
+                conn.send( ('test', f'') )
+
+        except BaseException as e:
+            exc_info = f"{type(e)} \n{str(e)} \n{traceback.format_exc()}"
+            conn.send( ('Error', exc_info) )
+
+    def exp_field(self, conn, decimation, num_ave, scans, start_field,
+            end_field, step_field, win_left, exp_name, curve_name,
+            win_right, p1_exp, p2_exp, p3_exp, p4_exp, 
+            p5_exp, p6_exp, p7_exp, p8_exp, p9_exp, laser_flag, 
+            rep_rate, laser_num, q_switch_delay):
+        import traceback
+
+        try:
+            import time
+            import datetime
+            import numpy as np
+            import atomize.general_modules.general_functions as general
+            import atomize.device_modules.Insys_FPGA as pb_pro
+            import atomize.device_modules.Lakeshore_335 as ls
+            import atomize.device_modules.BH_15 as bh
+            import atomize.device_modules.Micran_X_band_MW_bridge_v2 as mwBridge
+            import atomize.general_modules.csv_opener_saver as openfile
+
+            file_handler = openfile.Saver_Opener()
+            pb = pb_pro.Insys_FPGA()
+            bh15 = bh.BH_15()
+            ls335 = ls.Lakeshore_335()
+            mw = mwBridge.Micran_X_band_MW_bridge_v2()
+
+            pb.win_left = win_left
+            pb.win_right = win_right
+
+            START_FIELD = start_field
+            END_FIELD = end_field
+            FIELD_STEP = step_field
+            
+            AVERAGES = num_ave
+            SCANS = scans
+            PHASES = len(p1_exp[3])
+            DEC_COEF = decimation
+            process = 'None'
+            REP_RATE = f'{rep_rate} Hz'
+            EXP_NAME = exp_name
+            CURVE_NAME = curve_name
+
+            #general.plot_remove(exp_name)
+
+            bh15.magnet_field( start_field )
+            general.wait('2000 ms')
+
+            if laser_flag != 1:
+                pb.pulser_repetition_rate( REP_RATE )
+                pulses = [
+                        p1_exp, p2_exp, p3_exp, p4_exp, 
+                        p5_exp, p6_exp, p7_exp, p8_exp, 
+                        p9_exp
+                        ]
+
+                for i, p in enumerate(pulses):
+                    length_str = p[2].split(' ')[0]
+                    
+                    if int(float(length_str)) != 0:
+                        pb.pulser_pulse(
+                            name=f'P{i}',
+                            channel=p[0],
+                            start=p[1],
+                            length=p[2],
+                            phase_list=p[3],
+                            delta_start=p[4],
+                            length_increment=p[5]
+                        )
+
+            else:
+                if laser_num == 1:
+                    pb.pulser_repetition_rate( '9.9 Hz' )
+                elif laser_num == 2:
+                    pb.pulser_repetition_rate( REP_RATE )
+                else:
+                    pb.pulser_repetition_rate( REP_RATE )
+
+                pulses = [
+                        p1_exp, p2_exp, p3_exp, p4_exp, 
+                        p5_exp, p6_exp, p7_exp, p8_exp, 
+                        p9_exp
+                        ]
+
+                for i, p in enumerate(pulses):
+                    if i != 1:
+                        start_val = float(p[1].split(' ')[0]) + q_switch_delay
+                        p[1] = f"{self.round_to_closest(start_val, 3.2)} ns"
+
+                    length_val = int(float(p[2].split(' ')[0]))
+                    if length_val != 0:
+                        kwargs = {
+                            'name': f'P{i}',
+                            'channel': p[0],
+                            'start': p[1],
+                            'length': p[2],
+                            'delta_start': p[4],
+                            'length_increment': p[5]
+
+                        }
+                        
+                        if i != 1:
+                            kwargs['phase_list'] = p[3]
+                            
+                        pb.pulser_pulse(**kwargs)
+
+            pb.digitizer_decimation(DEC_COEF)
+            #points_window = pb.digitizer_window_points()
+
+            pb.pulser_open()
+            pb.digitizer_number_of_averages(AVERAGES)
+
+            POINTS = int( (END_FIELD - START_FIELD) / FIELD_STEP ) + 1
+            data = np.zeros( ( 2, POINTS ) )
+            x_axis = np.linspace(START_FIELD, END_FIELD, num = POINTS)
+
+            while self.command != 'exit':
+                k = 1
+
+                while k <= SCANS:
+
+                    field = START_FIELD
+
+                    if self.command == 'exit':
+                        break
+
+                    for j in range(POINTS):
+
+                        bh15.magnet_field(field)#, calibration = 'True')
+
+                        for i in range(PHASES):
+                        
+                            #r_data = np.random.random( 2 )
+                            #data[0, j] = r_data[0]
+                            #data[1, j] = r_data[1]
+                            
+                            process = general.plot_1d(exp_name, x_axis, ( data[0], data[1] ), xname = 'Field', xscale = 'G', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Field: ' + str(k) + ' / ' + str(field), pr = process)
+
+                            pb.pulser_next_phase()
+
+                            data[0], data[1] = pb.digitizer_get_curve( POINTS, PHASES, current_scan = k, total_scan = SCANS, integral = True )
+
+                        field = round( (FIELD_STEP + field), 3 )
+
+                        pb.pulser_shift()
+
+                        conn.send( ('Status', int( 100 * (( k - 1 ) * POINTS + j + 1) / POINTS / SCANS)) )
+
+                        # check our polling data
+                        if self.command[0:2] == 'SC':
+                            SCANS = int( self.command[2:] )
+                            self.command = 'start'
+                        elif self.command == 'exit':
+                            data[0], data[1] = pb.digitizer_at_exit(integral = True)
+                            break
+                        
+                        if conn.poll() == True:
+                            self.command = conn.recv()
+
+                    pb.pulser_pulse_reset()
+
+                    k += 1
+
+                self.command = 'exit'
+
+            if self.command == 'exit':
+                tb = round( pb.digitizer_window(), 1)
+                pb.pulser_close()
+
+                general.plot_1d(exp_name, x_axis, ( data[0], data[1] ), xname = 'Field', xscale = 'G', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Field: ' + str(k) + ' / ' + str(field))
+
+                now = datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")
+                w = 30
+
+                # Data saving
+                header = (
+                    f"{'Date:':<{w}} {now}\n"
+                    f"{'Experiment:':<{w}} Pulsed EPR Experiment\n"
+                    f"{'Start Field:':<{w}} {START_FIELD} G\n"
+                    f"{'End Field:':<{w}} {END_FIELD} G\n"
+                    f"{'Field Step:':<{w}} {FIELD_STEP} G\n"
+                    f"{general.fmt(mw.mw_bridge_rotary_vane(), w)}\n"
+                    f"{general.fmt(mw.mw_bridge_att_prm(), w)}\n"
+                    f"{general.fmt(mw.mw_bridge_att2_prm(), w)}\n"
+                    f"{general.fmt(mw.mw_bridge_att1_prd(), w)}\n"
+                    f"{general.fmt(mw.mw_bridge_synthesizer(), w)}\n"
+                    f"{'Repetition Rate:':<{w}} {pb.pulser_repetition_rate()}\n"
+                    f"{'Number of Scans:':<{w}} {SCANS}\n"
+                    f"{'Averages:':<{w}} {AVERAGES}\n"
+                    f"{'Window:':<{w}} {tb} ns\n"
+                    f"{'Temperature:':<{w}} {ls335.tc_temperature('A')} K\n"
+                    f"{'Temperature Cernox:':<{w}} {ls335.tc_temperature('B')} K\n"
+                    f"{'-'*50}\n"
+                    f"Pulse List:\n{pb.pulser_pulse_list()}"
+                    f"{'-'*50}\n"
+                    f"Field (G), I (A.U.), Q (A.U.)"
+                )
+
+                conn.send(('Open', ''))
+                
+                while True:
+                    if conn.poll():
+                        msg = conn.recv()
+                        if msg.startswith('FL'):
+                            file_data = msg[2:]
+                            break
+                    general.wait('200 ms')
+
+
+                file_handler.save_data(file_data, np.c_[x_axis, data[0], data[1]], header = header, mode = 'w')
+
+                conn.send( ('', f'Experiment {exp_name} finished') )
+
+        except BaseException as e:
+            exc_info = f"{type(e)} \n{str(e)} \n{traceback.format_exc()}"
+            conn.send( ('Error', exc_info) )
+
+    def exp_field_test(self, conn, decimation, num_ave, scans, start_field,
+            end_field, step_field, win_left, exp_name, curve_name,
+            win_right, p1_exp, p2_exp, p3_exp, p4_exp, 
+            p5_exp, p6_exp, p7_exp, p8_exp, p9_exp, laser_flag, 
+            rep_rate, laser_num, q_switch_delay):
+
+        import traceback
+
+        sys.argv = ['', 'test']
+
+        try:
+            import time
+            import datetime
+            import numpy as np
+            import atomize.general_modules.general_functions as general
+            general.test_flag = 'test'
+            import atomize.device_modules.Insys_FPGA as pb_pro
+            import atomize.device_modules.Lakeshore_335 as ls
+            import atomize.device_modules.BH_15 as bh
+            import atomize.device_modules.Micran_X_band_MW_bridge_v2 as mwBridge
+            import atomize.general_modules.csv_opener_saver as openfile
+
+            file_handler = openfile.Saver_Opener()
+            pb = pb_pro.Insys_FPGA()
+            bh15 = bh.BH_15()
+            ls335 = ls.Lakeshore_335()
+            mw = mwBridge.Micran_X_band_MW_bridge_v2()
+
+            pb.win_left = win_left
+            pb.win_right = win_right
+
+            START_FIELD = start_field
+            END_FIELD = end_field
+            FIELD_STEP = step_field
+            
+            AVERAGES = num_ave
+            SCANS = scans
+            PHASES = len(p1_exp[3])
+            DEC_COEF = decimation
+            process = 'None'
+            REP_RATE = f'{rep_rate} Hz'
+            EXP_NAME = exp_name
+            CURVE_NAME = curve_name
+
+            bh15.magnet_field( start_field )
+            general.wait('2000 ms')
+
+            if laser_flag != 1:
+                pb.pulser_repetition_rate( REP_RATE )
+                pulses = [
+                        p1_exp, p2_exp, p3_exp, p4_exp, 
+                        p5_exp, p6_exp, p7_exp, p8_exp, 
+                        p9_exp
+                        ]
+
+                for i, p in enumerate(pulses):
+                    length_str = p[2].split(' ')[0]
+                    if p[4] != '0.0 ns':
+                        raise ValueError(f"Please remove Start Increments for all pulses")
+
+                    if int(float(length_str)) != 0:
+                        pb.pulser_pulse(
+                            name=f'P{i}',
+                            channel=p[0],
+                            start=p[1],
+                            length=p[2],
+                            phase_list=p[3],
+                            delta_start=p[4],
+                            length_increment=p[5]
+                        )
+
+            else:
+                if laser_num == 1:
+                    pb.pulser_repetition_rate( '9.9 Hz' )
+                elif laser_num == 2:
+                    pb.pulser_repetition_rate( REP_RATE )
+                else:
+                    pb.pulser_repetition_rate( REP_RATE )
+
+                pulses = [
+                        p1_exp, p2_exp, p3_exp, p4_exp, 
+                        p5_exp, p6_exp, p7_exp, p8_exp, 
+                        p9_exp
+                        ]
+
+                for i, p in enumerate(pulses):
+                    if p[4] != '0.0 ns':
+                        raise ValueError(f"Please remove Start Increments for all pulses")
+
+                    if i != 1:
+                        start_val = float(p[1].split(' ')[0]) + q_switch_delay
+                        p[1] = f"{self.round_to_closest(start_val, 3.2)} ns"
+
+                    length_val = int(float(p[2].split(' ')[0]))
+                    if i == 1 and length_val == 0:
+                        raise ValueError(f"LASER pulse has zero length")
+
+                    if length_val != 0:
+                        kwargs = {
+                            'name': f'P{i}',
+                            'channel': p[0],
+                            'start': p[1],
+                            'length': p[2],
+                            'delta_start': p[4],
+                            'length_increment': p[5]
+
+                        }
+                        
+                        if i != 1:
+                            kwargs['phase_list'] = p[3]
+                            
+                        pb.pulser_pulse(**kwargs)
+
+            pb.digitizer_decimation(DEC_COEF)
+            #points_window = pb.digitizer_window_points()
+
+            pb.pulser_open()
+            pb.digitizer_number_of_averages(AVERAGES)
+
+            POINTS = int( (END_FIELD - START_FIELD) / FIELD_STEP ) + 1
+            data = np.zeros( ( 2, POINTS ) )
+            x_axis = np.linspace(START_FIELD, END_FIELD, num = POINTS)
+
+            while self.command != 'exit':
+
+                for k in general.scans(SCANS):
+
+                    field = START_FIELD
+
+                    if self.command == 'exit':
+                        break
+
+                    for j in range(POINTS):
+
+                        bh15.magnet_field(field)#, calibration = 'True')
+
+                        for i in range(PHASES):
+                            
+                            ##data = np.random.random( ( 2, POINTS ) )
+                            process = general.plot_1d(exp_name, x_axis, ( data[0], data[1] ), xname = 'Field', xscale = 'G', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Field: ' + str(k) + ' / ' + str(field), pr = process)
+
+                            pb.pulser_next_phase()
+
+                            data[0], data[1] = pb.digitizer_get_curve( POINTS, PHASES, current_scan = k, total_scan = SCANS, integral = True )
+
+                        field = round( (FIELD_STEP + field), 3 )
+
+                        pb.pulser_shift()
+
+                        #conn.send( ('Status', int( 100 * (( k - 1 ) * POINTS + j + 1) / POINTS / SCANS)) )
+
+                        # check our polling data
+                        if self.command[0:2] == 'SC':
+                            SCANS = int( self.command[2:] )
+                            self.command = 'start'
+                        elif self.command == 'exit':
+                            data[0], data[1] = pb.digitizer_at_exit(integral = True)
+                            break
+                        
+                        if conn.poll() == True:
+                            self.command = conn.recv()
+
+                    pb.pulser_pulse_reset()
+
+                self.command = 'exit'
+
+            if self.command == 'exit':
+                tb = round( pb.digitizer_window(), 1)
+                pb.pulser_close()
+
+                general.plot_1d(exp_name, x_axis, ( data[0], data[1] ), xname = 'Field', xscale = 'G', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Field: ' + str(k) + ' / ' + str(field))
+
+                now = datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")
+                w = 30
+
+                # Data saving
+                header = (
+                    f"{'Date:':<{w}} {now}\n"
+                    f"{'Experiment:':<{w}} Pulsed EPR Experiment\n"
+                    f"{'Start Field:':<{w}} {START_FIELD} G\n"
+                    f"{'End Field:':<{w}} {END_FIELD} G\n"
+                    f"{'Field Step:':<{w}} {FIELD_STEP} G\n"
+                    f"{general.fmt(mw.mw_bridge_rotary_vane(), w)}\n"
+                    f"{general.fmt(mw.mw_bridge_att_prm(), w)}\n"
+                    f"{general.fmt(mw.mw_bridge_att2_prm(), w)}\n"
+                    f"{general.fmt(mw.mw_bridge_att1_prd(), w)}\n"
+                    f"{general.fmt(mw.mw_bridge_synthesizer(), w)}\n"
+                    f"{'Repetition Rate:':<{w}} {pb.pulser_repetition_rate()}\n"
+                    f"{'Number of Scans:':<{w}} {SCANS}\n"
+                    f"{'Averages:':<{w}} {AVERAGES}\n"
+                    f"{'Window:':<{w}} {tb} ns\n"
+                    f"{'Temperature:':<{w}} {ls335.tc_temperature('A')} K\n"
+                    f"{'Temperature Cernox:':<{w}} {ls335.tc_temperature('B')} K\n"
+                    f"{'-'*50}\n"
+                    f"Pulse List:\n{pb.pulser_pulse_list()}"
+                    f"{'-'*50}\n"
+                    f"Field (G), I (A.U.), Q (A.U.)"
+                )
+
+                #conn.send(('Open', ''))
+                
+                #while True:
+                #    if conn.poll():
+                #        msg = conn.recv()
+                #        if msg.startswith('FL'):
+                #            file_data = msg[2:]
+                #            break
+                #    general.wait('200 ms')
+
+
+                #file_handler.save_data(file_data, np.c_[x_axis, data[0], data[1]], header = header, mode = 'w')
+
+                conn.send( ('test', f'') )
+
+        except BaseException as e:
+            exc_info = f"{type(e)} \n{str(e)} \n{traceback.format_exc()}"
+            conn.send( ('Error', exc_info) )
+
+    def exp_log(self, conn, decimation, num_ave, scans, points,
+            log_start, log_end, win_left, exp_name, curve_name,
+            win_right, p1_exp, p2_exp, p3_exp, p4_exp, 
+            p5_exp, p6_exp, p7_exp, p8_exp, p9_exp, laser_flag, 
+            rep_rate, field, laser_num, q_switch_delay):
+
+        import traceback
+
+        try:
+            import time
+            import datetime
+            import numpy as np
+            import atomize.general_modules.general_functions as general
+            import atomize.device_modules.Insys_FPGA as pb_pro
+            import atomize.device_modules.Lakeshore_335 as ls
+            import atomize.device_modules.BH_15 as bh
+            import atomize.device_modules.Micran_X_band_MW_bridge_v2 as mwBridge
+            import atomize.general_modules.csv_opener_saver as openfile
+
+            ### Nonlinear axis
+            POINTS = points
+            T_start = log_start
+            T_end = log_end
+
+            nonlinear_time_raw = 10 ** np.linspace( T_start, T_end, POINTS )
+            nonlinear_time = np.unique( general.numpy_round( nonlinear_time_raw, 3.2 ) )
+            POINTS = len( nonlinear_time )
+            x_axis = (np.insert(nonlinear_time , 0, 0))[:-1]
+
+            file_handler = openfile.Saver_Opener()
+            pb = pb_pro.Insys_FPGA()
+            bh15 = bh.BH_15()
+            ls335 = ls.Lakeshore_335()
+            mw = mwBridge.Micran_X_band_MW_bridge_v2()
+
+            pb.win_left = win_left
+            pb.win_right = win_right
+
+            FIELD = field
+            AVERAGES = num_ave
+            SCANS = scans
+            PHASES = len(p1_exp[3])
+            DEC_COEF = decimation
+            process = 'None'
+            REP_RATE = f'{rep_rate} Hz'
+            EXP_NAME = exp_name
+            CURVE_NAME = curve_name
+
+            bh15.magnet_field( field )
+            general.wait('2000 ms')
+
+
+            #### Creating different delays for different pulses
+            name_list = []
+            rel_shift = np.array( [] )
+            pulses = [
+                    p1_exp, p2_exp, p3_exp, p4_exp, 
+                    p5_exp, p6_exp, p7_exp, p8_exp, 
+                    p9_exp
+                    ]
+
+            for p in pulses:
+                length_str = p[2].split(' ')[0]
+                if int(float(length_str)) != 0:
+                    rel_shift = np.append(rel_shift, float(p[4].split(' ')[0]) ) 
+            
+            # do not take into account the same shift
+            unique_arr = np.unique(rel_shift)
+            minim = np.min(unique_arr)
+            rel_shift -= minim
+
+            unique_arr = np.unique(rel_shift)
+            if len(unique_arr) > 1:
+                next_after_min = np.partition(unique_arr, 1)[1]
+            else:
+                next_after_min = 1
+
+            rel_shift = ( (rel_shift ) / next_after_min).astype(int)
+
+            if rel_shift[0] != 0.0:
+                x_axis = x_axis * rel_shift[0] + self.round_to_closest( float(p1_exp[1].split(" ")[0]) , 3.2)
+            else:
+                indices = np.where(rel_shift[1:] != 0)[0] + 1
+                if indices.size > 0:
+                    x_axis = x_axis * rel_shift[indices[0]] + self.round_to_closest( float(pulses[indices[0]][1].split(" ")[0]) , 3.2)
+                else:
+                    ## this is for start increments: [3.2 3.2 3.2]
+                    raise ValueError(f"Pulses do not have Start Increments")
+            ####
+
+            if laser_flag != 1:
+                pb.pulser_repetition_rate( REP_RATE )
+
+                for i, p in enumerate(pulses):
+                    length_str = p[2].split(' ')[0]
+                    if int(float(length_str)) != 0:
+                        name_list.append(f'P{i}')
+                        pb.pulser_pulse(
+                            name=f'P{i}',
+                            channel=p[0],
+                            start=p[1],
+                            length=p[2],
+                            phase_list=p[3],
+                            delta_start=f"{self.round_to_closest( nonlinear_time[0] * rel_shift[i], 3.2 )} ns"
+                        )
+
+            else:
+                if laser_num == 1:
+                    pb.pulser_repetition_rate( '9.9 Hz' )
+                elif laser_num == 2:
+                    pb.pulser_repetition_rate( REP_RATE )
+                else:
+                    pb.pulser_repetition_rate( REP_RATE )
+
+                for i, p in enumerate(pulses):
+                    if i != 1:
+                        start_val = float(p[1].split(' ')[0]) + q_switch_delay
+                        p[1] = f"{self.round_to_closest(start_val, 3.2)} ns"
+
+                    length_val = int(float(p[2].split(' ')[0]))
+                    if length_val != 0:
+                        kwargs = {
+                            'name': f'P{i}',
+                            'channel': p[0],
+                            'start': p[1],
+                            'length': p[2],
+                            'delta_start': f"{self.round_to_closest( nonlinear_time[0] * rel_shift[i], 3.2 )} ns"
+                        }
+                        
+                        if i != 1:
+                            kwargs['phase_list'] = p[3]
+                            
+                        pb.pulser_pulse(**kwargs)
+
+            pb.digitizer_decimation(DEC_COEF)
+            #points_window = pb.digitizer_window_points()
+
+            pb.pulser_open()
+            pb.digitizer_number_of_averages(AVERAGES)
+            data = np.zeros( ( 2, POINTS ) )
+
+            while self.command != 'exit':
+
+                for k in general.scans(SCANS):
+
+                    if self.command == 'exit':
+                        break
+
+                    for j in range(POINTS):
+                        for i in range(PHASES):
+                            
+                            #r_data = np.random.random( 2 )
+                            #data[0, j] = r_data[0]
+                            #data[1, j] = r_data[1]
+
+                            process = general.plot_1d(exp_name, x_axis, ( data[0], data[1] ), xname = 'Time', xscale = 'ns', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Point: ' + str(k) + ' / ' + str(j), pr = process)
+
+                            pb.pulser_next_phase()
+
+                            data[0], data[1] = pb.digitizer_get_curve( POINTS, PHASES, current_scan = k, total_scan = SCANS, integral = True )
+
+                        # nonlinear_time_shift is calculated from the initial position of the pulses
+                        if j > 0:
+                            new_delta_start = nonlinear_time[j] - nonlinear_time[j-1]
+
+                            for i, names in enumerate(name_list):
+                                pb.pulser_redefine_delta_start(name = names, delta_start = f"{self.round_to_closest( new_delta_start * rel_shift[i], 3.2 )} ns")
+
+                        pb.pulser_shift()
+
+                        conn.send( ('Status', int( 100 * (( k - 1 ) * POINTS + j + 1) / POINTS / SCANS)) )
+
+                        # check our polling data
+                        if self.command[0:2] == 'SC':
+                            SCANS = int( self.command[2:] )
+                            self.command = 'start'
+                        elif self.command == 'exit':
+                            data[0], data[1] = pb.digitizer_at_exit(integral = True)
+                            break
+                        
+                        if conn.poll() == True:
+                            self.command = conn.recv()
+
+                    pb.pulser_pulse_reset()
+
+                self.command = 'exit'
+
+            if self.command == 'exit':
+                tb = round( pb.digitizer_window(), 1)
+                pb.pulser_close()
+
+                general.plot_1d(exp_name, x_axis, ( data[0], data[1] ), xname = 'Time', xscale = 'ns', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Point: ' + str(k) + ' / ' + str(j))
+
+                now = datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")
+                w = 30
+
+                # Data saving
+                header = (
+                    f"{'Date:':<{w}} {now}\n"
+                    f"{'Experiment:':<{w}} Pulsed EPR Log Experiment\n"
+                    f"{'Field:':<{w}} {FIELD} G\n"
+                    f"{general.fmt(mw.mw_bridge_rotary_vane(), w)}\n"
+                    f"{general.fmt(mw.mw_bridge_att_prm(), w)}\n"
+                    f"{general.fmt(mw.mw_bridge_att2_prm(), w)}\n"
+                    f"{general.fmt(mw.mw_bridge_att1_prd(), w)}\n"
+                    f"{general.fmt(mw.mw_bridge_synthesizer(), w)}\n"
+                    f"{'Repetition Rate:':<{w}} {pb.pulser_repetition_rate()}\n"
+                    f"{'Number of Scans:':<{w}} {SCANS}\n"
+                    f"{'Averages:':<{w}} {AVERAGES}\n"
+                    f"{'Points:':<{w}} {POINTS}\n"
+                    f"{'Window:':<{w}} {tb} ns\n"
+                    f"{'Horizontal Resolution, Log[T Start]:':<{w}} {T_start}\n"
+                    f"{'Horizontal Resolution, Log[T End]:':<{w}} {T_end}\n"
+                    f"{'Temperature:':<{w}} {ls335.tc_temperature('A')} K\n"
+                    f"{'Temperature Cernox:':<{w}} {ls335.tc_temperature('B')} K\n"
+                    f"{'-'*50}\n"
+                    f"Pulse List:\n{pb.pulser_pulse_list()}"
+                    f"{'-'*50}\n"
+                    f"Time (ns), I (A.U.), Q (A.U.)"
+                )
+
+                conn.send(('Open', ''))
+                
+                while True:
+                    if conn.poll():
+                        msg = conn.recv()
+                        if msg.startswith('FL'):
+                            file_data = msg[2:]
+                            break
+                    general.wait('200 ms')
+
+                file_handler.save_data(file_data, np.c_[x_axis, data[0], data[1]], header = header, mode = 'w')
+
+                conn.send( ('', f'Experiment {exp_name} finished') )
+
+        except BaseException as e:
+            exc_info = f"{type(e)} \n{str(e)} \n{traceback.format_exc()}"
+            conn.send( ('Error', exc_info) )
+
+    def exp_log_test(self, conn, decimation, num_ave, scans, points,
+            log_start, log_end, win_left, exp_name, curve_name,
+            win_right, p1_exp, p2_exp, p3_exp, p4_exp, 
+            p5_exp, p6_exp, p7_exp, p8_exp, p9_exp, laser_flag, 
+            rep_rate, field, laser_num, q_switch_delay):
+        import traceback
+
+        sys.argv = ['', 'test']
+
+        try:
+            import time
+            import datetime
+            import numpy as np
+            import atomize.general_modules.general_functions as general
+            general.test_flag = 'test'
+            import atomize.device_modules.Insys_FPGA as pb_pro
+            import atomize.device_modules.Lakeshore_335 as ls
+            import atomize.device_modules.BH_15 as bh
+            import atomize.device_modules.Micran_X_band_MW_bridge_v2 as mwBridge
+            import atomize.general_modules.csv_opener_saver as openfile
+
+            ### Nonlinear axis
+            POINTS = points
+            T_start = log_start
+            T_end = log_end
+
+            nonlinear_time_raw = 10 ** np.linspace( T_start, T_end, POINTS )
+            nonlinear_time = np.unique( general.numpy_round( nonlinear_time_raw, 3.2 ) )
+            POINTS = len( nonlinear_time )
+            x_axis = (np.insert(nonlinear_time , 0, 0))[:-1]
+
+            file_handler = openfile.Saver_Opener()
+            pb = pb_pro.Insys_FPGA()
+            bh15 = bh.BH_15()
+            ls335 = ls.Lakeshore_335()
+            mw = mwBridge.Micran_X_band_MW_bridge_v2()
+
+            pb.win_left = win_left
+            pb.win_right = win_right
+
+            FIELD = field
+            AVERAGES = num_ave
+            SCANS = scans
+            PHASES = len(p1_exp[3])
+            DEC_COEF = decimation
+            process = 'None'
+            REP_RATE = f'{rep_rate} Hz'
+            EXP_NAME = exp_name
+            CURVE_NAME = curve_name
+
+            bh15.magnet_field( field )
+            general.wait('2000 ms')
+
+            #### Creating different delays for different pulses
+            name_list = []
+            rel_shift = np.array( [] )
+            pulses = [
+                    p1_exp, p2_exp, p3_exp, p4_exp, 
+                    p5_exp, p6_exp, p7_exp, p8_exp, 
+                    p9_exp
+                    ]
+
+            for p in pulses:
+                length_str = p[2].split(' ')[0]
+                if int(float(length_str)) != 0:
+                    rel_shift = np.append(rel_shift, float(p[4].split(' ')[0]) ) 
+            
+            # do not take into account the same shift
+            unique_arr = np.unique(rel_shift)
+            minim = np.min(unique_arr)
+            rel_shift -= minim
+
+            unique_arr = np.unique(rel_shift)
+            if len(unique_arr) > 1:
+                next_after_min = np.partition(unique_arr, 1)[1]
+            else:
+                next_after_min = 1
+
+            rel_shift = ( (rel_shift ) / next_after_min).astype(int)
+
+            if rel_shift[0] != 0.0:
+                x_axis = x_axis * rel_shift[0] + self.round_to_closest( float(p1_exp[1].split(" ")[0]) , 3.2)
+            else:
+                indices = np.where(rel_shift[1:] != 0)[0] + 1
+                if indices.size > 0:
+                    x_axis = x_axis * rel_shift[indices[0]] + self.round_to_closest( float(pulses[indices[0]][1].split(" ")[0]) , 3.2)
+                else:
+                    ## this is for start increments: [3.2 3.2 3.2]
+                    raise ValueError(f"Pulses do not have Start Increments")
+            ####
+
+            if laser_flag != 1:
+                pb.pulser_repetition_rate( REP_RATE )
+
+                for i, p in enumerate(pulses):
+                    length_str = p[2].split(' ')[0]
+                    if int(float(length_str)) != 0:
+                        name_list.append(f'P{i}')
+                        pb.pulser_pulse(
+                            name=f'P{i}',
+                            channel=p[0],
+                            start=p[1],
+                            length=p[2],
+                            phase_list=p[3],
+                            delta_start=f"{self.round_to_closest( nonlinear_time[0] * rel_shift[i], 3.2 )} ns"
+                        )
+
+            else:
+                if laser_num == 1:
+                    pb.pulser_repetition_rate( '9.9 Hz' )
+                elif laser_num == 2:
+                    pb.pulser_repetition_rate( REP_RATE )
+                else:
+                    pb.pulser_repetition_rate( REP_RATE )
+
+                for i, p in enumerate(pulses):
+                    if i != 1:
+                        start_val = float(p[1].split(' ')[0]) + q_switch_delay
+                        p[1] = f"{self.round_to_closest(start_val, 3.2)} ns"
+
+                    length_val = int(float(p[2].split(' ')[0]))
+                    if i == 1 and length_val == 0:
+                        raise ValueError(f"LASER pulse has zero length")
+
+                    if length_val != 0:
+                        name_list.append(f'P{i}')
+                        kwargs = {
+                            'name': f'P{i}',
+                            'channel': p[0],
+                            'start': p[1],
+                            'length': p[2],
+                            'delta_start': f"{self.round_to_closest( nonlinear_time[0] * rel_shift[i], 3.2 )} ns"
+                        }
+                        
+                        if i != 1:
+                            kwargs['phase_list'] = p[3]
+                            
+                        pb.pulser_pulse(**kwargs)
+
+            pb.digitizer_decimation(DEC_COEF)
+            #points_window = pb.digitizer_window_points()
+
+            pb.pulser_open()
+            pb.digitizer_number_of_averages(AVERAGES)
+            data = np.zeros( ( 2, POINTS ) )
+
+            while self.command != 'exit':
+
+                for k in general.scans(SCANS):
+
+                    if self.command == 'exit':
+                        break
+
+                    for j in range(POINTS):
+                        for i in range(PHASES):
+                            
+                            ##data = np.random.random( ( 2, POINTS ) )
+
+                            process = general.plot_1d(exp_name, x_axis / 1e9, ( data[0], data[1] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Point: ' + str(k) + ' / ' + str(j), pr = process)
+
+                            pb.pulser_next_phase()
+
+                            data[0], data[1] = pb.digitizer_get_curve( POINTS, PHASES, current_scan = k, total_scan = SCANS, integral = True )
+
+                        # nonlinear_time_shift is calculated from the initial position of the pulses
+                        if j > 0:
+                            new_delta_start = nonlinear_time[j] - nonlinear_time[j-1]
+
+                            for i, names in enumerate(name_list):
+                                pb.pulser_redefine_delta_start(name = names, delta_start = f"{self.round_to_closest( new_delta_start * rel_shift[i], 3.2 )} ns")
+
+                        pb.pulser_shift()
+
+                        #conn.send( ('Status', int( 100 * (( k - 1 ) * POINTS + j + 1) / POINTS / SCANS)) )
+
+                        # check our polling data
+                        if self.command[0:2] == 'SC':
+                            SCANS = int( self.command[2:] )
+                            self.command = 'start'
+                        elif self.command == 'exit':
+                            data[0], data[1] = pb.digitizer_at_exit(integral = True)
+                            break
+                        
+                        if conn.poll() == True:
+                            self.command = conn.recv()
+
+                    pb.pulser_pulse_reset()
+
+                self.command = 'exit'
+
+            if self.command == 'exit':
+                tb = round( pb.digitizer_window(), 1)
+                pb.pulser_close()
+
+                general.plot_1d(exp_name, x_axis / 1e9, ( data[0], data[1] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Point: ' + str(k) + ' / ' + str(j))
+
+                now = datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")
+                w = 30
+
+                # Data saving
+                header = (
+                    f"{'Date:':<{w}} {now}\n"
+                    f"{'Experiment:':<{w}} Pulsed EPR Log Experiment\n"
+                    f"{'Field:':<{w}} {FIELD} G\n"
+                    f"{general.fmt(mw.mw_bridge_rotary_vane(), w)}\n"
+                    f"{general.fmt(mw.mw_bridge_att_prm(), w)}\n"
+                    f"{general.fmt(mw.mw_bridge_att2_prm(), w)}\n"
+                    f"{general.fmt(mw.mw_bridge_att1_prd(), w)}\n"
+                    f"{general.fmt(mw.mw_bridge_synthesizer(), w)}\n"
+                    f"{'Repetition Rate:':<{w}} {pb.pulser_repetition_rate()}\n"
+                    f"{'Number of Scans:':<{w}} {SCANS}\n"
+                    f"{'Averages:':<{w}} {AVERAGES}\n"
+                    f"{'Points:':<{w}} {POINTS}\n"
+                    f"{'Window:':<{w}} {tb} ns\n"
+                    f"{'Horizontal Resolution, Log[T Start]:':<{w}} {T_start}\n"
+                    f"{'Horizontal Resolution, Log[T End]:':<{w}} {T_end}\n"
+                    f"{'Temperature:':<{w}} {ls335.tc_temperature('A')} K\n"
+                    f"{'Temperature Cernox:':<{w}} {ls335.tc_temperature('B')} K\n"
+                    f"{'-'*50}\n"
+                    f"Pulse List:\n{pb.pulser_pulse_list()}"
+                    f"{'-'*50}\n"
+                    f"Time (ns), I (A.U.), Q (A.U.)"
+                )
+
+                #conn.send(('Open', ''))
+                
+                #while True:
+                #    if conn.poll():
+                #        msg = conn.recv()
+                #        if msg.startswith('FL'):
+                #            file_data = msg[2:]
+                #            break
+                #    general.wait('200 ms')
+
+
+                #file_handler.save_data(file_data, np.c_[x_axis, data[0], data[1]], header = header, mode = 'w')
+
+                conn.send( ('test', f'') )
+
+        except BaseException as e:
+            exc_info = f"{type(e)} \n{str(e)} \n{traceback.format_exc()}"
+            conn.send( ('Error', exc_info) )
+
+    
 def main():
     """
     A function to run the main window of the programm.

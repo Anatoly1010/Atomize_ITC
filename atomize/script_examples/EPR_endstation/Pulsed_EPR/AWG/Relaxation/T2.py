@@ -61,7 +61,6 @@ EXP_NAME = 'T2'
 
 
 # Setting magnetic field
-bh15.magnet_setup(FIELD, 1)
 bh15.magnet_field(FIELD)
 general.wait('4000 ms')
 

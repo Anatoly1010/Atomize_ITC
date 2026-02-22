@@ -310,7 +310,7 @@ class MainWindow(QMainWindow):
         self.exp_process.join() 
         self.timer.stop()
         self.progress_bar.setValue(0)
-        self.button_start.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }  ")
+        self.button_start.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }  QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
         
         if self.exit_clicked == 1:
             sys.exit()
@@ -354,7 +354,7 @@ class MainWindow(QMainWindow):
         # sending parameters for initial initialization
         self.exp_process = Process( target = worker.exp_test, args = ( self.child_conn, self.cur_exp_name, self.cur_length, self.cur_st_freq, self.cur_rep_rate, self.cur_scan, self.cur_end_freq, self.cur_step_freq, self.cur_averages, ) )
 
-        self.button_start.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(211, 194, 78); border-style: outset; color: rgb(63, 63, 97); font-weight: bold; } ")
+        self.button_start.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(211, 194, 78); border-style: outset; color: rgb(63, 63, 97); font-weight: bold; } QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
         self.progress_bar.setValue(0)
 
         self.exp_process.start()
@@ -390,6 +390,11 @@ class MainWindow(QMainWindow):
                     color: rgb(193, 202, 227); 
                     font-weight: bold; 
                 }
+                QPushButton:pressed {
+                    background-color: rgb(211, 194, 78); 
+                    border-style: inset; 
+                    font-weight: bold; 
+                }
             """)
         else:
             self.timer.stop()
@@ -402,6 +407,11 @@ class MainWindow(QMainWindow):
                         background-color: rgb(63, 63, 97); 
                         border-style: outset; 
                         color: rgb(193, 202, 227); 
+                        font-weight: bold; 
+                    }
+                    QPushButton:pressed {
+                        background-color: rgb(211, 194, 78); 
+                        border-style: inset; 
                         font-weight: bold; 
                     }
                 """)
@@ -556,7 +566,8 @@ class Worker():
             while self.command != 'exit':
 
                 # Start of experiment
-                for k in general.scans(SCANS):
+                k = 1
+                while k <= SCANS:
 
                     i = 0
                     freq = START_FREQ
@@ -598,6 +609,8 @@ class Worker():
                         i += 1
 
                     mw.mw_bridge_synthesizer( START_FREQ )
+
+                    k += 1
 
                 # finish succesfully
                 self.command = 'exit'

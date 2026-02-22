@@ -410,7 +410,7 @@ class MainWindow(QMainWindow):
         self.exp_process.join() 
         self.timer.stop()
         self.progress_bar.setValue(0)
-        self.button_start.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }  ")
+        self.button_start.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; } QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; } ")
         
         if self.exit_clicked == 1:
             sys.exit()
@@ -454,7 +454,7 @@ class MainWindow(QMainWindow):
         self.exp_process = Process( target = worker.exp_test, args = ( self.child_conn, self.cur_offres_field, self.cur_exp_name, self.cur_end_field, self.cur_start_field, self.cur_step, self.cur_ave_offres, self.cur_scan, self.cur_ave, self.cur_num_osc, self.cur_trig_ch, self.save_scan, self.two_side, ) )
             
 
-        self.button_start.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(211, 194, 78); border-style: outset; color: rgb(63, 63, 97); font-weight: bold; } ")
+        self.button_start.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(211, 194, 78); border-style: outset; color: rgb(63, 63, 97); font-weight: bold; } QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
         self.progress_bar.setValue(0)
 
         self.exp_process.start()
@@ -492,6 +492,11 @@ class MainWindow(QMainWindow):
                     color: rgb(193, 202, 227); 
                     font-weight: bold; 
                 }
+                QPushButton:pressed {
+                    background-color: rgb(211, 194, 78); 
+                    border-style: inset; 
+                    font-weight: bold; 
+                }
             """)
         else:
             self.timer.stop()
@@ -504,6 +509,11 @@ class MainWindow(QMainWindow):
                         background-color: rgb(63, 63, 97); 
                         border-style: outset; 
                         color: rgb(193, 202, 227); 
+                        font-weight: bold; 
+                    }
+                    QPushButton:pressed {
+                        background-color: rgb(211, 194, 78); 
+                        border-style: inset; 
                         font-weight: bold; 
                     }
                 """)
@@ -1384,7 +1394,7 @@ class Worker():
                     general.wait('30 ms')
 
                 # Data saving
-                j = 1
+                #j = 1
                 if p9 == 1:
 
                     now = datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")
@@ -1508,7 +1518,7 @@ class Worker():
                     #file_handler.save_header(file_save_2, header = header_2, mode = 'w')
                     #file_handler.save_header(file_save_3, header = header, mode = 'w')
 
-                while j <= SCANS:
+                for j in general.scans(SCANS):
                     if self.command == 'exit':
                         break
 
@@ -1758,7 +1768,7 @@ class Worker():
                             #file_save_j = file_save_1.split('.csv')[0] + f'_{j}_scans.csv'
                             #file_handler.save_data(file_save_j, np.transpose( data[0, :, :] ), header = header)
 
-                    j += 1
+                    #j += 1
 
                 # finish succesfully
                 self.command = 'exit'

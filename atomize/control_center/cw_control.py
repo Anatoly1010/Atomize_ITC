@@ -832,8 +832,8 @@ class Worker():
                 field = itc_fc.magnet_field( START_FIELD )#, calibration = 'True' )
                 sr860.lock_in_sensitivity( p9 )
 
-                j = 1
-                while j <= SCANS:
+                #j = 1
+                for j in general.scans(SCANS):
 
                     i = 0
                     field = START_FIELD
@@ -917,7 +917,7 @@ class Worker():
                             if conn.poll() == True:
                                 self.command = conn.recv()
                     
-                    j += 1
+                    #j += 1
 
                 # finish succesfully
                 self.command = 'exit'
