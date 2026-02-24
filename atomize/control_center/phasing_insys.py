@@ -3616,7 +3616,7 @@ class Worker():
                             #data[0, j] = r_data[0]
                             #data[1, j] = r_data[1]
 
-                            process = general.plot_1d(exp_name, x_axis, ( data[0], data[1] ), xname = 'Time', xscale = 'ns', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Point: ' + str(k) + ' / ' + str(j), pr = process)
+                            process = general.plot_1d(exp_name, x_axis / 1e9, ( data[0], data[1] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Point: ' + str(k) + ' / ' + str(j), pr = process)
 
                             pb.pulser_next_phase()
 
@@ -3652,7 +3652,7 @@ class Worker():
                 tb = round( pb.digitizer_window(), 1)
                 pb.pulser_close()
 
-                general.plot_1d(exp_name, x_axis, ( data[0], data[1] ), xname = 'Time', xscale = 'ns', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Point: ' + str(k) + ' / ' + str(j))
+                general.plot_1d(exp_name, x_axis / 1e9, ( data[0], data[1] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Point: ' + str(k) + ' / ' + str(j))
 
                 now = datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")
                 w = 30
