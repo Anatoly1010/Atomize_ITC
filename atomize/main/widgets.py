@@ -1601,23 +1601,42 @@ class CrossSectionDock(CloseableDock):
 
             self.v_cross_section_widget.cursor_label.border = pg.mkPen((128, 128, 128, 255), width=1.5)
 
-            if plot_data_item.opts['logMode'][0] == True:
-                y = np.log10( ydata[self.y_cross_index] )
-                z = zval
-            elif plot_data_item.opts['logMode'][1] == True:
-                y = ydata[self.y_cross_index]
-                z = np.log10( zval )
-            elif (plot_data_item.opts['logMode'][0]) == True and (plot_data_item.opts['logMode'][1]) == True:
-                y = ydata[self.y_cross_index]
-                z = np.log10( zval )
-            elif (plot_data_item.opts['fftMode'] == True) or (plot_data_item.opts['derivativeMode'] == True) or (plot_data_item.opts['phasemapMode'] == True) or (plot_data_item.opts['subtractMeanMode'] == True):
-                self.v_cross_section_widget.image_operation = 0
-                y = ydata[self.y_cross_index]
-                z = zval
-                self.v_cross_section_widget.cursor_label.border = pg.mkPen((255, 255, 0, 255), width=1.5)
-            else:
-                y = ydata[self.y_cross_index]
-                z = zval
+            try:
+                if plot_data_item.opts['logMode'][0] == True:
+                    y = np.log10( ydata[self.y_cross_index] )
+                    z = zval
+                elif plot_data_item.opts['logMode'][1] == True:
+                    y = ydata[self.y_cross_index]
+                    z = np.log10( zval )
+                elif (plot_data_item.opts['logMode'][0]) == True and (plot_data_item.opts['logMode'][1]) == True:
+                    y = ydata[self.y_cross_index]
+                    z = np.log10( zval )
+                elif (plot_data_item.opts['fftMode'] == True) or (plot_data_item.opts['derivativeMode'] == True) or (plot_data_item.opts['phasemapMode'] == True) or (plot_data_item.opts['subtractMeanMode'] == True):
+                    self.v_cross_section_widget.image_operation = 0
+                    y = ydata[self.y_cross_index]
+                    z = zval
+                    self.v_cross_section_widget.cursor_label.border = pg.mkPen((255, 255, 0, 255), width=1.5)
+                else:
+                    y = ydata[self.y_cross_index]
+                    z = zval
+            except KeyError:
+                if plot_data_item.opts['logMode'][0] == True:
+                    y = np.log10( ydata[self.y_cross_index] )
+                    z = zval
+                elif plot_data_item.opts['logMode'][1] == True:
+                    y = ydata[self.y_cross_index]
+                    z = np.log10( zval )
+                elif (plot_data_item.opts['logMode'][0]) == True and (plot_data_item.opts['logMode'][1]) == True:
+                    y = ydata[self.y_cross_index]
+                    z = np.log10( zval )
+                elif (plot_data_item.opts['fftMode'] == True) or (plot_data_item.opts['derivativeMode'] == True) or (plot_data_item.opts['phasemapMode'] == True):
+                    self.v_cross_section_widget.image_operation = 0
+                    y = ydata[self.y_cross_index]
+                    z = zval
+                    self.v_cross_section_widget.cursor_label.border = pg.mkPen((255, 255, 0, 255), width=1.5)
+                else:
+                    y = ydata[self.y_cross_index]
+                    z = zval
 
             view_range = vb.viewRange()
             x_min, x_max = view_range[0]
@@ -1648,23 +1667,42 @@ class CrossSectionDock(CloseableDock):
 
             self.h_cross_section_widget.cursor_label.border = pg.mkPen((128, 128, 128, 255), width=1.5)
 
-            if plot_data_item.opts['logMode'][0] == True:
-                x = np.log10( xdata[self.x_cross_index] )
-                z = zval
-            elif plot_data_item.opts['logMode'][1] == True:
-                x = xdata[self.x_cross_index]
-                z = np.log10( zval )
-            elif (plot_data_item.opts['logMode'][0]) == True and (plot_data_item.opts['logMode'][1]) == True:
-                x = xdata[self.x_cross_index]
-                z = np.log10( zval )
-            elif (plot_data_item.opts['fftMode'] == True) or (plot_data_item.opts['derivativeMode'] == True) or (plot_data_item.opts['phasemapMode'] == True) or (plot_data_item.opts['subtractMeanMode'] == True):
-                self.h_cross_section_widget.image_operation = 0
-                x = xdata[self.x_cross_index]
-                z = zval
-                self.h_cross_section_widget.cursor_label.border = pg.mkPen((255, 255, 0, 255), width=1.5)
-            else:
-                x = xdata[self.x_cross_index]
-                z = zval
+            try:
+                if plot_data_item.opts['logMode'][0] == True:
+                    x = np.log10( xdata[self.x_cross_index] )
+                    z = zval
+                elif plot_data_item.opts['logMode'][1] == True:
+                    x = xdata[self.x_cross_index]
+                    z = np.log10( zval )
+                elif (plot_data_item.opts['logMode'][0]) == True and (plot_data_item.opts['logMode'][1]) == True:
+                    x = xdata[self.x_cross_index]
+                    z = np.log10( zval )
+                elif (plot_data_item.opts['fftMode'] == True) or (plot_data_item.opts['derivativeMode'] == True) or (plot_data_item.opts['phasemapMode'] == True) or (plot_data_item.opts['subtractMeanMode'] == True):
+                    self.h_cross_section_widget.image_operation = 0
+                    x = xdata[self.x_cross_index]
+                    z = zval
+                    self.h_cross_section_widget.cursor_label.border = pg.mkPen((255, 255, 0, 255), width=1.5)
+                else:
+                    x = xdata[self.x_cross_index]
+                    z = zval
+            except KeyError:
+                if plot_data_item.opts['logMode'][0] == True:
+                    x = np.log10( xdata[self.x_cross_index] )
+                    z = zval
+                elif plot_data_item.opts['logMode'][1] == True:
+                    x = xdata[self.x_cross_index]
+                    z = np.log10( zval )
+                elif (plot_data_item.opts['logMode'][0]) == True and (plot_data_item.opts['logMode'][1]) == True:
+                    x = xdata[self.x_cross_index]
+                    z = np.log10( zval )
+                elif (plot_data_item.opts['fftMode'] == True) or (plot_data_item.opts['derivativeMode'] == True) or (plot_data_item.opts['phasemapMode'] == True):
+                    self.h_cross_section_widget.image_operation = 0
+                    x = xdata[self.x_cross_index]
+                    z = zval
+                    self.h_cross_section_widget.cursor_label.border = pg.mkPen((255, 255, 0, 255), width=1.5)
+                else:
+                    x = xdata[self.x_cross_index]
+                    z = zval
 
             view_range = vb.viewRange()
             x_min, x_max = view_range[0]
