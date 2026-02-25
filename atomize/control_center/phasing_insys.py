@@ -183,7 +183,7 @@ class MainWindow(QMainWindow):
         main_window_layout.addWidget(buttons_widget)
 
         # ---- Labels & Inputs ----
-        labels = [("Start", "label_1"), ("Length", "label_2"), ("Start Increment", "label_3"), ("Length Increment", "label_4"), ("Type", "label_5"), ("Phase", "label_6"), ("Repetition Rate", "label_7"), ("Magnetic Field", "label_8"), ("Experiment Progress", "label_p1")]
+        labels = [("Start", "label_1"), ("Length", "label_2"), ("Start Increment", "label_3"), ("Length Increment", "label_4"), ("Type", "label_5"), ("Phase", "label_6"), ("Repetition Rate", "label_7"), ("Magnetic Field", "label_8"), ("Progress", "label_p1")]
 
         for name, attr_name in labels:
             lbl = QLabel(name)
@@ -2723,14 +2723,14 @@ class Worker():
                             #data[0, j] = r_data[0]
                             #data[1, j] = r_data[1]
                             
+                            pb.pulser_next_phase()
+
                             if step != 1:
                                 process = general.plot_1d(exp_name, x_axis / 1e9, ( data[0], data[1] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j*STEP, 1)), pr = process)
                             else:
                                 process = general.plot_1d(exp_name, x_axis, ( data[0], data[1] ), xname = 'Point', xscale = '', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j, 1)), pr = process)
 
-                                pb.pulser_next_phase()
-
-                                data[0], data[1] = pb.digitizer_get_curve( POINTS, PHASES, current_scan = k, total_scan = SCANS, integral = True )
+                            data[0], data[1] = pb.digitizer_get_curve( POINTS, PHASES, current_scan = k, total_scan = SCANS, integral = True )
 
                         pb.pulser_shift()
                         pb.pulser_increment()
@@ -2748,6 +2748,11 @@ class Worker():
                         if conn.poll() == True:
                             self.command = conn.recv()
 
+                    if step != 1:
+                        general.plot_1d(exp_name, x_axis / 1e9, ( data[0], data[1] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j*STEP, 1)))
+                    else:
+                        general.plot_1d(exp_name, x_axis, ( data[0], data[1] ), xname = 'Point', xscale = '', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j, 1)))
+
                     pb.pulser_pulse_reset()
                     k += 1
 
@@ -2764,7 +2769,7 @@ class Worker():
 
                 now = datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")
                 w = 30
-
+                
                 # Data saving
                 header = (
                     f"{'Date:':<{w}} {now}\n"
@@ -2944,13 +2949,13 @@ class Worker():
                     for j in range(POINTS):
                         for i in range(PHASES):
                             
+                            pb.pulser_next_phase()
+
                             ##data = np.random.random( ( 2, POINTS ) )
                             if step != 1:
                                 process = general.plot_1d(exp_name, x_axis / 1e9, ( data[0], data[1] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j*STEP, 1)), pr = process)
                             else:
                                 process = general.plot_1d(exp_name, x_axis, ( data[0], data[1] ), xname = 'Point', xscale = '', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j, 1)), pr = process)
-
-                            pb.pulser_next_phase()
 
                             data[0], data[1] = pb.digitizer_get_curve( POINTS, PHASES, current_scan = k, total_scan = SCANS, integral = True )
 
@@ -2969,6 +2974,11 @@ class Worker():
                         
                         if conn.poll() == True:
                             self.command = conn.recv()
+
+                    if step != 1:
+                        general.plot_1d(exp_name, x_axis / 1e9, ( data[0], data[1] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j*STEP, 1)))
+                    else:
+                        general.plot_1d(exp_name, x_axis, ( data[0], data[1] ), xname = 'Point', xscale = '', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j, 1)))
 
                     pb.pulser_pulse_reset()
 
@@ -3184,6 +3194,8 @@ class Worker():
                         
                         if conn.poll() == True:
                             self.command = conn.recv()
+
+                    general.plot_1d(exp_name, x_axis, ( data[0], data[1] ), xname = 'Field', xscale = 'G', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Field: ' + str(k) + ' / ' + str(field))
 
                     pb.pulser_pulse_reset()
 
@@ -3404,6 +3416,8 @@ class Worker():
                         
                         if conn.poll() == True:
                             self.command = conn.recv()
+
+                    general.plot_1d(exp_name, x_axis, ( data[0], data[1] ), xname = 'Field', xscale = 'G', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Field: ' + str(k) + ' / ' + str(field))
 
                     pb.pulser_pulse_reset()
 
@@ -3643,6 +3657,8 @@ class Worker():
                         
                         if conn.poll() == True:
                             self.command = conn.recv()
+
+                    general.plot_1d(exp_name, x_axis / 1e9, ( data[0], data[1] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Point: ' + str(k) + ' / ' + str(j))
 
                     pb.pulser_pulse_reset()
 
@@ -3886,6 +3902,8 @@ class Worker():
                         if conn.poll() == True:
                             self.command = conn.recv()
 
+                    general.plot_1d(exp_name, x_axis / 1e9, ( data[0], data[1] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Point: ' + str(k) + ' / ' + str(j))
+                    
                     pb.pulser_pulse_reset()
 
                 self.command = 'exit'

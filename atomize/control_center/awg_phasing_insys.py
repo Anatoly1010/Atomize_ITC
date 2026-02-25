@@ -188,7 +188,7 @@ class MainWindow(QMainWindow):
         main_window_layout.addWidget(buttons_widget)
 
         # ---- Labels & Inputs ----
-        labels = [("Start", "label_1"), ("Length", "label_2"), ("Sigma", "label_3"), ("Start Increment", "label_4"), ("Length Increment", "label_5"), ("Frequency", "label_6"), ("Frequency Sweep", "label_7"), ("Amplitude", "label_8"), ("Phase", "label_9"), ("Type", "label_10"), ("Repetition Rate", "label_11"), ("Magnetic Field", "label_12"), ("Experiment Progress", "label_p1")]
+        labels = [("Start", "label_1"), ("Length", "label_2"), ("Sigma", "label_3"), ("Start Increment", "label_4"), ("Length Increment", "label_5"), ("Frequency", "label_6"), ("Frequency Sweep", "label_7"), ("Amplitude", "label_8"), ("Phase", "label_9"), ("Type", "label_10"), ("Repetition Rate", "label_11"), ("Magnetic Field", "label_12"), ("Progress", "label_p1")]
 
         for name, attr_name in labels:
             lbl = QLabel(name)
@@ -3500,17 +3500,18 @@ class Worker():
                                     pr = process
                                 )
 
-                                pb.awg_next_phase()
-                                pb.pulser_update()
+                            pb.awg_next_phase()
+                            pb.pulser_update()
 
-                                data[0], data[1] = pb.digitizer_get_curve( 
-                                    POINTS, 
-                                    PHASES, 
-                                    current_scan = k, 
-                                    total_scan = SCANS ) 
+                            data[0], data[1] = pb.digitizer_get_curve( 
+                                POINTS, 
+                                PHASES, 
+                                current_scan = k, 
+                                total_scan = SCANS ) 
 
                         pb.pulser_shift()
                         pb.pulser_increment()
+
                         if increment == 1:
                             pb.awg_increment()
                         else:
@@ -3528,6 +3529,34 @@ class Worker():
                         
                         if conn.poll() == True:
                             self.command = conn.recv()
+
+
+                    if step != 1:
+                        general.plot_2d(
+                            EXP_NAME, 
+                            data, 
+                            start_step = ((0, 0.4 * DEC_COEF / 1e9), (0, STEP / 1e9)), 
+                            xname = 'Time', 
+                            xscale = 's', 
+                            yname = 'Delay', 
+                            yscale = 's', 
+                            zname = 'Intensity', 
+                            zscale = 'mV', 
+                            text = f"Scan / Time: {k} / {j * STEP:.1f}"
+                        )
+                    else:
+                        general.plot_2d(
+                            EXP_NAME, 
+                            data, 
+                            start_step = ((0, 0.4 * DEC_COEF / 1e9), (0, 1)), 
+                            xname = 'Time', 
+                            xscale = 's', 
+                            yname = 'Point', 
+                            yscale = '', 
+                            zname = 'Intensity', 
+                            zscale = 'mV', 
+                            text = f"Scan / Time: {k} / {j * STEP:.1f}"
+                        )
 
                     pb.pulser_pulse_reset()
                     if increment == 1:
@@ -3937,6 +3966,33 @@ class Worker():
                         if conn.poll() == True:
                             self.command = conn.recv()
 
+                    if step != 1:
+                        general.plot_2d(
+                            EXP_NAME, 
+                            data, 
+                            start_step = ((0, 0.4 * DEC_COEF / 1e9), (0, STEP / 1e9)), 
+                            xname = 'Time', 
+                            xscale = 's', 
+                            yname = 'Delay', 
+                            yscale = 's', 
+                            zname = 'Intensity', 
+                            zscale = 'mV', 
+                            text = f"Scan / Time: {k} / {j * STEP:.1f}"
+                        )
+                    else:
+                        general.plot_2d(
+                            EXP_NAME, 
+                            data, 
+                            start_step = ((0, 0.4 * DEC_COEF / 1e9), (0, 1)), 
+                            xname = 'Time', 
+                            xscale = 's', 
+                            yname = 'Point', 
+                            yscale = '', 
+                            zname = 'Intensity', 
+                            zscale = 'mV', 
+                            text = f"Scan / Time: {k} / {j * STEP:.1f}"
+                        )
+
                     pb.pulser_pulse_reset()
                     if increment == 1:
                         pb.awg_pulse_reset()
@@ -4310,6 +4366,19 @@ class Worker():
                         if conn.poll() == True:
                             self.command = conn.recv()
 
+                    general.plot_2d(
+                        EXP_NAME, 
+                        data, 
+                        start_step = ((0, 0.4 * DEC_COEF / 1e9), (START_FIELD, FIELD_STEP)), 
+                        xname = 'Time', 
+                        xscale = 's', 
+                        yname = 'Field', 
+                        yscale = 'G', 
+                        zname = 'Intensity', 
+                        zscale = 'mV', 
+                        text = f"Scan / Field: {k} / {field}",
+                    )
+
                     pb.pulser_pulse_reset()
                     k += 1
 
@@ -4373,7 +4442,13 @@ class Worker():
                             break
                     general.wait('200 ms')
 
-                file_handler.save_data(file_data, np.c_[x_axis, data[0], data[1]], header = header, mode = 'w')
+
+                file_handler.save_data(
+                    file_data, 
+                    data, 
+                    header = header, 
+                    mode = 'w'
+                )
 
                 conn.send( ('', f'Experiment {exp_name} finished') )
 
@@ -4675,6 +4750,18 @@ class Worker():
                         
                         if conn.poll() == True:
                             self.command = conn.recv()
+                    general.plot_2d(
+                        EXP_NAME, 
+                        data, 
+                        start_step = ((0, 0.4 * DEC_COEF / 1e9), (START_FIELD, FIELD_STEP)), 
+                        xname = 'Time', 
+                        xscale = 's', 
+                        yname = 'Field', 
+                        yscale = 'G', 
+                        zname = 'Intensity', 
+                        zscale = 'mV', 
+                        text = f"Scan / Field: {k} / {field}"
+                    )
 
                     pb.pulser_pulse_reset()
 
@@ -4739,7 +4826,12 @@ class Worker():
                 #    general.wait('200 ms')
 
 
-                #file_handler.save_data(file_data, np.c_[x_axis, data[0], data[1]], header = header, mode = 'w')
+                #file_handler.save_data(
+                #    file_data, 
+                #    data, 
+                #    header = header, 
+                #    mode = 'w'
+                #)
 
                 conn.send( ('test', f'') )
 
@@ -5093,6 +5185,19 @@ class Worker():
                         if conn.poll() == True:
                             self.command = conn.recv()
 
+                    general.plot_2d(
+                        EXP_NAME, 
+                        data, 
+                        start_step = ((0, 0.4 * DEC_COEF / 1e9), (0, 1)), 
+                        xname = 'Time', 
+                        xscale = 's', 
+                        yname = 'Point', 
+                        yscale = '', 
+                        zname = 'Intensity', 
+                        zscale = 'mV', 
+                        text = f"Scan / Point: {k} / {j}",
+                        pr = process
+                    )
                     pb.pulser_pulse_reset()
 
                 self.command = 'exit'
@@ -5155,7 +5260,13 @@ class Worker():
                             break
                     general.wait('200 ms')
 
-                file_handler.save_data(file_data, np.c_[x_axis, data[0], data[1]], header = header, mode = 'w')
+
+                file_handler.save_data(
+                    file_data, 
+                    data, 
+                    header = header, 
+                    mode = 'w'
+                )
 
                 conn.send( ('', f'Experiment {exp_name} finished') )
 
@@ -5514,6 +5625,20 @@ class Worker():
                         if conn.poll() == True:
                             self.command = conn.recv()
 
+                    general.plot_2d(
+                        EXP_NAME, 
+                        data, 
+                        start_step = ((0, 0.4 * DEC_COEF / 1e9), (0, 1)), 
+                        xname = 'Time', 
+                        xscale = 's', 
+                        yname = 'Point', 
+                        yscale = '', 
+                        zname = 'Intensity', 
+                        zscale = 'mV', 
+                        text = f"Scan / Point: {k} / {j}",
+                        pr = process
+                    )
+                    
                     pb.pulser_pulse_reset()
 
                 self.command = 'exit'
@@ -5577,7 +5702,12 @@ class Worker():
                 #    general.wait('200 ms')
 
 
-                #file_handler.save_data(file_data, np.c_[x_axis, data[0], data[1]], header = header, mode = 'w')
+                #file_handler.save_data(
+                #    file_data, 
+                #    data, 
+                #    header = header, 
+                #    mode = 'w'
+                #)
 
                 conn.send( ('test', f'') )
 

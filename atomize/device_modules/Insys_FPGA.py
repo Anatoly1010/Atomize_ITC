@@ -210,14 +210,6 @@ class Insys_FPGA:
         self.amplitude_max_awg = 260 # mV
         self.amplitude_min_awg = 1 # mV
 
-        # for phase cycling
-        self.phase_map = {
-            '+':  1 + 0j,  '+x':  1 + 0j,
-            '-': -1 + 0j,  '-x': -1 + 0j,
-            '+i': 0 + 1j,  '+y': 0 + 1j,
-            '-i': 0 - 1j,  '-y': 0 - 1j
-        }
-
         ####################ADC################################################################################
         if self.test_flag != 'test':
             self.sample_rate_adc = 2500 # MHz
@@ -1769,17 +1761,16 @@ class Insys_FPGA:
             if self.n_scans > 1:
                 self.answer[(i//phases):(j//phases),:] = np.zeros( ( points_to_cycle_ph, counts_adc ), dtype = np.complex64 )
 
-            #Phase-cycling
-            coeffs = np.array([self.phase_map[target] for target in acq_cycle], dtype=np.complex128)
-            raw_complex = data_i + 1j * data_q
 
-
-            num_samples = len(raw_complex) // phases
-            reshaped_data = raw_complex.reshape(num_samples, phases)
-            accumulated = np.sum(reshaped_data * coeffs[:phases], axis=1)
-
-            target_range = slice(i // phases, j // phases)
-            self.answer[target_range, :] += accumulated[:, np.newaxis]
+            for index, element in enumerate(acq_cycle):
+                if element == '+' or element == '+x':
+                    self.answer[(i//phases):(j//phases),:] += (data_i)[index::phases] + 1j*(data_q)[index::phases]
+                elif element == '-' or element == '-x':
+                    self.answer[(i//phases):(j//phases),:] += -(data_i)[index::phases] - 1j*(data_q)[index::phases]
+                elif element == '+i' or element == '+y':
+                    self.answer[(i//phases):(j//phases),:] += 1j*(data_i)[index::phases] - (data_q)[index::phases]
+                elif element == '-i' or element == '-y':
+                    self.answer[(i//phases):(j//phases),:] += -1j*(data_i)[index::phases] + (data_q)[index::phases]
 
             ## NO LAST POINT IN SCANS
             if (i == 0) and (self.n_scans > 1) and (k == 0):
@@ -1816,20 +1807,19 @@ class Insys_FPGA:
                 if (self.n_scans - 1 ) > 1:
                     self.answer[(i//phases):(j//phases),:] = np.zeros( ( points_to_cycle_ph, counts_adc ), dtype = np.complex64 )
 
-                #Phase-cycling
-                coeffs = np.array([self.phase_map[target] for target in acq_cycle], dtype=np.complex128)
-                raw_complex = data_i + 1j * data_q
+                for index, element in enumerate(acq_cycle):
+                    if element == '+' or element == '+x':
+                        self.answer[(i//phases):(j//phases),:] += (data_i)[index::phases] + 1j*(data_q)[index::phases]
+                    elif element == '-' or element == '-x':
+                        self.answer[(i//phases):(j//phases),:] += -(data_i)[index::phases] - 1j*(data_q)[index::phases]
+                    elif element == '+i' or element == '+y':
+                        self.answer[(i//phases):(j//phases),:] += 1j*(data_i)[index::phases] - (data_q)[index::phases]
+                    elif element == '-i' or element == '-y':
+                        self.answer[(i//phases):(j//phases),:] += -1j*(data_i)[index::phases] + (data_q)[index::phases]
 
 
-                num_samples = len(raw_complex) // phases
-                reshaped_data = raw_complex.reshape(num_samples, phases)
-                accumulated = np.sum(reshaped_data * coeffs[:phases], axis=1)
-
-                target_range = slice(i // phases, j // phases)
-                self.answer[target_range, :] += accumulated[:, np.newaxis]
-
-                self.nid_pc_prev_no_reset = self.nid_prev - (self.nid_prev % phases)
-                self.nid_pc_prev = self.nid_prev - (self.nid_prev % phases)
+            self.nid_pc_prev_no_reset = self.nid_prev - (self.nid_prev % phases)
+            self.nid_pc_prev = self.nid_prev - (self.nid_prev % phases)
 
             k = 0
 
