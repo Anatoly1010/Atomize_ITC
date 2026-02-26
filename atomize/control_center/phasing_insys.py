@@ -99,6 +99,11 @@ class MainWindow(QMainWindow):
 
         self.tab_pulse.setTabShape(QTabWidget.TabShape.Rounded)
         self.tab_pulse.setStyleSheet("""
+            QTabWidget::pane {
+                border: 1px solid rgb(43, 43, 77); 
+                top: -1px; 
+                background: rgb(63, 63, 97);
+            }
             QTabBar::tab { 
                 width: 151px; 
                 height: 25px;
