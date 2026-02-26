@@ -551,7 +551,7 @@ class MainWindow(QMainWindow):
                     setattr(self, par_name, float(spin_box.value()))
 
         # ---- Text Edits ----
-        text_edit = [("EXP", "text_edit_exp_name", "cur_exp_name", self.exp_name),
+        text_edit = [("E_AWG", "text_edit_exp_name", "cur_exp_name", self.exp_name),
                      ("c1", "text_edit_curve", "cur_curve_name", self.curve_name)
                     ]
 
@@ -622,13 +622,13 @@ class MainWindow(QMainWindow):
 
         left_grid.addWidget(self.label_e3, 8, 0)
         left_grid.addWidget(self.text_edit_exp_name, 8, 1)
-        left_grid.addWidget(self.label_e4, 9, 0)
-        left_grid.addWidget(self.text_edit_curve, 9, 1)
+        #left_grid.addWidget(self.label_e4, 9, 0)
+        #left_grid.addWidget(self.text_edit_curve, 9, 1)
 
-        left_grid.addWidget(hline(), 10, 0, 1, 2)
+        left_grid.addWidget(hline(), 9, 0, 1, 2)
 
-        left_grid.setRowStretch(11, 1)
-        left_grid.setColumnStretch(11, 1)
+        left_grid.setRowStretch(10, 1)
+        left_grid.setColumnStretch(10, 1)
 
         right_grid = QGridLayout()
         right_grid.setVerticalSpacing(4)
@@ -3530,34 +3530,6 @@ class Worker():
                         if conn.poll() == True:
                             self.command = conn.recv()
 
-
-                    if step != 1:
-                        general.plot_2d(
-                            EXP_NAME, 
-                            data, 
-                            start_step = ((0, 0.4 * DEC_COEF / 1e9), (0, STEP / 1e9)), 
-                            xname = 'Time', 
-                            xscale = 's', 
-                            yname = 'Delay', 
-                            yscale = 's', 
-                            zname = 'Intensity', 
-                            zscale = 'mV', 
-                            text = f"Scan / Time: {k} / {j * STEP:.1f}"
-                        )
-                    else:
-                        general.plot_2d(
-                            EXP_NAME, 
-                            data, 
-                            start_step = ((0, 0.4 * DEC_COEF / 1e9), (0, 1)), 
-                            xname = 'Time', 
-                            xscale = 's', 
-                            yname = 'Point', 
-                            yscale = '', 
-                            zname = 'Intensity', 
-                            zscale = 'mV', 
-                            text = f"Scan / Time: {k} / {j * STEP:.1f}"
-                        )
-
                     pb.pulser_pulse_reset()
                     if increment == 1:
                         pb.awg_pulse_reset()
@@ -3966,32 +3938,6 @@ class Worker():
                         if conn.poll() == True:
                             self.command = conn.recv()
 
-                    if step != 1:
-                        general.plot_2d(
-                            EXP_NAME, 
-                            data, 
-                            start_step = ((0, 0.4 * DEC_COEF / 1e9), (0, STEP / 1e9)), 
-                            xname = 'Time', 
-                            xscale = 's', 
-                            yname = 'Delay', 
-                            yscale = 's', 
-                            zname = 'Intensity', 
-                            zscale = 'mV', 
-                            text = f"Scan / Time: {k} / {j * STEP:.1f}"
-                        )
-                    else:
-                        general.plot_2d(
-                            EXP_NAME, 
-                            data, 
-                            start_step = ((0, 0.4 * DEC_COEF / 1e9), (0, 1)), 
-                            xname = 'Time', 
-                            xscale = 's', 
-                            yname = 'Point', 
-                            yscale = '', 
-                            zname = 'Intensity', 
-                            zscale = 'mV', 
-                            text = f"Scan / Time: {k} / {j * STEP:.1f}"
-                        )
 
                     pb.pulser_pulse_reset()
                     if increment == 1:
@@ -4366,18 +4312,6 @@ class Worker():
                         if conn.poll() == True:
                             self.command = conn.recv()
 
-                    general.plot_2d(
-                        EXP_NAME, 
-                        data, 
-                        start_step = ((0, 0.4 * DEC_COEF / 1e9), (START_FIELD, FIELD_STEP)), 
-                        xname = 'Time', 
-                        xscale = 's', 
-                        yname = 'Field', 
-                        yscale = 'G', 
-                        zname = 'Intensity', 
-                        zscale = 'mV', 
-                        text = f"Scan / Field: {k} / {field}",
-                    )
 
                     pb.pulser_pulse_reset()
                     k += 1
@@ -4770,18 +4704,6 @@ class Worker():
             if self.command == 'exit':
                 pb.pulser_close()
 
-                general.plot_2d(
-                    EXP_NAME, 
-                    data, 
-                    start_step = ((0, 0.4 * DEC_COEF / 1e9), (START_FIELD, FIELD_STEP)), 
-                    xname = 'Time', 
-                    xscale = 's', 
-                    yname = 'Field', 
-                    yscale = 'G', 
-                    zname = 'Intensity', 
-                    zscale = 'mV', 
-                    text = f"Scan / Field: {k} / {field}"
-                    )
 
                 now = datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")
                 w = 30
@@ -4852,6 +4774,7 @@ class Worker():
 
         try:
             import time
+            import textwrap
             import datetime
             import numpy as np
             import atomize.general_modules.general_functions as general
@@ -5139,7 +5062,8 @@ class Worker():
                     for j in range(POINTS):
                         for i in range(PHASES):
 
-                            process = general.plot_2d(
+                            #process = 
+                            general.plot_2d(
                                 EXP_NAME, 
                                 data, 
                                 start_step = ((0, 0.4 * DEC_COEF / 1e9), (0, 1)), 
@@ -5149,8 +5073,7 @@ class Worker():
                                 yscale = '', 
                                 zname = 'Intensity', 
                                 zscale = 'mV', 
-                                text = f"Scan / Point: {k} / {j}",
-                                pr = process
+                                text = f"Scan / Point: {k} / {j}"
                             )
 
                             pb.awg_next_phase()
@@ -5166,8 +5089,8 @@ class Worker():
                         if j > 0:
                             new_delta_start = nonlinear_time[j] - nonlinear_time[j-1]
 
-                            for i, names in enumerate(name_list):
-                                pb.pulser_redefine_delta_start(name = names, delta_start = f"{self.round_to_closest( new_delta_start * rel_shift[i], 3.2 )} ns")
+                            delta_starts = [f"{self.round_to_closest(x * new_delta_start, 3.2)} ns" for x in rel_shift]
+                            pb.pulser_redefine_delta_start(name = name_list, delta_start = delta_starts )
 
                         pb.pulser_shift()
                         pb.awg_pulse_reset()
@@ -5185,19 +5108,7 @@ class Worker():
                         if conn.poll() == True:
                             self.command = conn.recv()
 
-                    general.plot_2d(
-                        EXP_NAME, 
-                        data, 
-                        start_step = ((0, 0.4 * DEC_COEF / 1e9), (0, 1)), 
-                        xname = 'Time', 
-                        xscale = 's', 
-                        yname = 'Point', 
-                        yscale = '', 
-                        zname = 'Intensity', 
-                        zscale = 'mV', 
-                        text = f"Scan / Point: {k} / {j}",
-                        pr = process
-                    )
+
                     pb.pulser_pulse_reset()
 
                 self.command = 'exit'
@@ -5222,6 +5133,23 @@ class Worker():
                 w = 30
 
                 # Data saving
+                max_val_len = len(f"{max(x_axis):.1f}")
+                col_width = max_val_len + 2 
+                
+                cols_per_line = 6
+
+                formatted_values = [f"{val:<{col_width}.1f}" for val in x_axis]
+
+                rows = []
+                for i in range(0, len(formatted_values), cols_per_line):
+                    rows.append("".join(formatted_values[i : i + cols_per_line]))
+
+                first_row = rows[0]
+                indent = " " * (w + 1)
+                other_rows = f"\n{indent}".join(rows[1:])
+
+                v_res_formatted = f"{first_row}\n{indent}{other_rows}" if other_rows else first_row
+
                 header = (
                     f"{'Date:':<{w}} {now}\n"
                     f"{'Experiment:':<{w}} Pulsed EPR AWG Log Experiment\n"
@@ -5237,9 +5165,9 @@ class Worker():
                     f"{'Points:':<{w}} {POINTS}\n"
                     f"{'Window:':<{w}} {p1_exp[2]}\n"
                     f"{'Horizontal Resolution:':<{w}} {0.4 * DEC_COEF:.1g} ns\n"
-                    f"{'Vertical Resolution:':<{w}} {x_axis} ns\n"
-                    f"{'Vertical Resolution, Log[T Start]:':<{w}} {T_start}\n"
-                    f"{'Vertical Resolution, Log[T End]:':<{w}} {T_end}\n"
+                    f"{'Vertical Resolution (ns):':<{w}} {v_res_formatted}\n"
+                    f"{'Log[T Start]:':<{w}} {T_start}\n"
+                    f"{'Log[T End]:':<{w}} {T_end}\n"
                     f"{'Temperature:':<{w}} {ls335.tc_temperature('A')} K\n"
                     f"{'Temperature Cernox:':<{w}} {ls335.tc_temperature('B')} K\n"
                     f"{'-'*50}\n"
@@ -5289,6 +5217,7 @@ class Worker():
 
         try:
             import time
+            import textwrap
             import datetime
             import numpy as np
             import atomize.general_modules.general_functions as general
@@ -5606,8 +5535,8 @@ class Worker():
                         if j > 0:
                             new_delta_start = nonlinear_time[j] - nonlinear_time[j-1]
 
-                            for i, names in enumerate(name_list):
-                                pb.pulser_redefine_delta_start(name = names, delta_start = f"{self.round_to_closest( new_delta_start * rel_shift[i], 3.2 )} ns")
+                            delta_starts = [f"{self.round_to_closest(x * new_delta_start, 3.2)} ns" for x in rel_shift]
+                            pb.pulser_redefine_delta_start(name = name_list, delta_start = delta_starts )
 
                         pb.pulser_shift()
                         pb.awg_pulse_reset()
@@ -5625,19 +5554,6 @@ class Worker():
                         if conn.poll() == True:
                             self.command = conn.recv()
 
-                    general.plot_2d(
-                        EXP_NAME, 
-                        data, 
-                        start_step = ((0, 0.4 * DEC_COEF / 1e9), (0, 1)), 
-                        xname = 'Time', 
-                        xscale = 's', 
-                        yname = 'Point', 
-                        yscale = '', 
-                        zname = 'Intensity', 
-                        zscale = 'mV', 
-                        text = f"Scan / Point: {k} / {j}",
-                        pr = process
-                    )
                     
                     pb.pulser_pulse_reset()
 
@@ -5663,6 +5579,23 @@ class Worker():
                 w = 30
 
                 # Data saving
+                # Data saving
+                max_val_len = len(f"{max(x_axis):.1f}")
+                col_width = max_val_len + 2 
+                cols_per_line = 6
+
+                formatted_values = [f"{val:<{col_width}.1f}" for val in x_axis]
+
+                rows = []
+                for i in range(0, len(formatted_values), cols_per_line):
+                    rows.append("".join(formatted_values[i : i + cols_per_line]))
+
+                first_row = rows[0]
+                indent = " " * (w + 1)
+                other_rows = f"\n{indent}".join(rows[1:])
+
+                v_res_formatted = f"{first_row}\n{indent}{other_rows}" if other_rows else first_row
+
                 header = (
                     f"{'Date:':<{w}} {now}\n"
                     f"{'Experiment:':<{w}} Pulsed EPR AWG Log Experiment\n"
@@ -5678,9 +5611,9 @@ class Worker():
                     f"{'Points:':<{w}} {POINTS}\n"
                     f"{'Window:':<{w}} {p1_exp[2]}\n"
                     f"{'Horizontal Resolution:':<{w}} {0.4 * DEC_COEF:.1g} ns\n"
-                    f"{'Vertical Resolution:':<{w}} {x_axis} ns\n"
-                    f"{'Vertical Resolution, Log[T Start]:':<{w}} {T_start}\n"
-                    f"{'Vertical Resolution, Log[T End]:':<{w}} {T_end}\n"
+                    f"{'Vertical Resolution (ns):':<{w}} {v_res_formatted}\n"
+                    f"{'Log[T Start]:':<{w}} {T_start}\n"
+                    f"{'Log[T End]:':<{w}} {T_end}\n"
                     f"{'Temperature:':<{w}} {ls335.tc_temperature('A')} K\n"
                     f"{'Temperature Cernox:':<{w}} {ls335.tc_temperature('B')} K\n"
                     f"{'-'*50}\n"

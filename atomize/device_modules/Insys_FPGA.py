@@ -780,6 +780,7 @@ class Insys_FPGA:
 
                 i += 1
 
+    #update!
     def pulser_redefine_delta_start(self, *, name, delta_start):
         """
         A function for redefining delta_start of the specified pulse.
@@ -790,52 +791,62 @@ class Insys_FPGA:
         """
 
         if self.test_flag != 'test':
-            i = 0
+            names_list = [name] if isinstance(name, str) else name
+            delta_starts_list = [delta_start] if isinstance(delta_start, str) else delta_start
 
-            while i < len( self.pulse_array_pulser ):
-                if name == self.pulse_array_pulser[i]['name']:
-                    temp_delta_start = delta_start.split(" ")
-                    if temp_delta_start[1] in self.timebase_dict:
-                        coef = self.timebase_dict[temp_delta_start[1]]
-                        p_delta_start_raw = coef*float(temp_delta_start[0])
-                        p_delta_start = self.round_to_closest(p_delta_start_raw, 3.2)
-                        if p_delta_start != p_delta_start_raw:
-                            general.message(f"Pulse Delta start of {p_delta_start_raw} is not divisible by 3.2. The closest available Pulse Delta start of {p_delta_start} ns is used")
+            for name, d_start in zip(names_list, delta_starts_list):
 
-                    self.pulse_array_pulser[i]['delta_start'] = str(p_delta_start) + ' ns'
-                    self.shift_count_pulser = 1
-                else:
-                    pass
+                temp_delta_start = d_start.split(" ")
+                if len(temp_delta_start) < 2 or temp_delta_start[1] not in self.timebase_dict:
+                    continue
+                
+                coef = self.timebase_dict[temp_delta_start[1]]
+                p_delta_start_raw = coef * float(temp_delta_start[0])
+                p_delta_start = self.round_to_closest(p_delta_start_raw, 3.2)
+                
+                if p_delta_start != p_delta_start_raw:
+                    general.message(f"Pulse Delta start of {p_delta_start_raw} is not divisible by 3.2. The closest available {p_delta_start} ns is used")
+                
 
-                i += 1
+                for i, pulse in enumerate(self.pulse_array_pulser):
+                    if pulse['name'] == name:
+                        new_val = f"{p_delta_start} ns"
+                        pulse['delta_start'] = new_val
+                        self.shift_count_pulser = 1
+
+                        if pulse['channel'] == 'TRIGGER_AWG' and i > 0:
+                            self.pulse_array_pulser[i-1]['delta_start'] = new_val
 
         elif self.test_flag == 'test':
-            i = 0
-            assert( name in self.pulse_name_array_pulser ), 'Pulse with the specified name is not defined'
+            
+            names_list = [name] if isinstance(name, str) else name
+            delta_starts_list = [delta_start] if isinstance(delta_start, str) else delta_start
 
-            while i < len( self.pulse_array_pulser ):
-                if name == self.pulse_array_pulser[i]['name']:
+            for name, d_start in zip(names_list, delta_starts_list):
+                assert( name in self.pulse_name_array_pulser ), 'Pulse with the specified name is not defined'
 
-                    # checks
-                    temp_delta_start = delta_start.split(" ")
-                    if temp_delta_start[1] in self.timebase_dict:
-                        coef = self.timebase_dict[temp_delta_start[1]]
-                        p_delta_start_raw = coef*float(temp_delta_start[0])
-                        p_delta_start = self.round_to_closest(p_delta_start_raw, 3.2)
-                        if p_delta_start != p_delta_start_raw:
-                            general.message(f"Pulse Delta start is not divisible by 3.2. The closest available Pulse Delta start of {p_delta_start} ns is used")
+                temp_delta_start = d_start.split(" ")
+                if len(temp_delta_start) < 2 or temp_delta_start[1] not in self.timebase_dict:
+                    assert( 1 == 2 ), 'Incorrect time dimension (s, ms, us, ns)'
+                
+                coef = self.timebase_dict[temp_delta_start[1]]
+                p_delta_start_raw = coef * float(temp_delta_start[0])
+                p_delta_start = self.round_to_closest(p_delta_start_raw, 3.2)
+                
+                if p_delta_start != p_delta_start_raw:
+                    general.message(f"Pulse Delta start of {p_delta_start_raw} is not divisible by 3.2. The closest available {p_delta_start} ns is used")
+                
+                assert(round(remainder(p_delta_start, 3.2), 2) == 0), 'Pulse delta start should be divisible by 3.2'
+                assert(p_delta_start >= 0), 'Pulse delta start is a negative number'
 
-                        assert(round(remainder(p_delta_start, 3.2), 2) == 0), 'Pulse delta start should be divisible by 3.2'
-                        assert(p_delta_start >= 0), 'Pulse delta start is a negative number'
-                    else:
-                        assert( 1 == 2 ), 'Incorrect time dimension (s, ms, us, ns)'
+                for i, pulse in enumerate(self.pulse_array_pulser):
+                    if pulse['name'] == name:
+                        new_val = f"{p_delta_start} ns"
+                        pulse['delta_start'] = new_val
+                        self.shift_count_pulser = 1
 
-                    self.pulse_array_pulser[i]['delta_start'] = str(p_delta_start) + ' ns'
-                    self.shift_count_pulser = 1
-                else:
-                    pass
-
-                i += 1
+                        if pulse['channel'] == 'TRIGGER_AWG' and i > 0:
+                            self.pulse_array_pulser[i-1]['delta_start'] = new_val
 
     def pulser_redefine_length_increment(self, *, name, length_increment):
         """

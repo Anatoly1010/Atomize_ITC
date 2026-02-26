@@ -2726,9 +2726,9 @@ class Worker():
                             pb.pulser_next_phase()
 
                             if step != 1:
-                                process = general.plot_1d(exp_name, x_axis / 1e9, ( data[0], data[1] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j*STEP, 1)), pr = process)
+                                general.plot_1d(exp_name, x_axis / 1e9, ( data[0], data[1] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j*STEP, 1)))
                             else:
-                                process = general.plot_1d(exp_name, x_axis, ( data[0], data[1] ), xname = 'Point', xscale = '', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j, 1)), pr = process)
+                                general.plot_1d(exp_name, x_axis, ( data[0], data[1] ), xname = 'Point', xscale = '', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j, 1)))
 
                             data[0], data[1] = pb.digitizer_get_curve( POINTS, PHASES, current_scan = k, total_scan = SCANS, integral = True )
 
@@ -2747,11 +2747,6 @@ class Worker():
                         
                         if conn.poll() == True:
                             self.command = conn.recv()
-
-                    if step != 1:
-                        general.plot_1d(exp_name, x_axis / 1e9, ( data[0], data[1] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j*STEP, 1)))
-                    else:
-                        general.plot_1d(exp_name, x_axis, ( data[0], data[1] ), xname = 'Point', xscale = '', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j, 1)))
 
                     pb.pulser_pulse_reset()
                     k += 1
@@ -2953,9 +2948,9 @@ class Worker():
 
                             ##data = np.random.random( ( 2, POINTS ) )
                             if step != 1:
-                                process = general.plot_1d(exp_name, x_axis / 1e9, ( data[0], data[1] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j*STEP, 1)), pr = process)
+                                general.plot_1d(exp_name, x_axis / 1e9, ( data[0], data[1] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j*STEP, 1)))
                             else:
-                                process = general.plot_1d(exp_name, x_axis, ( data[0], data[1] ), xname = 'Point', xscale = '', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j, 1)), pr = process)
+                                general.plot_1d(exp_name, x_axis, ( data[0], data[1] ), xname = 'Point', xscale = '', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j, 1)))
 
                             data[0], data[1] = pb.digitizer_get_curve( POINTS, PHASES, current_scan = k, total_scan = SCANS, integral = True )
 
@@ -2975,10 +2970,6 @@ class Worker():
                         if conn.poll() == True:
                             self.command = conn.recv()
 
-                    if step != 1:
-                        general.plot_1d(exp_name, x_axis / 1e9, ( data[0], data[1] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j*STEP, 1)))
-                    else:
-                        general.plot_1d(exp_name, x_axis, ( data[0], data[1] ), xname = 'Point', xscale = '', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j, 1)))
 
                     pb.pulser_pulse_reset()
 
@@ -3171,10 +3162,11 @@ class Worker():
                             #r_data = np.random.random( 2 )
                             #data[0, j] = r_data[0]
                             #data[1, j] = r_data[1]
-                            
+
                             process = general.plot_1d(exp_name, x_axis, ( data[0], data[1] ), xname = 'Field', xscale = 'G', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Field: ' + str(k) + ' / ' + str(field), pr = process)
 
                             pb.pulser_next_phase()
+
 
                             data[0], data[1] = pb.digitizer_get_curve( POINTS, PHASES, current_scan = k, total_scan = SCANS, integral = True )
 
@@ -3194,8 +3186,6 @@ class Worker():
                         
                         if conn.poll() == True:
                             self.command = conn.recv()
-
-                    general.plot_1d(exp_name, x_axis, ( data[0], data[1] ), xname = 'Field', xscale = 'G', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Field: ' + str(k) + ' / ' + str(field))
 
                     pb.pulser_pulse_reset()
 
@@ -3392,6 +3382,7 @@ class Worker():
                         bh15.magnet_field(field)#, calibration = 'True')
 
                         for i in range(PHASES):
+
                             
                             ##data = np.random.random( ( 2, POINTS ) )
                             process = general.plot_1d(exp_name, x_axis, ( data[0], data[1] ), xname = 'Field', xscale = 'G', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Field: ' + str(k) + ' / ' + str(field), pr = process)
@@ -3416,8 +3407,6 @@ class Worker():
                         
                         if conn.poll() == True:
                             self.command = conn.recv()
-
-                    general.plot_1d(exp_name, x_axis, ( data[0], data[1] ), xname = 'Field', xscale = 'G', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Field: ' + str(k) + ' / ' + str(field))
 
                     pb.pulser_pulse_reset()
 
@@ -3629,10 +3618,10 @@ class Worker():
                             #r_data = np.random.random( 2 )
                             #data[0, j] = r_data[0]
                             #data[1, j] = r_data[1]
+                            pb.pulser_next_phase()
 
                             process = general.plot_1d(exp_name, x_axis / 1e9, ( data[0], data[1] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Point: ' + str(k) + ' / ' + str(j), pr = process)
 
-                            pb.pulser_next_phase()
 
                             data[0], data[1] = pb.digitizer_get_curve( POINTS, PHASES, current_scan = k, total_scan = SCANS, integral = True )
 
@@ -3640,8 +3629,8 @@ class Worker():
                         if j > 0:
                             new_delta_start = nonlinear_time[j] - nonlinear_time[j-1]
 
-                            for i, names in enumerate(name_list):
-                                pb.pulser_redefine_delta_start(name = names, delta_start = f"{self.round_to_closest( new_delta_start * rel_shift[i], 3.2 )} ns")
+                            delta_starts = [f"{self.round_to_closest(x * new_delta_start, 3.2)} ns" for x in rel_shift]
+                            pb.pulser_redefine_delta_start(name = name_list, delta_start = delta_starts )
 
                         pb.pulser_shift()
 
@@ -3657,8 +3646,6 @@ class Worker():
                         
                         if conn.poll() == True:
                             self.command = conn.recv()
-
-                    general.plot_1d(exp_name, x_axis / 1e9, ( data[0], data[1] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Point: ' + str(k) + ' / ' + str(j))
 
                     pb.pulser_pulse_reset()
 
@@ -3688,8 +3675,8 @@ class Worker():
                     f"{'Averages:':<{w}} {AVERAGES}\n"
                     f"{'Points:':<{w}} {POINTS}\n"
                     f"{'Window:':<{w}} {tb} ns\n"
-                    f"{'Horizontal Resolution, Log[T Start]:':<{w}} {T_start}\n"
-                    f"{'Horizontal Resolution, Log[T End]:':<{w}} {T_end}\n"
+                    f"{'Log[T Start]:':<{w}} {T_start}\n"
+                    f"{'Log[T End]:':<{w}} {T_end}\n"
                     f"{'Temperature:':<{w}} {ls335.tc_temperature('A')} K\n"
                     f"{'Temperature Cernox:':<{w}} {ls335.tc_temperature('B')} K\n"
                     f"{'-'*50}\n"
@@ -3873,10 +3860,9 @@ class Worker():
                         for i in range(PHASES):
                             
                             ##data = np.random.random( ( 2, POINTS ) )
+                            pb.pulser_next_phase()
 
                             process = general.plot_1d(exp_name, x_axis / 1e9, ( data[0], data[1] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Point: ' + str(k) + ' / ' + str(j), pr = process)
-
-                            pb.pulser_next_phase()
 
                             data[0], data[1] = pb.digitizer_get_curve( POINTS, PHASES, current_scan = k, total_scan = SCANS, integral = True )
 
@@ -3884,8 +3870,8 @@ class Worker():
                         if j > 0:
                             new_delta_start = nonlinear_time[j] - nonlinear_time[j-1]
 
-                            for i, names in enumerate(name_list):
-                                pb.pulser_redefine_delta_start(name = names, delta_start = f"{self.round_to_closest( new_delta_start * rel_shift[i], 3.2 )} ns")
+                            delta_starts = [f"{self.round_to_closest(x * new_delta_start, 3.2)} ns" for x in rel_shift]
+                            pb.pulser_redefine_delta_start(name = name_list, delta_start = delta_starts )
 
                         pb.pulser_shift()
 
@@ -3901,8 +3887,6 @@ class Worker():
                         
                         if conn.poll() == True:
                             self.command = conn.recv()
-
-                    general.plot_1d(exp_name, x_axis / 1e9, ( data[0], data[1] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Point: ' + str(k) + ' / ' + str(j))
                     
                     pb.pulser_pulse_reset()
 
@@ -3932,8 +3916,8 @@ class Worker():
                     f"{'Averages:':<{w}} {AVERAGES}\n"
                     f"{'Points:':<{w}} {POINTS}\n"
                     f"{'Window:':<{w}} {tb} ns\n"
-                    f"{'Horizontal Resolution, Log[T Start]:':<{w}} {T_start}\n"
-                    f"{'Horizontal Resolution, Log[T End]:':<{w}} {T_end}\n"
+                    f"{'Log[T Start]:':<{w}} {T_start}\n"
+                    f"{'Log[T End]:':<{w}} {T_end}\n"
                     f"{'Temperature:':<{w}} {ls335.tc_temperature('A')} K\n"
                     f"{'Temperature Cernox:':<{w}} {ls335.tc_temperature('B')} K\n"
                     f"{'-'*50}\n"
