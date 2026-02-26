@@ -105,7 +105,7 @@ class CrosshairPlotWidget(pg.PlotWidget):
         self.cursor_label.setZValue(100)
         self.addItem(self.cursor_label)
 
-        ##self.getViewBox().setLimits(minYRange=1e-30)
+        self.getViewBox().setLimits(maxYRange=1e30, minYRange=1e-30)
 
     def on_fft_toggled(self, enabled):
         if enabled:
@@ -216,16 +216,6 @@ class CrosshairPlotWidget(pg.PlotWidget):
                     # screen coordinates
                     search_x = np.log10(np.maximum(xdata, 1e-15)) if x_log_mode else xdata
                     search_y = np.log10(np.maximum(ydata, 1e-15)) if y_log_mode else ydata
-
-                    y_min, y_max = ydata.min(), ydata.max()
-                    was_y_auto = vb.state['autoRange'][1]
-
-                    if np.isclose(y_min, y_max, atol=1e-30):
-                        vb.enableAutoRange(axis='y', enable=False)
-                        vb.setYRange(-1, 1, padding=0)
-                    else:
-                        if was_y_auto:
-                            vb.enableAutoRange(axis='y', enable=True)
 
                     # normalization
                     view_range = vb.viewRange() # [[xmin, xmax], [ymin, ymax]]
@@ -1656,16 +1646,6 @@ class CrossSectionDock(CloseableDock):
             x_min, x_max = view_range[0]
             y_min, y_max = view_range[1]
 
-            y_min, y_max = v_ydata.min(), v_ydata.max()
-            was_y_auto = vb.state['autoRange'][1]
-
-            if np.isclose(y_min, y_max, atol=1e-30):
-                vb.enableAutoRange(axis='y', enable=False)
-                vb.setYRange(-1, 1, padding=0)
-            else:
-                if was_y_auto:
-                    vb.enableAutoRange(axis='y', enable=True)
-
             anchor_x = 1 if y > (x_max + x_min) / 2 else 0
             anchor_y = 0 if z > (y_max + y_min) / 2 else 1
 
@@ -1731,16 +1711,6 @@ class CrossSectionDock(CloseableDock):
             view_range = vb.viewRange()
             x_min, x_max = view_range[0]
             y_min, y_max = view_range[1]
-
-            y_min, y_max = v_xdata.min(), v_xdata.max()
-            was_y_auto = vb.state['autoRange'][1]
-
-            if np.isclose(y_min, y_max, atol=1e-30):
-                vb.enableAutoRange(axis='y', enable=False)
-                vb.setYRange(-1, 1, padding=0)
-            else:
-                if was_y_auto:
-                    vb.enableAutoRange(axis='y', enable=True)
 
             anchor_x = 1 if x > (x_max + x_min) / 2 else 0
             anchor_y = 0 if z > (y_max + y_min) / 2 else 1
