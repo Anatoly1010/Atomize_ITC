@@ -1205,7 +1205,7 @@ class MainWindow(QMainWindow):
         try:
             self.parent_conn_dig.send( 'QC' + str( self.quad ) )
         except AttributeError:
-            self.message('Digitizer is not running')
+            pass
 
     def zero_order_func(self):
         """
@@ -1230,7 +1230,7 @@ class MainWindow(QMainWindow):
             try:
                 self.parent_conn_dig.send( 'ZO' + str( self.zero_order ) )
             except AttributeError:
-                self.message('Digitizer is not running')
+                pass
 
     def first_order_func(self):
         """
@@ -1242,7 +1242,7 @@ class MainWindow(QMainWindow):
             try:
                 self.parent_conn_dig.send( 'FO' + str( self.first_order ) )
             except AttributeError:
-                self.message('Digitizer is not running')
+                pass
 
     def second_order_func(self):
         """
@@ -1256,7 +1256,7 @@ class MainWindow(QMainWindow):
             try:
                 self.parent_conn_dig.send( 'SO' + str( self.second_order ) )
             except AttributeError:
-                self.message('Digitizer is not running')
+                pass
 
     def p_to_drop_func(self):
         """
@@ -1268,7 +1268,7 @@ class MainWindow(QMainWindow):
             try:
                 self.parent_conn_dig.send( 'PD' + str( self.p_to_drop ) )
             except AttributeError:
-                self.message('Digitizer is not running')
+                pass
 
     def fft_online(self):
         """
@@ -1283,7 +1283,7 @@ class MainWindow(QMainWindow):
         try:
             self.parent_conn_dig.send( 'FF' + str( self.fft ) )
         except AttributeError:
-            self.message('Digitizer is not running')
+            pass
 
     def change_live_mode(self):
         """
@@ -1298,7 +1298,7 @@ class MainWindow(QMainWindow):
         try:
             self.parent_conn_dig.send( 'LM' + str( self.l_mode ) )
         except AttributeError:
-            self.message('Digitizer is not running')
+            pass
 
     def win_left(self):
         """
@@ -1313,7 +1313,7 @@ class MainWindow(QMainWindow):
             try:
                 self.parent_conn_dig.send( 'WL' + str( self.cur_win_left ) )
             except AttributeError:
-                self.message('Digitizer is not running')
+                pass
 
     def win_right(self):
         self.cur_win_right = int( float( self.Win_right.value() ) / self.time_per_point )
@@ -1325,7 +1325,7 @@ class MainWindow(QMainWindow):
             try:
                 self.parent_conn_dig.send( 'WR' + str( self.cur_win_right ) )
             except AttributeError:
-                self.message('Digitizer is not running')
+                pass
 
     def acq_number(self):
         """
@@ -1337,7 +1337,7 @@ class MainWindow(QMainWindow):
             try:
                 self.parent_conn_dig.send( 'NA' + str( self.number_averages ) )
             except AttributeError:
-                self.message('Digitizer is not running')
+                pass
 
     def open_file_dialog(self):
         """
@@ -2015,7 +2015,7 @@ class MainWindow(QMainWindow):
         ###    self.errors.appendPlainText( str( self.cur_phase ) )
         ###    self.parent_conn_dig.send( 'PH' + str( self.cur_phase ) )
         ###except AttributeError:
-        ###    self.message('Digitizer is not running')
+        ###    pass
 
     def phase_converted(self, ph_str):
         if ph_str == '+x':
@@ -2046,7 +2046,7 @@ class MainWindow(QMainWindow):
         try:
             self.parent_conn_dig.send( 'RR' + str( self.repetition_rate.split(' ')[0] ) )
         except AttributeError:
-            self.message('Digitizer is not running')
+            pass
 
     def field(self):
         """
@@ -2058,7 +2058,7 @@ class MainWindow(QMainWindow):
             #self.errors.appendPlainText( str( self.mag_field ) )
             self.parent_conn_dig.send( 'FI' + str( self.mag_field ) )
         except AttributeError:
-            self.message('Digitizer is not running')
+            pass
 
     def update(self):
         """
@@ -3389,10 +3389,10 @@ class Worker():
                             )
 
             else:
-                if laser_flag == 1:
+                if laser_num == 1:
                     pb.pulser_repetition_rate( '9.9 Hz' )
                 else:
-                    pb.pulser_repetition_rate( str(p14) + ' Hz' )
+                    pb.pulser_repetition_rate( REP_RATE )
 
 
                 #p7 is LASER pulse
@@ -3800,10 +3800,10 @@ class Worker():
                             )
 
             else:
-                if laser_flag == 1:
+                if laser_num == 1:
                     pb.pulser_repetition_rate( '9.9 Hz' )
                 else:
-                    pb.pulser_repetition_rate( str(p14) + ' Hz' )
+                    pb.pulser_repetition_rate( REP_RATE )
 
                 if int(float(p2_exp[1].split(' ')[0])) != 0:
                     #p7 is LASER pulse
@@ -4185,10 +4185,11 @@ class Worker():
                             )
 
             else:
-                if laser_flag == 1:
+                if laser_num == 1:
                     pb.pulser_repetition_rate( '9.9 Hz' )
                 else:
-                    pb.pulser_repetition_rate( str(p14) + ' Hz' )
+                    pb.pulser_repetition_rate( REP_RATE )
+
 
                 #p7 is LASER pulse
                 pb.pulser_pulse(
@@ -4557,10 +4558,11 @@ class Worker():
                             )
 
             else:
-                if laser_flag == 1:
+                if laser_num == 1:
                     pb.pulser_repetition_rate( '9.9 Hz' )
                 else:
-                    pb.pulser_repetition_rate( str(p14) + ' Hz' )
+                    pb.pulser_repetition_rate( REP_RATE )
+
 
                 if int(float(p2_exp[1].split(' ')[0])) != 0:
                     #p7 is LASER pulse
@@ -4796,6 +4798,7 @@ class Worker():
 
             nonlinear_time_raw = 10 ** np.linspace( T_start, T_end, POINTS )
             nonlinear_time = np.unique( general.numpy_round( nonlinear_time_raw, 3.2 ) )
+            nonlinear_diff = np.diff(nonlinear_time)
             POINTS = len( nonlinear_time )
             x_axis = (np.insert(nonlinear_time , 0, 0))[:-1]
 
@@ -4986,10 +4989,11 @@ class Worker():
                             )
 
             else:
-                if laser_flag == 1:
+                if laser_num == 1:
                     pb.pulser_repetition_rate( '9.9 Hz' )
                 else:
-                    pb.pulser_repetition_rate( str(p14) + ' Hz' )
+                    pb.pulser_repetition_rate( REP_RATE )
+
 
 
                 #p7 is LASER pulse
@@ -5092,7 +5096,7 @@ class Worker():
 
                         # nonlinear_time_shift is calculated from the initial position of the pulses
                         if j > 0:
-                            new_delta_start = nonlinear_time[j] - nonlinear_time[j-1]
+                            new_delta_start = nonlinear_diff[j-1]
 
                             delta_starts = [f"{self.round_to_closest(x * new_delta_start, 3.2)} ns" for x in rel_shift]
                             pb.pulser_redefine_delta_start(name = name_list, delta_start = delta_starts )
@@ -5240,6 +5244,7 @@ class Worker():
 
             nonlinear_time_raw = 10 ** np.linspace( T_start, T_end, POINTS )
             nonlinear_time = np.unique( general.numpy_round( nonlinear_time_raw, 3.2 ) )
+            nonlinear_diff = np.diff(nonlinear_time)
             POINTS = len( nonlinear_time )
             x_axis = (np.insert(nonlinear_time , 0, 0))[:-1]
 
@@ -5430,10 +5435,11 @@ class Worker():
                             )
 
             else:
-                if laser_flag == 1:
+                if laser_num == 1:
                     pb.pulser_repetition_rate( '9.9 Hz' )
                 else:
-                    pb.pulser_repetition_rate( str(p14) + ' Hz' )
+                    pb.pulser_repetition_rate( REP_RATE )
+
 
                 if int(float(p2_exp[1].split(' ')[0])) != 0:
                     #p7 is LASER pulse
@@ -5538,7 +5544,7 @@ class Worker():
 
                         # nonlinear_time_shift is calculated from the initial position of the pulses
                         if j > 0:
-                            new_delta_start = nonlinear_time[j] - nonlinear_time[j-1]
+                            new_delta_start = nonlinear_diff[j-1]
 
                             delta_starts = [f"{self.round_to_closest(x * new_delta_start, 3.2)} ns" for x in rel_shift]
                             pb.pulser_redefine_delta_start(name = name_list, delta_start = delta_starts )
