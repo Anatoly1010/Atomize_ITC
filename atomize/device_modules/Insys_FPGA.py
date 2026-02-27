@@ -3092,6 +3092,7 @@ class Insys_FPGA:
                         pulse['delta_start'] = new_val
                         self.shift_count_awg = 1
 
+    #update!
     def awg_redefine_frequency(self, *, name, freq):
         """
         A function for redefining frequency of the specified pulse.
@@ -3101,50 +3102,48 @@ class Insys_FPGA:
         """
 
         if self.test_flag != 'test':
-            i = 0
+            names_list = [name] if isinstance(name, str) else name
+            freq_list = [freq] if isinstance(freq, str) else freq
 
-            while i < len( self.pulse_array_awg ):
-                if name == self.pulse_array_awg[i]['name']:
-                    self.pulse_array_awg[i]['frequency'] = freq
-                    self.shift_count_awg = 1
-                else:
-                    pass
+            for name, fr in zip(names_list, freq_list):
+            
+                for i, pulse in enumerate(self.pulse_array_awg):                     
 
-                i += 1
+                    if pulse['name'] == name:
+                        pulse['frequency'] = fr
+                        self.shift_count_awg = 1
 
         elif self.test_flag == 'test':
-            i = 0
-            assert( name in self.pulse_name_array_awg ), 'Pulse with the specified name is not defined'
+            names_list = [name] if isinstance(name, str) else name
+            freq_list = [freq] if isinstance(freq, str) else freq
 
-            while i < len( self.pulse_array_awg ):
-                if name == self.pulse_array_awg[i]['name']:
-                    # checks
-
-                    if self.pulse_array_awg[i]['function'] != 'WURST' and self.pulse_array_awg[i]['function'] != 'SECH/TANH':
-                        temp_freq = freq.split(" ")
+            for name, fr in zip(names_list, freq_list):
+                assert( name in self.pulse_name_array_awg ), 'Pulse with the specified name is not defined'
+            
+                for i, pulse in enumerate(self.pulse_array_awg):
+                    if pulse['function'] != 'WURST' and pulse['function'] != 'SECH/TANH':
+                        temp_freq = fr.split(" ")
                         coef = temp_freq[1]
                         p_freq = float(temp_freq[0])
                         assert (coef == 'MHz'), 'Incorrect frequency dimension. Only MHz is possible'
                         assert(p_freq >= self.min_freq_awg), 'Frequency is lower than minimum available (' + str(self.min_freq_awg) +' MHz)'
                         assert(p_freq < self.max_freq_awg), 'Frequency is longer than minimum available (' + str(self.max_freq_awg) +' MHz)'
                     else:
-                        temp_freq_st = frequency[0].split(" ")
-                        temp_freq_end = frequency[1].split(" ")
+                        temp_freq_st = fr[0].split(" ")
+                        temp_freq_end = fr[1].split(" ")
                         coef_st = temp_freq_st[1]
                         coef_end = temp_freq_end[1]
                         p_freq_st = float(temp_freq_st[0])
                         p_freq_end = float(temp_freq_end[0])
                         assert (coef_st == 'MHz' and coef_end == 'MHz'), 'Incorrect frequency dimension. Only MHz is possible'
                         assert(p_freq_st >= self.min_freq_awg and p_freq_end >= self.min_freq_awg), 'Frequency is lower than minimum available (' + str(self.min_freq_awg) +' MHz)'
-                        assert(p_freq_st < self.max_freq_awg and p_freq_end < self.max_freq_awg), 'Frequency is longer than minimum available (' + str(self.max_freq_awg) +' MHz)'
+                        assert(p_freq_st < self.max_freq_awg and p_freq_end < self.max_freq_awg), 'Frequency is longer than minimum available (' + str(self.max_freq_awg) +' MHz)'                        
 
-                    self.pulse_array_awg[i]['frequency'] = freq
-                    self.shift_count_awg = 1
-                else:
-                    pass
+                    if pulse['name'] == name:
+                        pulse['frequency'] = fr
+                        self.shift_count_awg = 1
 
-                i += 1
-
+    #update!
     def awg_redefine_phase(self, *, name, phase):
         """
         A function for redefining phase of the specified pulse.
@@ -3155,30 +3154,29 @@ class Insys_FPGA:
         """
 
         if self.test_flag != 'test':
-            i = 0
+            names_list = [name] if isinstance(name, str) else name
+            phase_list = [phase] if isinstance(phase, str) else phase
 
-            while i < len( self.pulse_array_awg ):
-                if name == self.pulse_array_awg[i]['name']:
-                    self.pulse_array_awg[i]['phase'] = float(phase)
-                    self.shift_count_awg = 1
-                else:
-                    pass
+            for name, ph in zip(names_list, phase_list):
 
-                i += 1
+                for i, pulse in enumerate(self.pulse_array_awg):
+                    if pulse['name'] == name:
+                        pulse['phase'] = float(ph)
+                        self.shift_count_awg = 1
 
         elif self.test_flag == 'test':
-            i = 0
-            assert( name in self.pulse_name_array_awg ), 'Pulse with the specified name is not defined'
+            names_list = [name] if isinstance(name, str) else name
+            phase_list = [phase] if isinstance(phase, str) else phase
 
-            while i < len( self.pulse_array_awg ):
-                if name == self.pulse_array_awg[i]['name']:
-                    self.pulse_array_awg[i]['phase'] = float(phase)
-                    self.shift_count_awg = 1
-                else:
-                    pass
+            for name, ph in zip(names_list, phase_list):
+                assert( name in self.pulse_name_array_awg ), 'Pulse with the specified name is not defined'
+            
+                for i, pulse in enumerate(self.pulse_array_awg):
+                    if pulse['name'] == name:
+                        pulse['phase'] = float(ph)
+                        self.shift_count_awg = 1
 
-                i += 1
-
+    #update!
     def awg_redefine_delta_phase(self, *, name, delta_phase):
         """
         A function for redefining delta_phase of the specified pulse.
@@ -3187,32 +3185,30 @@ class Insys_FPGA:
 
         def func(*, name1, name2): defines a function without default values of key arguments
         """
-
         if self.test_flag != 'test':
-            i = 0
+            names_list = [name] if isinstance(name, str) else name
+            dphase_list = [delta_phase] if isinstance(delta_phase, str) else delta_phase
 
-            while i < len( self.pulse_array_awg ):
-                if name == self.pulse_array_awg[i]['name']:
-                    self.pulse_array_awg[i]['delta_phase'] = float(delta_phase)
-                    self.shift_count_awg = 1
-                else:
-                    pass
+            for name, d_ph in zip(names_list, dphase_list):
 
-                i += 1
+                for i, pulse in enumerate(self.pulse_array_awg):
+                    if pulse['name'] == name:
+                        pulse['delta_phase'] = float(d_ph)
+                        self.shift_count_awg = 1
 
         elif self.test_flag == 'test':
-            i = 0
-            assert( name in self.pulse_name_array_awg ), 'Pulse with the specified name is not defined'
+            names_list = [name] if isinstance(name, str) else name
+            dphase_list = [delta_phase] if isinstance(delta_phase, str) else delta_phase
 
-            while i < len( self.pulse_array_awg ):
-                if name == self.pulse_array_awg[i]['name']:
-                    self.pulse_array_awg[i]['delta_phase'] = float(delta_phase)
-                    self.shift_count_awg = 1
-                else:
-                    pass
+            for name, d_ph in zip(names_list, dphase_list):
+                assert( name in self.pulse_name_array_awg ), 'Pulse with the specified name is not defined'
+            
+                for i, pulse in enumerate(self.pulse_array_awg):
+                    if pulse['name'] == name:
+                        pulse['delta_phase'] = float(d_ph)
+                        self.shift_count_awg = 1
 
-                i += 1
-
+    #update!
     def awg_add_phase(self, *, name, add_phase):
         """
         A function for adding a constant phase to the specified pulse.
@@ -3222,37 +3218,29 @@ class Insys_FPGA:
 
         def func(*, name1, name2): defines a function without default values of key arguments
         """
-
+        
         if self.test_flag != 'test':
-            i = 0
+            names_list = [name] if isinstance(name, str) else name
+            phase_list = [add_phase] if isinstance(add_phase, str) else add_phase
 
-            while i < len( self.pulse_array_awg ):
-                if name == self.pulse_array_awg[i]['name']:
-                    self.pulse_array_awg[i]['phase'] = self.pulse_array_awg[i]['phase'] + float(add_phase)
-                    self.shift_count_awg = 1
-                else:
-                    pass
+            for name, ph in zip(names_list, phase_list):
 
-                i += 1
-
-            # it is bad idea to update it here, since the phase of only one pulse
-            # can be changed in one call of this function
-            #self.awg_update_test()
+                for i, pulse in enumerate(self.pulse_array_awg):
+                    if pulse['name'] == name:
+                        pulse['phase'] += float(ph)
+                        self.shift_count_awg = 1
 
         elif self.test_flag == 'test':
-            i = 0
-            assert( name in self.pulse_name_array_awg ), 'Pulse with the specified name is not defined'
+            names_list = [name] if isinstance(name, str) else name
+            phase_list = [add_phase] if isinstance(add_phase, str) else add_phase
 
-            while i < len( self.pulse_array_awg ):
-                if name == self.pulse_array_awg[i]['name']:
-                    self.pulse_array_awg[i]['phase'] = self.pulse_array_awg[i]['phase'] + float(add_phase)
-                    self.shift_count_awg = 1
-                else:
-                    pass
-
-                i += 1
-
-            #self.awg_update_test()
+            for name, ph in zip(names_list, phase_list):
+                assert( name in self.pulse_name_array_awg ), 'Pulse with the specified name is not defined'
+            
+                for i, pulse in enumerate(self.pulse_array_awg):
+                    if pulse['name'] == name:
+                        pulse['phase'] += float(ph)
+                        self.shift_count_awg = 1
 
     #update!
     def awg_redefine_length_increment(self, *, name, length_increment):
