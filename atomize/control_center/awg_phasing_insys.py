@@ -66,8 +66,10 @@ class MainWindow(QMainWindow):
 
     def menu(self):
         menubar = self.menuBar()
-        menubar.setStyleSheet("QMenuBar { color: rgb(193, 202, 227); font-weight: bold; font-size: 14px; } QMenu::item { color: rgb(211, 194, 78); } QMenu::item:selected {color: rgb(193, 202, 227); }")
+        menubar.setStyleSheet("QMenuBar { color: rgb(193, 202, 227); font-weight: bold; font-size: 14px;  border-bottom: 1px solid rgb(193, 202, 227); padding-top: 2px; padding-bottom: 0px; } QMenu::item { color: rgb(193, 202, 227); } QMenu::item:selected {color: rgb(211, 194, 78); background-color: rgb(63, 63, 97); } QMenuBar::item:selected {background-color: rgb(63, 63, 97); }")
         file_menu = menubar.addMenu("File")
+        pulse_menu = menubar.addMenu("Pulse")
+
         menubar.setFixedHeight(27)
 
         self.action_read = QAction("Read from file", self)
@@ -77,6 +79,135 @@ class MainWindow(QMainWindow):
         self.action_save = QAction("Save to file", self)
         self.action_save.triggered.connect(self.save_file_dialog)
         file_menu.addAction(self.action_save)
+
+        self.reset_all = QAction("Reset All", self)
+        self.reset_all.triggered.connect(self.reset_all_func)
+        pulse_menu.addAction(self.reset_all)
+
+        pulse_menu.addSeparator()
+
+        reset_pulse_menu = pulse_menu.addMenu("Reset Pulse...")
+
+        self.pulse_actions = []
+
+        for i in range(1, 10):
+            action_text = f"P{i}"
+            action = QAction(action_text, self)
+            
+            action.triggered.connect(lambda checked, p=i: self.reset_pulse_func(p))
+            
+            reset_pulse_menu.addAction(action)
+            self.pulse_actions.append(action)
+
+        pulse_menu.addSeparator()
+
+        copy_pulse_menu = pulse_menu.addMenu("Copy Pulse...")
+
+        self.copy_pulse_actions = []
+
+        for i in range(1, 10):
+            action_text = f"P{i}"
+            action = QAction(action_text, self)
+            
+            action.triggered.connect(lambda checked, p=i: self.copy_pulse_func(p))
+            
+            copy_pulse_menu.addAction(action)
+            self.copy_pulse_actions.append(action)
+
+        cut_pulse_menu = pulse_menu.addMenu("Cut Pulse...")
+
+        self.cut_pulse_actions = []
+
+        for i in range(1, 10):
+            action_text = f"P{i}"
+            action = QAction(action_text, self)
+            
+            action.triggered.connect(lambda checked, p=i: self.cut_pulse_func(p))
+            
+            cut_pulse_menu.addAction(action)
+            self.cut_pulse_actions.append(action)
+
+        paste_pulse_menu = pulse_menu.addMenu("Paste Pulse...")
+
+        self.paste_pulse_actions = []
+
+        for i in range(1, 10):
+            action_text = f"P{i}"
+            action = QAction(action_text, self)
+            
+            action.triggered.connect(lambda checked, p=i: self.paste_pulse_func(p))
+            
+            paste_pulse_menu.addAction(action)
+            self.paste_pulse_actions.append(action)
+
+    def cut_pulse_func(self, pulse_number):
+        self.copy_pulse_func(pulse_number)
+
+        if pulse_number == 1:
+            values = [576, 816, 0, 0, "+x,-x", "DETECTION"]
+        else:
+            values = [0, 0, 0, 0, "+x,+x", "MW"]
+
+        suffixes = ["_st", "_len", "_st_inc", "_len_inc"]
+        
+        for i, suffix in enumerate(suffixes):
+            getattr(self, f"P{pulse_number}{suffix}").setValue(values[i])
+
+        phase_widget = getattr(self, f"Phase_{pulse_number}")
+        new_phase_text = str(values[4])
+        phase_widget.setPlainText(new_phase_text)
+            
+        combo_widget = getattr(self, f"P{pulse_number}_type")
+        new_combo_text = str(values[5])
+        combo_widget.setCurrentText(new_combo_text)
+
+    def paste_pulse_func(self, pulse_number):
+        if self.pulse_buffer is None:
+            return
+
+        getattr(self, f"P{pulse_number}_st").setValue(self.pulse_buffer['st'])
+        getattr(self, f"P{pulse_number}_len").setValue(self.pulse_buffer['len'])
+        getattr(self, f"P{pulse_number}_st_inc").setValue(self.pulse_buffer['st_inc'])
+        getattr(self, f"P{pulse_number}_len_inc").setValue(self.pulse_buffer['len_inc'])
+        getattr(self, f"Phase_{pulse_number}").setPlainText(self.pulse_buffer['phase'])
+        getattr(self, f"P{pulse_number}_type").setCurrentText(self.pulse_buffer['type'])
+    
+    def copy_pulse_func(self, pulse_number):
+        self.pulse_buffer = {
+            'st': getattr(self, f"P{pulse_number}_st").value(),
+            'len': getattr(self, f"P{pulse_number}_len").value(),
+            'st_inc': getattr(self, f"P{pulse_number}_st_inc").value(),
+            'len_inc': getattr(self, f"P{pulse_number}_len_inc").value(),
+            'phase': getattr(self, f"Phase_{pulse_number}").toPlainText(),
+            'type': getattr(self, f"P{pulse_number}_type").currentText()
+        }
+
+    def reset_pulse_func(self, pulse_number):
+        if pulse_number == 1:
+            values = [576, 816, 0, 0, 0, 0, 100, 0, "+x,-x", "DETECTION"]
+        elif pulse_number == 2:
+            values = [0, 22.4, 0, 0, 50, 350, 100, 0, "+x,-x", "SINE"]
+        elif pulse_number == 3:
+            values = [288, 44.8, 0, 0, 50, 350, 100, 0, "+x,+x", "SINE"]
+        else:
+            values = [0, 0, 0, 0, 50, 350, 100, 0, "+x,+x", "SINE"]
+
+        suffixes = ["_st", "_len", "_st_inc", "_len_inc", "_fr", "_sw", "_cf", "_sig"]
+        
+        for i, suffix in enumerate(suffixes):
+            getattr(self, f"P{pulse_number}{suffix}").setValue(values[i])
+
+        phase_widget = getattr(self, f"Phase_{pulse_number}")
+        new_phase_text = str(values[8])
+        phase_widget.setPlainText(new_phase_text)
+            
+        combo_widget = getattr(self, f"P{pulse_number}_type")
+        new_combo_text = str(values[9])
+        combo_widget.setCurrentText(new_combo_text)
+
+    def reset_all_func(self):
+        for i in range(1, 10):
+            self.reset_pulse_func(i)
 
     def design_tab_1(self):
         self.setObjectName("MainWindow")
@@ -138,6 +269,7 @@ class MainWindow(QMainWindow):
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
         scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.horizontalScrollBar().setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
         #scroll.setFixedHeight(383)
 
         scroll.setStyleSheet(f"""
@@ -193,7 +325,7 @@ class MainWindow(QMainWindow):
         main_window_layout.addWidget(buttons_widget)
 
         # ---- Labels & Inputs ----
-        labels = [("Start", "label_1"), ("Length", "label_2"), ("Sigma", "label_3"), ("Start Increment", "label_4"), ("Length Increment", "label_5"), ("Frequency", "label_6"), ("Frequency Sweep", "label_7"), ("Amplitude", "label_8"), ("Phase", "label_9"), ("Type", "label_10"), ("Repetition Rate", "label_11"), ("Magnetic Field", "label_12"), ("Progress", "label_p1")]
+        labels = [("Start", "label_1"), ("Length", "label_2"), ("Sigma", "label_3"), ("Start Increment", "label_4"), ("Length Increment", "label_5"), ("Frequency", "label_6"), ("Frequency Sweep", "label_7"), ("Amplitude", "label_8"), ("Type", "label_9"), ("Phase", "label_10"), ("Repetition Rate", "label_11"), ("Magnetic Field", "label_12"), ("Progress", "label_p1")]
 
         for name, attr_name in labels:
             lbl = QLabel(name)
@@ -239,7 +371,8 @@ class MainWindow(QMainWindow):
                 spin_box.setSuffix(pulse_set[6])
                 spin_box.setFixedSize(130, 26)
                 spin_box.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.PlusMinus)
-
+                spin_box.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
+                
                 spin_box.setKeyboardTracking( False )
                 # widget name pulse_set[7]
                 setattr(self, f"P{i}{pulse_set[7]}", spin_box)
@@ -295,6 +428,7 @@ class MainWindow(QMainWindow):
                 spin_box.setFixedSize(130, 26)
                 spin_box.setButtonSymbols(QSpinBox.ButtonSymbols.PlusMinus)
                 spin_box.setKeyboardTracking(False)
+                spin_box.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu) 
 
                 attr_name = f"P{i}{pulse_set[7]}"
                 setattr(self, attr_name, spin_box)
@@ -391,6 +525,7 @@ class MainWindow(QMainWindow):
             self.update_pulse_phase(i)
 
             self.gridLayout.addWidget(txt, 14, i)
+            txt.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
 
         # ---- Boxes----
         boxes = [(QDoubleSpinBox, "Rep_rate", "repetition_rate", self.rep_rate, 0.1, 20e3, 500, 1, 1, " Hz"),
@@ -417,6 +552,7 @@ class MainWindow(QMainWindow):
 
             self.buttons_layout.addWidget(rr_box, box_c, 1)
             box_c += 1
+            rr_box.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
 
         label_widget = getattr(self, f"label_11")
         self.buttons_layout.addWidget(label_widget, 0, 0)
@@ -539,6 +675,7 @@ class MainWindow(QMainWindow):
             spin_box.valueChanged.connect(func)
             spin_box.setFixedSize(130, 26)
             spin_box.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.PlusMinus)
+            spin_box.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
 
             spin_box.setKeyboardTracking( False )
             
@@ -569,7 +706,7 @@ class MainWindow(QMainWindow):
             txt.setAcceptRichText(False)
             txt.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
             txt.setStyleSheet("QTextEdit { color : rgb(211, 194, 78) ; selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
-
+            txt.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
 
         # ---- Combo boxes----
         combo_boxes = [("Linear Time", "combo_sweep", "cur_sweep", self.sweep_type, 
@@ -728,6 +865,7 @@ class MainWindow(QMainWindow):
             spin_box.valueChanged.connect(func)
             spin_box.setFixedSize(130, 26)
             spin_box.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.PlusMinus)
+            spin_box.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
 
             spin_box.setKeyboardTracking( False )
             
@@ -931,6 +1069,7 @@ class MainWindow(QMainWindow):
             spin_box.valueChanged.connect(func)
             spin_box.setFixedSize(130, 26)
             spin_box.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.PlusMinus)
+            spin_box.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
 
             spin_box.setKeyboardTracking( False )
             
@@ -1571,6 +1710,7 @@ class MainWindow(QMainWindow):
         A function to open a new window for choosing a pulse list
         """
         filedialog = QFileDialog(self, 'Save File', directory = self.path, filter = "AWG pulse phase list (*.phase_awg)", options = QFileDialog.Option.DontUseNativeDialog)
+        filedialog.setAcceptMode(QFileDialog.AcceptMode.AcceptSave)
 
         tree = filedialog.findChild(QTreeView)
         header = tree.header()
@@ -2369,7 +2509,8 @@ class MainWindow(QMainWindow):
             except Exception as e:
                 break
 
-        #time.sleep(0.1)
+        if self.digitizer_process.is_alive() and not self.timer.isActive():
+            self.digitizer_process.join()
 
         if hasattr(self, 'digitizer_process') and not self.digitizer_process.is_alive():
             if self.parent_conn_dig.poll():
@@ -2414,6 +2555,7 @@ class MainWindow(QMainWindow):
         file_data = self.file_handler.create_file_dialog(multiprocessing = True)        
 
         if file_data:
+            self.save_file(file_data.split(".csv")[0])
             self.parent_conn_dig.send( 'FL' + str( file_data ) )
         else:
             self.parent_conn_dig.send( 'FL' + '' )
@@ -3253,12 +3395,15 @@ class Worker():
             if p1_exp[4] != '0.0 ns':
                 #delta_start
                 step = round( float( p1_exp[4].split(' ')[0] ), 1)
+                f_delay = self.round_to_closest( float(p1_exp[1].split(' ')[0]), 3.2) / 1e9
             elif p1_exp[5] != '0.0 ns':
                 #length_increment
                 step = round( float( p1_exp[5].split(' ')[0] ), 1)
+                f_delay = self.round_to_closest( float(p1_exp[2].split(' ')[0]), 3.2) / 1e9
             else:
                 #prevent no increment
                 step = 1
+                f_delay = 0
                 conn.send( ('Message', 'No START or LENGTH increment; the time axis corresponds to the number of points in the experiment') )
 
             pb.phase_shift_ch1_seq_mode_awg = iq_phase
@@ -3462,6 +3607,9 @@ class Worker():
             pb.digitizer_number_of_averages(AVERAGES)
             data = np.zeros( ( 2, points_window, POINTS ) )
 
+            dec_calc = 0.4 * DEC_COEF / 1e9
+            step_ns = STEP / 1e9
+
             while self.command != 'exit':
 
                 k = 1
@@ -3480,7 +3628,7 @@ class Worker():
                                 process = general.plot_2d(
                                     EXP_NAME, 
                                     data, 
-                                    start_step = ((0, 0.4 * DEC_COEF / 1e9), (0, STEP / 1e9)), 
+                                    start_step = ((0, dec_calc), (f_delay,step_ns)), 
                                     xname = 'Time', 
                                     xscale = 's', 
                                     yname = 'Delay', 
@@ -3494,7 +3642,7 @@ class Worker():
                                 process = general.plot_2d(
                                     EXP_NAME, 
                                     data, 
-                                    start_step = ((0, 0.4 * DEC_COEF / 1e9), (0, 1)), 
+                                    start_step = ((0, dec_calc), (0, 1)), 
                                     xname = 'Time', 
                                     xscale = 's', 
                                     yname = 'Point', 
@@ -3550,7 +3698,7 @@ class Worker():
                     general.plot_2d(
                         EXP_NAME, 
                         data, 
-                        start_step = ((0, 0.4 * DEC_COEF / 1e9), (0, STEP / 1e9)), 
+                        start_step = ((0, dec_calc), (0, step_ns)), 
                         xname = 'Time', 
                         xscale = 's', 
                         yname = 'Delay', 
@@ -3563,7 +3711,7 @@ class Worker():
                     general.plot_2d(
                         EXP_NAME, 
                         data, 
-                        start_step = ((0, 0.4 * DEC_COEF / 1e9), (0, 1)), 
+                        start_step = ((0, dec_calc), (0, 1)), 
                         xname = 'Time', 
                         xscale = 's', 
                         yname = 'Point', 
@@ -3663,15 +3811,19 @@ class Worker():
             #pb.win_right = win_right
 
             #p1_exp DETECTION
+           #p1_exp DETECTION
             if p1_exp[4] != '0.0 ns':
                 #delta_start
                 step = round( float( p1_exp[4].split(' ')[0] ), 1)
+                f_delay = self.round_to_closest( float(p1_exp[1].split(' ')[0]), 3.2) / 1e9
             elif p1_exp[5] != '0.0 ns':
                 #length_increment
                 step = round( float( p1_exp[5].split(' ')[0] ), 1)
+                f_delay = self.round_to_closest( float(p1_exp[2].split(' ')[0]), 3.2) / 1e9
             else:
                 #prevent no increment
                 step = 1
+                f_delay = 0
                 #conn.send( ('Message', 'No START or LENGTH increment; the time axis corresponds to the number of points in the experiment') )
 
             pb.phase_shift_ch1_seq_mode_awg = iq_phase
@@ -3874,6 +4026,8 @@ class Worker():
             pb.pulser_open()
             pb.digitizer_number_of_averages(AVERAGES)
             data = np.zeros( ( 2, points_window, POINTS ) )
+            dec_calc = 0.4 * DEC_COEF / 1e9
+            step_ns = STEP / 1e9
 
             while self.command != 'exit':
 
@@ -3889,7 +4043,7 @@ class Worker():
                                 process = general.plot_2d(
                                     EXP_NAME, 
                                     data, 
-                                    start_step = ((0, 0.4 * DEC_COEF / 1e9), (0, STEP / 1e9)), 
+                                    start_step = ((0, dec_calc), (f_delay, step_ns)), 
                                     xname = 'Time', 
                                     xscale = 's', 
                                     yname = 'Delay', 
@@ -3903,7 +4057,7 @@ class Worker():
                                 process = general.plot_2d(
                                     EXP_NAME, 
                                     data, 
-                                    start_step = ((0, 0.4 * DEC_COEF / 1e9), (0, 1)), 
+                                    start_step = ((0, dec_calc), (0, 1)), 
                                     xname = 'Time', 
                                     xscale = 's', 
                                     yname = 'Point', 
@@ -3957,7 +4111,7 @@ class Worker():
                     general.plot_2d(
                         EXP_NAME, 
                         data, 
-                        start_step = ((0, 0.4 * DEC_COEF / 1e9), (0, STEP / 1e9)), 
+                        start_step = ((0, dec_calc), (f_delay, step_ns)), 
                         xname = 'Time', 
                         xscale = 's', 
                         yname = 'Delay', 
@@ -3970,7 +4124,7 @@ class Worker():
                     general.plot_2d(
                         EXP_NAME, 
                         data, 
-                        start_step = ((0, 0.4 * DEC_COEF / 1e9), (0, 1)), 
+                        start_step = ((0, dec_calc), (0, 1)), 
                         xname = 'Time', 
                         xscale = 's', 
                         yname = 'Point', 
@@ -4257,6 +4411,7 @@ class Worker():
 
             POINTS = int( (END_FIELD - START_FIELD) / FIELD_STEP ) + 1
             data = np.zeros( ( 2, points_window, POINTS ) )
+            dec_calc = 0.4 * DEC_COEF / 1e9
 
             while self.command != 'exit':
 
@@ -4280,7 +4435,7 @@ class Worker():
                             process = general.plot_2d(
                                 EXP_NAME, 
                                 data, 
-                                start_step = ((0, 0.4 * DEC_COEF / 1e9), (START_FIELD, FIELD_STEP)), 
+                                start_step = ((0, dec_calc), (START_FIELD, FIELD_STEP)), 
                                 xname = 'Time', 
                                 xscale = 's', 
                                 yname = 'Field', 
@@ -4330,7 +4485,7 @@ class Worker():
                 general.plot_2d(
                     EXP_NAME, 
                     data, 
-                    start_step = ((0, 0.4 * DEC_COEF / 1e9), (START_FIELD, FIELD_STEP)), 
+                    start_step = ((0, dec_calc), (START_FIELD, FIELD_STEP)), 
                     xname = 'Time', 
                     xscale = 's', 
                     yname = 'Field', 
@@ -4635,6 +4790,7 @@ class Worker():
 
             POINTS = int( (END_FIELD - START_FIELD) / FIELD_STEP ) + 1
             data = np.zeros( ( 2, points_window, POINTS ) )
+            dec_calc = 0.4 * DEC_COEF / 1e9
 
             while self.command != 'exit':
 
@@ -4654,7 +4810,7 @@ class Worker():
                             process = general.plot_2d(
                                 EXP_NAME, 
                                 data, 
-                                start_step = ((0, 0.4 * DEC_COEF / 1e9), (START_FIELD, FIELD_STEP)), 
+                                start_step = ((0, dec_calc), (START_FIELD, FIELD_STEP)), 
                                 xname = 'Time', 
                                 xscale = 's', 
                                 yname = 'Field', 
@@ -4694,7 +4850,7 @@ class Worker():
                     general.plot_2d(
                         EXP_NAME, 
                         data, 
-                        start_step = ((0, 0.4 * DEC_COEF / 1e9), (START_FIELD, FIELD_STEP)), 
+                        start_step = ((0, dec_calc), (START_FIELD, FIELD_STEP)), 
                         xname = 'Time', 
                         xscale = 's', 
                         yname = 'Field', 
@@ -5060,6 +5216,7 @@ class Worker():
             pb.pulser_open()
             pb.digitizer_number_of_averages(AVERAGES)
             data = np.zeros( ( 2, points_window, POINTS ) )
+            dec_calc = 0.4 * DEC_COEF / 1e9
 
             while self.command != 'exit':
 
@@ -5075,7 +5232,7 @@ class Worker():
                             general.plot_2d(
                                 EXP_NAME, 
                                 data, 
-                                start_step = ((0, 0.4 * DEC_COEF / 1e9), (0, 1)), 
+                                start_step = ((0, dec_calc), (0, 1)), 
                                 xname = 'Time', 
                                 xscale = 's', 
                                 yname = 'Point', 
@@ -5128,7 +5285,7 @@ class Worker():
                 general.plot_2d(
                     EXP_NAME, 
                     data, 
-                    start_step = ((0, 0.4 * DEC_COEF / 1e9), (0, 1)), 
+                    start_step = ((0, dec_calc), (0, 1)), 
                     xname = 'Time', 
                     xscale = 's', 
                     yname = 'Point', 
@@ -5508,6 +5665,7 @@ class Worker():
             pb.pulser_open()
             pb.digitizer_number_of_averages(AVERAGES)
             data = np.zeros( ( 2, points_window, POINTS ) )
+            dec_calc = 0.4 * DEC_COEF / 1e9
 
             while self.command != 'exit':
 
@@ -5522,7 +5680,7 @@ class Worker():
                             process = general.plot_2d(
                                 EXP_NAME, 
                                 data, 
-                                start_step = ((0, 0.4 * DEC_COEF / 1e9), (0, 1)), 
+                                start_step = ((0, dec_calc), (0, 1)), 
                                 xname = 'Time', 
                                 xscale = 's', 
                                 yname = 'Point', 
@@ -5576,7 +5734,7 @@ class Worker():
                 general.plot_2d(
                     EXP_NAME, 
                     data, 
-                    start_step = ((0, 0.4 * DEC_COEF / 1e9), (0, 1)), 
+                    start_step = ((0, dec_calc), (0, 1)), 
                     xname = 'Time', 
                     xscale = 's', 
                     yname = 'Point', 

@@ -1583,7 +1583,7 @@ class CrossSectionDock(CloseableDock):
             self.cursor_label.setPos(view_x, view_y)
             self.cursor_label.show()
 
-            label_text = f"X: {view_x:.4g}\nY: {view_y:.4g}\nZ: {z_val:.4g}"
+            label_text = f"X: {view_x:.4g} ({(self.y_cross_index+1):.0f})\nY: {view_y:.4g} ({(self.x_cross_index+1):.0f})\nZ: {z_val:.4g}"
             self.cursor_label.setText(label_text)
 
     def update_cross_section(self):
@@ -1661,7 +1661,9 @@ class CrossSectionDock(CloseableDock):
             else:
                 self.v_cross_section_widget.cursor_label.show()
 
-            label_text = f"Y: {ydata[self.y_cross_index]:.4g}\nZ: {zval:.4g}"
+            label_text = f"X: {xdata[self.x_cross_index]:.4g} ({(self.y_cross_index+1):.0f})\nY: {ydata[self.y_cross_index]:.4g} ({(self.x_cross_index+1):.0f})\nZ: {zval:.4g}"
+            #label_text = f"Y: {ydata[self.y_cross_index]:.4g}\nZ: {zval:.4g}\nPoint: {(self.x_cross_index+1):.0f}"
+            
             self.v_cross_section_widget.cursor_label.setText(label_text)
 
         if self.h_cross_section_widget.image_operation == 1:
@@ -1727,5 +1729,7 @@ class CrossSectionDock(CloseableDock):
             else:
                 self.h_cross_section_widget.cursor_label.show()
 
-            label_text = f"X: {xdata[self.x_cross_index]:.4g}\nZ: {zval:.4g}"
+            label_text = f"X: {xdata[self.x_cross_index]:.4g} ({(self.y_cross_index+1):.0f})\nY: {ydata[self.y_cross_index]:.4g} ({(self.x_cross_index+1):.0f})\nZ: {zval:.4g}"
+            #f"X: {xdata[self.x_cross_index]:.4g}\nZ: {zval:.4g}\nPoint: {(self.y_cross_index+1):.0f}"
+
             self.h_cross_section_widget.cursor_label.setText(label_text)

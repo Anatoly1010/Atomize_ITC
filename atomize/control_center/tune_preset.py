@@ -6,8 +6,8 @@ import sys
 import time
 import numpy as np
 from multiprocessing import Process, Pipe
-from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QLabel, QDoubleSpinBox, QSpinBox, QPushButton, QTextEdit, QGridLayout, QFrame, QProgressBar
-from PyQt6.QtGui import QIcon
+from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QLabel, QDoubleSpinBox, QSpinBox, QPushButton, QTextEdit, QGridLayout, QFrame, QProgressBar, QFileDialog,  QTreeView, QHeaderView, QSizeGrip, QLineEdit, QFileIconProvider
+from PyQt6.QtGui import QIcon, QAction
 from PyQt6.QtCore import Qt, QTimer
 import atomize.general_modules.csv_opener_saver as openfile
 
@@ -20,10 +20,15 @@ class MainWindow(QMainWindow):
         A function for connecting actions and creating a main window
         """
         super(MainWindow, self).__init__(*args, **kwargs)
-        
+        self.menu()
+
         #####
-        path_to_main2 = os.path.join(os.path.abspath(os.getcwd()), '..', 'libs') #'..',
-        os.chdir(path_to_main2)
+        try:
+            path_to_main2 = os.path.join(os.path.abspath(os.getcwd()), '..', 'libs')
+            os.chdir(path_to_main2) 
+        except FileNotFoundError:
+            path_to_main2 = os.path.join(os.path.abspath(os.getcwd()), '..', '..', 'libs')
+            os.chdir(path_to_main2)
         #####
 
         self.design()
@@ -48,6 +53,7 @@ class MainWindow(QMainWindow):
         path_to_main = os.path.dirname(os.path.abspath(__file__))
         icon_path = os.path.join(path_to_main, 'gui/icon_temp.png')
         self.setWindowIcon( QIcon(icon_path) )
+        self.path = os.path.join(path_to_main, '..', '..', '..', '..', 'experimental_data')
 
         centralwidget = QWidget(self)
         self.setCentralWidget(centralwidget)
@@ -60,7 +66,7 @@ class MainWindow(QMainWindow):
         centralwidget.setLayout(gridLayout)
         
         # ---- Labels & Inputs ----
-        labels = [("Pulse Length", "label_1"), ("Repetition Rate", "label_2"), ("Start Frequency", "label_3"), ("End Frequency", "label_4"), ("Frequency Step", "label_5"), ("Acquisitions", "label_6"), ("Number of Scans", "label_7"), ("Experiment Name", "label_8"), , ("Progress", "label_12"), ("Trigger Channel", "label_9"), ("Curve Channel", "label_10"), ("Oscilloscope IP", "label_11")]
+        labels = [("Pulse Length", "label_1"), ("Repetition Rate", "label_2"), ("Start Frequency", "label_3"), ("End Frequency", "label_4"), ("Frequency Step", "label_5"), ("Acquisitions", "label_6"), ("Number of Scans", "label_7"), ("Experiment Name", "label_8"), ("Progress", "label_12"), ("Trigger Channel", "label_9"), ("Curve Channel", "label_10"), ("Oscilloscope IP", "label_11")]
 
         for name, attr_name in labels:
             lbl = QLabel(name)
@@ -94,6 +100,7 @@ class MainWindow(QMainWindow):
             spin_box.valueChanged.connect(func)
             spin_box.setFixedSize(130, 26)
             spin_box.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.PlusMinus)
+            spin_box.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
 
             spin_box.setKeyboardTracking( False )
             
@@ -119,7 +126,7 @@ class MainWindow(QMainWindow):
             txt.setAcceptRichText(False)
             txt.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
             txt.setStyleSheet("QTextEdit { color : rgb(211, 194, 78) ; selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
-
+            txt.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
 
         # ---- Buttons ----
         buttons = [("Start", "button_start", self.start),
@@ -219,6 +226,24 @@ class MainWindow(QMainWindow):
         gridLayout.setRowStretch(21, 2)
         gridLayout.setColumnStretch(21, 2)
 
+    def menu(self):
+        menubar = self.menuBar()
+        menubar.setStyleSheet("QMenuBar { color: rgb(193, 202, 227); font-weight: bold; font-size: 14px;  border-bottom: 1px solid rgb(193, 202, 227); padding-top: 2px; padding-bottom: 0px; } QMenu::item { color: rgb(193, 202, 227); } QMenu::item:selected {color: rgb(211, 194, 78); background-color: rgb(63, 63, 97); } QMenuBar::item:selected {background-color: rgb(63, 63, 97); }")
+        file_menu = menubar.addMenu("File")
+
+        menubar.setFixedHeight(27)
+
+        self.action_read = QAction("Read from file", self)
+        self.action_read.triggered.connect( self.open_file_dialog )
+        file_menu.addAction(self.action_read)
+
+        self.action_save = QAction("Save to file", self)
+        self.action_save.triggered.connect(self.save_file_dialog)
+        file_menu.addAction(self.action_save)
+
+    def comment(self):
+        pass
+
     def round_to_closest(self, x, y):
         """
         A function to round x to divisible by y
@@ -308,7 +333,7 @@ class MainWindow(QMainWindow):
         
         self.monitor_timer.stop()
         self.exp_process.join() 
-        self.timer.stop()
+        #self.timer.stop()
         self.progress_bar.setValue(0)
         self.button_start.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }  QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
         
@@ -432,7 +457,8 @@ class MainWindow(QMainWindow):
             except Exception as e:
                 break
 
-        #time.sleep(0.1)
+        if self.exp_process.is_alive() and not self.timer.isActive():
+            self.exp_process.join()
 
         if hasattr(self, 'exp_process') and not self.exp_process.is_alive():
             if self.parent_conn.poll():
@@ -454,6 +480,7 @@ class MainWindow(QMainWindow):
         file_data = self.file_handler.create_file_dialog(multiprocessing = True)        
 
         if file_data:
+            self.save_file(file_data.split(".csv")[0])
             self.parent_conn.send( 'FL' + str( file_data ) )
         else:
             self.parent_conn.send( 'FL' + '' )
@@ -468,6 +495,495 @@ class MainWindow(QMainWindow):
         self.exp_process.start()
         self.parent_conn.send('start')
         self.timer.start(300)
+
+    def open_file_dialog(self):
+        """
+        A function to open a new window for choosing a pulse list
+        """
+        filedialog = QFileDialog(self, 'Open File', directory = self.path, filter = "Tune Parameters (*.tune)", options = QFileDialog.Option.DontUseNativeDialog)
+        
+        tree = filedialog.findChild(QTreeView)
+        header = tree.header()
+        for i in range(header.count()):
+            header.setSectionResizeMode(i, QHeaderView.ResizeMode.ResizeToContents)
+
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+
+        buttons = filedialog.findChildren(QPushButton)
+        seen_texts = []
+        for btn in buttons:
+            if btn.text() in seen_texts:
+                btn.hide()
+            else:
+                seen_texts.append(btn.text())
+        
+        line_edit = filedialog.findChild(QLineEdit)
+
+        if line_edit:
+            line_edit.setCompleter(None)
+
+        size_grip = filedialog.findChild(QSizeGrip)
+        if size_grip:
+            size_grip.setVisible(False)
+
+        filedialog.setStyleSheet("""
+            QFileDialog, QDialog { 
+                background-color: rgb(42, 42, 64); 
+                color: rgb(193, 202, 227);
+                font-size: 11px;
+            }
+
+            QFileDialog QListView {
+                min-width: 150px; 
+                background-color: rgb(35, 35, 55);
+                border: 1px solid rgb(63, 63, 97);
+                color: rgb(193, 202, 227);
+            }
+
+            QTreeView {
+                min-width: 500px;
+                background-color: rgb(35, 35, 55);
+                border: 1px solid rgb(63, 63, 97);
+                color: rgb(193, 202, 227);
+                outline: none;
+            }
+
+            QFileDialog QFrame#qt_contents, QFileDialog QWidget {
+                background-color: rgb(42, 42, 64);
+            }
+            
+            QFileDialog QToolBar {
+                background-color: rgb(42, 42, 64);
+                border-bottom: 1px solid rgb(63, 63, 97);
+                min-height: 34px; 
+                padding: 2px;
+            }
+
+            QToolButton {
+                background-color: rgb(63, 63, 97);
+                border: 1px solid rgb(83, 83, 117);
+                border-radius: 4px;
+                min-height: 23px; 
+                max-height: 23px;
+                min-width: 23px;
+                qproperty-iconSize: 14px 14px; 
+                margin: 0px 2px;
+                vertical-align: middle;
+            }
+
+            QToolButton:hover {
+                border: 1px solid rgb(211, 194, 78);
+                background-color: rgb(83, 83, 117);
+            }
+
+            QLineEdit, QComboBox {
+                background-color: rgb(63, 63, 97);
+                color: rgb(193, 202, 227);
+                border: 1px solid rgb(83, 83, 117);
+                border-radius: 3px;
+                padding: 2px 5px;
+                min-height: 16px; 
+            }
+
+            QLineEdit:focus, QFileDialog QComboBox:focus {
+                border: 1px solid rgb(211, 194, 78);
+                color: rgb(211, 194, 78);
+                outline: none;
+            }
+
+            QFileDialog QComboBox#lookInCombo {
+                background-color: rgb(42, 42, 64);
+                color: rgb(193, 202, 227);
+                border: 1px solid rgb(83, 83, 117);
+                border-radius: 3px;
+                padding-left: 5px;
+                min-height: 19px;
+                max-height: 19px;
+                selection-background-color: rgb(48, 48, 75);
+                selection-color: rgb(211, 194, 78);
+            }
+
+            QFileDialog QComboBox#lookInCombo QAbstractItemView {
+                outline: none;
+                border: 1px solid rgb(48, 48, 75);
+                background-color: rgb(42, 42, 64);
+            }
+
+            QFileDialog QDialogButtonBox QPushButton {
+                background-color: rgb(63, 63, 97);
+                color: rgb(193, 202, 227);
+                border: 1px solid rgb(83, 83, 117);
+                border-radius: 4px;
+                font-weight: bold;
+                min-height: 23px;
+                max-height: 23px;
+                min-width: 75px;
+                padding: 0px 12px;
+            }
+
+            QFileDialog QDialogButtonBox QPushButton:hover {
+                background-color: rgb(83, 83, 117);
+                border: 1px solid rgb(211, 194, 78);
+                color: rgb(211, 194, 78);
+            }
+            
+            QHeaderView::section {
+                background-color: rgb(63, 63, 97);
+                color: rgb(193, 202, 227);
+                padding: 4px;
+                border: none;
+                border-right: 1px solid rgb(83, 83, 117);
+                min-height: 20px;
+            }
+
+            QScrollBar:vertical {
+                border: none; background: rgb(43, 43, 77); 
+                width: 10px; margin: 0px;
+            }
+            QScrollBar::handle:vertical {
+                background: rgb(193, 202, 227); min-height: 20px; border-radius: 5px;
+            }
+            QScrollBar::handle:vertical:hover { background: rgb(211, 194, 78); }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: none; }
+
+            QScrollBar:horizontal {
+                border: none; 
+                background: rgb(43, 43, 77); 
+                height: 10px; 
+                margin: 0px;
+            }
+            QScrollBar::handle:horizontal {
+                background: rgb(193, 202, 227); 
+                min-width: 20px; 
+                border-radius: 5px;
+            }
+            QScrollBar::handle:horizontal:hover { 
+                background: rgb(211, 194, 78); 
+            }
+            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { 
+                width: 0px; 
+            }
+            QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal { 
+                background: none; 
+            }
+
+            QFileDialog QDialogButtonBox {
+                background-color: rgb(42, 42, 64);
+                border-top: 1px solid rgb(63, 63, 97);
+                padding: 6px;
+            }
+
+            QFileDialog QLabel {
+                color: rgb(193, 202, 227);
+            }
+
+            QFileDialog QListView::item:hover {
+                background-color: rgb(48, 48, 75);
+                color: rgb(211, 194, 78);
+            }
+
+            QHeaderView {
+                background-color: rgb(63, 63, 97);
+            }
+
+            QFileDialog QListView#sidebar:inactive, 
+            QTreeView:inactive {
+                selection-background-color: rgb(35, 35, 55);
+                selection-color: rgb(211, 194, 78);
+            }
+
+            QTreeView::item:hover { 
+                background-color: rgb(48, 48, 75);
+                color: rgb(211, 194, 78); 
+                } 
+            QTreeView::item:selected:inactive, 
+            QFileDialog QListView#sidebar::item:selected:inactive {
+                selection-background-color: rgb(63, 63, 97);
+                selection-color: rgb(211, 194, 78);
+            }
+            QFileDialog QListView#sidebar::item {
+                padding-left: 5px; 
+                padding-top: 5px;
+            }
+
+            QMenu {
+                background-color: rgb(42, 42, 64);
+                border: 1px solid rgb(63, 63, 97);
+                padding: 3px;
+            }
+            QMenu::item { color: rgb(211, 194, 78); } 
+            QMenu::item:selected { 
+                background-color: rgb(48, 48, 75); 
+                color: rgb(211, 194, 78);
+                }
+
+        """)
+        
+        filedialog.setFileMode(QFileDialog.FileMode.AnyFile)
+        filedialog.fileSelected.connect(self.open_file)
+        filedialog.show()
+
+    def save_file_dialog(self):
+        """
+        A function to open a new window for choosing a pulse list
+        """
+        filedialog = QFileDialog(self, 'Save File', directory = self.path, filter = "Tune Parameters (*.tune)", options = QFileDialog.Option.DontUseNativeDialog)
+        filedialog.setAcceptMode(QFileDialog.AcceptMode.AcceptSave)
+
+        tree = filedialog.findChild(QTreeView)
+        header = tree.header()
+        for i in range(header.count()):
+            header.setSectionResizeMode(i, QHeaderView.ResizeMode.ResizeToContents)
+
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+
+        buttons = filedialog.findChildren(QPushButton)
+        seen_texts = []
+        for btn in buttons:
+            if btn.text() in seen_texts:
+                btn.hide()
+            else:
+                seen_texts.append(btn.text())
+        
+        line_edit = filedialog.findChild(QLineEdit)
+
+        if line_edit:
+            line_edit.setCompleter(None)
+
+        size_grip = filedialog.findChild(QSizeGrip)
+        if size_grip:
+            size_grip.setVisible(False)
+
+        filedialog.setStyleSheet("""
+            QFileDialog, QDialog { 
+                background-color: rgb(42, 42, 64); 
+                color: rgb(193, 202, 227);
+                font-size: 11px;
+            }
+
+            QFileDialog QListView {
+                min-width: 150px; 
+                background-color: rgb(35, 35, 55);
+                border: 1px solid rgb(63, 63, 97);
+                color: rgb(193, 202, 227);
+            }
+
+            QTreeView {
+                min-width: 500px;
+                background-color: rgb(35, 35, 55);
+                border: 1px solid rgb(63, 63, 97);
+                color: rgb(193, 202, 227);
+                outline: none;
+            }
+
+            QFileDialog QFrame#qt_contents, QFileDialog QWidget {
+                background-color: rgb(42, 42, 64);
+            }
+            
+            QFileDialog QToolBar {
+                background-color: rgb(42, 42, 64);
+                border-bottom: 1px solid rgb(63, 63, 97);
+                min-height: 34px; 
+                padding: 2px;
+            }
+
+            QToolButton {
+                background-color: rgb(63, 63, 97);
+                border: 1px solid rgb(83, 83, 117);
+                border-radius: 4px;
+                min-height: 23px; 
+                max-height: 23px;
+                min-width: 23px;
+                qproperty-iconSize: 14px 14px; 
+                margin: 0px 2px;
+                vertical-align: middle;
+            }
+
+            QToolButton:hover {
+                border: 1px solid rgb(211, 194, 78);
+                background-color: rgb(83, 83, 117);
+            }
+
+            QLineEdit, QComboBox {
+                background-color: rgb(63, 63, 97);
+                color: rgb(193, 202, 227);
+                border: 1px solid rgb(83, 83, 117);
+                border-radius: 3px;
+                padding: 2px 5px;
+                min-height: 16px; 
+            }
+
+            QLineEdit:focus, QFileDialog QComboBox:focus {
+                border: 1px solid rgb(211, 194, 78);
+                color: rgb(211, 194, 78);
+                outline: none;
+            }
+
+            QFileDialog QComboBox#lookInCombo {
+                background-color: rgb(42, 42, 64);
+                color: rgb(193, 202, 227);
+                border: 1px solid rgb(83, 83, 117);
+                border-radius: 3px;
+                padding-left: 5px;
+                min-height: 19px;
+                max-height: 19px;
+                selection-background-color: rgb(48, 48, 75);
+                selection-color: rgb(211, 194, 78);
+            }
+
+            QFileDialog QComboBox#lookInCombo QAbstractItemView {
+                outline: none;
+                border: 1px solid rgb(48, 48, 75);
+                background-color: rgb(42, 42, 64);
+            }
+
+            QFileDialog QDialogButtonBox QPushButton {
+                background-color: rgb(63, 63, 97);
+                color: rgb(193, 202, 227);
+                border: 1px solid rgb(83, 83, 117);
+                border-radius: 4px;
+                font-weight: bold;
+                min-height: 23px;
+                max-height: 23px;
+                min-width: 75px;
+                padding: 0px 12px;
+            }
+
+            QFileDialog QDialogButtonBox QPushButton:hover {
+                background-color: rgb(83, 83, 117);
+                border: 1px solid rgb(211, 194, 78);
+                color: rgb(211, 194, 78);
+            }
+            
+            QHeaderView::section {
+                background-color: rgb(63, 63, 97);
+                color: rgb(193, 202, 227);
+                padding: 4px;
+                border: none;
+                border-right: 1px solid rgb(83, 83, 117);
+                min-height: 20px;
+            }
+
+            QScrollBar:vertical {
+                border: none; background: rgb(43, 43, 77); 
+                width: 10px; margin: 0px;
+            }
+            QScrollBar::handle:vertical {
+                background: rgb(193, 202, 227); min-height: 20px; border-radius: 5px;
+            }
+            QScrollBar::handle:vertical:hover { background: rgb(211, 194, 78); }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: none; }
+
+            QScrollBar:horizontal {
+                border: none; 
+                background: rgb(43, 43, 77); 
+                height: 10px; 
+                margin: 0px;
+            }
+            QScrollBar::handle:horizontal {
+                background: rgb(193, 202, 227); 
+                min-width: 20px; 
+                border-radius: 5px;
+            }
+            QScrollBar::handle:horizontal:hover { 
+                background: rgb(211, 194, 78); 
+            }
+            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { 
+                width: 0px; 
+            }
+            QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal { 
+                background: none; 
+            }
+
+            QFileDialog QDialogButtonBox {
+                background-color: rgb(42, 42, 64);
+                border-top: 1px solid rgb(63, 63, 97);
+                padding: 6px;
+            }
+
+            QFileDialog QLabel {
+                color: rgb(193, 202, 227);
+            }
+
+            QFileDialog QListView::item:hover {
+                background-color: rgb(48, 48, 75);
+                color: rgb(211, 194, 78);
+            }
+
+            QHeaderView {
+                background-color: rgb(63, 63, 97);
+            }
+
+            QFileDialog QListView#sidebar:inactive, 
+            QTreeView:inactive {
+                selection-background-color: rgb(35, 35, 55);
+                selection-color: rgb(211, 194, 78);
+            }
+
+            QTreeView::item:hover { 
+                background-color: rgb(48, 48, 75);
+                color: rgb(211, 194, 78); 
+                } 
+            QTreeView::item:selected:inactive, 
+            QFileDialog QListView#sidebar::item:selected:inactive {
+                selection-background-color: rgb(63, 63, 97);
+                selection-color: rgb(211, 194, 78);
+            }
+            QFileDialog QListView#sidebar::item {
+                padding-left: 5px; 
+                padding-top: 5px;
+            }
+
+            QMenu {
+                background-color: rgb(42, 42, 64);
+                border: 1px solid rgb(63, 63, 97);
+                padding: 3px;
+            }
+            QMenu::item { color: rgb(211, 194, 78); } 
+            QMenu::item:selected { 
+                background-color: rgb(48, 48, 75); 
+                color: rgb(211, 194, 78);
+                }
+
+        """)
+
+        filedialog.setFileMode(QFileDialog.FileMode.AnyFile)
+        filedialog.fileSelected.connect(self.save_file)
+        filedialog.show()
+
+    def open_file(self, filename):
+        """
+        A function to open a pulse list
+        :param filename: string
+        """
+        text = open(filename).read()
+        lines = text.split('\n')
+
+        self.box_length.setValue( float( lines[0].split(':  ')[1] ) )
+        self.box_rep_rate.setValue( int( lines[1].split(':  ')[1] ) )
+        self.box_st_freq.setValue( int( lines[2].split(':  ')[1] ) )
+        self.box_end_freq.setValue( int( lines[3].split(':  ')[1] ) )
+        self.box_step_freq.setValue( int( lines[4].split(':  ')[1] ) )
+        self.box_averag.setValue( int( lines[5].split(':  ')[1] ) )
+        self.box_scan.setValue( int( lines[6].split(':  ')[1] ) )
+
+    def save_file(self, filename):
+        """
+        A function to save a new pulse list
+        :param filename: string
+        """
+        if filename[-4:] != 'tune':
+            filename = filename + '.tune'
+        with open(filename, 'w') as file:
+            file.write( 'Pulse Length:  ' + str(self.box_length.value()) + '\n' )
+            file.write( 'Repetition Rate:  ' + str(self.box_rep_rate.value()) + '\n' )
+            file.write( 'Start Frequency:  ' + str(self.box_st_freq.value()) + '\n' )
+            file.write( 'End Frequency:  ' + str(self.box_end_freq.value()) + '\n' )
+            file.write( 'Frequency Step:  ' + str(self.box_step_freq.value()) + '\n' )
+            file.write( 'Averages:  ' + str(self.box_averag.value()) + '\n' )
+            file.write( 'Scans:  ' + str(self.box_scan.value()) + '\n' )
 
 # The worker class that run the digitizer in a different thread
 class Worker():

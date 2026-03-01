@@ -92,7 +92,8 @@ class MainWindow(QMainWindow):
             spin_box.valueChanged.connect(func)
             spin_box.setFixedSize(130, 26)
             spin_box.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.PlusMinus)
-
+            spin_box.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
+            
             spin_box.setKeyboardTracking( False )
             
             setattr(self, attr_name, spin_box)

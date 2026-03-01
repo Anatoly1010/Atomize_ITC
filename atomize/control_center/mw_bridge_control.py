@@ -122,6 +122,7 @@ class MainWindow(QMainWindow):
             spin_box.setFixedSize(130, 26)
             spin_box.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.PlusMinus)
             spin_box.setKeyboardTracking( False )
+            spin_box.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
 
             setattr(self, attr_name, spin_box)
 

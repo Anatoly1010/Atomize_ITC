@@ -34,18 +34,18 @@ class MainExtended(MainWindow):
         self.process_tune_preset = QtCore.QProcess(self)
         self.process_phasing = QtCore.QProcess(self)
         self.process_awg_phasing = QtCore.QProcess(self)
-        self.process_t2 = QtCore.QProcess(self)
-        self.process_t1 = QtCore.QProcess(self)
-        self.process_ed = QtCore.QProcess(self)
-        self.process_eseem = QtCore.QProcess(self)
+        #self.process_t2 = QtCore.QProcess(self)
+        #self.process_t1 = QtCore.QProcess(self)
+        #self.process_ed = QtCore.QProcess(self)
+        #self.process_eseem = QtCore.QProcess(self)
 
         self.all_processes = [self.process_tr, self.process_osc, 
             self.process_osc2, self.process_cw, self.process_temp, 
             self.process_field, self.process_mw, self.process_tune_preset, 
-            self.process_phasing, self.process_awg_phasing, self.process_t2, 
-            self.process_t1, self.process_ed, self.process_eseem
+            self.process_phasing, self.process_awg_phasing
         ]
-
+        #, self.process_t2, self.process_t1, self.process_ed, self.process_eseem]
+        
         for process in self.all_processes:
             process.readyReadStandardOutput.connect(self.handle_output_control_center)
 
@@ -61,8 +61,6 @@ class MainExtended(MainWindow):
         self.skip_lines = 0
 
     def handle_output_control_center(self):
-
-
         sending_process = self.sender()
         if not sending_process:
             return
@@ -98,11 +96,13 @@ class MainExtended(MainWindow):
 
         button_name_1 = ["CW EPR", "TR EPR", "2012A; IP x.2.21", "2012A_2; IP x.2.22", "Set Temperature", "Set MF"]
         button_name_2 = ["Pulsed MW Bridge", "", "RECT Channel", "AWG Channel"]
-        button_name_3 = ["Resonator Tuning", "T2 Measurement", "T1 Measurement", "ED Spectrum", "3pESEEM"]
+        button_name_3 = ["Resonator Tuning"]
+        #, "T2 Measurement", "T1 Measurement", "ED Spectrum", "3pESEEM"]
 
         actions_1 = [self.start_cw, self.start_tr_control, self.start_osc_control, self.start_osc_control_2, self.start_temp_control, self.start_field_control]
         actions_2 = [self.start_mw_control, None, self.start_rect_phasing, self.start_awg_phasing]
-        actions_3 = [self.start_tune_preset, self.start_t2_preset, self.start_t1_preset, self.start_ed_preset, self.start_eseem_preset]
+        actions_3 = [self.start_tune_preset]
+        #, self.start_t2_preset, self.start_t1_preset, self.start_ed_preset, self.start_eseem_preset]
 
         columns_data = [(button_name_1, actions_1, 1), (button_name_2, actions_2, 2), (button_name_3, actions_3, 3)]
 
@@ -121,69 +121,14 @@ class MainExtended(MainWindow):
                 gridlayout.addWidget(btn, row_idx , col_idx)
                 button_list.append(btn)
 
-        # Open Script:
-        label = QLabel("Open Script:")
-        label.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        label.setFixedWidth(100)
-        gridlayout.addWidget(label, 0, 4)
-
-        combo_items = [" Tuning", " T2 Echo Shape", " ED Spectrum", " ESEEM Echo Shape"]
-        self.script_chooser = QComboBox()
-        self.script_chooser.addItems(combo_items)
-        self.script_chooser.setFixedSize(140, 40)
-        gridlayout.addWidget(self.script_chooser, 0, 5)
-        self.script_chooser.setStyleSheet("""
-                QComboBox { 
-                    background-color: rgb(63, 63, 97);
-                    color: rgb(193, 202, 227); 
-                    border: 1px solid rgb(43, 43, 77);
-                    border-radius: 4px;
-                    padding: 0px 10px 0px 10px; 
-                    font-weight: bold;
-                }
-                
-                QComboBox::drop-down {
-                    subcontrol-origin: padding;
-                    subcontrol-position: top right;
-                    width: 22px;
-                    border-left: 1px solid rgb(43, 43, 77); 
-                    border-top-right-radius: 3px;
-                    border-bottom-right-radius: 3px;
-                }
-
-                QComboBox::down-arrow {
-                    border-left: 4px solid transparent;
-                    border-right: 4px solid transparent;
-                    border-top: 4px solid rgb(193, 202, 227);
-                    width: 0;
-                    height: 0;
-                    margin-top: 1px; 
-                    margin-right: 2px;
-                }
-
-                QComboBox QAbstractItemView {
-                    background-color: rgb(42, 42, 64);
-                    color: rgb(193, 202, 227);
-                    selection-background-color: rgb(63, 63, 97);
-                    selection-color: rgb(211, 194, 78);
-                    border: 1px solid rgb(63, 63, 97);
-                    outline: none;
-                }
-            """)
-
-        self.script_chooser.currentIndexChanged.connect(self.script_open_combo)
-        self.script = self.text_to_script_name( self.script_chooser.currentText() )
-        # preopen script
-        #self.open_file( self.script )
-
         # Test option
         label_2 = QLabel("Test Scripts:")
         label_2.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
         label_2.setFixedWidth(100)
-        gridlayout.addWidget(label_2, 1, 4)
+        gridlayout.addWidget(label_2, 0, 4)
 
         self.checkTests = QCheckBox("")
-        gridlayout.addWidget(self.checkTests, 1, 5)
+        gridlayout.addWidget(self.checkTests, 0, 5)
         self.checkTests.setStyleSheet("""
                 QCheckBox { 
                     color: rgb(193, 202, 227); 
@@ -225,7 +170,7 @@ class MainExtended(MainWindow):
         gridlayout.setColumnStretch(6, 3)
         gridlayout.setRowStretch(6, 3)
 
-        bottom_label = QLabel("https://anatoly1010.github.io/atomize_docs/; Version 0.3.1; 15/02/2026")
+        bottom_label = QLabel("https://anatoly1010.github.io/atomize_docs/; Version 0.3.2; 01/03/2026")
         bottom_label.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
         main_layout.addWidget(bottom_label)
 
@@ -238,9 +183,9 @@ class MainExtended(MainWindow):
             self.process_python, self.process_tr, self.process_osc, 
             self.process_osc2, self.process_cw, self.process_temp, 
             self.process_field, self.process_mw, self.process_tune_preset, 
-            self.process_phasing, self.process_awg_phasing, self.process_t2, 
-            self.process_t1, self.process_ed, self.process_eseem
+            self.process_phasing, self.process_awg_phasing
         ]
+            #, self.process_t2, self.process_t1, self.process_ed, self.process_eseem]
 
         active_processes = []
         for p in processes:
@@ -265,9 +210,9 @@ class MainExtended(MainWindow):
             self.process_python, self.process_tr, self.process_osc, 
             self.process_osc2, self.process_cw, self.process_temp, 
             self.process_field, self.process_mw, self.process_tune_preset, 
-            self.process_phasing, self.process_awg_phasing, self.process_t2, 
-            self.process_t1, self.process_ed, self.process_eseem
+            self.process_phasing, self.process_awg_phasing
         ]
+            #, self.process_t2, self.process_t1, self.process_ed, self.process_eseem]
 
         active_processes = []
         for p in processes:
@@ -374,6 +319,7 @@ class MainExtended(MainWindow):
             # mod
 
     ##### new methods:
+    ###unused
     def start_eseem_preset(self):
         """
         A function to run an phasing for rect channel.
@@ -401,6 +347,7 @@ class MainExtended(MainWindow):
         """
         self.process_t2.setArguments([os.path.join('..','atomize/control_center/t2_preset_insys.py')])
         self.process_t2.start()
+    ###unused
 
     def start_rect_phasing(self):
         """
@@ -471,21 +418,6 @@ class MainExtended(MainWindow):
         """
         self.process_temp.setArguments([os.path.join('..','atomize/control_center/temp_control.py')])
         self.process_temp.start()
-
-    def script_open_combo(self):
-        self.script = self.text_to_script_name( self.script_chooser.currentText() )
-        self.open_file(  os.path.join(self.script ))
-
-    def text_to_script_name(self, text_to_parse):
-
-        if text_to_parse == ' Tuning':
-            return os.path.join(self.path_to_main, '..', 'atomize/tests/pulse_epr/01_resonator_tuning.py')
-        elif text_to_parse == ' T2 Echo Shape':
-            return os.path.join(self.path_to_main, '..', 'atomize/tests/pulse_epr/keysight/02_t2_baseline_echo_shape.py')
-        elif text_to_parse == ' ED Spectrum':
-            return os.path.join(self.path_to_main, '..', 'atomize/tests/pulse_epr/keysight/03_echo_detected_spectrum_baseline.py')
-        elif text_to_parse == ' ESEEM Echo Shape':
-            return os.path.join(self.path_to_main, '..', 'atomize/tests/pulse_epr/keysight/07_eseem_phase_echo_shape.py')
 
 def main():
     """

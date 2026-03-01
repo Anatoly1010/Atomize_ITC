@@ -62,8 +62,10 @@ class MainWindow(QMainWindow):
 
     def menu(self):
         menubar = self.menuBar()
-        menubar.setStyleSheet("QMenuBar { color: rgb(193, 202, 227); font-weight: bold; font-size: 14px; } QMenu::item { color: rgb(211, 194, 78); } QMenu::item:selected {color: rgb(193, 202, 227); }")
+        menubar.setStyleSheet("QMenuBar { color: rgb(193, 202, 227); font-weight: bold; font-size: 14px;  border-bottom: 1px solid rgb(193, 202, 227); padding-top: 2px; padding-bottom: 0px; } QMenu::item { color: rgb(193, 202, 227); } QMenu::item:selected {color: rgb(211, 194, 78); background-color: rgb(63, 63, 97); } QMenuBar::item:selected {background-color: rgb(63, 63, 97); }")
         file_menu = menubar.addMenu("File")
+        pulse_menu = menubar.addMenu("Pulse")
+
         menubar.setFixedHeight(27)
 
         self.action_read = QAction("Read from file", self)
@@ -73,6 +75,135 @@ class MainWindow(QMainWindow):
         self.action_save = QAction("Save to file", self)
         self.action_save.triggered.connect(self.save_file_dialog)
         file_menu.addAction(self.action_save)
+
+        self.reset_all = QAction("Reset All", self)
+        self.reset_all.triggered.connect(self.reset_all_func)
+        pulse_menu.addAction(self.reset_all)
+
+        pulse_menu.addSeparator()
+
+        reset_pulse_menu = pulse_menu.addMenu("Reset Pulse...")
+
+        self.pulse_actions = []
+
+        for i in range(1, 10):
+            action_text = f"P{i}"
+            action = QAction(action_text, self)
+            
+            action.triggered.connect(lambda checked, p=i: self.reset_pulse_func(p))
+            
+            reset_pulse_menu.addAction(action)
+            self.pulse_actions.append(action)
+
+        pulse_menu.addSeparator()
+
+        copy_pulse_menu = pulse_menu.addMenu("Copy Pulse...")
+
+        self.copy_pulse_actions = []
+
+        for i in range(1, 10):
+            action_text = f"P{i}"
+            action = QAction(action_text, self)
+            
+            action.triggered.connect(lambda checked, p=i: self.copy_pulse_func(p))
+            
+            copy_pulse_menu.addAction(action)
+            self.copy_pulse_actions.append(action)
+
+        cut_pulse_menu = pulse_menu.addMenu("Cut Pulse...")
+
+        self.cut_pulse_actions = []
+
+        for i in range(1, 10):
+            action_text = f"P{i}"
+            action = QAction(action_text, self)
+            
+            action.triggered.connect(lambda checked, p=i: self.cut_pulse_func(p))
+            
+            cut_pulse_menu.addAction(action)
+            self.cut_pulse_actions.append(action)
+
+        paste_pulse_menu = pulse_menu.addMenu("Paste Pulse...")
+
+        self.paste_pulse_actions = []
+
+        for i in range(1, 10):
+            action_text = f"P{i}"
+            action = QAction(action_text, self)
+            
+            action.triggered.connect(lambda checked, p=i: self.paste_pulse_func(p))
+            
+            paste_pulse_menu.addAction(action)
+            self.paste_pulse_actions.append(action)
+
+    def cut_pulse_func(self, pulse_number):
+        self.copy_pulse_func(pulse_number)
+
+        if pulse_number == 1:
+            values = [576, 816, 0, 0, "+x,-x", "DETECTION"]
+        else:
+            values = [0, 0, 0, 0, "+x,+x", "MW"]
+
+        suffixes = ["_st", "_len", "_st_inc", "_len_inc"]
+        
+        for i, suffix in enumerate(suffixes):
+            getattr(self, f"P{pulse_number}{suffix}").setValue(values[i])
+
+        phase_widget = getattr(self, f"Phase_{pulse_number}")
+        new_phase_text = str(values[4])
+        phase_widget.setPlainText(new_phase_text)
+            
+        combo_widget = getattr(self, f"P{pulse_number}_type")
+        new_combo_text = str(values[5])
+        combo_widget.setCurrentText(new_combo_text)
+
+    def paste_pulse_func(self, pulse_number):
+        if self.pulse_buffer is None:
+            return
+
+        getattr(self, f"P{pulse_number}_st").setValue(self.pulse_buffer['st'])
+        getattr(self, f"P{pulse_number}_len").setValue(self.pulse_buffer['len'])
+        getattr(self, f"P{pulse_number}_st_inc").setValue(self.pulse_buffer['st_inc'])
+        getattr(self, f"P{pulse_number}_len_inc").setValue(self.pulse_buffer['len_inc'])
+        getattr(self, f"Phase_{pulse_number}").setPlainText(self.pulse_buffer['phase'])
+        getattr(self, f"P{pulse_number}_type").setCurrentText(self.pulse_buffer['type'])
+    
+    def copy_pulse_func(self, pulse_number):
+        self.pulse_buffer = {
+            'st': getattr(self, f"P{pulse_number}_st").value(),
+            'len': getattr(self, f"P{pulse_number}_len").value(),
+            'st_inc': getattr(self, f"P{pulse_number}_st_inc").value(),
+            'len_inc': getattr(self, f"P{pulse_number}_len_inc").value(),
+            'phase': getattr(self, f"Phase_{pulse_number}").toPlainText(),
+            'type': getattr(self, f"P{pulse_number}_type").currentText()
+        }
+
+    def reset_pulse_func(self, pulse_number):
+        if pulse_number == 1:
+            values = [576, 816, 0, 0, "+x,-x", "DETECTION"]
+        elif pulse_number == 2:
+            values = [0, 22.4, 0, 0, "+x,-x", "MW"]
+        elif pulse_number == 3:
+            values = [288, 44.8, 0, 0, "+x,+x", "MW"]
+        else:
+            values = [0, 0, 0, 0, "+x,+x", "MW"]
+
+        suffixes = ["_st", "_len", "_st_inc", "_len_inc"]
+        
+        for i, suffix in enumerate(suffixes):
+            getattr(self, f"P{pulse_number}{suffix}").setValue(values[i])
+
+        phase_widget = getattr(self, f"Phase_{pulse_number}")
+        new_phase_text = str(values[4])
+        phase_widget.setPlainText(new_phase_text)
+            
+        combo_widget = getattr(self, f"P{pulse_number}_type")
+        new_combo_text = str(values[5])
+        combo_widget.setCurrentText(new_combo_text)
+
+    def reset_all_func(self):
+        for i in range(1, 10):
+            self.reset_pulse_func(i)
 
     def design_tab_1(self):
         self.setObjectName("MainWindow")
@@ -134,6 +265,7 @@ class MainWindow(QMainWindow):
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
         scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.horizontalScrollBar().setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
         #scroll.setFixedHeight(383)
 
         scroll.setStyleSheet(f"""
@@ -171,7 +303,8 @@ class MainWindow(QMainWindow):
         self.gridLayout.setContentsMargins(5, 5, 0, 0)
         self.gridLayout.setVerticalSpacing(4)
         self.gridLayout.setHorizontalSpacing(20)
-        
+
+
         tab_layout.addLayout(self.gridLayout)
         tab_layout.addStretch()
 
@@ -231,6 +364,7 @@ class MainWindow(QMainWindow):
                 spin_box.setSuffix(pulse_set[6])
                 spin_box.setFixedSize(130, 26)
                 spin_box.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.PlusMinus)
+                spin_box.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
 
                 spin_box.setKeyboardTracking( False )
                 # widget name pulse_set[7]
@@ -325,6 +459,7 @@ class MainWindow(QMainWindow):
             self.update_pulse_phase(i)
 
             self.gridLayout.addWidget(txt, 10, i)
+            txt.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu) 
 
         label_widget = getattr(self, f"label_6")
         label_widget.setFixedSize(130, 26)
@@ -357,6 +492,7 @@ class MainWindow(QMainWindow):
 
             self.buttons_layout.addWidget(rr_box, box_c, 1)
             box_c += 1
+            rr_box.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
 
         label_widget = getattr(self, f"label_7")
         self.buttons_layout.addWidget(label_widget, 0, 0)
@@ -483,7 +619,8 @@ class MainWindow(QMainWindow):
             spin_box.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.PlusMinus)
 
             spin_box.setKeyboardTracking( False )
-            
+            spin_box.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu) 
+
             setattr(self, attr_name, spin_box)
             if isinstance(spin_box, QSpinBox):
                 if attr_name == 'Dec':
@@ -511,6 +648,7 @@ class MainWindow(QMainWindow):
             txt.setAcceptRichText(False)
             txt.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
             txt.setStyleSheet("QTextEdit { color : rgb(211, 194, 78) ; selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
+            txt.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
 
         # ---- Combo boxes----
         combo_boxes = [("Linear Time", "combo_sweep", "cur_sweep", self.sweep_type, 
@@ -672,7 +810,8 @@ class MainWindow(QMainWindow):
             spin_box.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.PlusMinus)
 
             spin_box.setKeyboardTracking( False )
-            
+            spin_box.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu) 
+
             setattr(self, attr_name, spin_box)
             if isinstance(spin_box, QDoubleSpinBox):
                 if attr_name == 'Zero_order':
@@ -1979,7 +2118,8 @@ class MainWindow(QMainWindow):
             except Exception as e:
                 break
 
-        #time.sleep(0.1)
+        if self.digitizer_process.is_alive() and not self.timer.isActive():
+            self.digitizer_process.join()
 
         if hasattr(self, 'digitizer_process') and not self.digitizer_process.is_alive():
             if self.parent_conn_dig.poll():
@@ -2024,6 +2164,7 @@ class MainWindow(QMainWindow):
         file_data = self.file_handler.create_file_dialog(multiprocessing = True)        
 
         if file_data:
+            self.save_file(file_data.split(".csv")[0])
             self.parent_conn_dig.send( 'FL' + str( file_data ) )
         else:
             self.parent_conn_dig.send( 'FL' + '' )
@@ -2596,7 +2737,37 @@ class Worker():
             win_right, p1_exp, p2_exp, p3_exp, p4_exp, 
             p5_exp, p6_exp, p7_exp, p8_exp, p9_exp, laser_flag, 
             rep_rate, field, laser_num, q_switch_delay):
-        
+        import time
+        import traceback
+        import atomize.general_modules.csv_opener_saver as openfile
+
+        file_handler = openfile.Saver_Opener()
+
+        while self.command != 'exit':
+
+            time.sleep(0.2)
+
+            if conn.poll() == True:
+                self.command = conn.recv()
+
+            if self.command == 'exit':
+                #pb.pulser_close()
+                self.command = conn.recv()
+                conn.send(('Open', ''))
+                
+                while True:
+                    if conn.poll():
+                        msg = conn.recv()
+                        if msg.startswith('FL'):
+                            file_data = msg[2:]
+                            break
+                    general.wait('200 ms')
+
+                header = 'test'
+                file_handler.save_data(file_data, np.c_[np.array([0]), np.array([0]), np.array([0])], header = header, mode = 'w')
+
+                conn.send( ('', f'Pulses are stopped') )        
+        """   
         import traceback
 
         try:
@@ -2624,14 +2795,17 @@ class Worker():
             if p1_exp[4] != '0.0 ns':
                 #delta_start
                 step = round( float( p1_exp[4].split(' ')[0] ), 1)
+                f_delay = self.round_to_closest( float(p1_exp[1].split(' ')[0]), 3.2)
             elif p1_exp[5] != '0.0 ns':
                 #length_increment
                 step = round( float( p1_exp[5].split(' ')[0] ), 1)
+                f_delay = self.round_to_closest( float(p1_exp[2].split(' ')[0]), 3.2)
             else:
                 #prevent no increment
                 step = 1
+                f_delay = 0
                 conn.send( ('Message', 'No START or LENGTH increment; the time axis corresponds to the number of points in the experiment') )
-            
+
             general.plot_remove(exp_name)
 
             POINTS = points
@@ -2712,7 +2886,8 @@ class Worker():
             pb.pulser_open()
             pb.digitizer_number_of_averages(AVERAGES)
             data = np.zeros( ( 2, POINTS ) )
-            x_axis = np.linspace(0, (POINTS - 1)*STEP, num = POINTS) 
+            x_axis = f_delay + np.linspace(0, (POINTS - 1)*STEP, num = POINTS) 
+            x_axis_plot = x_axis / 1e9
 
             while self.command != 'exit':
 
@@ -2731,7 +2906,7 @@ class Worker():
                             pb.pulser_next_phase()
 
                             if step != 1:
-                                general.plot_1d(exp_name, x_axis / 1e9, ( data[0], data[1] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j*STEP, 1)))
+                                general.plot_1d(exp_name, x_axis_plot, ( data[0], data[1] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j*STEP, 1)))
                             else:
                                 general.plot_1d(exp_name, x_axis, ( data[0], data[1] ), xname = 'Point', xscale = '', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j, 1)))
 
@@ -2763,7 +2938,7 @@ class Worker():
                 pb.pulser_close()
 
                 if step != 1:
-                    general.plot_1d(exp_name, x_axis / 1e9, ( data[0], data[1] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j*STEP, 1)))
+                    general.plot_1d(exp_name, x_axis_plot, ( data[0], data[1] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j*STEP, 1)))
                 else:
                     general.plot_1d(exp_name, x_axis, ( data[0], data[1] ), xname = 'Point', xscale = '', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j, 1)))
 
@@ -2812,7 +2987,8 @@ class Worker():
         except BaseException as e:
             exc_info = f"{type(e)} \n{str(e)} \n{traceback.format_exc()}"
             conn.send( ('Error', exc_info) )
-    
+        """
+
     def exp_test(self, conn, decimation, num_ave, scans, points,
             win_left, exp_name, curve_name,
             win_right, p1_exp, p2_exp, p3_exp, p4_exp, 
@@ -2848,12 +3024,15 @@ class Worker():
             if p1_exp[4] != '0.0 ns':
                 #delta_start
                 step = round( float( p1_exp[4].split(' ')[0] ), 1)
+                f_delay = self.round_to_closest( float(p1_exp[1].split(' ')[0]), 3.2)
             elif p1_exp[5] != '0.0 ns':
                 #length_increment
                 step = round( float( p1_exp[5].split(' ')[0] ), 1)
+                f_delay = self.round_to_closest( float(p1_exp[2].split(' ')[0]), 3.2)
             else:
                 #prevent no increment
                 step = 1
+                f_delay = 0
                 #conn.send( ('Message', 'No START or LENGTH increment; the time axis corresponds to the number of points in the experiment') )
 
             POINTS = points
@@ -2937,7 +3116,8 @@ class Worker():
             pb.pulser_open()
             pb.digitizer_number_of_averages(AVERAGES)
             data = np.zeros( ( 2, POINTS ) )
-            x_axis = np.linspace(0, (POINTS - 1)*STEP, num = POINTS) 
+            x_axis = f_delay + np.linspace(0, (POINTS - 1)*STEP, num = POINTS) 
+            x_axis_plot = x_axis / 1e9
 
             while self.command != 'exit':
 
@@ -2953,7 +3133,7 @@ class Worker():
 
                             ##data = np.random.random( ( 2, POINTS ) )
                             if step != 1:
-                                general.plot_1d(exp_name, x_axis / 1e9, ( data[0], data[1] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j*STEP, 1)))
+                                general.plot_1d(exp_name, x_axis_plot, ( data[0], data[1] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j*STEP, 1)))
                             else:
                                 general.plot_1d(exp_name, x_axis, ( data[0], data[1] ), xname = 'Point', xscale = '', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j, 1)))
 
@@ -2985,7 +3165,7 @@ class Worker():
                 pb.pulser_close()
 
                 if step != 1:
-                    general.plot_1d(exp_name, x_axis / 1e9, ( data[0], data[1] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j*STEP, 1)))
+                    general.plot_1d(exp_name, x_axis_plot, ( data[0], data[1] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j*STEP, 1)))
                 else:
                     general.plot_1d(exp_name, x_axis, ( data[0], data[1] ), xname = 'Point', xscale = '', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j, 1)))
 
@@ -3610,6 +3790,7 @@ class Worker():
             pb.pulser_open()
             pb.digitizer_number_of_averages(AVERAGES)
             data = np.zeros( ( 2, POINTS ) )
+            x_axis_plot = x_axis / 1e9
 
             while self.command != 'exit':
 
@@ -3626,7 +3807,7 @@ class Worker():
                             #data[1, j] = r_data[1]
                             pb.pulser_next_phase()
 
-                            process = general.plot_1d(exp_name, x_axis / 1e9, ( data[0], data[1] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Point: ' + str(k) + ' / ' + str(j), pr = process)
+                            process = general.plot_1d(exp_name, x_axis_plot, ( data[0], data[1] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Point: ' + str(k) + ' / ' + str(j), pr = process)
 
 
                             data[0], data[1] = pb.digitizer_get_curve( POINTS, PHASES, current_scan = k, total_scan = SCANS, integral = True )
@@ -3661,7 +3842,7 @@ class Worker():
                 tb = round( pb.digitizer_window(), 1)
                 pb.pulser_close()
 
-                general.plot_1d(exp_name, x_axis / 1e9, ( data[0], data[1] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Point: ' + str(k) + ' / ' + str(j))
+                general.plot_1d(exp_name, x_axis_plot, ( data[0], data[1] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Point: ' + str(k) + ' / ' + str(j))
 
                 now = datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")
                 w = 30
@@ -3855,6 +4036,7 @@ class Worker():
             pb.pulser_open()
             pb.digitizer_number_of_averages(AVERAGES)
             data = np.zeros( ( 2, POINTS ) )
+            x_axis_plot = x_axis / 1e9
 
             while self.command != 'exit':
 
@@ -3869,7 +4051,7 @@ class Worker():
                             ##data = np.random.random( ( 2, POINTS ) )
                             pb.pulser_next_phase()
 
-                            process = general.plot_1d(exp_name, x_axis / 1e9, ( data[0], data[1] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Point: ' + str(k) + ' / ' + str(j), pr = process)
+                            process = general.plot_1d(exp_name, x_axis_plot, ( data[0], data[1] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Point: ' + str(k) + ' / ' + str(j), pr = process)
 
                             data[0], data[1] = pb.digitizer_get_curve( POINTS, PHASES, current_scan = k, total_scan = SCANS, integral = True )
 
@@ -3903,7 +4085,7 @@ class Worker():
                 tb = round( pb.digitizer_window(), 1)
                 pb.pulser_close()
 
-                general.plot_1d(exp_name, x_axis / 1e9, ( data[0], data[1] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Point: ' + str(k) + ' / ' + str(j))
+                general.plot_1d(exp_name, x_axis_plot, ( data[0], data[1] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Point: ' + str(k) + ' / ' + str(j))
 
                 now = datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")
                 w = 30

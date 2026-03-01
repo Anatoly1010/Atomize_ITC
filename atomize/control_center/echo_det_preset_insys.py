@@ -96,6 +96,7 @@ class MainWindow(QMainWindow):
             spin_box.valueChanged.connect(func)
             spin_box.setFixedSize(130, 26)
             spin_box.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.PlusMinus)
+            spin_box.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
 
             spin_box.setKeyboardTracking( False )
             
@@ -119,7 +120,8 @@ class MainWindow(QMainWindow):
             txt.setAcceptRichText(False)
             txt.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
             txt.setStyleSheet("QTextEdit { color : rgb(211, 194, 78) ; selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
-
+            txt.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
+            
         # ---- Buttons ----
         buttons = [("Start", "button_start", self.start),
                    ("Stop", "button_stop", self.stop),
@@ -309,7 +311,7 @@ class MainWindow(QMainWindow):
         
         self.monitor_timer.stop()
         self.exp_process.join() 
-        self.timer.stop()
+        #self.timer.stop()
         self.progress_bar.setValue(0)
         self.button_start.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }  QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
 
@@ -432,7 +434,8 @@ class MainWindow(QMainWindow):
             except Exception as e:
                 break
 
-        #time.sleep(0.1)
+        if self.exp_process.is_alive() and not self.timer.isActive():
+            self.exp_process.join()
 
         if hasattr(self, 'exp_process') and not self.exp_process.is_alive():
             if self.parent_conn.poll():
