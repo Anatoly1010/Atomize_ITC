@@ -11,7 +11,7 @@ from math import exp, sqrt
 from threading import Thread
 from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QLabel, QDoubleSpinBox, QSpinBox, QComboBox, QPushButton, QTextEdit, QGridLayout, QFrame
 from PyQt6.QtGui import QIcon
-from PyQt6.QtCore import QEvent
+from PyQt6.QtCore import QEvent, Qt
 import atomize.general_modules.general_functions as general
 import atomize.device_modules.ECC_15K as ecc
 

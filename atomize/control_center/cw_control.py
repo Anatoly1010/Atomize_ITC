@@ -542,9 +542,10 @@ class MainWindow(QMainWindow):
 
     def open_dialog(self):
         file_data = self.file_handler.create_file_dialog(multiprocessing = True)        
-
+        print(file_data == 'None')
         if file_data:
-            self.save_file(file_data.split(".csv")[0])
+            if file_data != 'None':
+                self.save_file(file_data.split(".csv")[0])
             self.parent_conn.send( 'FL' + str( file_data ) )
         else:
             self.parent_conn.send( 'FL' + '' )

@@ -127,6 +127,7 @@ class Insys_FPGA:
         self.protect_awg_delay_pulser = int(float(self.specific_parameters_pulser['protect_awg_delay'])/self.timebase_pulser) # in clock; delay for LNA_PROTECT turning off; because of shift a 
         # combination of rect_awg_delay and protect_awg_delay is used
 
+        self.trigger_awg_shift = 160
         self.internal_pause_pulser = '0 us'
 
         # interval that shift the first pulse in the sequence
@@ -570,9 +571,12 @@ class Insys_FPGA:
                 coef = self.timebase_dict[temp_start[1]]
                 p_start_raw = coef*float(temp_start[0])
 
-                p_start = self.round_to_closest(p_start_raw, 3.2)
-                if p_start != p_start_raw:
-                    general.message(f"Pulse Start of {p_start_raw} is not divisible by 3.2. The closest available Pulse Start of {p_start} ns is used")
+                if channel != 'TRIGGER_AWG':
+                    p_start = self.round_to_closest(p_start_raw, 3.2)
+                    if p_start != p_start_raw:
+                        general.message(f"Pulse Start of {p_start_raw} is not divisible by 3.2. The closest available Pulse Start of {p_start} ns is used")
+                else:
+                    p_start = self.round_to_closest(p_start_raw - self.trigger_awg_shift, 3.2)
 
                 pulse['start'] = str(p_start) + ' ns'
 
@@ -666,14 +670,22 @@ class Insys_FPGA:
             if temp_start[1] in self.timebase_dict:
                 coef = self.timebase_dict[temp_start[1]]
                 p_start_raw = coef*float(temp_start[0])
-                p_start = self.round_to_closest(p_start_raw, 3.2)
+                
+                if channel != 'TRIGGER_AWG':
+                    p_start = self.round_to_closest(p_start_raw, 3.2)
+                    if p_start != p_start_raw:
+                        general.message(f"Pulse Start of {p_start_raw} is not divisible by 3.2. The closest available Pulse Start of {p_start} ns is used")
+                else:
+                    p_start = self.round_to_closest(p_start_raw - self.trigger_awg_shift, 3.2)
+
+                pulse['start'] = str(p_start) + ' ns'
                 if p_start != p_start_raw:
                     general.message(f"Pulse Start is not divisible by 3.2. The closest available Pulse Start of {p_start} ns is used")
 
                 pulse['start'] = str(p_start) + ' ns'
 
                 assert(round(remainder(p_start, 3.2), 2) == 0), 'Pulse start should be divisible by 3.2'
-                assert(p_start >= 0), 'Pulse start is a negative number'
+                #assert(p_start >= 0), 'Pulse start is a negative number'
             else:
                 assert( 1 == 2 ), 'Incorrect time dimension (s, ms, us, ns)'
 
@@ -4271,7 +4283,8 @@ class Insys_FPGA:
 
             # to save time if there is no AWG pulses
             if self.awg_pulses_pulser == 0:
-                pass
+                return answer
+
             elif self.awg_pulses_pulser == 1:
                 # join AWG and MW pulses in order to add AMP_ON and LNA_PROTECT for them together
                 for index, element in enumerate(answer):
@@ -4291,17 +4304,16 @@ class Insys_FPGA:
                 except UnboundLocalError:
                     pass
 
-            new_ans = self.process_and_merge_rect_awg(answer, target_channel=128, gap_threshold=71)
-            
-            #return answer
-            return new_ans
+                new_ans = self.process_and_merge_rect_awg(answer, target_channel=128, gap_threshold=71)
+                return new_ans
 
         elif self.test_flag == 'test':
             # according to 0 element (channel number)
             answer = np.split(np_array, np.where(np.diff(np_array[:,0]))[0] + 1)
 
             if self.awg_pulses_pulser == 0:
-                pass
+                return answer
+
             elif self.awg_pulses_pulser == 1:
                 # attempt to join AWG and MW pulses in order to add AMP_ON and LNA_PROTECT for them together
                 for index, element in enumerate(answer):
@@ -4320,10 +4332,8 @@ class Insys_FPGA:
                 except UnboundLocalError:
                     pass
 
-            new_ans = self.process_and_merge_rect_awg(answer, target_channel=128, gap_threshold=71)
-
-            #return answer
-            return new_ans
+                new_ans = self.process_and_merge_rect_awg(answer, target_channel=128, gap_threshold=71)
+                return new_ans
 
     #for test
     def process_and_merge_rect_awg(self, data_list, target_channel =128, gap_threshold=70):

@@ -575,7 +575,8 @@ class MainWindow(QMainWindow):
         file_data = self.file_handler.create_file_dialog(multiprocessing = True)
 
         if file_data:
-            self.save_file(file_data.split(".csv")[0])
+            if file_data != 'None':
+                self.save_file(file_data.split(".csv")[0])
             self.parent_conn.send( 'FL' + str( file_data ) )
         else:
             self.parent_conn.send( 'FL' + '' )
