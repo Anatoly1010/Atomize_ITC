@@ -111,10 +111,12 @@ class CrosshairPlotWidget(pg.PlotWidget):
         if enabled:
             self.hide_cross_hair()
             self.plot_item.setLabel('bottom', 'Frequency', units = 'Hz')
+            self.x_units = 'Hz'
         else:
             try:
                 self.hide_cross_hair()
                 self.plot_item.setLabel('bottom', self.axis[0], units = self.axis[1])
+                self.x_units = self.axis[1]
             except AttributeError:
                 pass
 
@@ -131,8 +133,12 @@ class CrosshairPlotWidget(pg.PlotWidget):
                 view_x, view_y = view_coords.x(), view_coords.y()
                 self.add_cross_hair(view_x, view_y)
 
+                y_parsed = pg.siFormat(view_x, suffix=self.y_units, precision = 5)
+                x_parsed = pg.siFormat(view_y, suffix=self.x_units, precision = 5)
+
                 #label
-                label_text = f"X: {view_x:.4g}\nY: {view_x:.4g}"
+                label_text = f"X: {x_parsed}\nY: {y_parsed}"
+                #label_text = f"X: {view_x:.4g}\nY: {view_x:.4g}"
                 self.cursor_label.border = pg.mkPen((255, 255, 255, 255), width=1.5)
                 self.cursor_label.setText(label_text)
                 self.cursor_label.setPos(view_x, view_y)
@@ -176,6 +182,11 @@ class CrosshairPlotWidget(pg.PlotWidget):
             vb = item.getViewBox()
             view_coords = vb.mapSceneToView(mouse_event)
             x_log_mode, y_log_mode = vb.state['logMode'][0], vb.state['logMode'][1]
+
+            if not hasattr(self, 'y_units'):
+                self.y_units = item.getAxis('left').labelUnits
+            if not hasattr(self, 'x_units'):
+                self.x_units = item.getAxis('bottom').labelUnits
 
             # mouse coordinates; log-mode - already log values
             v_x, v_y = view_coords.x(), view_coords.y()
@@ -270,7 +281,10 @@ class CrosshairPlotWidget(pg.PlotWidget):
             self.cursor_label.border = pg.mkPen(curve_color, width=1.5)
             #border color
 
-            label_text = f"X: {pt_x:.4g}\nY: {pt_y:.4g}"
+            y_parsed = pg.siFormat(pt_y, suffix=self.y_units, precision = 5)
+            x_parsed = pg.siFormat(pt_x, suffix=self.x_units, precision = 5)
+
+            label_text = f"X: {x_parsed}\nY: {y_parsed}"
             self.cursor_label.setText(label_text)
             
             v_pos = math.log10(max(pt_x, 1e-15)) if x_log_mode else pt_x
@@ -475,6 +489,11 @@ class CrosshairDock(CloseableDock):
                 pass
 
     def plot(self, *args, **kwargs):
+        if not hasattr(self.plot_widget, 'y_units'):
+            self.plot_widget.y_units = kwargs.get('yscale', '')
+        if not hasattr(self.plot_widget, 'x_units'):
+            self.plot_widget.x_units = kwargs.get('xscale', '')
+        
         self.plot_widget.parametric = kwargs.pop('parametric', False)
         vline_arg = kwargs.get('vline', '')
 
@@ -1136,12 +1155,19 @@ class CrossSectionDock(CloseableDock):
         self.ui.histogram.item.axis.setLabel(text=zlabel)
 
     def setAxisLabels(self, *args, **kwargs):
-        self.plot_item.setLabel(axis='bottom', text=kwargs.get('xname', ''), units=kwargs.get('xscale', ''))
-        self.plot_item.setLabel(axis='left', text=kwargs.get('yname', ''), units=kwargs.get('yscale', ''))
-        self.v_cross_section_widget.plotItem.setLabel(axis='left', text=kwargs.get('zname', ''), units=kwargs.get('zscale', ''))
-        self.h_cross_section_widget.plotItem.setLabel(axis='bottom', text=kwargs.get('xname', ''), units=kwargs.get('xscale', ''))
-        self.v_cross_section_widget.plotItem.setLabel(axis='bottom', text=kwargs.get('yname', ''), units=kwargs.get('yscale', ''))
-        self.h_cross_section_widget.plotItem.setLabel(axis='left', text=kwargs.get('zname', ''), units=kwargs.get('zscale', ''))
+        if not hasattr(self, 'label_z'):
+            self.label_z = kwargs.get('zscale', '')
+        if not hasattr(self, 'label_y'): 
+            self.label_y = kwargs.get('yscale', '')
+        if not hasattr(self, 'label_x'):
+            self.label_x = kwargs.get('xscale', '')
+
+        self.plot_item.setLabel(axis='bottom', text=kwargs.get('xname', ''), units=self.label_x)
+        self.plot_item.setLabel(axis='left', text=kwargs.get('yname', ''), units=self.label_y)
+        self.v_cross_section_widget.plotItem.setLabel(axis='left', text=kwargs.get('zname', ''), units=self.label_z)
+        self.h_cross_section_widget.plotItem.setLabel(axis='bottom', text=kwargs.get('xname', ''), units=self.label_x)
+        self.v_cross_section_widget.plotItem.setLabel(axis='bottom', text=kwargs.get('yname', ''), units=self.label_y)
+        self.h_cross_section_widget.plotItem.setLabel(axis='left', text=kwargs.get('zname', ''), units=self.label_z)
 
         self.h_cross_section_widget.axis = [kwargs.get('xname', ''), kwargs.get('xscale', '')] 
         self.v_cross_section_widget.axis = [kwargs.get('yname', ''), kwargs.get('yscale', '')] 
@@ -1493,8 +1519,12 @@ class CrossSectionDock(CloseableDock):
         self.cursor_label.setPos(mid_x, mid_y)
         self.cursor_label.show()
 
+        mid_y_parsed = pg.siFormat(mid_y, suffix=self.label_y, precision = 5)
+        mid_x_parsed = pg.siFormat(mid_x, suffix=self.label_x, precision = 5)
+        mid_z_parsed = pg.siFormat(0, suffix=self.label_z, precision = 5)
+
         self.cursor_label.border = pg.mkPen((255, 255, 0, 255), width=1.5)
-        label_text = f"X: {mid_x:.4g}\nY: {mid_y:.4g}\nZ: {0}"
+        label_text = f"X: {mid_x_parsed}\nY: {mid_y_parsed}\nZ: {mid_z_parsed}"
         self.cursor_label.setText(label_text)
 
         self.v_cross_section_widget.image_operation = 1
@@ -1504,7 +1534,6 @@ class CrossSectionDock(CloseableDock):
         self.h_cross_section_widget.image_operation = 1
         self.h_cross_section_widget.click_count_1d = 0
         self.h_cross_section_widget.search_mode = False
-
 
     def hide_cross_section(self):
         if self.cross_section_enabled:
@@ -1593,7 +1622,11 @@ class CrossSectionDock(CloseableDock):
             self.cursor_label.setPos(view_x, view_y)
             self.cursor_label.show()
 
-            label_text = f"X: {view_x:.4g} ({(self.y_cross_index+1):.0f})\nY: {view_y:.4g} ({(self.x_cross_index+1):.0f})\nZ: {z_val:.4g}"
+            y_parsed = pg.siFormat(view_y, suffix=self.label_y, precision = 5)
+            x_parsed = pg.siFormat(view_x, suffix=self.label_x, precision = 5)
+            z_parsed = pg.siFormat(z_val, suffix=self.label_z, precision = 5)
+
+            label_text = f"X: {x_parsed} ({(self.y_cross_index+1):.0f})\nY: {y_parsed} ({(self.x_cross_index+1):.0f})\nZ: {z_parsed}"
             self.cursor_label.setText(label_text)
 
     def update_cross_section_set_data(self):
@@ -1683,7 +1716,11 @@ class CrossSectionDock(CloseableDock):
             else:
                 self.v_cross_section_widget.cursor_label.show()
 
-            label_text = f"X: {xdata[self.x_cross_index]:.4g} ({(self.y_cross_index+1):.0f})\nY: {ydata[self.y_cross_index]:.4g} ({(self.x_cross_index+1):.0f})\nZ: {zval:.4g}"
+            y_parsed = pg.siFormat(ydata[self.y_cross_index], suffix=self.label_y, precision = 5)
+            x_parsed = pg.siFormat(xdata[self.x_cross_index], suffix=self.label_x, precision = 5)
+            z_parsed = pg.siFormat(zval, suffix=self.label_z, precision = 5)
+
+            label_text = f"X: {x_parsed} ({(self.y_cross_index+1):.0f})\nY: {y_parsed} ({(self.x_cross_index+1):.0f})\nZ: {z_parsed}"
             #label_text = f"Y: {ydata[self.y_cross_index]:.4g}\nZ: {zval:.4g}\nPoint: {(self.x_cross_index+1):.0f}"
             
             self.v_cross_section_widget.cursor_label.setText(label_text)
@@ -1751,7 +1788,11 @@ class CrossSectionDock(CloseableDock):
             else:
                 self.h_cross_section_widget.cursor_label.show()
 
-            label_text = f"X: {xdata[self.x_cross_index]:.4g} ({(self.y_cross_index+1):.0f})\nY: {ydata[self.y_cross_index]:.4g} ({(self.x_cross_index+1):.0f})\nZ: {zval:.4g}"
+            y_parsed = pg.siFormat(ydata[self.y_cross_index], suffix=self.label_y, precision = 5)
+            x_parsed = pg.siFormat(xdata[self.x_cross_index], suffix=self.label_x, precision = 5)
+            z_parsed = pg.siFormat(zval, suffix=self.label_z, precision = 5)
+
+            label_text = f"X: {x_parsed} ({(self.y_cross_index+1):.0f})\nY: {y_parsed} ({(self.x_cross_index+1):.0f})\nZ: {z_parsed}"
             #f"X: {xdata[self.x_cross_index]:.4g}\nZ: {zval:.4g}\nPoint: {(self.y_cross_index+1):.0f}"
 
             self.h_cross_section_widget.cursor_label.setText(label_text)
