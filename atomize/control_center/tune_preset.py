@@ -228,7 +228,25 @@ class MainWindow(QMainWindow):
 
     def menu(self):
         menubar = self.menuBar()
-        menubar.setStyleSheet("QMenuBar { color: rgb(193, 202, 227); font-weight: bold; font-size: 14px;  border-bottom: 1px solid rgb(193, 202, 227); padding-top: 2px; padding-bottom: 0px; } QMenu::item { color: rgb(193, 202, 227); } QMenu::item:selected {color: rgb(211, 194, 78); background-color: rgb(63, 63, 97); } QMenuBar::item:selected {background-color: rgb(63, 63, 97); }")
+        menubar.setStyleSheet("""
+            QMenuBar { 
+                color: rgb(193, 202, 227); 
+                font-weight: bold; 
+                font-size: 14px;  
+                
+                border-bottom: 2px solid rgb(60, 65, 85); 
+                margin-bottom: 1px;
+                background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, 
+                                  stop:0.95 transparent, 
+                                  stop:1.0 rgb(100, 105, 130));
+                
+                padding-top: 2px; 
+                padding-bottom: 1px; 
+            } 
+            QMenu::item { color: rgb(193, 202, 227); } 
+            QMenu::item:selected { color: rgb(211, 194, 78); background-color: rgb(63, 63, 97); } 
+            QMenuBar::item:selected { background-color: rgb(63, 63, 97); }
+        """)
         file_menu = menubar.addMenu("File")
 
         menubar.setFixedHeight(27)
