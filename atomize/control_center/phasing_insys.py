@@ -2756,37 +2756,7 @@ class Worker():
             win_right, p1_exp, p2_exp, p3_exp, p4_exp, 
             p5_exp, p6_exp, p7_exp, p8_exp, p9_exp, laser_flag, 
             rep_rate, field, laser_num, q_switch_delay):
-        import time
-        import traceback
-        import atomize.general_modules.csv_opener_saver as openfile
 
-        file_handler = openfile.Saver_Opener()
-
-        while self.command != 'exit':
-
-            time.sleep(0.2)
-
-            if conn.poll() == True:
-                self.command = conn.recv()
-
-            if self.command == 'exit':
-                #pb.pulser_close()
-                self.command = conn.recv()
-                conn.send(('Open', ''))
-                
-                while True:
-                    if conn.poll():
-                        msg = conn.recv()
-                        if msg.startswith('FL'):
-                            file_data = msg[2:]
-                            break
-                    general.wait('200 ms')
-
-                header = 'test'
-                file_handler.save_data(file_data, np.c_[np.array([0]), np.array([0]), np.array([0])], header = header, mode = 'w')
-
-                conn.send( ('', f'Pulses are stopped') )        
-        """   
         import traceback
 
         try:
@@ -3006,7 +2976,6 @@ class Worker():
         except BaseException as e:
             exc_info = f"{type(e)} \n{str(e)} \n{traceback.format_exc()}"
             conn.send( ('Error', exc_info) )
-        """
 
     def exp_test(self, conn, decimation, num_ave, scans, points,
             win_left, exp_name, curve_name,
