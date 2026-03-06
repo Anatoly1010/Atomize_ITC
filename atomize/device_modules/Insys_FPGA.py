@@ -130,7 +130,7 @@ class Insys_FPGA:
         self.trigger_awg_shift = 160
         self.internal_pause_pulser = '0 us'
         self.synt2_shift = 0
-        self.synt2_ext = 3.2
+        self.synt2_ext = 32
 
         # interval that shift the first pulse in the sequence
         # start times of other pulses can be calculated from this time.
@@ -563,6 +563,10 @@ class Insys_FPGA:
                     pulse_awg = {'name': name + 'AWG', 'channel': 'AWG', 'start': start, 'length': length, 'delta_start' : delta_start, 'length_increment': length_increment, 'phase_list': phase_list}
                     self.pulse_array_pulser.append( pulse_awg )
                     self.pulse_name_array_pulser.append( pulse['name'] )
+                    #mod
+                    if default_source == 0:
+                        pulse_synt2 = {'name': name + 'SYNT2', 'channel': 'SYNT2', 'start': start, 'length': str(self.round_to_closest(p_length + self.synt2_ext, 3.2)) + ' ns', 'delta_start' : delta_start, 'length_increment': length_increment, 'phase_list': phase_list}
+                        self.pulse_array_pulser.append( pulse_synt2 )
 
             temp_start = start.split(" ")
             if temp_start[1] in self.timebase_dict:
@@ -743,6 +747,7 @@ class Insys_FPGA:
             else:
                 assert (1 == 2), 'Incorrect channel name'
 
+    #add synt2
     def pulser_redefine_start(self, *, name, start):
         """
         A function for redefining start of the specified pulse.
@@ -1181,9 +1186,10 @@ class Insys_FPGA:
                 
                 to_spinapi2 = np.array(to_spinapi, dtype = np.int64)
                 if self.awg_pulses_pulser == 1:
-                    to_spinapi3 = to_spinapi2 + np.array( [512, 0, 0] )
-                    to_spinapi3[-1, 0] = 0
-                    self.gen_GIM_words( to_spinapi3 ) # Создает главный буфер 
+                    #mod; two lines:
+                    #to_spinapi3 = to_spinapi2 + np.array( [512, 0, 0] )
+                    #to_spinapi3[-1, 0] = 0
+                    self.gen_GIM_words( to_spinapi2 ) # Создает главный буфер 
                 else:
                     self.gen_GIM_words( to_spinapi2 ) # Создает главный буфер 
                 #general.message( to_spinapi3 )
@@ -1257,9 +1263,10 @@ class Insys_FPGA:
                 to_spinapi2 = np.array(to_spinapi, dtype = np.int64)
 
                 if self.awg_pulses_pulser == 1:
-                    to_spinapi3 = to_spinapi2 + np.array( [512, 0, 0] )
-                    to_spinapi3[-1, 0] = 0
-                    self.gen_GIM_words( to_spinapi3 ) # Создает главный буфер
+                    #mod; two lines:
+                    #to_spinapi3 = to_spinapi2 + np.array( [512, 0, 0] )
+                    #to_spinapi3[-1, 0] = 0
+                    self.gen_GIM_words( to_spinapi2 ) # Создает главный буфер
                 else:
                     self.gen_GIM_words( to_spinapi2 ) # Создает главный буфер 
 
@@ -4116,7 +4123,8 @@ class Insys_FPGA:
                     ch_num = self.channel_dict_pulser[ch]
 
                 # get start
-                if ch != 'AWG':
+                #mod
+                if (ch != 'AWG') and (ch != 'SYNT2'):
                     st = p_array[i]['start']
                 else:
                     # shift AWG pulse to get RECT_AWG
@@ -4133,7 +4141,8 @@ class Insys_FPGA:
                     st_time = int( ceil(round( float(st[:-3]) * 1000000000 / self.timebase_pulser, 1) ) )
                 
                 # get length
-                if ch != 'AWG':
+                #mod
+                if (ch != 'AWG') and (ch != 'SYNT2'):
                     leng = p_array[i]['length']
                 else:
                     # shift AWG pulse to get RECT_AWG
@@ -4897,6 +4906,22 @@ class Insys_FPGA:
         """
 
         if self.test_flag != 'test':
+
+            pulses = np_array
+
+            max_pulse = pulses[:, 2].max()
+            min_pulse = pulses[:, 1].min() - self.add_shift_pulser
+            
+            bit_array = np.zeros(max_pulse - min_pulse, dtype=np.int64)
+            
+            for bit_val, start, end in pulses:
+                s = start - min_pulse
+                e = end - min_pulse
+                bit_array[s:e] |= bit_val
+            
+            return bit_array, min_pulse
+
+            """
             #pulses = self.preparing_to_bit_pulse_pulser(np_array)
             pulses = np_array
             max_pulse = np.amax(pulses[:,2])
@@ -4931,6 +4956,7 @@ class Insys_FPGA:
                 i += 1
 
             return bit_array, min_pulse
+            """
 
         elif self.test_flag == 'test':
 

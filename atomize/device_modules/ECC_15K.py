@@ -63,6 +63,9 @@ class ECC_15K:
                         general.message(f"No connection {self.__class__.__name__}")
                         sys.exit()
 
+            ans = self.device_query(f'SYSTem:ERRor?')
+            general.message(ans)
+
         # Test run parameters
         # These values are returned by the modules in the test run 
         elif self.test_flag == 'test':
