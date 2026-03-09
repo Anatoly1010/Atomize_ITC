@@ -2359,6 +2359,8 @@ class Worker():
             pb.digitizer_number_of_averages(p3)
             PHASES = len( p6[3] )
             
+            general.plot_remove('Dig')
+            
             pb.pulser_open()
             
             # the idea of automatic and dynamic changing is
@@ -3240,7 +3242,7 @@ class Worker():
             DEC_COEF = decimation
             process = 'None'
             REP_RATE = f'{rep_rate} Hz'
-            EXP_NAME = exp_name
+            EXP_NAME = f'{exp_name}_F'
             CURVE_NAME = curve_name
 
             #general.plot_remove(exp_name)
@@ -3663,9 +3665,10 @@ class Worker():
 
             nonlinear_time_raw = 10 ** np.linspace( T_start, T_end, POINTS )
             nonlinear_time = np.unique( general.numpy_round( nonlinear_time_raw, 3.2 ) )
-            nonlinear_diff = np.diff(nonlinear_time)
+            nonlinear_diff = np.append(np.diff(nonlinear_time), 0)
+            original_time = np.concatenate(([0], nonlinear_diff)).cumsum()
             POINTS = len( nonlinear_time )
-            x_axis = (np.insert(nonlinear_time , 0, 0))[:-1]
+            x_axis = original_time[:-1]
 
             file_handler = openfile.Saver_Opener()
             pb = pb_pro.Insys_FPGA()
@@ -3683,7 +3686,7 @@ class Worker():
             DEC_COEF = decimation
             process = 'None'
             REP_RATE = f'{rep_rate} Hz'
-            EXP_NAME = exp_name
+            EXP_NAME = f'{exp_name}_L'
             CURVE_NAME = curve_name
 
             bh15.magnet_field( field )
@@ -3741,7 +3744,7 @@ class Worker():
                             start=p[1],
                             length=p[2],
                             phase_list=p[3],
-                            delta_start=f"{self.round_to_closest( nonlinear_time[0] * rel_shift[i], 3.2 )} ns"
+                            delta_start=f"{self.round_to_closest( nonlinear_diff[0] * rel_shift[i], 3.2 )} ns"
                         )
 
             else:
@@ -3764,7 +3767,7 @@ class Worker():
                             'channel': p[0],
                             'start': p[1],
                             'length': p[2],
-                            'delta_start': f"{self.round_to_closest( nonlinear_time[0] * rel_shift[i], 3.2 )} ns"
+                            'delta_start': f"{self.round_to_closest( nonlinear_diff[0] * rel_shift[i], 3.2 )} ns"
                         }
                         
                         if i != 1:
@@ -3802,7 +3805,7 @@ class Worker():
 
                         # nonlinear_time_shift is calculated from the initial position of the pulses
                         if j > 0:
-                            new_delta_start = nonlinear_diff[j-1]
+                            new_delta_start = nonlinear_diff[j]
 
                             delta_starts = [f"{self.round_to_closest(x * new_delta_start, 3.2)} ns" for x in rel_shift]
                             pb.pulser_redefine_delta_start(name = name_list, delta_start = delta_starts )
@@ -3906,9 +3909,12 @@ class Worker():
 
             nonlinear_time_raw = 10 ** np.linspace( T_start, T_end, POINTS )
             nonlinear_time = np.unique( general.numpy_round( nonlinear_time_raw, 3.2 ) )
-            nonlinear_diff = np.diff(nonlinear_time)
+            ##
+            nonlinear_diff = np.append(np.diff(nonlinear_time), 0)
+            original_time = np.concatenate(([0], nonlinear_diff)).cumsum()
             POINTS = len( nonlinear_time )
-            x_axis = (np.insert(nonlinear_time , 0, 0))[:-1]
+            ##
+            x_axis = original_time[:-1]
 
             file_handler = openfile.Saver_Opener()
             pb = pb_pro.Insys_FPGA()
@@ -3960,10 +3966,12 @@ class Worker():
             rel_shift = ( (rel_shift ) / next_after_min).astype(int)
 
             if rel_shift[0] != 0.0:
+                ##
                 x_axis = x_axis * rel_shift[0] + self.round_to_closest( float(p1_exp[1].split(" ")[0]) , 3.2)
             else:
                 indices = np.where(rel_shift[1:] != 0)[0] + 1
                 if indices.size > 0:
+                    ##
                     x_axis = x_axis * rel_shift[indices[0]] + self.round_to_closest( float(pulses[indices[0]][1].split(" ")[0]) , 3.2)
                 else:
                     ## this is for start increments: [3.2 3.2 3.2]
@@ -3983,7 +3991,8 @@ class Worker():
                             start=p[1],
                             length=p[2],
                             phase_list=p[3],
-                            delta_start=f"{self.round_to_closest( nonlinear_time[0] * rel_shift[i], 3.2 )} ns"
+                            ##
+                            delta_start=f"{self.round_to_closest( nonlinear_diff[0] * rel_shift[i], 3.2 )} ns"
                         )
 
             else:
@@ -4010,7 +4019,8 @@ class Worker():
                             'channel': p[0],
                             'start': p[1],
                             'length': p[2],
-                            'delta_start': f"{self.round_to_closest( nonlinear_time[0] * rel_shift[i], 3.2 )} ns"
+                            ##
+                            'delta_start': f"{self.round_to_closest( nonlinear_diff[0] * rel_shift[i], 3.2 )} ns"
                         }
                         
                         if i != 1:
@@ -4026,6 +4036,8 @@ class Worker():
             data = np.zeros( ( 2, POINTS ) )
             x_axis_plot = x_axis / 1e9
 
+            ##general.message_test(f'X: {x_axis}')
+            
             while self.command != 'exit':
 
                 for k in general.scans(SCANS):
@@ -4034,6 +4046,8 @@ class Worker():
                         break
 
                     for j in range(POINTS):
+                        ##general.message_test(pb.pulse_array_pulser)
+
                         for i in range(PHASES):
                             
                             ##data = np.random.random( ( 2, POINTS ) )
@@ -4044,14 +4058,14 @@ class Worker():
                             data[0], data[1] = pb.digitizer_get_curve( POINTS, PHASES, current_scan = k, total_scan = SCANS, integral = True )
 
                         # nonlinear_time_shift is calculated from the initial position of the pulses
+                        ##
                         if j > 0:
-                            new_delta_start = nonlinear_diff[j-1]
+                            new_delta_start = nonlinear_diff[j]
 
                             delta_starts = [f"{self.round_to_closest(x * new_delta_start, 3.2)} ns" for x in rel_shift]
                             pb.pulser_redefine_delta_start(name = name_list, delta_start = delta_starts )
 
                         pb.pulser_shift()
-
                         #conn.send( ('Status', int( 100 * (( k - 1 ) * POINTS + j + 1) / POINTS / SCANS)) )
 
                         # check our polling data
@@ -4121,7 +4135,6 @@ class Worker():
         except BaseException as e:
             exc_info = f"{type(e)} \n{str(e)} \n{traceback.format_exc()}"
             conn.send( ('Error', exc_info) )
-
     
 def main():
     """

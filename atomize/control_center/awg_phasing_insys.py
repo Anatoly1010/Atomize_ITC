@@ -1972,7 +1972,6 @@ class MainWindow(QMainWindow):
         self.setter(text, 7, self.P8_type, self.P8_st, self.P8_len, self.P8_sig, self.P8_fr, self.P8_sw, self.P8_cf, self.Phase_8, self.P8_st_inc, self.P8_len_inc)
         self.setter(text, 8, self.P9_type, self.P9_st, self.P9_len, self.P9_sig, self.P9_fr, self.P9_sw, self.P9_cf, self.Phase_9, self.P9_st_inc, self.P9_len_inc)
 
-        self.Rep_rate.setValue( float( lines[9].split(':  ')[1] ) )
         self.Field.setValue( float( lines[10].split(':  ')[1] ) )
         #self.Delay.setValue( float( lines[9].split(':  ')[1] ) )
         self.Ampl_1.setValue( int( lines[12].split(':  ')[1] ) )
@@ -1994,7 +1993,7 @@ class MainWindow(QMainWindow):
             self.Zero_order.setValue( float( lines[23].split(':  ')[1] ) )
             self.First_order.setValue( float( lines[24].split(':  ')[1] ) )
             self.Second_order.setValue( float( lines[25].split(':  ')[1] ) )
-            #self.Combo_osc.setCurrentText( str( lines[24].split(':  ')[1] ) )
+            self.Combo_laser.setCurrentText( str( lines[26].split(':  ')[1] ) )
         except IndexError:
             pass
 
@@ -2006,6 +2005,7 @@ class MainWindow(QMainWindow):
         self.box_end_field.setValue( float( lines[33].split(':  ')[1] ) )
         self.box_step_field.setValue( float( lines[34].split(':  ')[1] ) )
         self.combo_sweep.setCurrentText( str( lines[35].split(':  ')[1] ) )
+        self.Rep_rate.setValue( float( lines[9].split(':  ')[1] ) )
 
         self.dig_stop()
 
@@ -2078,7 +2078,7 @@ class MainWindow(QMainWindow):
             file.write( 'Zero order:  ' + str(self.Zero_order.value()) + '\n' )
             file.write( 'First order:  ' + str(self.First_order.value()) + '\n' )
             file.write( 'Second order:  ' + str(self.Second_order.value()) + '\n' )
-            file.write( 'Oscilloscope:  ' + str('2012a') + '\n' )
+            file.write( 'Laser:  ' + str( self.Combo_laser.currentText() ) + '\n' )
             file.write( 'Decimation:  ' + str( self.Dec.value() ) + '\n' )
 
             file.write( 'Points:  ' + str( self.box_points.value() ) + '\n' )
@@ -2878,6 +2878,8 @@ class Worker():
             pb.digitizer_number_of_averages(p3)
             PHASES = len( p6[3] )
             
+            general.plot_remove('Dig')
+
             #pb.pulser_visualize()
             pb.pulser_open()
 
@@ -4304,7 +4306,7 @@ class Worker():
             DEC_COEF = decimation
             process = 'None'
             REP_RATE = f'{rep_rate} Hz'
-            EXP_NAME = exp_name
+            EXP_NAME = f'{exp_name}_F'
 
             bh15.magnet_field( start_field )
             general.wait('2000 ms')
@@ -4952,6 +4954,7 @@ class Worker():
             p5_awg_exp, p6_awg_exp, p7_awg_exp, p8_awg_exp, p9_awg_exp, 
             b_sech_cur, correction, synt, laser_flag, laser_num, 
             q_switch_delay, iq_phase):
+
         import traceback
 
         try:
@@ -5054,7 +5057,7 @@ class Worker():
             DEC_COEF = decimation
             process = 'None'
             REP_RATE = f'{rep_rate} Hz'
-            EXP_NAME = exp_name
+            EXP_NAME = f'{exp_name}_L'
             # for awg pulse increments
             increment = 0
 
@@ -5420,9 +5423,12 @@ class Worker():
 
             nonlinear_time_raw = 10 ** np.linspace( T_start, T_end, POINTS )
             nonlinear_time = np.unique( general.numpy_round( nonlinear_time_raw, 3.2 ) )
-            nonlinear_diff = np.diff(nonlinear_time)
+            ##
+            nonlinear_diff = np.append(np.diff(nonlinear_time), 0)
+            original_time = np.concatenate(([0], nonlinear_diff)).cumsum()
             POINTS = len( nonlinear_time )
-            x_axis = (np.insert(nonlinear_time , 0, 0))[:-1]
+            ##
+            x_axis = original_time[:-1]
 
             file_handler = openfile.Saver_Opener()
             pb = pb_pro.Insys_FPGA()
@@ -5554,17 +5560,19 @@ class Worker():
             rel_shift = ( (rel_shift ) / next_after_min).astype(int)
 
             if rel_shift[0] != 0.0:
+                ##
                 x_axis = x_axis * rel_shift[0] + self.round_to_closest( float(p1_exp[1].split(" ")[0]) , 3.2)
             else:
                 indices = np.where(rel_shift[1:] != 0)[0] + 1
                 if indices.size > 0:
+                    ##
                     x_axis = x_axis * rel_shift[indices[0]] + self.round_to_closest( float(pulses[indices[0]][1].split(" ")[0]) , 3.2)
                 else:
                     ## this is for start increments: [3.2 3.2 3.2]
                     raise ValueError(f"Pulses do not have Start Increments")
 
             if 'P1' in name_list:
-                pb.pulser_redefine_delta_start(name = 'P1', delta_start = f"{self.round_to_closest( nonlinear_time[0] * rel_shift[0], 3.2 )} ns")
+                pb.pulser_redefine_delta_start(name = 'P1', delta_start = f"{self.round_to_closest( nonlinear_diff[0] * rel_shift[0], 3.2 )} ns")
             ####
 
             #Laser flag
@@ -5606,8 +5614,9 @@ class Worker():
                                 name=f'P{2*i + 3}',
                                 channel='TRIGGER_AWG', 
                                 start=tp[0], 
-                                length=tp[1], 
-                                delta_start=f"{self.round_to_closest( nonlinear_time[0] * rel_shift[i + 1], 3.2 )} ns"
+                                length=tp[1],
+                                ## 
+                                delta_start=f"{self.round_to_closest( nonlinear_diff[0] * rel_shift[i + 1], 3.2 )} ns"
                             )
 
             else:
@@ -5623,8 +5632,9 @@ class Worker():
                         name=f'L1',
                         channel='LASER', 
                         start=p2_exp[0], 
-                        length=p2_exp[1], 
-                        delta_start=f"{self.round_to_closest( nonlinear_time[0] * rel_shift[1], 3.2 )} ns"
+                        length=p2_exp[1],
+                        ## 
+                        delta_start=f"{self.round_to_closest( nonlinear_diff[0] * rel_shift[1], 3.2 )} ns"
                     )
                 else:
                     raise ValueError(f"LASER pulse has zero length")
@@ -5673,7 +5683,8 @@ class Worker():
                                 channel='TRIGGER_AWG', 
                                 start=tp[0], 
                                 length=tp[1], 
-                                delta_start=f"{self.round_to_closest( nonlinear_time[0] * rel_shift[i + 2], 3.2 )} ns"
+                                ##
+                                delta_start=f"{self.round_to_closest( nonlinear_diff[0] * rel_shift[i + 2], 3.2 )} ns"
                             )
 
             pb.pulser_default_synt(synt)
@@ -5686,6 +5697,8 @@ class Worker():
             data = np.zeros( ( 2, points_window, POINTS ) )
             dec_calc = 0.4 * DEC_COEF / 1e9
 
+            ##general.message_test(f'X: {x_axis}')
+
             while self.command != 'exit':
 
                 for k in general.scans(SCANS):
@@ -5694,6 +5707,8 @@ class Worker():
                         break
 
                     for j in range(POINTS):
+                        ##general.message_test(pb.pulse_array_pulser)
+
                         for i in range(PHASES):
 
                             process = general.plot_2d(
@@ -5720,8 +5735,9 @@ class Worker():
                                 total_scan = SCANS ) 
 
                         # nonlinear_time_shift is calculated from the initial position of the pulses
+                        ##
                         if j > 0:
-                            new_delta_start = nonlinear_diff[j-1]
+                            new_delta_start = nonlinear_diff[j]
 
                             delta_starts = [f"{self.round_to_closest(x * new_delta_start, 3.2)} ns" for x in rel_shift]
                             pb.pulser_redefine_delta_start(name = name_list, delta_start = delta_starts )

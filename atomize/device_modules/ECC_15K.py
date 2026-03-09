@@ -63,8 +63,9 @@ class ECC_15K:
                         general.message(f"No connection {self.__class__.__name__}")
                         sys.exit()
 
-            ans = self.device_query(f'SYSTem:ERRor?')
+            ans = self.device_query(f'SYST:ERR?')
             general.message(ans)
+            self.device_write(f'*RST')
 
         # Test run parameters
         # These values are returned by the modules in the test run 
@@ -84,6 +85,7 @@ class ECC_15K:
         if self.status_flag == 1:
             command = str(command)
             self.device.write(command)
+            general.wait('300 ms')
             res = self.device_query(f"*OPC?")
             #general.message(res)
         else:
@@ -149,7 +151,7 @@ class ECC_15K:
         if self.test_flag != 'test':
             if len(state) == 1:
                 state = str( state[0] )
-                self.device_write(f'OUTPut {state}')
+                self.device_write(f'OUTP {state}')
                 self.state = state
 
             elif len(state) == 0:
