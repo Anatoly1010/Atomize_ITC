@@ -486,12 +486,10 @@ class CrosshairDock(CloseableDock):
         #remove cross-hair
         self.closeClicked.connect(self.hide_cross_hair)
 
-        self.menu = self.plot_widget.getMenu()
-        self.menu.addSeparator()
-
+        plot_item = self.plot_widget.getPlotItem()
         open_action = QtGui.QAction('Open 1D Data', self)
         open_action.triggered.connect(self.file_dialog)
-        self.menu.addAction(open_action)
+        plot_item.vb.menu.addAction(open_action)
 
         self.avail_colors = [pg.mkPen(color=(47,79,79),width=1), pg.mkPen(color=(255,153,0),width=1), pg.mkPen(color=(255,0,255),width=1), pg.mkPen(color=(0,0,255),width=1), pg.mkPen(color=(0,0,0),width=1), pg.mkPen(color=(255,0,0),width=1), pg.mkPen(color=(95,158,160),width=1), pg.mkPen(color=(0,128,0),width=1), pg.mkPen(color=(255,255,0),width=1), pg.mkPen(color=(255,255,255),width=1)]
         self.avail_symbols= ['x','p','star','s','o','+']
@@ -1195,16 +1193,16 @@ class CrossSectionDock(CloseableDock):
         self.hide_action.setChecked(False)
         self.hide_action.triggered.connect(self.update_label_visibility)
         self.plot_item.vb.menu.addAction(self.hide_action)
-        
-        save_action = QtGui.QAction('Save Data', self)
-        save_action.triggered.connect(self.fileSaveDialog)
-        self.img_view.scene.contextMenu.append(save_action)
 
         histogram_action = QtGui.QAction('Histogram', self)
         histogram_action.setCheckable(True)
         histogram_action.triggered.connect(self.set_histogram)
-        self.img_view.scene.contextMenu.append(histogram_action)
-        
+        self.plot_item.vb.menu.addAction(histogram_action)
+
+        save_action = QtGui.QAction('Save Data', self)
+        save_action.triggered.connect(self.fileSaveDialog)
+        self.plot_item.vb.menu.addAction(save_action)
+
         #self.autolevels_action = QtGui.QAction('Autoscale Levels', self)
         #self.autolevels_action.setCheckable(True)
         #self.autolevels_action.setChecked(True)
