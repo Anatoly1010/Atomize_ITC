@@ -2897,9 +2897,9 @@ class Worker():
                             pb.pulser_next_phase()
 
                             if step != 1:
-                                general.plot_1d(exp_name, x_axis_plot, ( data[0], data[1] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j*STEP, 1)))
+                                general.plot_1d(EXP_NAME, x_axis_plot, ( data[0], data[1] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j*STEP, 1)))
                             else:
-                                general.plot_1d(exp_name, x_axis, ( data[0], data[1] ), xname = 'Point', xscale = '', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j, 1)))
+                                general.plot_1d(EXP_NAME, x_axis, ( data[0], data[1] ), xname = 'Point', xscale = '', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j, 1)))
 
                             data[0], data[1] = pb.digitizer_get_curve( POINTS, PHASES, current_scan = k, total_scan = SCANS, integral = True )
 
@@ -2929,9 +2929,9 @@ class Worker():
                 pb.pulser_close()
 
                 if step != 1:
-                    general.plot_1d(exp_name, x_axis_plot, ( data[0], data[1] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j*STEP, 1)))
+                    general.plot_1d(EXP_NAME, x_axis_plot, ( data[0], data[1] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j*STEP, 1)))
                 else:
-                    general.plot_1d(exp_name, x_axis, ( data[0], data[1] ), xname = 'Point', xscale = '', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j, 1)))
+                    general.plot_1d(EXP_NAME, x_axis, ( data[0], data[1] ), xname = 'Point', xscale = '', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j, 1)))
 
                 now = datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")
                 w = 30
@@ -2973,7 +2973,7 @@ class Worker():
 
                 file_handler.save_data(file_data, np.c_[x_axis, data[0], data[1]], header = header, mode = 'w')
 
-                conn.send( ('', f'Experiment {exp_name} finished') )
+                conn.send( ('', f'Experiment {EXP_NAME} finished') )
 
         except BaseException as e:
             exc_info = f"{type(e)} \n{str(e)} \n{traceback.format_exc()}"
@@ -3123,9 +3123,9 @@ class Worker():
 
                             ##data = np.random.random( ( 2, POINTS ) )
                             if step != 1:
-                                general.plot_1d(exp_name, x_axis_plot, ( data[0], data[1] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j*STEP, 1)))
+                                general.plot_1d(EXP_NAME, x_axis_plot, ( data[0], data[1] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j*STEP, 1)))
                             else:
-                                general.plot_1d(exp_name, x_axis, ( data[0], data[1] ), xname = 'Point', xscale = '', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j, 1)))
+                                general.plot_1d(EXP_NAME, x_axis, ( data[0], data[1] ), xname = 'Point', xscale = '', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j, 1)))
 
                             data[0], data[1] = pb.digitizer_get_curve( POINTS, PHASES, current_scan = k, total_scan = SCANS, integral = True )
 
@@ -3155,9 +3155,9 @@ class Worker():
                 pb.pulser_close()
 
                 if step != 1:
-                    general.plot_1d(exp_name, x_axis_plot, ( data[0], data[1] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j*STEP, 1)))
+                    general.plot_1d(EXP_NAME, x_axis_plot, ( data[0], data[1] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j*STEP, 1)))
                 else:
-                    general.plot_1d(exp_name, x_axis, ( data[0], data[1] ), xname = 'Point', xscale = '', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j, 1)))
+                    general.plot_1d(EXP_NAME, x_axis, ( data[0], data[1] ), xname = 'Point', xscale = '', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j, 1)))
 
                 now = datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")
                 w = 30
@@ -3338,7 +3338,7 @@ class Worker():
                             #data[0, j] = r_data[0]
                             #data[1, j] = r_data[1]
 
-                            process = general.plot_1d(exp_name, x_axis, ( data[0], data[1] ), xname = 'Field', xscale = 'G', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Field: ' + str(k) + ' / ' + str(field), pr = process)
+                            process = general.plot_1d(EXP_NAME, x_axis, ( data[0], data[1] ), xname = 'Field', xscale = 'G', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Field: ' + str(k) + ' / ' + str(field), pr = process)
 
                             pb.pulser_next_phase()
 
@@ -3372,7 +3372,7 @@ class Worker():
                 tb = round( pb.digitizer_window(), 1)
                 pb.pulser_close()
 
-                general.plot_1d(exp_name, x_axis, ( data[0], data[1] ), xname = 'Field', xscale = 'G', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Field: ' + str(k) + ' / ' + str(field))
+                general.plot_1d(EXP_NAME, x_axis, ( data[0], data[1] ), xname = 'Field', xscale = 'G', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Field: ' + str(k) + ' / ' + str(field))
 
                 now = datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")
                 w = 30
@@ -3414,7 +3414,7 @@ class Worker():
 
                 file_handler.save_data(file_data, np.c_[x_axis, data[0], data[1]], header = header, mode = 'w')
 
-                conn.send( ('', f'Experiment {exp_name} finished') )
+                conn.send( ('', f'Experiment {EXP_NAME} finished') )
 
         except BaseException as e:
             exc_info = f"{type(e)} \n{str(e)} \n{traceback.format_exc()}"
@@ -3560,7 +3560,7 @@ class Worker():
 
                             
                             ##data = np.random.random( ( 2, POINTS ) )
-                            process = general.plot_1d(exp_name, x_axis, ( data[0], data[1] ), xname = 'Field', xscale = 'G', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Field: ' + str(k) + ' / ' + str(field), pr = process)
+                            process = general.plot_1d(EXP_NAME, x_axis, ( data[0], data[1] ), xname = 'Field', xscale = 'G', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Field: ' + str(k) + ' / ' + str(field), pr = process)
 
                             pb.pulser_next_phase()
 
@@ -3591,7 +3591,7 @@ class Worker():
                 tb = round( pb.digitizer_window(), 1)
                 pb.pulser_close()
 
-                general.plot_1d(exp_name, x_axis, ( data[0], data[1] ), xname = 'Field', xscale = 'G', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Field: ' + str(k) + ' / ' + str(field))
+                general.plot_1d(EXP_NAME, x_axis, ( data[0], data[1] ), xname = 'Field', xscale = 'G', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Field: ' + str(k) + ' / ' + str(field))
 
                 now = datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")
                 w = 30
@@ -3762,6 +3762,7 @@ class Worker():
 
                     length_val = int(float(p[2].split(' ')[0]))
                     if length_val != 0:
+                        name_list.append(f'P{i}')
                         kwargs = {
                             'name': f'P{i}',
                             'channel': p[0],
@@ -3791,6 +3792,7 @@ class Worker():
                         break
 
                     for j in range(POINTS):
+
                         for i in range(PHASES):
                             
                             #r_data = np.random.random( 2 )
@@ -3798,7 +3800,7 @@ class Worker():
                             #data[1, j] = r_data[1]
                             pb.pulser_next_phase()
 
-                            process = general.plot_1d(exp_name, x_axis_plot, ( data[0], data[1] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Point: ' + str(k) + ' / ' + str(j), pr = process)
+                            process = general.plot_1d(EXP_NAME, x_axis_plot, ( data[0], data[1] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Point: ' + str(k) + ' / ' + str(j), pr = process)
 
 
                             data[0], data[1] = pb.digitizer_get_curve( POINTS, PHASES, current_scan = k, total_scan = SCANS, integral = True )
@@ -3833,7 +3835,7 @@ class Worker():
                 tb = round( pb.digitizer_window(), 1)
                 pb.pulser_close()
 
-                general.plot_1d(exp_name, x_axis_plot, ( data[0], data[1] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Point: ' + str(k) + ' / ' + str(j))
+                general.plot_1d(EXP_NAME, x_axis_plot, ( data[0], data[1] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Point: ' + str(k) + ' / ' + str(j))
 
                 now = datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")
                 w = 30
@@ -3875,7 +3877,7 @@ class Worker():
 
                 file_handler.save_data(file_data, np.c_[x_axis, data[0], data[1]], header = header, mode = 'w')
 
-                conn.send( ('', f'Experiment {exp_name} finished') )
+                conn.send( ('', f'Experiment {EXP_NAME} finished') )
 
         except BaseException as e:
             exc_info = f"{type(e)} \n{str(e)} \n{traceback.format_exc()}"
@@ -4053,7 +4055,7 @@ class Worker():
                             ##data = np.random.random( ( 2, POINTS ) )
                             pb.pulser_next_phase()
 
-                            process = general.plot_1d(exp_name, x_axis_plot, ( data[0], data[1] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Point: ' + str(k) + ' / ' + str(j), pr = process)
+                            process = general.plot_1d(EXP_NAME, x_axis_plot, ( data[0], data[1] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Point: ' + str(k) + ' / ' + str(j), pr = process)
 
                             data[0], data[1] = pb.digitizer_get_curve( POINTS, PHASES, current_scan = k, total_scan = SCANS, integral = True )
 
@@ -4087,7 +4089,7 @@ class Worker():
                 tb = round( pb.digitizer_window(), 1)
                 pb.pulser_close()
 
-                general.plot_1d(exp_name, x_axis_plot, ( data[0], data[1] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Point: ' + str(k) + ' / ' + str(j))
+                general.plot_1d(EXP_NAME, x_axis_plot, ( data[0], data[1] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Point: ' + str(k) + ' / ' + str(j))
 
                 now = datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")
                 w = 30

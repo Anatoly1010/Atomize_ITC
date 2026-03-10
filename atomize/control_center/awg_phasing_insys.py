@@ -3791,7 +3791,7 @@ class Worker():
                     mode = 'w'
                 )
 
-                conn.send( ('', f'Experiment {exp_name} finished') )
+                conn.send( ('', f'Experiment {EXP_NAME} finished') )
 
         except BaseException as e:
             exc_info = f"{type(e)} \n{str(e)} \n{traceback.format_exc()}"
@@ -4566,7 +4566,7 @@ class Worker():
                     mode = 'w'
                 )
 
-                conn.send( ('', f'Experiment {exp_name} finished') )
+                conn.send( ('', f'Experiment {EXP_NAME} finished') )
 
         except BaseException as e:
             exc_info = f"{type(e)} \n{str(e)} \n{traceback.format_exc()}"
@@ -5384,7 +5384,7 @@ class Worker():
                     mode = 'w'
                 )
 
-                conn.send( ('', f'Experiment {exp_name} finished') )
+                conn.send( ('', f'Experiment {EXP_NAME} finished') )
 
         except BaseException as e:
             exc_info = f"{type(e)} \n{str(e)} \n{traceback.format_exc()}"

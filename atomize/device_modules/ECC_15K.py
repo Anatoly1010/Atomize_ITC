@@ -63,9 +63,9 @@ class ECC_15K:
                         general.message(f"No connection {self.__class__.__name__}")
                         sys.exit()
 
-            ans = self.device_query(f'SYST:ERR?')
-            general.message(ans)
-            self.device_write(f'*RST')
+            #ans = self.device_query(f'SYST:ERR?')
+            #general.message(ans)
+            self.device_write(f'INIT:CONT ON')
 
         # Test run parameters
         # These values are returned by the modules in the test run 
@@ -85,7 +85,7 @@ class ECC_15K:
         if self.status_flag == 1:
             command = str(command)
             self.device.write(command)
-            general.wait('300 ms')
+            general.wait('500 ms')
             res = self.device_query(f"*OPC?")
             #general.message(res)
         else:
@@ -122,7 +122,7 @@ class ECC_15K:
         if self.test_flag != 'test':
             if len(freq) == 1:
                 freq = str( freq[0] )
-                self.device_write(f':FREQ {freq}')
+                self.device_write(f'SOUR:FREQ {freq}')
                 self.freq = freq
 
             elif len(freq) == 0:
@@ -137,7 +137,7 @@ class ECC_15K:
                 min_freq = pg.siFormat( self.min_freq, suffix = 'Hz', precision = 3, allowUnicode = False)
                 max_freq = pg.siFormat( self.max_freq, suffix = 'Hz', precision = 3, allowUnicode = False)
                 assert(freq_check <= self.max_freq and freq_check >= self.min_freq),\
-                    f'Incorrect frequency. The available range if from {min_freq} to {max_freq}'
+                    f'Incorrect frequency. The available range is from {min_freq} to {max_freq}'
                 self.freq = freq
             elif len(freq) == 0:
                 answer = self.test_freq
