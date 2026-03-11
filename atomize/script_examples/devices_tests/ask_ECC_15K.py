@@ -6,12 +6,12 @@ import atomize.device_modules.ECC_15K as ecc
 ecc15k = ecc.ECC_15K()
 
 #bh15.magnet_setup(2000, 10)
-#general.message(ecc15k.synthetizer_name())
+general.message(ecc15k.synthetizer_name())
 
-#ecc15k.synthetizer_state('On')
-#general.message(ecc15k.synthetizer_state())
+ecc15k.synthetizer_state('Off')
+general.message(ecc15k.synthetizer_state())
 
-ecc15k.synthetizer_frequency('9704 MHz')
+#ecc15k.synthetizer_frequency('9750 MHz')
 general.message(ecc15k.synthetizer_frequency())
 
 #ecc15k.synthetizer_power(15)

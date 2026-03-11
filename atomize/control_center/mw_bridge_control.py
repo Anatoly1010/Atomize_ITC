@@ -33,7 +33,7 @@ class MainWindow(QMainWindow):
         config = configparser.ConfigParser()
         config.read(path_config_file)
 
-        #self.ecc15k = ecc.ECC_15K()
+        self.ecc15k = ecc.ECC_15K()
 
         self.UDP_IP = str(config['DEFAULT']['UDP_IP'])
         self.UDP_PORT = int(config['DEFAULT']['UDP_PORT'])
@@ -55,8 +55,11 @@ class MainWindow(QMainWindow):
         self.initialize()
         #self.telemetry()
 
-        #self.ecc15k.synthetizer_frequency(f"{freq2} MHz")
-        #self.ecc15k.synthetizer_power(power2)
+        power2 = int( self.Synt2_power.value() )
+        freq2 = int( self.Synt2.value() )
+        
+        self.ecc15k.synthetizer_frequency(f"{freq2} MHz")
+        self.ecc15k.synthetizer_power(power2)
         
         #self.telemetry_text.setStyleSheet("QPlainTextEdit { color : rgb(211, 194, 78); }")
 
@@ -101,7 +104,7 @@ class MainWindow(QMainWindow):
                       (QDoubleSpinBox, "Att2_prm", "", self.att2_prm, 0, 31.5, 0, 0.5, 1, " dB"),
                       (QSpinBox, "Synt", "", self.synt, 7000, 12000, 9700, 1, 0, " MHz"),
                       (QSpinBox, "Synt2", "", self.synt2, 800, 12000, 1000, 1, 0, " MHz"),
-                      (QSpinBox, "Synt2_power", "", self.synt2_power, 0, 15, 15, 1, 0, "")
+                      (QSpinBox, "Synt2_power", "", self.synt2_power, 0, 31, 15, 1, 0, "")
                         ]
 
 
@@ -261,17 +264,17 @@ class MainWindow(QMainWindow):
 
     def synt2(self):
         freq2 = int( self.Synt2.value() )
-        #self.ecc15k.synthetizer_frequency(f"{freq2} MHz")
+        self.ecc15k.synthetizer_frequency(f"{freq2} MHz")
         #self.telemetry_text.appendPlainText( f'Synt2 Freq: {self.ecc15k.synthetizer_frequency().split(" ")[0]}')
     
     def synt2_power(self):
         power2 = int( self.Synt2_power.value() )
-        #self.ecc15k.synthetizer_power(power2)
+        self.ecc15k.synthetizer_power(power2)
         #self.telemetry_text.appendPlainText( f'Synt2 Power Level: {self.ecc15k.synthetizer_power()}')
 
     def synt2_state(self):
         txt = str( self.Synt2_state.currentText() )
-        #self.ecc15k.synthetizer_state(txt)
+        self.ecc15k.synthetizer_state(txt)
         #self.telemetry_text.appendPlainText( f'Synt2 State: {self.ecc15k.synthetizer_state()}')
 
     def closeEvent(self, event):
