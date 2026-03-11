@@ -3422,9 +3422,19 @@ class Worker():
                 step = round( float( p1_exp[5].split(' ')[0] ), 1)
                 f_delay = self.round_to_closest( float(p1_exp[2].split(' ')[0]), 3.2) / 1e9
             else:
-                #prevent no increment
-                step = 1
-                f_delay = 0
+                pulses = [p2_exp, p3_exp, p4_exp, p5_exp, p6_exp, p7_exp, p8_exp, p9_exp]
+                
+                for p in pulses:
+                    if p[2] != '0.0 ns':
+                        step = round( float( p[2].split(' ')[0] ), 1)
+                        f_delay = self.round_to_closest( float(p[0].split(' ')[0]), 3.2) / 1e9
+                        break
+                    else:
+                        #prevent no increment
+                        step = 1
+                        f_delay = 0
+            
+            if step == 1:
                 conn.send( ('Message', 'No START or LENGTH increment; the time axis corresponds to the number of points in the experiment') )
 
             pb.phase_shift_ch1_seq_mode_awg = iq_phase
@@ -3842,9 +3852,20 @@ class Worker():
                 step = round( float( p1_exp[5].split(' ')[0] ), 1)
                 f_delay = self.round_to_closest( float(p1_exp[2].split(' ')[0]), 3.2) / 1e9
             else:
-                #prevent no increment
-                step = 1
-                f_delay = 0
+                pulses = [p2_exp, p3_exp, p4_exp, p5_exp, p6_exp, p7_exp, p8_exp, p9_exp]
+                
+                for p in pulses:
+                    if p[2] != '0.0 ns':
+                        step = round( float( p[2].split(' ')[0] ), 1)
+                        f_delay = self.round_to_closest( float(p[0].split(' ')[0]), 3.2) / 1e9
+                        break
+                    else:
+                        #prevent no increment
+                        step = 1
+                        f_delay = 0
+            
+            if step == 1:
+                pass
                 #conn.send( ('Message', 'No START or LENGTH increment; the time axis corresponds to the number of points in the experiment') )
 
             pb.phase_shift_ch1_seq_mode_awg = iq_phase

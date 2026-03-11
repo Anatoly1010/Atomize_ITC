@@ -2792,9 +2792,19 @@ class Worker():
                 step = round( float( p1_exp[5].split(' ')[0] ), 1)
                 f_delay = self.round_to_closest( float(p1_exp[2].split(' ')[0]), 3.2)
             else:
-                #prevent no increment
-                step = 1
-                f_delay = 0
+                pulses2 = [p2_exp, p3_exp, p4_exp, p5_exp, p6_exp, p7_exp, p8_exp, p9_exp]
+                
+                for p in pulses2:
+                    if p[4] != '0.0 ns':
+                        step = round( float( p[4].split(' ')[0] ), 1)
+                        f_delay = self.round_to_closest( float(p[1].split(' ')[0]), 3.2) / 1e9
+                        break
+                    else:
+                        #prevent no increment
+                        step = 1
+                        f_delay = 0
+                        
+            if step == 1: 
                 conn.send( ('Message', 'No START or LENGTH increment; the time axis corresponds to the number of points in the experiment') )
 
             general.plot_remove(exp_name)
@@ -3020,10 +3030,22 @@ class Worker():
                 step = round( float( p1_exp[5].split(' ')[0] ), 1)
                 f_delay = self.round_to_closest( float(p1_exp[2].split(' ')[0]), 3.2)
             else:
-                #prevent no increment
-                step = 1
-                f_delay = 0
+                pulses2 = [p2_exp, p3_exp, p4_exp, p5_exp, p6_exp, p7_exp, p8_exp, p9_exp]
+                
+                for p in pulses2:
+                    if p[4] != '0.0 ns':
+                        step = round( float( p[4].split(' ')[0] ), 1)
+                        f_delay = self.round_to_closest( float(p[1].split(' ')[0]), 3.2) / 1e9
+                        break
+                    else:
+                        #prevent no increment
+                        step = 1
+                        f_delay = 0
+                        
+            if step == 1: 
+                pass
                 #conn.send( ('Message', 'No START or LENGTH increment; the time axis corresponds to the number of points in the experiment') )
+
 
             POINTS = points
             STEP = step
