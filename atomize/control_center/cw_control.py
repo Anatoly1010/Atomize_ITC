@@ -11,6 +11,7 @@ from PyQt6.QtGui import QIcon, QAction
 from PyQt6.QtCore import Qt, QTimer
 import atomize.general_modules.csv_opener_saver as openfile
 
+
 class MainWindow(QMainWindow):
     """
     A main window class
@@ -560,7 +561,7 @@ class MainWindow(QMainWindow):
 
     def open_dialog(self):
         file_data = self.file_handler.create_file_dialog(multiprocessing = True)        
-        print(file_data == 'None')
+        #print(file_data == 'None')
         if file_data:
             if file_data != 'None':
                 self.save_file(file_data.split(".csv")[0])

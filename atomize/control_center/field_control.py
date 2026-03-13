@@ -279,7 +279,7 @@ class MainWindow(QMainWindow):
         """
         A function to stop oscilloscope
         """
-        self._on_destroyed()
+        self.Set_point.setValue( 0 )
 
     def turn_off(self):
         """

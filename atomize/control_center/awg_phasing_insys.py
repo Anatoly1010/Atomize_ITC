@@ -5263,7 +5263,8 @@ class Worker():
 
             while self.command != 'exit':
 
-                for k in general.scans(SCANS):
+                k = 1
+                while k <= SCANS:
 
                     if self.command == 'exit':
                         break
@@ -5319,7 +5320,8 @@ class Worker():
 
 
                     pb.pulser_pulse_reset()
-
+                    k += 1
+                
                 self.command = 'exit'
 
             if self.command == 'exit':
