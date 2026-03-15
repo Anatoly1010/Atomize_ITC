@@ -2359,7 +2359,7 @@ class Worker():
             pb.digitizer_number_of_averages(p3)
             PHASES = len( p6[3] )
             
-            general.plot_remove('Dig')
+            #general.plot_remove('Dig')
             
             pb.pulser_open()
             
@@ -2806,8 +2806,7 @@ class Worker():
                         
             if step == 1: 
                 conn.send( ('Message', 'No START or LENGTH increment; the time axis corresponds to the number of points in the experiment') )
-
-            general.plot_remove(exp_name)
+                general.plot_remove(exp_name)
 
             POINTS = points
             STEP = step
@@ -2894,7 +2893,12 @@ class Worker():
 
                 k = 1
                 while k <= SCANS:
+                    sp = ls335.tc_setpoint()
+                    ct = ls335.tc_temperature('B')
 
+                    if np.abs(sp - ct) > 0.8:
+                        general.wait('8000 ms')
+                    
                     if self.command == 'exit':
                         break
 
@@ -3134,6 +3138,12 @@ class Worker():
             while self.command != 'exit':
 
                 for k in general.scans(SCANS):
+                    
+                    sp = ls335.tc_setpoint()
+                    ct = ls335.tc_temperature('B')
+
+                    if np.abs(sp - ct) > 0.8:
+                        general.wait('8000 ms')
 
                     if self.command == 'exit':
                         break
@@ -3267,8 +3277,6 @@ class Worker():
             EXP_NAME = f'{exp_name}_F'
             CURVE_NAME = curve_name
 
-            #general.plot_remove(exp_name)
-
             bh15.magnet_field( start_field )
             general.wait('2000 ms')
 
@@ -3346,6 +3354,13 @@ class Worker():
                 while k <= SCANS:
 
                     field = START_FIELD
+                    bh15.magnet_field(field)
+
+                    sp = ls335.tc_setpoint()
+                    ct = ls335.tc_temperature('B')
+
+                    if np.abs(sp - ct) > 0.8:
+                        general.wait('8000 ms')
 
                     if self.command == 'exit':
                         break
@@ -3570,6 +3585,13 @@ class Worker():
                 for k in general.scans(SCANS):
 
                     field = START_FIELD
+                    bh15.magnet_field(field)
+
+                    sp = ls335.tc_setpoint()
+                    ct = ls335.tc_temperature('B')
+
+                    if np.abs(sp - ct) > 0.8:
+                        general.wait('8000 ms')
 
                     if self.command == 'exit':
                         break
@@ -3810,6 +3832,12 @@ class Worker():
 
                 k = 1
                 while k <= SCANS:
+
+                    sp = ls335.tc_setpoint()
+                    ct = ls335.tc_temperature('B')
+
+                    if np.abs(sp - ct) > 0.8:
+                        general.wait('8000 ms')
 
                     if self.command == 'exit':
                         break
@@ -4068,6 +4096,12 @@ class Worker():
 
                 for k in general.scans(SCANS):
 
+                    sp = ls335.tc_setpoint()
+                    ct = ls335.tc_temperature('B')
+
+                    if np.abs(sp - ct) > 0.8:
+                        general.wait('8000 ms')
+                    
                     if self.command == 'exit':
                         break
 
