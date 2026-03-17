@@ -3402,7 +3402,11 @@ class Worker():
                     pb.pulser_pulse_reset()
 
                     k += 1
-
+                    
+                    while field > START_FIELD:
+                        field -= 40
+                        bh15.magnet_field( field )
+                
                 self.command = 'exit'
 
             if self.command == 'exit':
@@ -3628,7 +3632,11 @@ class Worker():
                             self.command = conn.recv()
 
                     pb.pulser_pulse_reset()
-
+                    
+                    while field > START_FIELD:
+                        field -= 40
+                        bh15.magnet_field( field )
+                
                 self.command = 'exit'
 
             if self.command == 'exit':

@@ -4535,6 +4535,11 @@ class Worker():
 
 
                     pb.pulser_pulse_reset()
+
+                    while field > START_FIELD:
+                        field -= 40
+                        bh15.magnet_field( field )
+                    
                     k += 1
 
                 self.command = 'exit'
@@ -4914,6 +4919,7 @@ class Worker():
                         
                         if conn.poll() == True:
                             self.command = conn.recv()
+
                     general.plot_2d(
                         EXP_NAME, 
                         data, 
@@ -4928,7 +4934,11 @@ class Worker():
                     )
 
                     pb.pulser_pulse_reset()
-
+                    
+                    while field > START_FIELD:
+                        field -= 40
+                        bh15.magnet_field( field )
+                        
                 self.command = 'exit'
 
             if self.command == 'exit':

@@ -1376,6 +1376,8 @@ class CrossSectionDock(CloseableDock):
                 t_min, t_max = self.time_array[0], self.time_array[-1]
                 self.line.setBounds([t_min, t_max])
 
+        ##full_stack = self.img_view.image 
+
         #self.img_view.getView().vb.enableAutoRange(enable = autorange)
         self.update_cross_section_set_data()
         self.set_image = 1
