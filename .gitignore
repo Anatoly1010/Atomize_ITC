@@ -16,3 +16,4 @@ atomize/temp.csv
 libs/exam_adc.ini
 libs/exam_edac.ini
 libs/status
+*.param
