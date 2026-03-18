@@ -3413,14 +3413,14 @@ class Worker():
             #pb.win_right = win_right
 
             #p1_exp DETECTION
-            if p1_exp[4] != '0.0 ns':
+            if p1_exp[5] != '0.0 ns':
                 #delta_start
+                step = round( float( p1_exp[5].split(' ')[0] ), 1)
+                f_delay = 0#self.round_to_closest( float(p1_exp[1].split(' ')[0]), 3.2) / 1e9
+            elif p1_exp[4] != '0.0 ns':
+                #length_increment
                 step = round( float( p1_exp[4].split(' ')[0] ), 1)
                 f_delay = self.round_to_closest( float(p1_exp[1].split(' ')[0]), 3.2) / 1e9
-            elif p1_exp[5] != '0.0 ns':
-                #length_increment
-                step = round( float( p1_exp[5].split(' ')[0] ), 1)
-                f_delay = self.round_to_closest( float(p1_exp[2].split(' ')[0]), 3.2) / 1e9
             else:
                 pulses = [p2_exp, p3_exp, p4_exp, p5_exp, p6_exp, p7_exp, p8_exp, p9_exp]
                 
@@ -3847,15 +3847,14 @@ class Worker():
             #pb.win_right = win_right
 
             #p1_exp DETECTION
-           #p1_exp DETECTION
-            if p1_exp[4] != '0.0 ns':
+            if p1_exp[5] != '0.0 ns':
                 #delta_start
+                step = round( float( p1_exp[5].split(' ')[0] ), 1)
+                f_delay = 0#self.round_to_closest( float(p1_exp[1].split(' ')[0]), 3.2) / 1e9
+            elif p1_exp[4] != '0.0 ns':
+                #length_increment
                 step = round( float( p1_exp[4].split(' ')[0] ), 1)
                 f_delay = self.round_to_closest( float(p1_exp[1].split(' ')[0]), 3.2) / 1e9
-            elif p1_exp[5] != '0.0 ns':
-                #length_increment
-                step = round( float( p1_exp[5].split(' ')[0] ), 1)
-                f_delay = self.round_to_closest( float(p1_exp[2].split(' ')[0]), 3.2) / 1e9
             else:
                 pulses = [p2_exp, p3_exp, p4_exp, p5_exp, p6_exp, p7_exp, p8_exp, p9_exp]
                 
@@ -4535,9 +4534,10 @@ class Worker():
 
 
                     pb.pulser_pulse_reset()
-
+                    general.wait('1000 ms')
+                    
                     while field > START_FIELD:
-                        field -= 40
+                        field -= 100
                         bh15.magnet_field( field )
                     
                     k += 1
@@ -4935,8 +4935,10 @@ class Worker():
 
                     pb.pulser_pulse_reset()
                     
+                    general.wait('1000 ms')
+
                     while field > START_FIELD:
-                        field -= 40
+                        field -= 100
                         bh15.magnet_field( field )
                         
                 self.command = 'exit'

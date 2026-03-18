@@ -33,7 +33,7 @@ class MainWindow(QMainWindow):
         config = configparser.ConfigParser()
         config.read(path_config_file)
 
-        self.ecc15k = ecc.ECC_15K()
+        ###self.ecc15k = ecc.ECC_15K()
 
         self.UDP_IP = str(config['DEFAULT']['UDP_IP'])
         self.UDP_PORT = int(config['DEFAULT']['UDP_PORT'])
@@ -55,11 +55,11 @@ class MainWindow(QMainWindow):
         self.initialize()
         #self.telemetry()
 
-        power2 = int( self.Synt2_power.value() )
-        freq2 = int( self.Synt2.value() )
+        ###power2 = int( self.Synt2_power.value() )
+        ###freq2 = int( self.Synt2.value() )
         
-        self.ecc15k.synthetizer_frequency(f"{freq2} MHz")
-        self.ecc15k.synthetizer_power(power2)
+        ###self.ecc15k.synthetizer_frequency(f"{freq2} MHz")
+        ###self.ecc15k.synthetizer_power(power2)
         
         #self.telemetry_text.setStyleSheet("QPlainTextEdit { color : rgb(211, 194, 78); }")
 
@@ -264,17 +264,17 @@ class MainWindow(QMainWindow):
 
     def synt2(self):
         freq2 = int( self.Synt2.value() )
-        self.ecc15k.synthetizer_frequency(f"{freq2} MHz")
+        ###self.ecc15k.synthetizer_frequency(f"{freq2} MHz")
         #self.telemetry_text.appendPlainText( f'Synt2 Freq: {self.ecc15k.synthetizer_frequency().split(" ")[0]}')
     
     def synt2_power(self):
         power2 = int( self.Synt2_power.value() )
-        self.ecc15k.synthetizer_power(power2)
+        ###self.ecc15k.synthetizer_power(power2)
         #self.telemetry_text.appendPlainText( f'Synt2 Power Level: {self.ecc15k.synthetizer_power()}')
 
     def synt2_state(self):
         txt = str( self.Synt2_state.currentText() )
-        self.ecc15k.synthetizer_state(txt)
+        ###self.ecc15k.synthetizer_state(txt)
         #self.telemetry_text.appendPlainText( f'Synt2 State: {self.ecc15k.synthetizer_state()}')
 
     def closeEvent(self, event):
