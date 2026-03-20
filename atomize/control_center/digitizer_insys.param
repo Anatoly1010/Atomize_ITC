@@ -1,9 +1,9 @@
-Points: 512.0 ns
+Points: 816.0 ns
 Sample Rate: 2500
 Posstriger: 1024
 Range: 200
 CH0 Offset: 0
 CH1 Offset: 0
-Window Left: 475
-Window Right: 950
+Window Left: 575
+Window Right: 925
 Decimation: 1
