@@ -6598,10 +6598,12 @@ class Insys_FPGA:
         return channel_1 , channel_2
     
     #new
-    def digitizer_iq(self, arr_i, arr_q, freq, integral = False):
+    def digitizer_iq(self, arr_i, arr_q, freq, ph, integral = False):
 
         if np.isnan(arr_i).any() or np.isnan(arr_q).any():
             return None, None
+
+        #phi_rad = np.radians(ph)
 
         signal = arr_i + 1j * arr_q
         timeaxis = signal.shape[0]
@@ -6609,7 +6611,7 @@ class Insys_FPGA:
         fs = 2.5e9 / self.dec_coef
         t = np.arange(timeaxis) / fs
         f_offset = freq * 1e6
-        correction = np.exp(-1j * 2 * np.pi * f_offset * t)
+        correction = np.exp(-1j * (2 * np.pi * f_offset * t + ph) )
 
         new_shape = (timeaxis,) + (1,) * (signal.ndim - 1)
         corrected_signal = signal * correction.reshape(new_shape)

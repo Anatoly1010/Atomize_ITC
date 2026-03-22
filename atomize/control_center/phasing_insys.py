@@ -2,7 +2,9 @@
 # -*- coding: utf-8 -*-
 
 import os
+import re
 import sys
+import math
 import time
 import traceback
 import numpy as np
@@ -233,7 +235,7 @@ class MainWindow(QMainWindow):
         self.setWindowIcon( QIcon(icon_path) )
         self.path = os.path.join(path_to_main, '..', '..', '..', '..', 'experimental_data')
 
-        self.setMinimumHeight(580)
+        self.setMinimumHeight(610)
         self.setMinimumWidth(1360)
         self.setMaximumWidth(2200)
 
@@ -597,7 +599,8 @@ class MainWindow(QMainWindow):
         self.tab_pulse.tabBar().setTabTextColor(1, QColor(193, 202, 227))
 
         # ---- Labels & Inputs ----
-        labels = [("Acquisitions", "label_17"), ("Integration Left", "label_18"), ("Integration Right", "label_19"), ("Decimation", "label_20"), ("Points", "label_e1"), ("Scans", "label_e2"), ("Experiment Name", "label_e3"), ("Curve Name", "label_e4"), ("Start Field", "label_f1"), ("End Field", "label_f2"), ("Field Step", "label_f3"), ("Sweep Type", "label_c1"), ("Log[Start Time]", "label_e5"), ("Log[End Time]", "label_e6")]
+        labels = [("Acquisitions", "label_17"), ("Integration Left", "label_18"), ("Integration Right", "label_19"), ("Decimation", "label_20"), ("Points", "label_e1"), ("Scans", "label_e2"), ("Experiment Name", "label_e3"), ("Curve Name", "label_e4"), ("Start Field", "label_f1"), ("End Field", "label_f2"), ("Field Step", "label_f3"), ("Sweep Type", "label_c1"), ('lg(X<sub style="font-size: 12pt;">0</sub> / 1 ns)', "label_e5"), ('lg(X<sub style="font-size: 12pt;">END</sub> / 1 ns)', "label_e6"), 
+            ('X<sub style="font-size: 12pt;">0</sub>', "label_e7"), ("ΔX ", "label_e8")]
 
         for name, attr_name in labels:
             lbl = QLabel(name)
@@ -616,7 +619,9 @@ class MainWindow(QMainWindow):
                       (QDoubleSpinBox, "box_end_field", "cur_end_field", self.end_field, 0, 15000, 4000, 1, 1, " G"),
                       (QDoubleSpinBox, "box_step_field", "cur_step", self.step_field, 0.01, 50, 0.5, 0.1, 2, " G"),
                       (QDoubleSpinBox, "Log_start", "cur_log_start", self.log_start, 0, 10, 1, 0.01, 3, ""),
-                      (QDoubleSpinBox, "Log_end", "cur_log_end", self.log_end, 0, 10, 7, 0.01, 3, "")
+                      (QDoubleSpinBox, "Log_end", "cur_log_end", self.log_end, 0, 10, 7, 0.01, 3, ""),
+                      (QDoubleSpinBox, "X0", "cur_x0", self.x0, 0, 100e6, 0, 3.2, 1, " ns"),
+                      (QDoubleSpinBox, "XDelta", "cur_xdelta", self.xdelta, 0, 100e6, 0, 3.2, 1, " ns")
                         ]
 
         for widget_class, attr_name, par_name, func, v_min, v_max, cur_val, v_step, dec, suf in double_boxes:
@@ -716,22 +721,26 @@ class MainWindow(QMainWindow):
         left_grid.addWidget(self.box_scan, 3, 1)
         left_grid.addWidget(hline(), 4, 0, 1, 2)
 
-        left_grid.addWidget(self.label_e5, 5, 0)
-        left_grid.addWidget(self.Log_start, 5, 1)
-        left_grid.addWidget(self.label_e6, 6, 0)
-        left_grid.addWidget(self.Log_end, 6, 1)
+        left_grid.addWidget(self.label_e7, 5, 0)
+        left_grid.addWidget(self.X0, 5, 1)
+        left_grid.addWidget(self.label_e8, 6, 0)
+        left_grid.addWidget(self.XDelta, 6, 1)
 
-        left_grid.addWidget(hline(), 7, 0, 1, 2)
+        left_grid.addWidget(hline(), 8, 0, 1, 2)
 
-        left_grid.addWidget(self.label_e3, 8, 0)
-        left_grid.addWidget(self.text_edit_exp_name, 8, 1)
-        left_grid.addWidget(self.label_e4, 9, 0)
-        left_grid.addWidget(self.text_edit_curve, 9, 1)
+        left_grid.addWidget(self.label_e5, 9, 0)
+        left_grid.addWidget(self.Log_start, 9, 1)
+        left_grid.addWidget(self.label_e6, 10, 0)
+        left_grid.addWidget(self.Log_end, 10, 1)
 
-        left_grid.addWidget(hline(), 10, 0, 1, 2)
+        left_grid.addWidget(hline(), 11, 0, 1, 2)
 
-        left_grid.setRowStretch(11, 1)
-        left_grid.setColumnStretch(11, 1)
+        left_grid.addWidget(self.label_e3, 12, 0)
+        left_grid.addWidget(self.text_edit_exp_name, 12, 1)
+        left_grid.addWidget(self.label_e4, 13, 0)
+        left_grid.addWidget(self.text_edit_curve, 13, 1)
+
+        left_grid.addWidget(hline(), 14, 0, 1, 2)
 
         right_grid = QGridLayout()
         right_grid.setVerticalSpacing(4)
@@ -978,6 +987,12 @@ class MainWindow(QMainWindow):
 
         gridLayout.setRowStretch(2, 1)
         gridLayout.setColumnStretch(2, 1)
+
+    def x0(self):
+        self.cur_x0 = self.round_and_change_no_ns(self.X0)
+    
+    def xdelta(self):
+        self.cur_xdelta = self.round_and_change_no_ns(self.XDelta)
 
     def log_start(self):
         self.cur_log_start = round( float( self.Log_start.value() ), 3 )
@@ -1687,6 +1702,12 @@ class MainWindow(QMainWindow):
         self.box_step_field.setValue( float( lines[28].split(':  ')[1] ) )
         self.combo_sweep.setCurrentText( str( lines[29].split(':  ')[1] ) )
 
+        try:
+            self.X0.setValue( float( lines[30].split(':  ')[1] ) )
+            self.XDelta.setValue( float( lines[31].split(':  ')[1] ) )
+        except IndexError:
+            pass
+
         self.dig_stop()
 
         self.fft = 0
@@ -1749,6 +1770,9 @@ class MainWindow(QMainWindow):
             file.write( 'Field Step:  ' + str( self.box_step_field.value() ) + '\n' )
             file.write( 'Sweep Type:  ' + self.combo_sweep.currentText() + '\n' )
 
+            file.write( 'X0:  ' + str( self.X0.value() ) + '\n' )
+            file.write( 'dX:  ' + str( self.XDelta.value() ) + '\n' )
+
     def phase_converted(self, ph_str):
         if ph_str == '+x':
             return '+x'
@@ -1763,8 +1787,19 @@ class MainWindow(QMainWindow):
 
         text_edit = getattr(self, f"Phase_{index}")
         temp = text_edit.toPlainText().strip()
-        
+
         try:
+            #a = self.expand_phase_cycling(
+            #self.Phase_1.toPlainText().strip(),
+            #self.Phase_2.toPlainText().strip(),
+            #self.Phase_3.toPlainText().strip()
+            #)
+
+            #setattr(self, f"ph_{0}", a['receiver'])
+            #for i, p in enumerate( a['pulses']):
+            #    setattr(self, f"ph_{i+1}", a['pulses'][i])
+            #print( self.ph_1 )
+            
             if len(temp) >= 2: #and temp[0] == '[' and temp[-1] == ']':
                 content = temp[:].split(',') #[1:-1]
                 phases = [p.strip() for p in content if p.strip()]
@@ -1773,7 +1808,7 @@ class MainWindow(QMainWindow):
                     phases.append(phases[0])
                 
                 setattr(self, f"ph_{index}", phases)
-                
+            
         except (IndexError, AttributeError):
             pass
 
@@ -1808,6 +1843,15 @@ class MainWindow(QMainWindow):
         if current != raw:
             doubleBox.setValue( current )
         return self.add_ns( doubleBox.value() )
+
+    def round_and_change_no_ns(self, doubleBox):
+        """
+        """
+        raw = doubleBox.value()
+        current = self.round_to_closest( raw, 3.2 )
+        if current != raw:
+            doubleBox.setValue( current )
+        return doubleBox.value()
 
     def decimat(self):
         """
@@ -1956,7 +2000,8 @@ class MainWindow(QMainWindow):
                 self.cur_win_right, self.p1_exp, self.p2_exp, self.p3_exp, self.p4_exp, 
                 self.p5_exp, self.p6_exp, self.p7_exp, self.p8_exp, self.p9_exp, self.laser_flag, 
                 self.repetition_rate.split(' ')[0], 
-                self.mag_field, self.combo_laser_num, self.laser_q_switch_delay
+                self.mag_field, self.combo_laser_num, self.laser_q_switch_delay,
+                self.cur_x0, self.cur_xdelta
                 ) 
             )
         elif self.cur_sweep == 'Field':
@@ -1980,7 +2025,8 @@ class MainWindow(QMainWindow):
                 self.cur_win_right, self.p1_exp, self.p2_exp, self.p3_exp, self.p4_exp, 
                 self.p5_exp, self.p6_exp, self.p7_exp, self.p8_exp, self.p9_exp, self.laser_flag, 
                 self.repetition_rate.split(' ')[0], self.mag_field,
-                self.combo_laser_num, self.laser_q_switch_delay
+                self.combo_laser_num, self.laser_q_switch_delay,
+                self.cur_x0, self.cur_xdelta
                 ) 
             )
 
@@ -2221,7 +2267,8 @@ class MainWindow(QMainWindow):
                 self.cur_win_right, self.p1_exp, self.p2_exp, self.p3_exp, self.p4_exp, 
                 self.p5_exp, self.p6_exp, self.p7_exp, self.p8_exp, self.p9_exp, self.laser_flag, 
                 self.repetition_rate.split(' ')[0], 
-                self.mag_field, self.combo_laser_num, self.laser_q_switch_delay
+                self.mag_field, self.combo_laser_num, self.laser_q_switch_delay,
+                self.cur_x0, self.cur_xdelta
                 ) 
             )
         elif self.cur_sweep == 'Field':
@@ -2245,7 +2292,8 @@ class MainWindow(QMainWindow):
                 self.cur_win_right, self.p1_exp, self.p2_exp, self.p3_exp, self.p4_exp, 
                 self.p5_exp, self.p6_exp, self.p7_exp, self.p8_exp, self.p9_exp, self.laser_flag, 
                 self.repetition_rate.split(' ')[0], self.mag_field,
-                self.combo_laser_num, self.laser_q_switch_delay
+                self.combo_laser_num, self.laser_q_switch_delay,
+                self.cur_x0, self.cur_xdelta
                 ) 
             )
 
@@ -2254,6 +2302,63 @@ class MainWindow(QMainWindow):
         self.digitizer_process.start()
         self.parent_conn_dig.send('start')
         self.timer.start(200)
+
+    def expand_phase_cycling(self, p_input, *pulse_args):
+        phases = ['+x', '+y', '-x', '-y']
+        norm = {'x':0, 'y':1, '-x':2, '-y':3, '+':0, '-':2, 'i':1, '-i':3, '0':0}
+
+        def parse_input(s):
+            if isinstance(s, list):
+                if all(isinstance(x, (int, float)) for x in s): return s
+                return [phases.index(p.strip()) if p.strip() in phases else norm.get(p.strip().lower(), 0) for p in s]
+            
+            if ',' in s:
+                parts = [p.strip() for p in s.split(',')]
+                if all(re.match(r'^[+-]?\d+(\.\d+)?$', p) for p in parts):
+                    return [float(p) for p in parts]
+                return [phases.index(p) if p in phases else norm.get(p.lower(), 0) for p in parts]
+            
+            def get_recursive(st):
+                st = st.replace('D', '').lower()
+                if '[' not in st and '(' not in st:
+                    return [norm.get(st.strip(), 0)]
+                is_quad = st.startswith('[')
+                inner = get_recursive(st[1:-1])
+                full = []
+                steps, shift = (4, 1) if is_quad else (2, 2)
+                for step in range(steps):
+                    for p_idx in inner:
+                        full.append((p_idx + step * shift) % 4)
+                return full
+                
+            return get_recursive(s)
+
+        raw_indices = [parse_input(arg) for arg in pulse_args]
+        
+        lens = [len(s) for s in raw_indices]
+        target_len = lens[0]
+        for l in lens[1:]:
+            target_len = abs(target_len * l) // math.gcd(target_len, l)
+        if target_len < 2: target_len = 2
+
+        pulses_final = [(seq * (target_len // len(seq) + 1))[:target_len] for seq in raw_indices]
+
+        p_parsed = parse_input(p_input)
+        
+        if all(isinstance(x, (int, float)) for x in p_parsed):
+            receiver_indices = []
+            for step in range(target_len):
+                rec_sum = sum(p_parsed[i] * pulses_final[i][step] for i in range(len(p_parsed)))
+                receiver_indices.append(int(rec_sum) % 4)
+        else:
+            receiver_indices = (p_parsed * (target_len // len(p_parsed) + 1))[:target_len]
+
+        to_str = lambda indices: [phases[i] for i in indices]
+        
+        return {
+            "pulses": [to_str(p) for p in pulses_final],
+            "receiver": to_str(receiver_indices)
+        }
 
 # The worker class that run the digitizer in a different thread
 class Worker():
@@ -2757,8 +2862,8 @@ class Worker():
             win_left, exp_name, curve_name,
             win_right, p1_exp, p2_exp, p3_exp, p4_exp, 
             p5_exp, p6_exp, p7_exp, p8_exp, p9_exp, laser_flag, 
-            rep_rate, field, laser_num, q_switch_delay):
-
+            rep_rate, field, laser_num, q_switch_delay, x0, xd):
+        
         import traceback
 
         try:
@@ -2782,28 +2887,37 @@ class Worker():
             pb.win_left = win_left
             pb.win_right = win_right
 
-            #p1_exp DETECTION
-            if p1_exp[5] != '0.0 ns':
-                #delta_start
-                step = round( float( p1_exp[5].split(' ')[0] ), 1)
-                f_delay = 0#self.round_to_closest( float(p1_exp[1].split(' ')[0]), 3.2) / 1e9
-            elif p1_exp[4] != '0.0 ns':
-                #length_increment
-                step = round( float( p1_exp[4].split(' ')[0] ), 1)
-                f_delay = self.round_to_closest( float(p1_exp[1].split(' ')[0]), 3.2) / 1e9
-            else:
+            if xd == 0.0:
                 pulses2 = [p2_exp, p3_exp, p4_exp, p5_exp, p6_exp, p7_exp, p8_exp, p9_exp]
-                
-                for p in pulses2:
-                    if p[4] != '0.0 ns':
-                        step = round( float( p[4].split(' ')[0] ), 1)
-                        f_delay = self.round_to_closest( float(p[1].split(' ')[0]), 3.2) / 1e9
-                        break
-                    else:
-                        #prevent no increment
-                        step = 1
-                        f_delay = 0
-                        
+                #p1_exp DETECTION
+                if p1_exp[4] != '0.0 ns':
+                    #delta_start
+                    step = round( float( p1_exp[4].split(' ')[0] ), 1)
+                    for p in pulses2:
+                        if p[5] != '0.0 ns':
+                            f_delay = self.round_to_closest( float(p[2].split(' ')[0]), 3.2)
+                            break
+                        else:
+                            f_delay = self.round_to_closest( float(p1_exp[1].split(' ')[0]), 3.2)
+                elif p1_exp[5] != '0.0 ns':
+                    #length_increment
+                    step = round( float( p1_exp[5].split(' ')[0] ), 1)
+                    f_delay = self.round_to_closest( float(p1_exp[2].split(' ')[0]), 3.2)
+                else:                
+                    for p in pulses2:
+                        if p[4] != '0.0 ns':
+                            step = round( float( p[4].split(' ')[0] ), 1)
+                            f_delay = self.round_to_closest( float(p[1].split(' ')[0]), 3.2)
+                            break
+                        else:
+                            #prevent no increment
+                            step = 1
+                            f_delay = 0
+            
+            else:
+                step = round( xd, 1 )
+                f_delay =  self.round_to_closest( x0, 3.2 )
+
             if step == 1: 
                 conn.send( ('Message', 'No START or LENGTH increment; the time axis corresponds to the number of points in the experiment') )
                 general.plot_remove(exp_name)
@@ -2997,7 +3111,7 @@ class Worker():
             win_left, exp_name, curve_name,
             win_right, p1_exp, p2_exp, p3_exp, p4_exp, 
             p5_exp, p6_exp, p7_exp, p8_exp, p9_exp, laser_flag, 
-            rep_rate, field, laser_num, q_switch_delay):
+            rep_rate, field, laser_num, q_switch_delay, x0, xd):
         
         import traceback
 
@@ -3024,32 +3138,40 @@ class Worker():
             pb.win_left = win_left
             pb.win_right = win_right
 
-            #p1_exp DETECTION
-            if p1_exp[5] != '0.0 ns':
-                #delta_start
-                step = round( float( p1_exp[5].split(' ')[0] ), 1)
-                f_delay = 0#self.round_to_closest( float(p1_exp[1].split(' ')[0]), 3.2) / 1e9
-            elif p1_exp[4] != '0.0 ns':
-                #length_increment
-                step = round( float( p1_exp[4].split(' ')[0] ), 1)
-                f_delay = self.round_to_closest( float(p1_exp[1].split(' ')[0]), 3.2) / 1e9
-            else:
+            if xd == 0.0:
                 pulses2 = [p2_exp, p3_exp, p4_exp, p5_exp, p6_exp, p7_exp, p8_exp, p9_exp]
-                
-                for p in pulses2:
-                    if p[4] != '0.0 ns':
-                        step = round( float( p[4].split(' ')[0] ), 1)
-                        f_delay = self.round_to_closest( float(p[1].split(' ')[0]), 3.2) / 1e9
-                        break
-                    else:
-                        #prevent no increment
-                        step = 1
-                        f_delay = 0
+                #p1_exp DETECTION
+                if p1_exp[4] != '0.0 ns':
+                    #delta_start
+                    step = round( float( p1_exp[4].split(' ')[0] ), 1)
+                    for p in pulses2:
+                        if p[5] != '0.0 ns':
+                            f_delay = self.round_to_closest( float(p[2].split(' ')[0]), 3.2)
+                            break
+                        else:
+                            f_delay = self.round_to_closest( float(p1_exp[1].split(' ')[0]), 3.2)
+                elif p1_exp[5] != '0.0 ns':
+                    #length_increment
+                    step = round( float( p1_exp[5].split(' ')[0] ), 1)
+                    f_delay = self.round_to_closest( float(p1_exp[2].split(' ')[0]), 3.2)
+                else:                
+                    for p in pulses2:
+                        if p[4] != '0.0 ns':
+                            step = round( float( p[4].split(' ')[0] ), 1)
+                            f_delay = self.round_to_closest( float(p[1].split(' ')[0]), 3.2)
+                            break
+                        else:
+                            #prevent no increment
+                            step = 1
+                            f_delay = 0
+            
+            else:
+                step = round( xd, 1 )
+                f_delay =  self.round_to_closest( x0, 3.2 )
                         
             if step == 1: 
                 pass
                 #conn.send( ('Message', 'No START or LENGTH increment; the time axis corresponds to the number of points in the experiment') )
-
 
             POINTS = points
             STEP = step
@@ -3698,7 +3820,7 @@ class Worker():
             log_start, log_end, win_left, exp_name, curve_name,
             win_right, p1_exp, p2_exp, p3_exp, p4_exp, 
             p5_exp, p6_exp, p7_exp, p8_exp, p9_exp, laser_flag, 
-            rep_rate, field, laser_num, q_switch_delay):
+            rep_rate, field, laser_num, q_switch_delay, x0, xd):
 
         import traceback
 
@@ -3918,8 +4040,8 @@ class Worker():
                     f"{'Averages:':<{w}} {AVERAGES}\n"
                     f"{'Points:':<{w}} {POINTS}\n"
                     f"{'Window:':<{w}} {tb} ns\n"
-                    f"{'Log[T Start]:':<{w}} {T_start}\n"
-                    f"{'Log[T End]:':<{w}} {T_end}\n"
+                    f"{'Lg(X0/ns):':<{w}} {T_start}\n"
+                    f"{'Lg(ΔX/ns):':<{w}} {T_end}\n"
                     f"{'Temperature:':<{w}} {ls335.tc_temperature('A')} K\n"
                     f"{'Temperature Cernox:':<{w}} {ls335.tc_temperature('B')} K\n"
                     f"{'-'*50}\n"
@@ -3950,7 +4072,7 @@ class Worker():
             log_start, log_end, win_left, exp_name, curve_name,
             win_right, p1_exp, p2_exp, p3_exp, p4_exp, 
             p5_exp, p6_exp, p7_exp, p8_exp, p9_exp, laser_flag, 
-            rep_rate, field, laser_num, q_switch_delay):
+            rep_rate, field, laser_num, q_switch_delay, x0, xd):
         import traceback
 
         sys.argv = ['', 'test']
@@ -4178,8 +4300,8 @@ class Worker():
                     f"{'Averages:':<{w}} {AVERAGES}\n"
                     f"{'Points:':<{w}} {POINTS}\n"
                     f"{'Window:':<{w}} {tb} ns\n"
-                    f"{'Log[T Start]:':<{w}} {T_start}\n"
-                    f"{'Log[T End]:':<{w}} {T_end}\n"
+                    f"{'Lg(X0/ns):':<{w}} {T_start}\n"
+                    f"{'Lg(ΔX/ns):':<{w}} {T_end}\n"
                     f"{'Temperature:':<{w}} {ls335.tc_temperature('A')} K\n"
                     f"{'Temperature Cernox:':<{w}} {ls335.tc_temperature('B')} K\n"
                     f"{'-'*50}\n"
