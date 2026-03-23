@@ -472,7 +472,38 @@ class MainWindow(QMainWindow):
             txt.setFixedSize(130, 60)
             txt.setAcceptRichText(False)
             #txt.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-            txt.setStyleSheet("QTextEdit { color : rgb(211, 194, 78) ; selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
+            txt.setStyleSheet("""
+                QTextEdit { 
+                    color: rgb(211, 194, 78); 
+                    selection-background-color: rgb(211, 194, 78); 
+                    selection-color: rgb(63, 63, 97);
+                }
+
+                QScrollBar:vertical {
+                    border: none;
+                    background: rgb(43, 43, 77); 
+                    width: 10px;
+                    margin: 0px;
+                }
+
+                QScrollBar::handle:vertical {
+                    background: rgb(193, 202, 227); 
+                    min-height: 20px;
+                    border-radius: 5px;
+                }
+
+                QScrollBar::handle:vertical:hover {
+                    background: rgb(211, 194, 78); 
+                }
+
+                QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                    height: 0px;
+                }
+
+                QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+                    background: none;
+                }
+            """)
             
             setattr(self, f"Phase_{i}", txt)
             txt.textChanged.connect(lambda idx = i: self.update_pulse_phase(idx))
@@ -580,7 +611,40 @@ class MainWindow(QMainWindow):
         txt.setReadOnly(True)
         txt.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)        
         setattr(self, "errors", txt)
-        txt.setStyleSheet("QPlainTextEdit { color : rgb(211, 194, 78) ; selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
+
+        txt.setStyleSheet("""
+            QPlainTextEdit { 
+                color: rgb(211, 194, 78); 
+                selection-background-color: rgb(211, 194, 78); 
+                selection-color: rgb(63, 63, 97);
+            }
+
+            QScrollBar:vertical {
+                border: none;
+                background: rgb(43, 43, 77); 
+                width: 10px;
+                margin: 0px;
+            }
+
+            QScrollBar::handle:vertical {
+                background: rgb(193, 202, 227); 
+                min-height: 20px;
+                border-radius: 5px;
+            }
+
+            QScrollBar::handle:vertical:hover {
+                background: rgb(211, 194, 78); 
+            }
+
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                height: 0px;
+            }
+
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+                background: none;
+            }
+        """)
+        
         self.buttons_layout.addWidget(txt, 3, 2, 3, 10)
 
         #self.buttons_layout.setRowStretch(6, 11)
@@ -1203,6 +1267,7 @@ class MainWindow(QMainWindow):
         """
         filedialog = QFileDialog(self, 'Open File', directory = self.path, filter = "Pulse Phase List (*.phase)", options = QFileDialog.Option.DontUseNativeDialog)
         
+        filedialog.setMinimumWidth(800)
         tree = filedialog.findChild(QTreeView)
         header = tree.header()
         for i in range(header.count()):
@@ -1431,6 +1496,7 @@ class MainWindow(QMainWindow):
         """
         filedialog = QFileDialog(self, 'Save File', directory = self.path, filter = "Pulse Phase List (*.phase)", options = QFileDialog.Option.DontUseNativeDialog)
         filedialog.setAcceptMode(QFileDialog.AcceptMode.AcceptSave)
+        filedialog.setMinimumWidth(800)
 
         tree = filedialog.findChild(QTreeView)
         header = tree.header()

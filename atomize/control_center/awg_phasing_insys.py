@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 import os
@@ -537,8 +536,39 @@ class MainWindow(QMainWindow):
             txt.setFixedSize(130, 60)
             txt.setAcceptRichText(False)
             #txt.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-            txt.setStyleSheet("QTextEdit { color : rgb(211, 194, 78) ; selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
-            
+            txt.setStyleSheet("""
+                QTextEdit { 
+                    color: rgb(211, 194, 78); 
+                    selection-background-color: rgb(211, 194, 78); 
+                    selection-color: rgb(63, 63, 97);
+                }
+
+                QScrollBar:vertical {
+                    border: none;
+                    background: rgb(43, 43, 77); 
+                    width: 10px;
+                    margin: 0px;
+                }
+
+                QScrollBar::handle:vertical {
+                    background: rgb(193, 202, 227); 
+                    min-height: 20px;
+                    border-radius: 5px;
+                }
+
+                QScrollBar::handle:vertical:hover {
+                    background: rgb(211, 194, 78); 
+                }
+
+                QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                    height: 0px;
+                }
+
+                QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+                    background: none;
+                }
+            """)
+
             setattr(self, f"Phase_{i}", txt)
             txt.textChanged.connect(lambda idx = i: self.update_pulse_phase(idx))
             self.update_pulse_phase(i)
@@ -637,7 +667,40 @@ class MainWindow(QMainWindow):
         txt.setReadOnly(True)
         txt.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
         setattr(self, "errors", txt)
-        txt.setStyleSheet("QPlainTextEdit { color : rgb(211, 194, 78) ; selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
+
+        txt.setStyleSheet("""
+            QPlainTextEdit { 
+                color: rgb(211, 194, 78); 
+                selection-background-color: rgb(211, 194, 78); 
+                selection-color: rgb(63, 63, 97);
+            }
+
+            QScrollBar:vertical {
+                border: none;
+                background: rgb(43, 43, 77); 
+                width: 10px;
+                margin: 0px;
+            }
+
+            QScrollBar::handle:vertical {
+                background: rgb(193, 202, 227); 
+                min-height: 20px;
+                border-radius: 5px;
+            }
+
+            QScrollBar::handle:vertical:hover {
+                background: rgb(211, 194, 78); 
+            }
+
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                height: 0px;
+            }
+
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+                background: none;
+            }
+        """)   
+
         self.buttons_layout.addWidget(txt, 3, 2, 3, 10)
 
         #self.buttons_layout.setRowStretch(6, 11)
@@ -1539,6 +1602,8 @@ class MainWindow(QMainWindow):
         """
         filedialog = QFileDialog(self, 'Open File', directory = self.path, filter = "AWG pulse phase list (*.phase_awg)", options = QFileDialog.Option.DontUseNativeDialog)
 
+        filedialog.setMinimumWidth(800)
+        
         tree = filedialog.findChild(QTreeView)
         header = tree.header()
         for i in range(header.count()):
@@ -1767,6 +1832,7 @@ class MainWindow(QMainWindow):
         filedialog = QFileDialog(self, 'Save File', directory = self.path, filter = "AWG pulse phase list (*.phase_awg)", options = QFileDialog.Option.DontUseNativeDialog)
         filedialog.setAcceptMode(QFileDialog.AcceptMode.AcceptSave)
 
+        filedialog.setMinimumWidth(800)
         tree = filedialog.findChild(QTreeView)
         header = tree.header()
         for i in range(header.count()):
@@ -2140,7 +2206,6 @@ class MainWindow(QMainWindow):
 
             file.write( 'X0:  ' + str( self.X0.value() ) + '\n' )
             file.write( 'dX:  ' + str( self.XDelta.value() ) + '\n' )
-
 
     def remove_ns(self, string1):
         return string1.split(' ')[0]
@@ -3060,24 +3125,27 @@ class Worker():
                             vline = (p4 * t_res / 1e9, p5 * t_res / 1e9) 
                             )
 
-                        if p27 == 0:
-                            freq_axis, abs_values = fft.fft(x_axis, data_x, data_y, t_res * 1)
-                            m_val = round( np.amax( abs_values ), 2 )
-                            general.plot_1d('FFT', freq_axis * 1e6, abs_values, 
-                                xname = 'Offset', label = 'FFT', xscale = 'Hz', 
-                                yscale = 'A.U.', text = 'Max ' + str(m_val)
-                                )
-                        else:
-                            if p31 > len( data_x ) - 0.4 * p1:
-                                p31 = len( data_x ) - 0.8 * p1
-                                general.message('Maximum length of the data achieved. A number of drop points was corrected.')
-                            # fixed resolution of digitizer; 2 ns
-                            freq, fft_x, fft_y = fft.fft( x_axis[p31:], data_x[p31:], data_y[p31:], t_res * 1, re = 'True' )
-                            data_fft = fft.ph_correction( freq * 1e6, fft_x, fft_y, p28, p29, p30 )
-                            general.plot_1d('FFT', freq, ( data_fft[0], data_fft[1] ), 
-                                xname = 'Offset', xscale = 'Hz', 
-                                yscale = 'A.U.', label = 'FFT'
-                                )
+                        try:
+                            if p27 == 0:
+                                freq_axis, abs_values = fft.fft(x_axis, data_x, data_y, t_res * 1)
+                                m_val = round( np.amax( abs_values ), 2 )
+                                general.plot_1d('FFT', freq_axis * 1e6, abs_values, 
+                                    xname = 'Offset', label = 'FFT', xscale = 'Hz', 
+                                    yscale = 'A.U.', text = 'Max ' + str(m_val)
+                                    )
+                            else:
+                                if p31 > len( data_x ) - 0.4 * p1:
+                                    p31 = len( data_x ) - 0.8 * p1
+                                    general.message('Maximum length of the data achieved. A number of drop points was corrected.')
+                                # fixed resolution of digitizer; 2 ns
+                                freq, fft_x, fft_y = fft.fft( x_axis[p31:], data_x[p31:], data_y[p31:], t_res * 1, re = 'True' )
+                                data_fft = fft.ph_correction( freq * 1e6, fft_x, fft_y, p28, p29, p30 )
+                                general.plot_1d('FFT', freq, ( data_fft[0], data_fft[1] ), 
+                                    xname = 'Offset', xscale = 'Hz', 
+                                    yscale = 'A.U.', label = 'FFT'
+                                    )
+                        except TypeError:
+                            pass
 
                 self.command = 'start'
                 if PHASES != 1:
@@ -3420,24 +3488,27 @@ class Worker():
                             vline = (p4 * t_res / 1e9, p5 * t_res / 1e9) 
                             )
 
-                        if p27 == 0:
-                            freq_axis, abs_values = fft.fft(x_axis, data_x, data_y, t_res * 1)
-                            m_val = round( np.amax( abs_values ), 2 )
-                            general.plot_1d('FFT', freq_axis * 1e6, abs_values, 
-                                xname = 'Offset', label = 'FFT', xscale = 'Hz', 
-                                yscale = 'A.U.', text = 'Max ' + str(m_val)
-                                )
-                        else:
-                            if p31 > len( data_x ) - 0.4 * p1:
-                                p31 = len( data_x ) - 0.8 * p1
-                                general.message('Maximum length of the data achieved. A number of drop points was corrected.')
-                            # fixed resolution of digitizer; 2 ns
-                            freq, fft_x, fft_y = fft.fft( x_axis[p31:], data_x[p31:], data_y[p31:], t_res * 1, re = 'True' )
-                            data_fft = fft.ph_correction( freq * 1e6, fft_x, fft_y, p28, p29, p30 )
-                            general.plot_1d('FFT', freq, ( data_fft[0], data_fft[1] ), 
-                                xname = 'Offset', xscale = 'Hz', 
-                                yscale = 'A.U.', label = 'FFT'
-                                )
+                        try:
+                            if p27 == 0:
+                                freq_axis, abs_values = fft.fft(x_axis, data_x, data_y, t_res * 1)
+                                m_val = round( np.amax( abs_values ), 2 )
+                                general.plot_1d('FFT', freq_axis * 1e6, abs_values, 
+                                    xname = 'Offset', label = 'FFT', xscale = 'Hz', 
+                                    yscale = 'A.U.', text = 'Max ' + str(m_val)
+                                    )
+                            else:
+                                if p31 > len( data_x ) - 0.4 * p1:
+                                    p31 = len( data_x ) - 0.8 * p1
+                                    general.message('Maximum length of the data achieved. A number of drop points was corrected.')
+                                # fixed resolution of digitizer; 2 ns
+                                freq, fft_x, fft_y = fft.fft( x_axis[p31:], data_x[p31:], data_y[p31:], t_res * 1, re = 'True' )
+                                data_fft = fft.ph_correction( freq * 1e6, fft_x, fft_y, p28, p29, p30 )
+                                general.plot_1d('FFT', freq, ( data_fft[0], data_fft[1] ), 
+                                    xname = 'Offset', xscale = 'Hz', 
+                                    yscale = 'A.U.', label = 'FFT'
+                                    )
+                        except TypeError:
+                            pass
 
                 if PHASES != 1:
                     pb.awg_pulse_reset()
@@ -3638,6 +3709,9 @@ class Worker():
                              ]
 
                 for i, (tp, ap) in enumerate(zip(trigger_pulses, awg_params)):
+                    if ap[9] != '0.0 ns':
+                        increment = 1
+
                     if int(float(tp[1].split(' ')[0])) != 0:
                         
                         is_complex = ap[0] in ['WURST', 'SECH/TANH']
@@ -3817,12 +3891,12 @@ class Worker():
                                 total_scan = SCANS )
 
                         pb.pulser_shift()
-                        pb.pulser_increment()
-
                         if increment == 1:
                             pb.awg_increment()
                         else:
                             pb.awg_pulse_reset()
+
+                        pb.pulser_increment()
 
                         conn.send( ('Status', int( 100 * (( k - 1 ) * POINTS + j + 1) / POINTS / SCANS)) )
 
@@ -4144,6 +4218,9 @@ class Worker():
                              ]
 
                 for i, (tp, ap) in enumerate(zip(trigger_pulses, awg_params)):
+                    if ap[9] != '0.0 ns':
+                        increment = 1
+
                     if int(float(tp[1].split(' ')[0])) != 0:
                         
                         is_complex = ap[0] in ['WURST', 'SECH/TANH']
@@ -4320,11 +4397,12 @@ class Worker():
                                 total_scan = SCANS ) 
 
                         pb.pulser_shift()
-                        pb.pulser_increment()
                         if increment == 1:
                             pb.awg_increment()
                         else:
                             pb.awg_pulse_reset()
+
+                        pb.pulser_increment()
 
                         #conn.send( ('Status', int( 100 * (( k - 1 ) * POINTS + j + 1) / POINTS / SCANS)) )
 
@@ -4338,7 +4416,6 @@ class Worker():
                         
                         if conn.poll() == True:
                             self.command = conn.recv()
-
 
                     pb.pulser_pulse_reset()
                     if increment == 1:
@@ -5354,9 +5431,10 @@ class Worker():
 
             nonlinear_time_raw = 10 ** np.linspace( T_start, T_end, POINTS )
             nonlinear_time = np.unique( general.numpy_round( nonlinear_time_raw, 3.2 ) )
-            nonlinear_diff = np.diff(nonlinear_time)
+            nonlinear_diff = np.append(np.diff(nonlinear_time), 0)
+            original_time = np.concatenate(([0], nonlinear_diff)).cumsum()
             POINTS = len( nonlinear_time )
-            x_axis = (np.insert(nonlinear_time , 0, 0))[:-1]
+            x_axis = original_time[:-1]
 
             file_handler = openfile.Saver_Opener()
             pb = pb_pro.Insys_FPGA()
@@ -5861,11 +5939,9 @@ class Worker():
 
             nonlinear_time_raw = 10 ** np.linspace( T_start, T_end, POINTS )
             nonlinear_time = np.unique( general.numpy_round( nonlinear_time_raw, 3.2 ) )
-            ##
             nonlinear_diff = np.append(np.diff(nonlinear_time), 0)
             original_time = np.concatenate(([0], nonlinear_diff)).cumsum()
             POINTS = len( nonlinear_time )
-            ##
             x_axis = original_time[:-1]
 
             file_handler = openfile.Saver_Opener()

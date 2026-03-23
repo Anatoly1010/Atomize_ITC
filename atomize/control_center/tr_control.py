@@ -617,6 +617,8 @@ class MainWindow(QMainWindow):
         """
         filedialog = QFileDialog(self, 'Open File', directory = self.path, filter = "TR Parameters (*.tr)", options = QFileDialog.Option.DontUseNativeDialog)
         
+        filedialog.setMinimumWidth(800)
+
         tree = filedialog.findChild(QTreeView)
         header = tree.header()
         for i in range(header.count()):
@@ -846,6 +848,7 @@ class MainWindow(QMainWindow):
         filedialog = QFileDialog(self, 'Save File', directory = self.path, filter = "TR Parameters (*.tr)", options = QFileDialog.Option.DontUseNativeDialog)
         filedialog.setAcceptMode(QFileDialog.AcceptMode.AcceptSave)
 
+        filedialog.setMinimumWidth(800)
         tree = filedialog.findChild(QTreeView)
         header = tree.header()
         for i in range(header.count()):

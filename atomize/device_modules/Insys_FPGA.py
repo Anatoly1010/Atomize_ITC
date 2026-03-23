@@ -3406,7 +3406,7 @@ class Insys_FPGA:
         A function to increment both the length and sigma of the pulses.
         The function directly affects the pulse_array.
         """
-        self.is_first_phase_cycle = 0
+        #self.is_first_phase_cycle = 0
         if self.test_flag != 'test':
             if len(pulses) == 0:
                 i = 0
@@ -3485,7 +3485,7 @@ class Insys_FPGA:
 
                             if self.pulse_array_awg[pulse_index]['function'] == 'SINE':
                                 self.pulse_array_awg[pulse_index]['length'] = str( leng + d_length ) + ' ns'
-                                self.pulse_array_awg[pulse_index]['sigma'] = str( sigm + d_length ) + ' ns'
+                                #self.pulse_array_awg[pulse_index]['sigma'] = str( sigm + d_length ) + ' ns'
                             elif self.pulse_array_awg[pulse_index]['function'] == 'GAUSS' or self.pulse_array_awg[i]['function'] == 'SINC':
                                 ratio = leng/sigm
                                 self.pulse_array_awg[pulse_index]['length'] = str( leng + ratio*d_length ) + ' ns'
@@ -3526,11 +3526,15 @@ class Insys_FPGA:
                             assert(1 == 2), "Incorrect time dimension (ns, us, ms)"
                         
 
-                        ratio = leng/sigm
+                        if (self.pulse_array_awg[i]['function'] == 'GAUSS') or (self.pulse_array_awg[i]['function'] == 'SINC'):
+                            ratio = leng/sigm
+                        else:
+                            ratio = 0
+
                         if ( leng + ratio*d_length ) <= self.max_pulse_length_awg:
                             if self.pulse_array_awg[i]['function'] == 'SINE':
                                 self.pulse_array_awg[i]['length'] = str( leng + d_length ) + ' ns'
-                                self.pulse_array_awg[i]['sigma'] = str( sigm + d_length ) + ' ns'
+                                #self.pulse_array_awg[i]['sigma'] = str( sigm + d_length ) + ' ns'
                             elif self.pulse_array_awg[i]['function'] == 'GAUSS' or self.pulse_array_awg[i]['function'] == 'SINC':
                                 #ratio = leng/sigm
                                 self.pulse_array_awg[i]['length'] = str( leng + ratio*d_length ) + ' ns'
@@ -3576,11 +3580,15 @@ class Insys_FPGA:
                             else:
                                 assert(1 == 2), "Incorrect time dimension (ns, us, ms)"
 
-                            ratio = leng/sigm
+                            if (self.pulse_array_awg[i]['function'] == 'GAUSS') or (self.pulse_array_awg[i]['function'] == 'SINC'):
+                                ratio = leng/sigm
+                            else:
+                                ratio = 0
+
                             if ( leng + ratio*d_length ) <= self.max_pulse_length_awg:
                                 if self.pulse_array_awg[pulse_index]['function'] == 'SINE':
                                     self.pulse_array_awg[pulse_index]['length'] = str( leng + d_length ) + ' ns'
-                                    self.pulse_array_awg[pulse_index]['sigma'] = str( sigm + d_length ) + ' ns'
+                                    #self.pulse_array_awg[pulse_index]['sigma'] = str( sigm + d_length ) + ' ns'
                                 elif self.pulse_array_awg[pulse_index]['function'] == 'GAUSS' or self.pulse_array_awg[i]['function'] == 'SINC':
                                     #ratio = leng/sigm
                                     self.pulse_array_awg[pulse_index]['length'] = str( leng + ratio*d_length ) + ' ns'
@@ -3600,7 +3608,7 @@ class Insys_FPGA:
         It does not update the AWG card, if you want to reset all pulses and and also update 
         the AWG card use the function awg_reset() instead.
         """
-        self.is_first_phase_cycle = 0
+        #self.is_first_phase_cycle = 0
         if self.test_flag != 'test':
             
             if len(pulses) == 0:

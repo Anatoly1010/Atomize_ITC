@@ -574,7 +574,8 @@ class MainWindow(QMainWindow):
         A function to open a new window for choosing a pulse list
         """
         filedialog = QFileDialog(self, 'Open File', directory = self.path, filter = "CW Parameters (*.cw)", options = QFileDialog.Option.DontUseNativeDialog)
-        
+        filedialog.setMinimumWidth(800)
+
         tree = filedialog.findChild(QTreeView)
         header = tree.header()
         for i in range(header.count()):
@@ -803,7 +804,8 @@ class MainWindow(QMainWindow):
         """
         filedialog = QFileDialog(self, 'Save File', directory = self.path, filter = "CW Parameters (*.cw)", options = QFileDialog.Option.DontUseNativeDialog)
         filedialog.setAcceptMode(QFileDialog.AcceptMode.AcceptSave)
-
+        filedialog.setMinimumWidth(800)
+        
         tree = filedialog.findChild(QTreeView)
         header = tree.header()
         for i in range(header.count()):
