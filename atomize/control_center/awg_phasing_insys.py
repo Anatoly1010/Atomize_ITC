@@ -2826,58 +2826,58 @@ class MainWindow(QMainWindow):
         phases = ['+x', '+y', '-x', '-y']
         norm = {'x':0, 'y':1, '-x':2, '-y':3, '+':0, '-':2, 'i':1, '-i':3, '0':0}
 
-        def parse_input(s):
+        def parse_to_indices(s):
             if isinstance(s, list):
-                if all(isinstance(x, (int, float)) for x in s): return s
-                return [phases.index(p.strip()) if p.strip() in phases else norm.get(p.strip().lower(), 0) for p in s]
+                return [phases.index(p.strip()) if p.strip() in phases else norm.get(p.strip().lower().replace(' ', ''), 0) for p in s]
             
-            if ',' in s:
-                parts = [p.strip() for p in s.split(',')]
-                if all(re.match(r'^[+-]?\d+(\.\d+)?$', p) for p in parts):
-                    return [float(p) for p in parts]
-                return [phases.index(p) if p in phases else norm.get(p.lower(), 0) for p in parts]
-            
+            s_clean = s.replace(' ', '')
+            if ',' in s_clean:
+                if re.search(r'[xyi]', s_clean.lower()):
+                    parts = [p for p in s_clean.split(',') if p]
+                    return [phases.index(p) if p in phases else norm.get(p.lower(), 0) for p in parts]
+                return None
+                
             def get_recursive(st):
-                st = st.replace('D', '').lower()
+                st = st.replace('D', '').lower().replace(' ', '')
                 if '[' not in st and '(' not in st:
                     return [norm.get(st.strip(), 0)]
                 is_quad = st.startswith('[')
                 inner = get_recursive(st[1:-1])
-                full = []
                 steps, shift = (4, 1) if is_quad else (2, 2)
-                for step in range(steps):
-                    for p_idx in inner:
-                        full.append((p_idx + step * shift) % 4)
-                return full
-                
-            return get_recursive(s)
+                return [(p_idx + step * shift) % 4 for step in range(steps) for p_idx in inner]
+            return get_recursive(s_clean)
 
-        raw_indices = [parse_input(arg) for arg in pulse_args]
+        pulses_indices = [parse_to_indices(arg) for arg in pulse_args]
         
-        lens = [len(s) for s in raw_indices]
-        target_len = lens[0]
-        for l in lens[1:]:
+        lens = [len(s) for s in pulses_indices]
+        target_len = 1
+        for l in lens:
             target_len = abs(target_len * l) // math.gcd(target_len, l)
         if target_len < 2: target_len = 2
 
-        pulses_final = [(seq * (target_len // len(seq) + 1))[:target_len] for seq in raw_indices]
+        pulses_final = [(seq * (target_len // len(seq) + 1))[:target_len] for seq in pulses_indices]
 
-        p_parsed = parse_input(p_input)
-        
-        if all(isinstance(x, (int, float)) for x in p_parsed):
+
+        is_coeff_str = isinstance(p_input, str) and ',' in p_input and not re.search(r'[xyi]', p_input.lower())
+        is_coeff_list = isinstance(p_input, list) and all(isinstance(x, (int, float)) for x in p_input)
+
+        if is_coeff_str or is_coeff_list:
+            if is_coeff_str:
+                parts = [p.strip() for p in p_input.split(',')]
+                coeffs = [float(p) if p and p != '-' and p != '+' else 0.0 for p in parts]
+            else:
+                coeffs = p_input
+                
             receiver_indices = []
             for step in range(target_len):
-                rec_sum = sum(p_parsed[i] * pulses_final[i][step] for i in range(len(p_parsed)))
+                rec_sum = sum(coeffs[i] * pulses_final[i][step] for i in range(min(len(coeffs), len(pulses_final))))
                 receiver_indices.append(int(rec_sum) % 4)
         else:
-            receiver_indices = (p_parsed * (target_len // len(p_parsed) + 1))[:target_len]
+            det_indices = parse_to_indices(p_input)
+            receiver_indices = (det_indices * (target_len // len(det_indices) + 1))[:target_len]
 
         to_str = lambda indices: [phases[i] for i in indices]
-        
-        return {
-            "pulses": [to_str(p) for p in pulses_final],
-            "receiver": to_str(receiver_indices)
-        }
+        return {"pulses": [to_str(p) for p in pulses_final], "receiver": to_str(receiver_indices)}
 
 # The worker class that run the digitizer in a different thread
 class Worker():
