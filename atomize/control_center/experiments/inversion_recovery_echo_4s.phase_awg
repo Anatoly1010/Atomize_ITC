@@ -1,14 +1,14 @@
-P1:  DETECTION,  576.0,  816.0,  0.0,  50,  350,  100,  [-1,2],  0.0,  0.0
-P2:  SINE,  0.0,  22.4,  0.0,  50,  350,  100,  [(x)],  0.0,  0.0
-P3:  SINE,  288.0,  44.8,  0.0,  50,  350,  100,  [x],  0.0,  0.0
-P4:  SINE,  0.0,  0.0,  0.0,  50,  350,  100,  [+x,+x],  0.0,  0.0
+P1:  DETECTION,  678.4,  512.0,  0.0,  50,  350,  100,  [0,-1,2],  3.2,  0.0
+P2:  SINE,  0.0,  32.0,  0.0,  50,  350,  60,  [(x)],  0.0,  0.0
+P3:  SINE,  204.8,  32.0,  0.0,  50,  350,  30,  [((x))],  3.2,  0.0
+P4:  SINE,  441.6,  32.0,  0.0,  50,  350,  60,  [x],  3.2,  0.0
 P5:  SINE,  0.0,  0.0,  0.0,  50,  350,  100,  [+x,+x],  0.0,  0.0
 P6:  SINE,  0.0,  0.0,  0.0,  50,  350,  100,  [+x,+x],  0.0,  0.0
 P7:  SINE,  0.0,  0.0,  0.0,  50,  350,  100,  [+x,+x],  0.0,  0.0
 P8:  SINE,  0.0,  0.0,  0.0,  50,  350,  100,  [+x,+x],  0.0,  0.0
 P9:  SINE,  0.0,  0.0,  0.0,  50,  350,  100,  [+x,+x],  0.0,  0.0
-Rep rate:  500.0
-Field:  3493.0
+Rep rate:  480.0
+Field:  3324.0
 Delay:  0
 Ampl 1:  260
 Ampl 2:  260
@@ -17,23 +17,23 @@ N WURST; SECH/TANH:  10
 B SECH/TANH:  0.02
 Points:  2016
 Horizontal offset:  1024
-Window left:  0.0
-Window right:  320.0
-Acquisitions:  1
+Window left:  200.0
+Window right:  400.0
+Acquisitions:  30
 Points to Drop:  0
-Zero order:  0.0
+Zero order:  198.0
 First order:  0.0
 Second order:  0.0
 Laser:  Nd:YaG
 Decimation:  1
-Points:  500
+Points:  300
 Scans:  1
-Log Start:  1.0
-Log End:  7.0
-Start Field:  3000.0
-End Field:  4000.0
-Field Step:  0.5
-Sweep Type:  Linear Time
+Log Start:  2.3
+Log End:  6.3
+Start Field:  2400.0
+End Field:  4400.0
+Field Step:  1.0
+Sweep Type:  Log Time
 IQ Correction:  2
 X0:  0.0
 dX:  0.0

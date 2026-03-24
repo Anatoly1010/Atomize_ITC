@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
 
 import os
+import re
 import sys
+import math
 import time
 import traceback
 import numpy as np
@@ -164,20 +166,32 @@ class MainWindow(QMainWindow):
         cwd = os.getcwd()
 
         t2_sequences = {
-            'Hahn echo; 2S': 'hahn_echo_2s.phase_awg'
+            'Hahn Echo; 2S': 'hahn_echo_2s.phase_awg'
         }
 
         t2_exp_menu = self.exp_menu.addMenu('T₂')
+        
         for label, file_name in t2_sequences.items():
             full_path = os.path.join(cwd, 'experiments', file_name)
             action = QAction(label, self)
-            action.triggered.connect(lambda checked, name=full_path: self.set_preset_exp(full_path))
+            action.triggered.connect(lambda checked, name=full_path: self.set_preset_exp(name))
             t2_exp_menu.addAction(action)
 
         t1_exp_menu = self.exp_menu.addMenu('T₁')
 
+        t1_sequences = {
+            'Invertion Recovery Echo; 4S': 'inversion_recovery_echo_4s.phase_awg'
+        }
+
+        for label, file_name in t1_sequences.items():
+            full_path = os.path.join(cwd, 'experiments', file_name)
+            action = QAction(label, self)
+            action.triggered.connect(lambda checked, name=full_path: self.set_preset_exp(name))
+            t1_exp_menu.addAction(action)
+
     def set_preset_exp(self, filename):
         self.open_file(filename)
+        print(filename)
 
     def cut_pulse_func(self, pulse_number):
         self.copy_pulse_func(pulse_number)
@@ -1363,22 +1377,41 @@ class MainWindow(QMainWindow):
             
         #print(f"Pulse {index} type set to: {text}")
 
+    ###
     def update_pulse_phase(self, index):
 
-        text_edit = getattr(self, f"Phase_{index}")
-        temp = text_edit.toPlainText().strip()
-        
+        #text_edit = getattr(self, f"Phase_{index}")
+        #temp = text_edit.toPlainText().strip()
+
         try:
-            if len(temp) >= 2: #and temp[0] == '[' and temp[-1] == ']':
-                content = temp[:].split(',') #[1:-1]
-                phases = [p.strip() for p in content if p.strip()]
+            active_phases = []
+            for i in range(1, 10):
+                p_len = getattr(self, f"P{i}_len").value()
+                if p_len != 0.0:
+                    phase_text = getattr(self, f"Phase_{i}").toPlainText().strip()
+                    active_phases.append(phase_text)
+
+            a = self.expand_phase_cycling(*active_phases)
+            setattr(self, "ph_1", a['receiver'])
+            
+            for i, pulse_phase in enumerate(a['pulses']):
+                setattr(self, f"ph_{i+2}", pulse_phase)
+            
+            print(f"P0: {self.ph_1}")
+            print(f"P1: {self.ph_2}")
+            print(f"P2: {self.ph_3}")
+            print(f"P3: {self.ph_4}")
+
+            #if len(temp) >= 2: #and temp[0] == '[' and temp[-1] == ']':
+            #    content = temp[:].split(',') #[1:-1]
+            #    phases = [p.strip() for p in content if p.strip()]
                 
-                if len(phases) == 1:
-                    phases.append(phases[0])
+            #    if len(phases) == 1:
+            #        phases.append(phases[0])
                 
-                setattr(self, f"ph_{index}", phases)
-                
-        except (IndexError, AttributeError):
+            #    setattr(self, f"ph_{index}", phases)
+
+        except (IndexError, AttributeError, Exception) as e:
             pass
 
     def update_awg_generic(self, index, attr_suffix, val_suffix):
@@ -2187,11 +2220,12 @@ class MainWindow(QMainWindow):
                 fr = getattr(self, f'P{i}_fr').value()
                 sw = getattr(self, f'P{i}_sw').value()
                 cf = getattr(self, f'P{i}_cf').value()
-                ph = getattr(self, f'ph_{i}')
+                #ph = getattr(self, f'ph_{i}')
+                ph_list = getattr(self, f'Phase_{i}').toPlainText().strip()
                 d_start = getattr(self, f'P{i}_st_inc').value()
                 len_inc = getattr(self, f'P{i}_len_inc').value()
 
-                ph_str = f"[{','.join(ph)}]"
+                ph_str =  f"[{ph_list}]"#f"[{','.join(ph)}]"
                 
                 file.write(f"P{i}:  {p_type},  {st},  {length},  {sig},  {fr},  {sw},  {cf},  {ph_str},  {d_start},  {len_inc}\n")
 
@@ -2827,6 +2861,7 @@ class MainWindow(QMainWindow):
         norm = {'x':0, 'y':1, '-x':2, '-y':3, '+':0, '-':2, 'i':1, '-i':3, '0':0}
 
         def parse_to_indices(s):
+            if not s: return [0]
             if isinstance(s, list):
                 return [phases.index(p.strip()) if p.strip() in phases else norm.get(p.strip().lower().replace(' ', ''), 0) for p in s]
             
@@ -2839,6 +2874,7 @@ class MainWindow(QMainWindow):
                 
             def get_recursive(st):
                 st = st.replace('D', '').lower().replace(' ', '')
+                if not st: return [0]
                 if '[' not in st and '(' not in st:
                     return [norm.get(st.strip(), 0)]
                 is_quad = st.startswith('[')
@@ -2849,14 +2885,14 @@ class MainWindow(QMainWindow):
 
         pulses_indices = [parse_to_indices(arg) for arg in pulse_args]
         
-        lens = [len(s) for s in pulses_indices]
+        lens = [len(s) for s in pulses_indices if s]
         target_len = 1
-        for l in lens:
-            target_len = abs(target_len * l) // math.gcd(target_len, l)
+        if lens:
+            for l in lens:
+                target_len = abs(target_len * l) // math.gcd(target_len, l)
         if target_len < 2: target_len = 2
 
         pulses_final = [(seq * (target_len // len(seq) + 1))[:target_len] for seq in pulses_indices]
-
 
         is_coeff_str = isinstance(p_input, str) and ',' in p_input and not re.search(r'[xyi]', p_input.lower())
         is_coeff_list = isinstance(p_input, list) and all(isinstance(x, (int, float)) for x in p_input)
@@ -2864,14 +2900,18 @@ class MainWindow(QMainWindow):
         if is_coeff_str or is_coeff_list:
             if is_coeff_str:
                 parts = [p.strip() for p in p_input.split(',')]
-                coeffs = [float(p) if p and p != '-' and p != '+' else 0.0 for p in parts]
+                coeffs = []
+                for p in parts:
+                    match = re.search(r'-?\d+\.?\d*', p)
+                    coeffs.append(float(match.group()) if match else 0.0)
             else:
                 coeffs = p_input
                 
             receiver_indices = []
             for step in range(target_len):
-                rec_sum = sum(coeffs[i] * pulses_final[i][step] for i in range(min(len(coeffs), len(pulses_final))))
-                receiver_indices.append(int(rec_sum) % 4)
+                rec_sum = sum(coeffs[i] * pulses_final[i][step] 
+                              for i in range(min(len(coeffs), len(pulses_final))))
+                receiver_indices.append(int(round(rec_sum)) % 4)
         else:
             det_indices = parse_to_indices(p_input)
             receiver_indices = (det_indices * (target_len // len(det_indices) + 1))[:target_len]
@@ -4044,7 +4084,7 @@ class Worker():
                         f"{general.fmt(mw.mw_bridge_rotary_vane(), w)}\n"
                         f"{general.fmt(mw.mw_bridge_att_prm(), w)}\n"
                         f"{general.fmt(mw.mw_bridge_att2_prm(), w)}\n"
-                        f"{general.fmt(mw.mw_bridge_att1_prd(), w)}\n"
+                        f"{general.fmt(mw.mw_bridge_att2_prd(), w)}\n"
                         f"{general.fmt(mw.mw_bridge_synthesizer(), w)}\n"
                         f"{'Repetition Rate:':<{w}} {pb.pulser_repetition_rate()}\n"
                         f"{'Number of Scans:':<{w}} {SCANS}\n"
@@ -4070,7 +4110,7 @@ class Worker():
                         f"{general.fmt(mw.mw_bridge_rotary_vane(), w)}\n"
                         f"{general.fmt(mw.mw_bridge_att_prm(), w)}\n"
                         f"{general.fmt(mw.mw_bridge_att2_prm(), w)}\n"
-                        f"{general.fmt(mw.mw_bridge_att1_prd(), w)}\n"
+                        f"{general.fmt(mw.mw_bridge_att2_prd(), w)}\n"
                         f"{general.fmt(mw.mw_bridge_synthesizer(), w)}\n"
                         f"{'Repetition Rate:':<{w}} {pb.pulser_repetition_rate()}\n"
                         f"{'Number of Scans:':<{w}} {SCANS}\n"
@@ -4552,7 +4592,7 @@ class Worker():
                         f"{general.fmt(mw.mw_bridge_rotary_vane(), w)}\n"
                         f"{general.fmt(mw.mw_bridge_att_prm(), w)}\n"
                         f"{general.fmt(mw.mw_bridge_att2_prm(), w)}\n"
-                        f"{general.fmt(mw.mw_bridge_att1_prd(), w)}\n"
+                        f"{general.fmt(mw.mw_bridge_att2_prd(), w)}\n"
                         f"{general.fmt(mw.mw_bridge_synthesizer(), w)}\n"
                         f"{'Repetition Rate:':<{w}} {pb.pulser_repetition_rate()}\n"
                         f"{'Number of Scans:':<{w}} {SCANS}\n"
@@ -4578,7 +4618,7 @@ class Worker():
                         f"{general.fmt(mw.mw_bridge_rotary_vane(), w)}\n"
                         f"{general.fmt(mw.mw_bridge_att_prm(), w)}\n"
                         f"{general.fmt(mw.mw_bridge_att2_prm(), w)}\n"
-                        f"{general.fmt(mw.mw_bridge_att1_prd(), w)}\n"
+                        f"{general.fmt(mw.mw_bridge_att2_prd(), w)}\n"
                         f"{general.fmt(mw.mw_bridge_synthesizer(), w)}\n"
                         f"{'Repetition Rate:':<{w}} {pb.pulser_repetition_rate()}\n"
                         f"{'Number of Scans:':<{w}} {SCANS}\n"
@@ -4971,7 +5011,7 @@ class Worker():
                         f"{general.fmt(mw.mw_bridge_rotary_vane(), w)}\n"
                         f"{general.fmt(mw.mw_bridge_att_prm(), w)}\n"
                         f"{general.fmt(mw.mw_bridge_att2_prm(), w)}\n"
-                        f"{general.fmt(mw.mw_bridge_att1_prd(), w)}\n"
+                        f"{general.fmt(mw.mw_bridge_att2_prd(), w)}\n"
                         f"{general.fmt(mw.mw_bridge_synthesizer(), w)}\n"
                         f"{'Repetition Rate:':<{w}} {pb.pulser_repetition_rate()}\n"
                         f"{'Number of Scans:':<{w}} {SCANS}\n"
@@ -4999,7 +5039,7 @@ class Worker():
                         f"{general.fmt(mw.mw_bridge_rotary_vane(), w)}\n"
                         f"{general.fmt(mw.mw_bridge_att_prm(), w)}\n"
                         f"{general.fmt(mw.mw_bridge_att2_prm(), w)}\n"
-                        f"{general.fmt(mw.mw_bridge_att1_prd(), w)}\n"
+                        f"{general.fmt(mw.mw_bridge_att2_prd(), w)}\n"
                         f"{general.fmt(mw.mw_bridge_synthesizer(), w)}\n"
                         f"{'Repetition Rate:':<{w}} {pb.pulser_repetition_rate()}\n"
                         f"{'Number of Scans:':<{w}} {SCANS}\n"
@@ -5411,7 +5451,7 @@ class Worker():
                         f"{general.fmt(mw.mw_bridge_rotary_vane(), w)}\n"
                         f"{general.fmt(mw.mw_bridge_att_prm(), w)}\n"
                         f"{general.fmt(mw.mw_bridge_att2_prm(), w)}\n"
-                        f"{general.fmt(mw.mw_bridge_att1_prd(), w)}\n"
+                        f"{general.fmt(mw.mw_bridge_att2_prd(), w)}\n"
                         f"{general.fmt(mw.mw_bridge_synthesizer(), w)}\n"
                         f"{'Repetition Rate:':<{w}} {pb.pulser_repetition_rate()}\n"
                         f"{'Number of Scans:':<{w}} {SCANS}\n"
@@ -5439,7 +5479,7 @@ class Worker():
                         f"{general.fmt(mw.mw_bridge_rotary_vane(), w)}\n"
                         f"{general.fmt(mw.mw_bridge_att_prm(), w)}\n"
                         f"{general.fmt(mw.mw_bridge_att2_prm(), w)}\n"
-                        f"{general.fmt(mw.mw_bridge_att1_prd(), w)}\n"
+                        f"{general.fmt(mw.mw_bridge_att2_prd(), w)}\n"
                         f"{general.fmt(mw.mw_bridge_synthesizer(), w)}\n"
                         f"{'Repetition Rate:':<{w}} {pb.pulser_repetition_rate()}\n"
                         f"{'Number of Scans:':<{w}} {SCANS}\n"
@@ -5906,7 +5946,7 @@ class Worker():
                         f"{general.fmt(mw.mw_bridge_rotary_vane(), w)}\n"
                         f"{general.fmt(mw.mw_bridge_att_prm(), w)}\n"
                         f"{general.fmt(mw.mw_bridge_att2_prm(), w)}\n"
-                        f"{general.fmt(mw.mw_bridge_att1_prd(), w)}\n"
+                        f"{general.fmt(mw.mw_bridge_att2_prd(), w)}\n"
                         f"{general.fmt(mw.mw_bridge_synthesizer(), w)}\n"
                         f"{'Repetition Rate:':<{w}} {pb.pulser_repetition_rate()}\n"
                         f"{'Number of Scans:':<{w}} {SCANS}\n"
@@ -5934,7 +5974,7 @@ class Worker():
                         f"{general.fmt(mw.mw_bridge_rotary_vane(), w)}\n"
                         f"{general.fmt(mw.mw_bridge_att_prm(), w)}\n"
                         f"{general.fmt(mw.mw_bridge_att2_prm(), w)}\n"
-                        f"{general.fmt(mw.mw_bridge_att1_prd(), w)}\n"
+                        f"{general.fmt(mw.mw_bridge_att2_prd(), w)}\n"
                         f"{general.fmt(mw.mw_bridge_synthesizer(), w)}\n"
                         f"{'Repetition Rate:':<{w}} {pb.pulser_repetition_rate()}\n"
                         f"{'Number of Scans:':<{w}} {SCANS}\n"
@@ -6427,7 +6467,7 @@ class Worker():
                         f"{general.fmt(mw.mw_bridge_rotary_vane(), w)}\n"
                         f"{general.fmt(mw.mw_bridge_att_prm(), w)}\n"
                         f"{general.fmt(mw.mw_bridge_att2_prm(), w)}\n"
-                        f"{general.fmt(mw.mw_bridge_att1_prd(), w)}\n"
+                        f"{general.fmt(mw.mw_bridge_att2_prd(), w)}\n"
                         f"{general.fmt(mw.mw_bridge_synthesizer(), w)}\n"
                         f"{'Repetition Rate:':<{w}} {pb.pulser_repetition_rate()}\n"
                         f"{'Number of Scans:':<{w}} {SCANS}\n"
@@ -6455,7 +6495,7 @@ class Worker():
                         f"{general.fmt(mw.mw_bridge_rotary_vane(), w)}\n"
                         f"{general.fmt(mw.mw_bridge_att_prm(), w)}\n"
                         f"{general.fmt(mw.mw_bridge_att2_prm(), w)}\n"
-                        f"{general.fmt(mw.mw_bridge_att1_prd(), w)}\n"
+                        f"{general.fmt(mw.mw_bridge_att2_prd(), w)}\n"
                         f"{general.fmt(mw.mw_bridge_synthesizer(), w)}\n"
                         f"{'Repetition Rate:':<{w}} {pb.pulser_repetition_rate()}\n"
                         f"{'Number of Scans:':<{w}} {SCANS}\n"
