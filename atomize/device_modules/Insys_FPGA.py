@@ -2207,7 +2207,7 @@ class Insys_FPGA:
             #self.count_nip = np.ones( (int(p * ph) * 1) )
             #data_i = self.adc_sens * self.data_raw[0::(2*self.dec_coef)]
             #data_q = self.adc_sens * self.data_raw[1::(2*self.dec_coef)]
-
+            
             if self.buffer_ready == 1:
                 if integral == False:
                     self.data_i_ph, self.data_q_ph = self.pulser_acquisition_cycle(1, 1, p, ph, adc_window, acq_cycle = self.detection_phase_list)
@@ -2230,7 +2230,7 @@ class Insys_FPGA:
             elif self.buffer_ready == 0:
                 if integral == False:
                     self.buffer_ready = 0
-                    #return self.data_i_ph_T, self.data_q_ph_T, self.buffer_ready
+                    #return self.data_i_ph_T, self.data_q_ph_T#, self.buffer_ready
                     return None, None #, None#, 0
                 elif integral == True:
                     self.buffer_ready = 0
@@ -3440,7 +3440,7 @@ class Insys_FPGA:
 
                         if self.pulse_array_awg[i]['function'] == 'SINE':
                             self.pulse_array_awg[i]['length'] = str( leng + d_length ) + ' ns'
-                            self.pulse_array_awg[i]['sigma'] = str( sigm + d_length ) + ' ns'
+                            #self.pulse_array_awg[i]['sigma'] = str( sigm + d_length ) + ' ns'
                         elif self.pulse_array_awg[i]['function'] == 'GAUSS' or self.pulse_array_awg[i]['function'] == 'SINC':
                             ratio = leng/sigm
                             self.pulse_array_awg[i]['length'] = str( leng + ratio*d_length ) + ' ns'
@@ -3529,7 +3529,7 @@ class Insys_FPGA:
                         if (self.pulse_array_awg[i]['function'] == 'GAUSS') or (self.pulse_array_awg[i]['function'] == 'SINC'):
                             ratio = leng/sigm
                         else:
-                            ratio = 0
+                            ratio = 1
 
                         if ( leng + ratio*d_length ) <= self.max_pulse_length_awg:
                             if self.pulse_array_awg[i]['function'] == 'SINE':
@@ -3583,7 +3583,7 @@ class Insys_FPGA:
                             if (self.pulse_array_awg[i]['function'] == 'GAUSS') or (self.pulse_array_awg[i]['function'] == 'SINC'):
                                 ratio = leng/sigm
                             else:
-                                ratio = 0
+                                ratio = 1
 
                             if ( leng + ratio*d_length ) <= self.max_pulse_length_awg:
                                 if self.pulse_array_awg[pulse_index]['function'] == 'SINE':
@@ -6609,7 +6609,7 @@ class Insys_FPGA:
     def digitizer_iq(self, arr_i, arr_q, freq, ph, integral = False):
 
         if np.isnan(arr_i).any() or np.isnan(arr_q).any():
-            return None, None
+            return arr_i, arr_q
 
         #phi_rad = np.radians(ph)
 

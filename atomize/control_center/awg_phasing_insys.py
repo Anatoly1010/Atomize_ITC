@@ -86,6 +86,7 @@ class MainWindow(QMainWindow):
         """)
         file_menu = menubar.addMenu("File")
         pulse_menu = menubar.addMenu("Pulse")
+        self.exp_menu = menubar.addMenu("Experiment")
 
         menubar.setFixedHeight(27)
 
@@ -156,6 +157,27 @@ class MainWindow(QMainWindow):
             
             paste_pulse_menu.addAction(action)
             self.paste_pulse_actions.append(action)
+
+        self.menu_exp()
+
+    def menu_exp(self):
+        cwd = os.getcwd()
+
+        t2_sequences = {
+            'Hahn echo; 2S': 'hahn_echo_2s.phase_awg'
+        }
+
+        t2_exp_menu = self.exp_menu.addMenu('T₂')
+        for label, file_name in t2_sequences.items():
+            full_path = os.path.join(cwd, 'experiments', file_name)
+            action = QAction(label, self)
+            action.triggered.connect(lambda checked, name=full_path: self.set_preset_exp(full_path))
+            t2_exp_menu.addAction(action)
+
+        t1_exp_menu = self.exp_menu.addMenu('T₁')
+
+    def set_preset_exp(self, filename):
+        self.open_file(filename)
 
     def cut_pulse_func(self, pulse_number):
         self.copy_pulse_func(pulse_number)
@@ -2800,6 +2822,63 @@ class MainWindow(QMainWindow):
         self.parent_conn_dig.send('start')
         self.timer.start(200)
 
+    def expand_phase_cycling(self, p_input, *pulse_args):
+        phases = ['+x', '+y', '-x', '-y']
+        norm = {'x':0, 'y':1, '-x':2, '-y':3, '+':0, '-':2, 'i':1, '-i':3, '0':0}
+
+        def parse_input(s):
+            if isinstance(s, list):
+                if all(isinstance(x, (int, float)) for x in s): return s
+                return [phases.index(p.strip()) if p.strip() in phases else norm.get(p.strip().lower(), 0) for p in s]
+            
+            if ',' in s:
+                parts = [p.strip() for p in s.split(',')]
+                if all(re.match(r'^[+-]?\d+(\.\d+)?$', p) for p in parts):
+                    return [float(p) for p in parts]
+                return [phases.index(p) if p in phases else norm.get(p.lower(), 0) for p in parts]
+            
+            def get_recursive(st):
+                st = st.replace('D', '').lower()
+                if '[' not in st and '(' not in st:
+                    return [norm.get(st.strip(), 0)]
+                is_quad = st.startswith('[')
+                inner = get_recursive(st[1:-1])
+                full = []
+                steps, shift = (4, 1) if is_quad else (2, 2)
+                for step in range(steps):
+                    for p_idx in inner:
+                        full.append((p_idx + step * shift) % 4)
+                return full
+                
+            return get_recursive(s)
+
+        raw_indices = [parse_input(arg) for arg in pulse_args]
+        
+        lens = [len(s) for s in raw_indices]
+        target_len = lens[0]
+        for l in lens[1:]:
+            target_len = abs(target_len * l) // math.gcd(target_len, l)
+        if target_len < 2: target_len = 2
+
+        pulses_final = [(seq * (target_len // len(seq) + 1))[:target_len] for seq in raw_indices]
+
+        p_parsed = parse_input(p_input)
+        
+        if all(isinstance(x, (int, float)) for x in p_parsed):
+            receiver_indices = []
+            for step in range(target_len):
+                rec_sum = sum(p_parsed[i] * pulses_final[i][step] for i in range(len(p_parsed)))
+                receiver_indices.append(int(rec_sum) % 4)
+        else:
+            receiver_indices = (p_parsed * (target_len // len(p_parsed) + 1))[:target_len]
+
+        to_str = lambda indices: [phases[i] for i in indices]
+        
+        return {
+            "pulses": [to_str(p) for p in pulses_final],
+            "receiver": to_str(receiver_indices)
+        }
+
 # The worker class that run the digitizer in a different thread
 class Worker():
     def __init__(self):
@@ -2817,6 +2896,7 @@ class Worker():
         # should be inside dig_on() function;
         # freezing after digitizer restart otherwise
         #import time
+
         import traceback
 
         try:
@@ -3125,27 +3205,24 @@ class Worker():
                             vline = (p4 * t_res / 1e9, p5 * t_res / 1e9) 
                             )
 
-                        try:
-                            if p27 == 0:
-                                freq_axis, abs_values = fft.fft(x_axis, data_x, data_y, t_res * 1)
-                                m_val = round( np.amax( abs_values ), 2 )
-                                general.plot_1d('FFT', freq_axis * 1e6, abs_values, 
-                                    xname = 'Offset', label = 'FFT', xscale = 'Hz', 
-                                    yscale = 'A.U.', text = 'Max ' + str(m_val)
-                                    )
-                            else:
-                                if p31 > len( data_x ) - 0.4 * p1:
-                                    p31 = len( data_x ) - 0.8 * p1
-                                    general.message('Maximum length of the data achieved. A number of drop points was corrected.')
-                                # fixed resolution of digitizer; 2 ns
-                                freq, fft_x, fft_y = fft.fft( x_axis[p31:], data_x[p31:], data_y[p31:], t_res * 1, re = 'True' )
-                                data_fft = fft.ph_correction( freq * 1e6, fft_x, fft_y, p28, p29, p30 )
-                                general.plot_1d('FFT', freq, ( data_fft[0], data_fft[1] ), 
-                                    xname = 'Offset', xscale = 'Hz', 
-                                    yscale = 'A.U.', label = 'FFT'
-                                    )
-                        except TypeError:
-                            pass
+                        if p27 == 0:
+                            freq_axis, abs_values = fft.fft(x_axis, data_x, data_y, t_res * 1)
+                            m_val = round( np.amax( abs_values ), 2 )
+                            general.plot_1d('FFT', freq_axis * 1e6, abs_values, 
+                                xname = 'Offset', label = 'FFT', xscale = 'Hz', 
+                                yscale = 'A.U.', text = 'Max ' + str(m_val)
+                                )
+                        else:
+                            if p31 > len( data_x ) - 0.4 * p1:
+                                p31 = len( data_x ) - 0.8 * p1
+                                general.message('Maximum length of the data achieved. A number of drop points was corrected.')
+                            # fixed resolution of digitizer; 2 ns
+                            freq, fft_x, fft_y = fft.fft( x_axis[p31:], data_x[p31:], data_y[p31:], t_res * 1, re = 'True' )
+                            data_fft = fft.ph_correction( freq * 1e6, fft_x, fft_y, p28, p29, p30 )
+                            general.plot_1d('FFT', freq, ( data_fft[0], data_fft[1] ), 
+                                xname = 'Offset', xscale = 'Hz', 
+                                yscale = 'A.U.', label = 'FFT'
+                                )
 
                 self.command = 'start'
                 if PHASES != 1:
@@ -3167,7 +3244,7 @@ class Worker():
 
         except BaseException as e:
             exc_info = f"{type(e)} \n{str(e)} \n{traceback.format_exc()}"
-            conn.send( ('Error', exc_info) )            
+            conn.send( ('Error', exc_info) )
 
     def dig_test(self, conn, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11, p12, p13, p14, p15, p16, p17, p18, p19, p20, p21, p22, p23, p24, p25, p26, p27, p28, p29, p30, p31, p32, p33, p34, p35, p36, p37, p38, p39, p40, p41, p42, iq_corr):
         """
@@ -3488,27 +3565,24 @@ class Worker():
                             vline = (p4 * t_res / 1e9, p5 * t_res / 1e9) 
                             )
 
-                        try:
-                            if p27 == 0:
-                                freq_axis, abs_values = fft.fft(x_axis, data_x, data_y, t_res * 1)
-                                m_val = round( np.amax( abs_values ), 2 )
-                                general.plot_1d('FFT', freq_axis * 1e6, abs_values, 
-                                    xname = 'Offset', label = 'FFT', xscale = 'Hz', 
-                                    yscale = 'A.U.', text = 'Max ' + str(m_val)
-                                    )
-                            else:
-                                if p31 > len( data_x ) - 0.4 * p1:
-                                    p31 = len( data_x ) - 0.8 * p1
-                                    general.message('Maximum length of the data achieved. A number of drop points was corrected.')
-                                # fixed resolution of digitizer; 2 ns
-                                freq, fft_x, fft_y = fft.fft( x_axis[p31:], data_x[p31:], data_y[p31:], t_res * 1, re = 'True' )
-                                data_fft = fft.ph_correction( freq * 1e6, fft_x, fft_y, p28, p29, p30 )
-                                general.plot_1d('FFT', freq, ( data_fft[0], data_fft[1] ), 
-                                    xname = 'Offset', xscale = 'Hz', 
-                                    yscale = 'A.U.', label = 'FFT'
-                                    )
-                        except TypeError:
-                            pass
+                        if p27 == 0:
+                            freq_axis, abs_values = fft.fft(x_axis, data_x, data_y, t_res * 1)
+                            m_val = round( np.amax( abs_values ), 2 )
+                            general.plot_1d('FFT', freq_axis * 1e6, abs_values, 
+                                xname = 'Offset', label = 'FFT', xscale = 'Hz', 
+                                yscale = 'A.U.', text = 'Max ' + str(m_val)
+                                )
+                        else:
+                            if p31 > len( data_x ) - 0.4 * p1:
+                                p31 = len( data_x ) - 0.8 * p1
+                                general.message('Maximum length of the data achieved. A number of drop points was corrected.')
+                            # fixed resolution of digitizer; 2 ns
+                            freq, fft_x, fft_y = fft.fft( x_axis[p31:], data_x[p31:], data_y[p31:], t_res * 1, re = 'True' )
+                            data_fft = fft.ph_correction( freq * 1e6, fft_x, fft_y, p28, p29, p30 )
+                            general.plot_1d('FFT', freq, ( data_fft[0], data_fft[1] ), 
+                                xname = 'Offset', xscale = 'Hz', 
+                                yscale = 'A.U.', label = 'FFT'
+                                )
 
                 if PHASES != 1:
                     pb.awg_pulse_reset()
@@ -4349,52 +4423,55 @@ class Worker():
                         break
 
                     for j in range(POINTS):
+
                         for i in range(PHASES):
 
-                            if iq_cor == 0:
-                                if step != 1:
-                                    process = general.plot_2d(
-                                        EXP_NAME, 
-                                        data, 
-                                        start_step = ((0, dec_calc), (f_delay/1e9, step_ns)), 
-                                        xname = 'Time', 
-                                        xscale = 's', 
-                                        yname = 'Delay', 
-                                        yscale = 's', 
-                                        zname = 'Intensity', 
-                                        zscale = 'mV', 
-                                        text = f"Scan / Time: {k} / {j * STEP:.1f}",
-                                        pr = process
-                                    )
-                                else:
-                                    process = general.plot_2d(
-                                        EXP_NAME, 
-                                        data, 
-                                        start_step = ((0, dec_calc), (0, 1)), 
-                                        xname = 'Time', 
-                                        xscale = 's', 
-                                        yname = 'Point', 
-                                        yscale = '', 
-                                        zname = 'Intensity', 
-                                        zscale = 'mV', 
-                                        text = f"Scan / Time: {k} / {j * STEP:.1f}",
-                                        pr = process
-                                    )
-                            elif iq_cor == 1:
-                                data_x, data_y = pb.digitizer_iq(data[0], data[1], iq_freq, zp, integral = True)
-                                if step != 1:
-                                    general.plot_1d(EXP_NAME, x_axis_plot, ( data_x, data_y ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j*STEP, 1)))
-                                else:
-                                    general.plot_1d(EXP_NAME, x_axis, ( data_x, data_y ), xname = 'Point', xscale = '', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j, 1)))
+                            if j == 0:
+                                if iq_cor == 0:
+                                    if step != 1:
+                                        process = general.plot_2d(
+                                            EXP_NAME, 
+                                            data, 
+                                            start_step = ((0, dec_calc), (f_delay/1e9, step_ns)), 
+                                            xname = 'Time', 
+                                            xscale = 's', 
+                                            yname = 'Delay', 
+                                            yscale = 's', 
+                                            zname = 'Intensity', 
+                                            zscale = 'mV', 
+                                            text = f"Scan / Time: {k} / {j * STEP:.1f}",
+                                            pr = process
+                                        )
+                                    else:
+                                        process = general.plot_2d(
+                                            EXP_NAME, 
+                                            data, 
+                                            start_step = ((0, dec_calc), (0, 1)), 
+                                            xname = 'Time', 
+                                            xscale = 's', 
+                                            yname = 'Point', 
+                                            yscale = '', 
+                                            zname = 'Intensity', 
+                                            zscale = 'mV', 
+                                            text = f"Scan / Time: {k} / {j * STEP:.1f}",
+                                            pr = process
+                                        )
+                                elif iq_cor == 1:
+                                    data_x, data_y = pb.digitizer_iq(data[0], data[1], iq_freq, zp, integral = True)
+                                    if step != 1:
+                                        general.plot_1d(EXP_NAME, x_axis_plot, ( data_x, data_y ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j*STEP, 1)))
+                                    else:
+                                        general.plot_1d(EXP_NAME, x_axis, ( data_x, data_y ), xname = 'Point', xscale = '', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j, 1)))
 
                             pb.awg_next_phase()
                             pb.pulser_update()
 
-                            data[0], data[1] = pb.digitizer_get_curve( 
-                                POINTS, 
-                                PHASES, 
-                                current_scan = k, 
-                                total_scan = SCANS ) 
+                            if j == 0:
+                                data[0], data[1] = pb.digitizer_get_curve( 
+                                    POINTS, 
+                                    PHASES, 
+                                    current_scan = k, 
+                                    total_scan = SCANS ) 
 
                         pb.pulser_shift()
                         if increment == 1:
@@ -4547,7 +4624,7 @@ class Worker():
             p5_awg_exp, p6_awg_exp, p7_awg_exp, p8_awg_exp, p9_awg_exp, 
             b_sech_cur, correction, synt, laser_flag, laser_num, 
             q_switch_delay, iq_phase, iq_corr, win_left, win_right, zero_phase):
-
+        
         import traceback
 
         try:
@@ -5241,32 +5318,35 @@ class Worker():
 
                         for i in range(PHASES):
 
-                            if iq_cor == 0:
-                                process = general.plot_2d(
-                                    EXP_NAME, 
-                                    data, 
-                                    start_step = ((0, dec_calc), (START_FIELD, FIELD_STEP)), 
-                                    xname = 'Time', 
-                                    xscale = 's', 
-                                    yname = 'Field', 
-                                    yscale = 'G', 
-                                    zname = 'Intensity', 
-                                    zscale = 'mV', 
-                                    text = f"Scan / Field: {k} / {field}",
-                                    pr = process
-                                )
-                            elif iq_cor == 1:
-                                data_x, data_y = pb.digitizer_iq(data[0], data[1], iq_freq, zp, integral = True)
-                                process = general.plot_1d(EXP_NAME, x_axis, ( data_x, data_y ), xname = 'Field', xscale = 'G', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Field: ' + str(k) + ' / ' + str(field), pr = process)
-
+                            #speed-up tests
+                            if j == 0:
+                                if iq_cor == 0:
+                                    process = general.plot_2d(
+                                        EXP_NAME, 
+                                        data, 
+                                        start_step = ((0, dec_calc), (START_FIELD, FIELD_STEP)), 
+                                        xname = 'Time', 
+                                        xscale = 's', 
+                                        yname = 'Field', 
+                                        yscale = 'G', 
+                                        zname = 'Intensity', 
+                                        zscale = 'mV', 
+                                        text = f"Scan / Field: {k} / {field}",
+                                        pr = process
+                                    )
+                                elif iq_cor == 1:
+                                    data_x, data_y = pb.digitizer_iq(data[0], data[1], iq_freq, zp, integral = True)
+                                    process = general.plot_1d(EXP_NAME, x_axis, ( data_x, data_y ), xname = 'Field', xscale = 'G', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Field: ' + str(k) + ' / ' + str(field), pr = process)
+                            
                             pb.awg_next_phase()
                             pb.pulser_update()
 
-                            data[0], data[1] = pb.digitizer_get_curve( 
-                                POINTS, 
-                                PHASES, 
-                                current_scan = k, 
-                                total_scan = SCANS ) 
+                            if j == 0:
+                                data[0], data[1] = pb.digitizer_get_curve( 
+                                    POINTS, 
+                                    PHASES, 
+                                    current_scan = k, 
+                                    total_scan = SCANS ) 
 
                         field = round( (FIELD_STEP + field), 3 )
 
@@ -6240,31 +6320,33 @@ class Worker():
 
                         for i in range(PHASES):
 
-                            if iq_cor == 0:
-                                general.plot_2d(
-                                    EXP_NAME, 
-                                    data, 
-                                    start_step = ((0, dec_calc), (0, 1)), 
-                                    xname = 'Time', 
-                                    xscale = 's', 
-                                    yname = 'Point', 
-                                    yscale = '', 
-                                    zname = 'Intensity', 
-                                    zscale = 'mV', 
-                                    text = f"Scan / Point: {k} / {j}"
-                                )
-                            elif iq_cor == 1:
-                                data_x, data_y = pb.digitizer_iq(data[0], data[1], iq_freq, zp, integral = True)
-                                process = general.plot_1d(EXP_NAME, x_axis_plot, ( data_x, data_y ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Point: ' + str(k) + ' / ' + str(j), pr = process)
+                            if j == 0:
+                                if iq_cor == 0:
+                                    general.plot_2d(
+                                        EXP_NAME, 
+                                        data, 
+                                        start_step = ((0, dec_calc), (0, 1)), 
+                                        xname = 'Time', 
+                                        xscale = 's', 
+                                        yname = 'Point', 
+                                        yscale = '', 
+                                        zname = 'Intensity', 
+                                        zscale = 'mV', 
+                                        text = f"Scan / Point: {k} / {j}"
+                                    )
+                                elif iq_cor == 1:
+                                    data_x, data_y = pb.digitizer_iq(data[0], data[1], iq_freq, zp, integral = True)
+                                    process = general.plot_1d(EXP_NAME, x_axis_plot, ( data_x, data_y ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Point: ' + str(k) + ' / ' + str(j), pr = process)
 
                             pb.awg_next_phase()
                             pb.pulser_update()
 
-                            data[0], data[1] = pb.digitizer_get_curve( 
-                                POINTS, 
-                                PHASES, 
-                                current_scan = k, 
-                                total_scan = SCANS ) 
+                            if j == 0:
+                                data[0], data[1] = pb.digitizer_get_curve( 
+                                    POINTS, 
+                                    PHASES, 
+                                    current_scan = k, 
+                                    total_scan = SCANS ) 
 
                         # nonlinear_time_shift is calculated from the initial position of the pulses
                         ##
