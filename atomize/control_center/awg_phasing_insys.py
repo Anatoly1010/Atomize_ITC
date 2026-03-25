@@ -166,7 +166,8 @@ class MainWindow(QMainWindow):
         cwd = os.getcwd()
 
         t2_sequences = {
-            'Hahn Echo; 2S': 'hahn_echo_2s.phase_awg'
+            'Hahn Echo; 2S': 'hahn_echo_2s.phase_awg',
+            'Hahn Echo; 4S': 'hahn_echo_4s.phase_awg'
         }
 
         t2_exp_menu = self.exp_menu.addMenu('T₂')
@@ -180,7 +181,7 @@ class MainWindow(QMainWindow):
         t1_exp_menu = self.exp_menu.addMenu('T₁')
 
         t1_sequences = {
-            'Invertion Recovery Echo; 4S': 'inversion_recovery_echo_4s.phase_awg'
+            'Invertion Recovery Echo; 4S; Log': 'inversion_recovery_echo_4s_log.phase_awg'
         }
 
         for label, file_name in t1_sequences.items():
@@ -189,9 +190,57 @@ class MainWindow(QMainWindow):
             action.triggered.connect(lambda checked, name=full_path: self.set_preset_exp(name))
             t1_exp_menu.addAction(action)
 
+        nutation_exp_menu = self.exp_menu.addMenu('Nutation')
+
+        nutation_sequences = {
+            'Rabi Nutation Echo; 4S': 'rabi_echo_4s.phase_awg'
+        }
+
+        for label, file_name in nutation_sequences.items():
+            full_path = os.path.join(cwd, 'experiments', file_name)
+            action = QAction(label, self)
+            action.triggered.connect(lambda checked, name=full_path: self.set_preset_exp(name))
+            nutation_exp_menu.addAction(action)
+
+        ed_exp_menu = self.exp_menu.addMenu('Echo-Detected')
+
+        ed_sequences = {
+            'Echo-Detected; 2S': 'ed_2s.phase_awg',
+            'Echo-Detected; 4S': 'ed_4s.phase_awg'
+        }
+
+        for label, file_name in ed_sequences.items():
+            full_path = os.path.join(cwd, 'experiments', file_name)
+            action = QAction(label, self)
+            action.triggered.connect(lambda checked, name=full_path: self.set_preset_exp(name))
+            ed_exp_menu.addAction(action)
+
+        eseem_exp_menu = self.exp_menu.addMenu('3pESEEM')
+
+        eseem_sequences = {
+            '3pESEEM; 4S': '3peseem_4s.phase_awg',
+        }
+
+        for label, file_name in eseem_sequences.items():
+            full_path = os.path.join(cwd, 'experiments', file_name)
+            action = QAction(label, self)
+            action.triggered.connect(lambda checked, name=full_path: self.set_preset_exp(name))
+            eseem_exp_menu.addAction(action)
+
+        deer_exp_menu = self.exp_menu.addMenu('4pDEER')
+
+        deer_sequences = {
+            '4pDEER; 8S': '4pdeer_8s.phase_awg',
+        }
+
+        for label, file_name in deer_sequences.items():
+            full_path = os.path.join(cwd, 'experiments', file_name)
+            action = QAction(label, self)
+            action.triggered.connect(lambda checked, name=full_path: self.set_preset_exp(name))
+            deer_exp_menu.addAction(action)
+
     def set_preset_exp(self, filename):
         self.open_file(filename)
-        print(filename)
 
     def cut_pulse_func(self, pulse_number):
         self.copy_pulse_func(pulse_number)
@@ -1422,6 +1471,7 @@ class MainWindow(QMainWindow):
         setattr(self, target_attr, value)
         #print(f"Updated: {target_attr} = {value}")
 
+    ###
     def update_pulse_value(self, index, attr_suffix, val1_suffix, val2_suffix = None):
         """
         Универсальный обработчик для Pulse Start и Pulse Length.
@@ -1433,7 +1483,6 @@ class MainWindow(QMainWindow):
         spin_widget = getattr(self, f"P{index}{attr_suffix}")
         val1, val2 = self.round_and_change(spin_widget)
 
-
         if index == 1 and attr_suffix == '_st':
             setattr(self, f"p{index}_a", val1)
             if val2_suffix:
@@ -1443,6 +1492,8 @@ class MainWindow(QMainWindow):
             if val2_suffix:
                 setattr(self, f"p{index}{val2_suffix}", val2)
 
+        if attr_suffix == '_len':
+            self.update_pulse_phase(1)
         #print(f"Updated: p{index}{val1_suffix} = {val1}")
  
     def start_exp(self):

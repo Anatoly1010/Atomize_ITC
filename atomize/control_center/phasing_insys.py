@@ -1964,10 +1964,14 @@ class MainWindow(QMainWindow):
         self.decimation = self.Dec.value()
         self.time_per_point = 0.4 * self.decimation
 
+    ###
     def update_pulse_param(self, index, attr_suffix, val_suffix):
         spin_widget = getattr(self, f"P{index}{attr_suffix}")
         new_value = self.round_and_change(spin_widget)
         setattr(self, f"p{index}{val_suffix}", new_value)
+        
+        if attr_suffix == "_len":
+            self.update_pulse_phase(1)
         #print(f"Updated: p{index}{val_suffix} = {new_value}")
 
     def update_pulse_type(self, index):
