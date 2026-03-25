@@ -215,7 +215,7 @@ class MainWindow(QMainWindow):
             action.triggered.connect(lambda checked, name=full_path: self.set_preset_exp(name))
             ed_exp_menu.addAction(action)
 
-        eseem_exp_menu = self.exp_menu.addMenu('3pESEEM')
+        eseem_exp_menu = self.exp_menu.addMenu('ESEEM')
 
         eseem_sequences = {
             '3pESEEM; 4S': '3peseem_4s.phase_awg',
@@ -227,7 +227,7 @@ class MainWindow(QMainWindow):
             action.triggered.connect(lambda checked, name=full_path: self.set_preset_exp(name))
             eseem_exp_menu.addAction(action)
 
-        deer_exp_menu = self.exp_menu.addMenu('4pDEER')
+        deer_exp_menu = self.exp_menu.addMenu('DEER')
 
         deer_sequences = {
             '4pDEER; 8S': '4pdeer_8s.phase_awg',
@@ -1446,10 +1446,10 @@ class MainWindow(QMainWindow):
             for i, pulse_phase in enumerate(a['pulses']):
                 setattr(self, f"ph_{i+2}", pulse_phase)
             
-            print(f"P0: {self.ph_1}")
-            print(f"P1: {self.ph_2}")
-            print(f"P2: {self.ph_3}")
-            print(f"P3: {self.ph_4}")
+            #print(f"P0: {self.ph_1}")
+            #print(f"P1: {self.ph_2}")
+            #print(f"P2: {self.ph_3}")
+            #print(f"P3: {self.ph_4}")
 
             #if len(temp) >= 2: #and temp[0] == '[' and temp[-1] == ']':
             #    content = temp[:].split(',') #[1:-1]
