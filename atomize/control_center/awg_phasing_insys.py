@@ -165,6 +165,9 @@ class MainWindow(QMainWindow):
     def menu_exp(self):
         cwd = os.getcwd()
 
+        if os.path.basename(cwd) == 'libs':
+            cwd = os.path.abspath(os.path.join(cwd, '..', 'atomize', 'control_center'))
+
         t2_sequences = {
             'Hahn Echo; 2S': 'hahn_echo_2s.phase_awg',
             'Hahn Echo; 4S': 'hahn_echo_4s.phase_awg'
@@ -1435,10 +1438,13 @@ class MainWindow(QMainWindow):
         try:
             active_phases = []
             for i in range(1, 10):
+                attr_name = f"ph_{i}"
                 p_len = getattr(self, f"P{i}_len").value()
-                if p_len != 0.0:
+
+                if not hasattr(self, attr_name) or p_len != 0.0:
                     phase_text = getattr(self, f"Phase_{i}").toPlainText().strip()
                     active_phases.append(phase_text)
+                    setattr(self, attr_name, phase_text)
 
             a = self.expand_phase_cycling(*active_phases)
             setattr(self, "ph_1", a['receiver'])
@@ -1446,10 +1452,10 @@ class MainWindow(QMainWindow):
             for i, pulse_phase in enumerate(a['pulses']):
                 setattr(self, f"ph_{i+2}", pulse_phase)
             
-            #print(f"P0: {self.ph_1}")
-            #print(f"P1: {self.ph_2}")
-            #print(f"P2: {self.ph_3}")
-            #print(f"P3: {self.ph_4}")
+            print(f"P0: {self.ph_1}")
+            print(f"P1: {self.ph_2}")
+            print(f"P2: {self.ph_3}")
+            print(f"P3: {self.ph_4}")
 
             #if len(temp) >= 2: #and temp[0] == '[' and temp[-1] == ']':
             #    content = temp[:].split(',') #[1:-1]
@@ -2606,7 +2612,9 @@ class MainWindow(QMainWindow):
         self.digitizer_process.start()
         # send a command in a different thread about the current state
         self.parent_conn_dig.send('start')
-        
+        ###
+        self.last_error = False
+        ###
         self.is_testing = True
         self.is_experiment = True
         self.timer.start(200)
@@ -2675,6 +2683,9 @@ class MainWindow(QMainWindow):
         self.digitizer_process.start()
         # send a command in a different thread about the current state
         self.parent_conn_dig.send('start')
+        ###
+        self.last_error = False
+        ###
         self.is_testing = True
         self.timer.start(200)
 
@@ -2737,7 +2748,7 @@ class MainWindow(QMainWindow):
             self.progress_bar.setValue(0)
             self.message(data)
             self.errors.appendPlainText(data)
-            self.button_blue()                   
+            self.button_blue()               
         else:
             self.timer.stop()
             if ( data.startswith('Exp') ) and (msg_type == 'test'):

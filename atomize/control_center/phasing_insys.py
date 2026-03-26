@@ -162,6 +162,9 @@ class MainWindow(QMainWindow):
     def menu_exp(self):
         cwd = os.getcwd()
 
+        if os.path.basename(cwd) == 'libs':
+            cwd = os.path.abspath(os.path.join(cwd, '..', 'atomize', 'control_center'))
+
         t2_sequences = {
             'Hahn Echo; 2S': 'hahn_echo_2s.phase'
         }
@@ -1893,10 +1896,13 @@ class MainWindow(QMainWindow):
         try:
             active_phases = []
             for i in range(1, 10):
+                attr_name = f"ph_{i}"
                 p_len = getattr(self, f"P{i}_len").value()
-                if p_len != 0.0:
+
+                if not hasattr(self, attr_name) or p_len != 0.0:
                     phase_text = getattr(self, f"Phase_{i}").toPlainText().strip()
                     active_phases.append(phase_text)
+                    setattr(self, attr_name, phase_text)
 
             a = self.expand_phase_cycling(*active_phases)
             setattr(self, "ph_1", a['receiver'])
@@ -2143,7 +2149,9 @@ class MainWindow(QMainWindow):
         self.digitizer_process.start()
         # send a command in a different thread about the current state
         self.parent_conn_dig.send('start')
-        
+        ###
+        self.last_error = False
+        ###
         self.is_testing = True
         self.is_experiment = True
         self.timer.start(200)
@@ -2198,7 +2206,9 @@ class MainWindow(QMainWindow):
         self.digitizer_process.start()
         # send a command in a different thread about the current state
         self.parent_conn_dig.send('start')
-        
+        ###
+        self.last_error = False
+        ###
         self.is_testing = True
         self.timer.start(200)
 
