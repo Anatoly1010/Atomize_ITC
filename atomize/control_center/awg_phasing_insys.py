@@ -1702,11 +1702,11 @@ class MainWindow(QMainWindow):
         """
         self.number_averages = int( self.Acq_number.value() )
 
-        if self.opened == 0:
-            try:
-                self.parent_conn_dig.send( 'NA' + str( self.number_averages ) )
-            except AttributeError:
-                pass
+        #if self.opened == 0:
+        try:
+            self.parent_conn_dig.send( 'NA' + str( self.number_averages ) )
+        except AttributeError:
+            pass
 
     def open_file_dialog(self):
         """
@@ -3228,7 +3228,6 @@ class Worker():
                     
                 elif self.command[0:2] == 'NA':
                     num_ave = int( self.command[2:] )
-                    #print( num_ave )
                     pb.digitizer_number_of_averages( num_ave )
 
                 elif self.command[0:2] == 'WL':

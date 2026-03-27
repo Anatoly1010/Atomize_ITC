@@ -1291,11 +1291,11 @@ class MainWindow(QMainWindow):
         """
         self.number_averages = int( self.Acq_number.value() )
 
-        if self.opened == 0:
-            try:
-                self.parent_conn_dig.send( 'NA' + str( self.number_averages ) )
-            except AttributeError:
-                pass
+        #if self.opened == 0:
+        try:
+            self.parent_conn_dig.send( 'NA' + str( self.number_averages ) )
+        except AttributeError:
+            pass
 
     def open_file_dialog(self):
         """
