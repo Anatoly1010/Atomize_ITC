@@ -2765,7 +2765,7 @@ class Worker():
                         if p17 == 0:
                             freq_axis, abs_values = fft.fft(x_axis, data_x, data_y, t_res * 1)
                             m_val = round( np.amax( abs_values ), 2 )
-                            i_max = abs(round( freq_axis[ np.argmax( abs_values ) ], 2))
+                            #i_max = abs(round( freq_axis[ np.argmax( abs_values ) ], 2))
                             general.plot_1d('FFT', freq_axis * 1e6, abs_values, xname = 'Offset', 
                                 label = 'FFT', xscale = 'Hz', 
                                 yscale = 'A.U.', text = 'Max ' + str(m_val)
@@ -2978,6 +2978,7 @@ class Worker():
 
                 for i in range( PHASES ):
                     pb.pulser_next_phase()
+
                     if p2 == 0:
                         data[0], data[1] = pb.digitizer_get_curve(POINTS, PHASES, live_mode = 1)
                     elif p2 == 1:
