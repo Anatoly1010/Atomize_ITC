@@ -1,0 +1,32 @@
+P1:  DETECTION,  64576.0,  512.0,  [0,-1,2],  3.2,  0.0
+P2:  MW,  0.0,  9.6,  [x],  0.0,  3.2
+P3:  MW,  64000.0,  44.8,  [x],  3.2,  0.0
+P4:  MW,  64288.0,  89.6,  [[x]],  3.2,  0.0
+P5:  MW,  0.0,  0.0,  [+x,+x],  0.0,  0.0
+P6:  MW,  0.0,  0.0,  [+x,+x],  0.0,  0.0
+P7:  MW,  0.0,  0.0,  [+x,+x],  0.0,  0.0
+P8:  MW,  0.0,  0.0,  [+x,+x],  0.0,  0.0
+P9:  MW,  0.0,  0.0,  [+x,+x],  0.0,  0.0
+Rep rate:  500.0
+Field:  3493.0
+Points:  2016
+Horizontal offset:  1024
+Window left:  0.0
+Window right:  320.0
+Acquisitions:  1
+Points to Drop:  0
+Zero order:  0.0
+First order:  0.0
+Second order:  0.0
+Laser:  Nd:YaG
+Decimation:  1
+Points:  350
+Scans:  1
+Log Start:  1.0
+Log End:  7.0
+Start Field:  3000.0
+End Field:  4000.0
+Field Step:  0.5
+Sweep Type:  Linear Time
+X0:  9.6
+dX:  3.2

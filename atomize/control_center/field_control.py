@@ -73,7 +73,7 @@ class MainWindow(QMainWindow):
 
         # ---- Boxes ----
         double_boxes = [(QDoubleSpinBox, "Set_point", "field", self.set_field, 0, 15100, 0, 0.5, 2, " G"), 
-                        (QSpinBox, "box_ini", "initialization_step", self.set_ini, 1, 100, 10, 1, 0, " G")
+                        (QDoubleSpinBox, "box_ini", "initialization_step", self.set_ini, 0.1, 100, 10, 1, 1, " G")
                         ]
 
         for widget_class, attr_name, par_name, func, v_min, v_max, cur_val, v_step, dec, suf in double_boxes:
@@ -251,6 +251,10 @@ class MainWindow(QMainWindow):
 
             self.cur_field = self.itc_fc.magnet_field( self.field )
             self.cur_field = self.field
+            
+            self.Set_point.blockSignals(True)
+            self.Set_point.setValue(self.cur_field)
+            self.Set_point.blockSignals(False)
             #print('CF: ' + str(self.cur_field))
             #print('F: ' + str(self.field))
         else:
@@ -270,6 +274,10 @@ class MainWindow(QMainWindow):
 
             self.cur_field = self.itc_fc.magnet_field( self.field )
             self.cur_field =  self.field 
+            self.Set_point.blockSignals(True)
+            self.Set_point.setValue(self.cur_field)
+            self.Set_point.blockSignals(False)
+
             #print('CF: ' + str(self.cur_field))
             #print('F: ' + str(self.field))
 

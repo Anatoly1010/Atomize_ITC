@@ -35,8 +35,9 @@ class MainWindow(QMainWindow):
         #####
         
         # Phase correction
-        self.deg_rad = 57.2957795131
-        self.sec_order_coef = -2*np.pi/2
+        self.deg_rad = 180 / np.pi #57.2957795131
+        self.first_order_coef = 180 / np.pi * 1e-9
+        self.sec_order_coef = 180 / np.pi * 1e-18
 
         self.design_tab_1()
         self.design_tab_2()
@@ -166,7 +167,8 @@ class MainWindow(QMainWindow):
             cwd = os.path.abspath(os.path.join(cwd, '..', 'atomize', 'control_center'))
 
         t2_sequences = {
-            'Hahn Echo; 2S': 'hahn_echo_2s.phase'
+            'Hahn Echo; 2S': 'hahn_echo_2s.phase',
+            'Hahn Echo; 4S': 'hahn_echo_4s.phase'
         }
 
         t2_exp_menu = self.exp_menu.addMenu('T₂')
@@ -180,7 +182,7 @@ class MainWindow(QMainWindow):
         t1_exp_menu = self.exp_menu.addMenu('T₁')
 
         t1_sequences = {
-            'Invertion Recovery; 4S': 'hahn_echo_2s.phase'
+            'Invertion Recovery Echo; 4S; Log': 'inversion_recovery_echo_4s_log.phase'
         }
 
         for label, file_name in t1_sequences.items():
@@ -188,6 +190,55 @@ class MainWindow(QMainWindow):
             action = QAction(label, self)
             action.triggered.connect(lambda checked, name=full_path: self.set_preset_exp(name))
             t1_exp_menu.addAction(action)
+
+        nutation_exp_menu = self.exp_menu.addMenu('Nutation')
+
+        nutation_sequences = {
+            'Rabi Nutation Echo; 4S': 'rabi_echo_4s.phase'
+        }
+
+        for label, file_name in nutation_sequences.items():
+            full_path = os.path.join(cwd, 'experiments', file_name)
+            action = QAction(label, self)
+            action.triggered.connect(lambda checked, name=full_path: self.set_preset_exp(name))
+            nutation_exp_menu.addAction(action)
+
+        ed_exp_menu = self.exp_menu.addMenu('Echo-Detected')
+
+        ed_sequences = {
+            'Echo-Detected; 2S': 'ed_2s.phase',
+            'Echo-Detected; 4S': 'ed_4s.phase'
+        }
+
+        for label, file_name in ed_sequences.items():
+            full_path = os.path.join(cwd, 'experiments', file_name)
+            action = QAction(label, self)
+            action.triggered.connect(lambda checked, name=full_path: self.set_preset_exp(name))
+            ed_exp_menu.addAction(action)
+
+        eseem_exp_menu = self.exp_menu.addMenu('ESEEM')
+
+        eseem_sequences = {
+            '3pESEEM; 4S': '3peseem_4s.phase',
+        }
+
+        for label, file_name in eseem_sequences.items():
+            full_path = os.path.join(cwd, 'experiments', file_name)
+            action = QAction(label, self)
+            action.triggered.connect(lambda checked, name=full_path: self.set_preset_exp(name))
+            eseem_exp_menu.addAction(action)
+
+        deer_exp_menu = self.exp_menu.addMenu('DEER')
+
+        deer_sequences = {
+            '4pDEER; 8S': '4pdeer_8s.phase',
+        }
+
+        for label, file_name in deer_sequences.items():
+            full_path = os.path.join(cwd, 'experiments', file_name)
+            action = QAction(label, self)
+            action.triggered.connect(lambda checked, name=full_path: self.set_preset_exp(name))
+            deer_exp_menu.addAction(action)
 
     def set_preset_exp(self, filename):
         self.open_file(filename)
@@ -904,7 +955,8 @@ class MainWindow(QMainWindow):
         self.tab_pulse.tabBar().setTabTextColor(2, QColor(193, 202, 227))
 
         # ---- Labels & Inputs ----
-        labels = [("Points to Drop", "label_11"), ("Zero Order", "label_12"), ("First Order", "label_13"), ("Second Order", "label_14"), ("Live FFT", "label_15"), ("Quadrature", "label_16")]
+        labels = [("Points to Drop", "label_11"), ("Zero Order", "label_12"), ("First Order", "label_13"), ("Second Order", "label_14"), ("Live FFT", "label_15"), ("Phase Correction", "label_16")
+            ]
 
         for name, attr_name in labels:
             lbl = QLabel(name)
@@ -915,8 +967,8 @@ class MainWindow(QMainWindow):
         # ---- Boxes ----
         double_boxes = [(QSpinBox, "P_to_drop", "p_to_drop", self.p_to_drop_func, 0, 1e4, 0, 1, 0, ""),
                       (QDoubleSpinBox, "Zero_order", "zero_order", self.zero_order_func, -0.1, 360.1, 0, 0.1, 4, " deg"),
-                      (QDoubleSpinBox, "First_order", "first_order", self.first_order_func, -100, 100, 0, 0.001, 4, ""),
-                      (QDoubleSpinBox, "Second_order", "second_order", self.second_order_func, -100, 100, 0, 0.001, 4, " MHz/ns")
+                      (QDoubleSpinBox, "First_order", "first_order", self.first_order_func, -100, 100, 0, 0.001, 4, " deg/ns"),
+                      (QDoubleSpinBox, "Second_order", "second_order", self.second_order_func, -100, 100, 0, 0.001, 4, ' deg/ns²')
                         ]
 
         for widget_class, attr_name, par_name, func, v_min, v_max, cur_val, v_step, dec, suf in double_boxes:
@@ -943,20 +995,23 @@ class MainWindow(QMainWindow):
             if isinstance(spin_box, QDoubleSpinBox):
                 if attr_name == 'Zero_order':
                     setattr(self, par_name, float(spin_box.value() / self.deg_rad))
+                elif attr_name == 'First_order':
+                    setattr(self, par_name, float(spin_box.value() / self.first_order_coef))
                 else:
-                    setattr(self, par_name, float(spin_box.value()))
+                    setattr(self, par_name, float(spin_box.value() / self.sec_order_coef))
 
             else:
                 setattr(self, par_name, int(spin_box.value()))
 
-        if self.second_order != 0.0:
-            self.second_order = self.sec_order_coef / ( float( self.Second_order.value() ) * 1000 )
+        #if self.second_order != 0.0:
+        #    self.second_order = self.sec_order_coef / ( float( self.Second_order.value() ) * 1000 )
 
         self.l_mode = 0
 
         # ---- Check Boxes ----
         check_boxes = [("fft_box", self.fft_online),
-                       ("Quad_cor", self.quad_online)]
+                       ("Quad_cor", self.quad_online)
+                       ]
 
         for attr_name, func in check_boxes:
             check = QCheckBox("")
@@ -1209,7 +1264,7 @@ class MainWindow(QMainWindow):
         """
         A function to change the first order phase correction value
         """
-        self.first_order = float( self.First_order.value() )
+        self.first_order = float( self.First_order.value() ) / self.first_order_coef
 
         if self.opened == 0:
             try:
@@ -1221,9 +1276,7 @@ class MainWindow(QMainWindow):
         """
         A function to change the second order phase correction value
         """
-        self.second_order = float( self.Second_order.value() )
-        if self.second_order != 0.0:
-            self.second_order = self.sec_order_coef / ( float( self.Second_order.value() ) * 1000 )
+        self.second_order = float( self.Second_order.value() ) / self.sec_order_coef
         
         if self.opened == 0:
             try:
@@ -1788,8 +1841,8 @@ class MainWindow(QMainWindow):
         self.Field.setValue( float( lines[10].split(':  ')[1] ) )
 
         #self.live_mode.setCheckState(Qt.CheckState.Unchecked)
-        self.fft_box.setCheckState(Qt.CheckState.Unchecked)
-        self.Quad_cor.setCheckState(Qt.CheckState.Unchecked)
+        #self.fft_box.setCheckState(Qt.CheckState.Unchecked)
+        #self.Quad_cor.setCheckState(Qt.CheckState.Unchecked)
         self.Win_left.setValue( round(float( lines[13].split(':  ')[1] ), 1) )
         self.Win_right.setValue( round(float( lines[14].split(':  ')[1] ), 1) )
         self.Acq_number.setValue( int( lines[15].split(':  ')[1] ) )
@@ -2115,7 +2168,8 @@ class MainWindow(QMainWindow):
                 self.p5_exp, self.p6_exp, self.p7_exp, self.p8_exp, self.p9_exp, self.laser_flag, 
                 self.repetition_rate.split(' ')[0], 
                 self.mag_field, self.combo_laser_num, self.laser_q_switch_delay,
-                self.cur_x0, self.cur_xdelta
+                self.cur_x0, self.cur_xdelta, 
+                self.zero_order, self.first_order, self.sec_order, self.quad
                 ) 
             )
         elif self.cur_sweep == 'Field':
@@ -2127,7 +2181,8 @@ class MainWindow(QMainWindow):
                 self.cur_win_right, self.p1_exp, self.p2_exp, self.p3_exp, self.p4_exp, 
                 self.p5_exp, self.p6_exp, self.p7_exp, self.p8_exp, self.p9_exp, self.laser_flag, 
                 self.repetition_rate.split(' ')[0], 
-                self.combo_laser_num, self.laser_q_switch_delay
+                self.combo_laser_num, self.laser_q_switch_delay,
+                self.zero_order, self.first_order, self.sec_order, self.quad
                 ) 
             )
         elif self.cur_sweep == 'Log Time':
@@ -2140,7 +2195,8 @@ class MainWindow(QMainWindow):
                 self.p5_exp, self.p6_exp, self.p7_exp, self.p8_exp, self.p9_exp, self.laser_flag, 
                 self.repetition_rate.split(' ')[0], self.mag_field,
                 self.combo_laser_num, self.laser_q_switch_delay,
-                self.cur_x0, self.cur_xdelta
+                self.cur_x0, self.cur_xdelta,
+                self.zero_order, self.first_order, self.sec_order, self.quad
                 ) 
             )
 
@@ -2386,7 +2442,8 @@ class MainWindow(QMainWindow):
                 self.p5_exp, self.p6_exp, self.p7_exp, self.p8_exp, self.p9_exp, self.laser_flag, 
                 self.repetition_rate.split(' ')[0], 
                 self.mag_field, self.combo_laser_num, self.laser_q_switch_delay,
-                self.cur_x0, self.cur_xdelta
+                self.cur_x0, self.cur_xdelta,
+                self.zero_order, self.first_order, self.sec_order, self.quad
                 ) 
             )
         elif self.cur_sweep == 'Field':
@@ -2398,7 +2455,8 @@ class MainWindow(QMainWindow):
                 self.cur_win_right, self.p1_exp, self.p2_exp, self.p3_exp, self.p4_exp, 
                 self.p5_exp, self.p6_exp, self.p7_exp, self.p8_exp, self.p9_exp, self.laser_flag, 
                 self.repetition_rate.split(' ')[0], 
-                self.combo_laser_num, self.laser_q_switch_delay
+                self.combo_laser_num, self.laser_q_switch_delay,
+                self.zero_order, self.first_order, self.sec_order, self.quad
                 ) 
             )
         elif self.cur_sweep == 'Log Time':
@@ -2411,7 +2469,8 @@ class MainWindow(QMainWindow):
                 self.p5_exp, self.p6_exp, self.p7_exp, self.p8_exp, self.p9_exp, self.laser_flag, 
                 self.repetition_rate.split(' ')[0], self.mag_field,
                 self.combo_laser_num, self.laser_q_switch_delay,
-                self.cur_x0, self.cur_xdelta
+                self.cur_x0, self.cur_xdelta,
+                self.zero_order, self.first_order, self.sec_order, self.quad
                 ) 
             )
 
@@ -2432,11 +2491,9 @@ class MainWindow(QMainWindow):
             
             s_clean = s.replace(' ', '')
             if ',' in s_clean:
-                if re.search(r'[xyi]', s_clean.lower()):
-                    parts = [p for p in s_clean.split(',') if p]
-                    return [phases.index(p) if p in phases else norm.get(p.lower(), 0) for p in parts]
-                return None
-                
+                parts = [p for p in s_clean.split(',') if p]
+                return [phases.index(p) if p in phases else norm.get(p.lower(), 0) for p in parts]
+               
             def get_recursive(st):
                 st = st.replace('D', '').lower().replace(' ', '')
                 if not st: return [0]
@@ -2446,29 +2503,40 @@ class MainWindow(QMainWindow):
                 inner = get_recursive(st[1:-1])
                 steps, shift = (4, 1) if is_quad else (2, 2)
                 return [(p_idx + step * shift) % 4 for step in range(steps) for p_idx in inner]
+            
             return get_recursive(s_clean)
 
-        pulses_indices = [parse_to_indices(arg) for arg in pulse_args]
+        raw_sequences = [parse_to_indices(arg) for arg in pulse_args]
         
-        lens = [len(s) for s in pulses_indices if s]
         target_len = 1
-        if lens:
-            for l in lens:
-                target_len = abs(target_len * l) // math.gcd(target_len, l)
+        for i, seq in enumerate(raw_sequences):
+            arg = pulse_args[i]
+            if isinstance(arg, str) and ('(' in arg or '[' in arg):
+                if len(seq) > 1: target_len *= len(seq)
+        
+        if target_len == 1:
+            for seq in raw_sequences:
+                if len(seq) > 1:
+                    target_len = abs(target_len * len(seq)) // math.gcd(target_len, len(seq))
+        
         if target_len < 2: target_len = 2
 
-        pulses_final = [(seq * (target_len // len(seq) + 1))[:target_len] for seq in pulses_indices]
+        pulses_final = []
+        current_repeat = 1
+        for i, seq in enumerate(raw_sequences):
+            arg = pulse_args[i]
+            if isinstance(arg, str) and ('(' in arg or '[' in arg):
+                expanded = [p for p in seq for _ in range(current_repeat)]
+                final = (expanded * (target_len // len(expanded) + 1))[:target_len]
+                current_repeat *= len(seq)
+            else:
+                final = (seq * (target_len // len(seq) + 1))[:target_len]
+            pulses_final.append(final)
 
-        is_coeff_str = isinstance(p_input, str) and ',' in p_input and not re.search(r'[xyi]', p_input.lower())
-        is_coeff_list = isinstance(p_input, list) and all(isinstance(x, (int, float)) for x in p_input)
 
-        if is_coeff_str or is_coeff_list:
-            if is_coeff_str:
-                parts = [p.strip() for p in p_input.split(',')]
-                coeffs = []
-                for p in parts:
-                    match = re.search(r'-?\d+\.?\d*', p)
-                    coeffs.append(float(match.group()) if match else 0.0)
+        if isinstance(p_input, (list, str)) and not any(ph in str(p_input).lower() for ph in ['x','y']):
+            if isinstance(p_input, str):
+                coeffs = [float(x) for x in re.findall(r'-?\d+\.?\d*', p_input)]
             else:
                 coeffs = p_input
                 
@@ -2671,6 +2739,11 @@ class Worker():
                     data_x = data[0].ravel()
                     data_y = data[1].ravel()
 
+                    if p17 == 1:
+                        data_x, data_y = pb.digitizer_iq(data_x, data_y, 0, p18, p19, p20)
+                    else:
+                        pass
+
                     if p16 == 0:
                         # acquisition cycle
                         int_x = round( np.sum( data_x[p4:p5] ) * 1 * t_res , 1 ) #( 10**(10) * t_res )
@@ -2703,7 +2776,8 @@ class Worker():
                                 general.message('Maximum length of the data achieved. A number of drop points was corrected.')
                             # fixed resolution of digitizer; 0.4 ns
                             freq, fft_x, fft_y = fft.fft( x_axis[p21:] , data_x[p21:], data_y[p21:], t_res * 1, re = 'True' )
-                            data_fft = fft.ph_correction( freq * 1e6, fft_x, fft_y, p18, p19, p20 )
+                            data_fft = fft.ph_correction( freq * 1e6, fft_x, fft_y, 0, 0, 0)
+                                #p18, p19, p20 )
                             general.plot_1d('FFT', freq, ( data_fft[0], data_fft[1] ), 
                                 xname = 'Offset', xscale = 'Hz', 
                                 yscale = 'A.U.', label = 'FFT'
@@ -2914,6 +2988,11 @@ class Worker():
                     data_x = data[0].ravel()
                     data_y = data[1].ravel()
 
+                    if p17 == 1:
+                        data_x, data_y = pb.digitizer_iq(data_x, data_y, 0, p18, p19, p20)
+                    else:
+                        pass
+
                     if p16 == 0:
                         # acquisition cycle
                         int_x = round( np.sum( data_x[p4:p5] ) * 1 * t_res , 1 ) #( 10**(10) * t_res )
@@ -2946,7 +3025,8 @@ class Worker():
                                 general.message('Maximum length of the data achieved. A number of drop points was corrected.')
                             # fixed resolution of digitizer; 0.4 ns
                             freq, fft_x, fft_y = fft.fft( x_axis[p21:] , data_x[p21:], data_y[p21:], t_res * 1, re = 'True' )
-                            data_fft = fft.ph_correction( freq * 1e6, fft_x, fft_y, p18, p19, p20 )
+                            data_fft = fft.ph_correction( freq * 1e6, fft_x, fft_y, 0, 0, 0)
+                                #, p18, p19, p20 )
                             general.plot_1d('FFT', freq, ( data_fft[0], data_fft[1] ), 
                                 xname = 'Offset', xscale = 'Hz', 
                                 yscale = 'A.U.', label = 'FFT'
@@ -2986,7 +3066,8 @@ class Worker():
             win_left, exp_name, curve_name,
             win_right, p1_exp, p2_exp, p3_exp, p4_exp, 
             p5_exp, p6_exp, p7_exp, p8_exp, p9_exp, laser_flag, 
-            rep_rate, field, laser_num, q_switch_delay, x0, xd):
+            rep_rate, field, laser_num, q_switch_delay, x0, xd,
+            zero_order, first_order, sec_order, ph_cor):
         
         import traceback
 
@@ -3235,7 +3316,8 @@ class Worker():
             win_left, exp_name, curve_name,
             win_right, p1_exp, p2_exp, p3_exp, p4_exp, 
             p5_exp, p6_exp, p7_exp, p8_exp, p9_exp, laser_flag, 
-            rep_rate, field, laser_num, q_switch_delay, x0, xd):
+            rep_rate, field, laser_num, q_switch_delay, x0, xd,
+            zero_order, first_order, sec_order, ph_cor):
         
         import traceback
 
@@ -3488,7 +3570,8 @@ class Worker():
             end_field, step_field, win_left, exp_name, curve_name,
             win_right, p1_exp, p2_exp, p3_exp, p4_exp, 
             p5_exp, p6_exp, p7_exp, p8_exp, p9_exp, laser_flag, 
-            rep_rate, laser_num, q_switch_delay):
+            rep_rate, laser_num, q_switch_delay,
+            zero_order, first_order, sec_order, ph_cor):
         import traceback
 
         try:
@@ -3714,7 +3797,8 @@ class Worker():
             end_field, step_field, win_left, exp_name, curve_name,
             win_right, p1_exp, p2_exp, p3_exp, p4_exp, 
             p5_exp, p6_exp, p7_exp, p8_exp, p9_exp, laser_flag, 
-            rep_rate, laser_num, q_switch_delay):
+            rep_rate, laser_num, q_switch_delay, 
+            zero_order, first_order, sec_order, ph_cor):
 
         import traceback
 
@@ -3947,7 +4031,8 @@ class Worker():
             log_start, log_end, win_left, exp_name, curve_name,
             win_right, p1_exp, p2_exp, p3_exp, p4_exp, 
             p5_exp, p6_exp, p7_exp, p8_exp, p9_exp, laser_flag, 
-            rep_rate, field, laser_num, q_switch_delay, x0, xd):
+            rep_rate, field, laser_num, q_switch_delay, x0, xd,
+            zero_order, first_order, sec_order, ph_cor):
 
         import traceback
 
@@ -4199,7 +4284,8 @@ class Worker():
             log_start, log_end, win_left, exp_name, curve_name,
             win_right, p1_exp, p2_exp, p3_exp, p4_exp, 
             p5_exp, p6_exp, p7_exp, p8_exp, p9_exp, laser_flag, 
-            rep_rate, field, laser_num, q_switch_delay, x0, xd):
+            rep_rate, field, laser_num, q_switch_delay, x0, xd, 
+            zero_order, first_order, sec_order, ph_cor):
         import traceback
 
         sys.argv = ['', 'test']

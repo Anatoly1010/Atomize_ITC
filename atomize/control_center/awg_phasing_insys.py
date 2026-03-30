@@ -38,7 +38,8 @@ class MainWindow(QMainWindow):
 
         # Phase correction
         self.deg_rad = 180 / np.pi #57.2957795131
-        self.sec_order_coef = -2*np.pi/2
+        self.first_order_coef = 180 / np.pi * 1e-9
+        self.sec_order_coef = 180 / np.pi * 1e-18
         
         self.design_tab_1()
         self.design_tab_2()
@@ -1014,8 +1015,9 @@ class MainWindow(QMainWindow):
         self.tab_pulse.tabBar().setTabTextColor(2, QColor(193, 202, 227))
 
         # ---- Labels & Inputs ----
-        labels = [("Points to Drop", "label_11"), ("Zero Order", "label_12"), ("First Order", "label_13"), ("Second Order", "label_14"), ("Live FFT", "label_15"), ("Quadrature", "label_16"), ("Digital IQ", "label_fft1")]
+        labels = [("Points to Drop", "label_11"), ("Zero Order", "label_12"), ("First Order", "label_13"), ("Second Order", "label_14"), ("Live FFT", "label_15"), ("Phase Correction", "label_16"), ("Shift Offset", "label_fft1")]
 
+        #
         for name, attr_name in labels:
             lbl = QLabel(name)
             setattr(self, attr_name, lbl)
@@ -1025,8 +1027,8 @@ class MainWindow(QMainWindow):
         # ---- Boxes ----
         double_boxes = [(QSpinBox, "P_to_drop", "p_to_drop", self.p_to_drop_func, 0, 1e4, 0, 1, 0, ""),
                       (QDoubleSpinBox, "Zero_order", "zero_order", self.zero_order_func, -0.1, 360.1, 0, 0.5, 4, " deg"),
-                      (QDoubleSpinBox, "First_order", "first_order", self.first_order_func, -100, 100, 0, 0.001, 4, ""),
-                      (QDoubleSpinBox, "Second_order", "second_order", self.second_order_func, -100, 100, 0, 0.001, 4, " MHz/ns")
+                      (QDoubleSpinBox, "First_order", "first_order", self.first_order_func, -100, 100, 0, 0.001, 4, " deg/ns"),
+                      (QDoubleSpinBox, "Second_order", "second_order", self.second_order_func, -100, 100, 0, 0.001, 4, ' deg/ns²')
                         ]
 
         for widget_class, attr_name, par_name, func, v_min, v_max, cur_val, v_step, dec, suf in double_boxes:
@@ -1053,14 +1055,16 @@ class MainWindow(QMainWindow):
             if isinstance(spin_box, QDoubleSpinBox):
                 if attr_name == 'Zero_order':
                     setattr(self, par_name, float(spin_box.value() / self.deg_rad))
+                elif attr_name == 'First_order':
+                    setattr(self, par_name, float(spin_box.value() / self.first_order_coef))
                 else:
-                    setattr(self, par_name, float(spin_box.value()))
+                    setattr(self, par_name, float(spin_box.value() / self.sec_order_coef))
 
             else:
                 setattr(self, par_name, int(spin_box.value()))
 
-        if self.second_order != 0.0:
-            self.second_order = self.sec_order_coef / ( float( self.Second_order.value() ) * 1000 )
+        #if self.second_order != 0.0:
+        #    self.second_order = self.sec_order_coef / ( float( self.Second_order.value() ) * 1000 )
 
         self.l_mode = 0
 
@@ -1452,10 +1456,11 @@ class MainWindow(QMainWindow):
             for i, pulse_phase in enumerate(a['pulses']):
                 setattr(self, f"ph_{i+2}", pulse_phase)
             
-            print(f"P0: {self.ph_1}")
-            print(f"P1: {self.ph_2}")
-            print(f"P2: {self.ph_3}")
-            print(f"P3: {self.ph_4}")
+            #print(f"P0: {self.ph_1}")
+            #print(f"P1: {self.ph_2}")
+            #print(f"P2: {self.ph_3}")
+            #print(f"P3: {self.ph_4}")
+            #print(f"P4: {self.ph_5}")
 
             #if len(temp) >= 2: #and temp[0] == '[' and temp[-1] == ']':
             #    content = temp[:].split(',') #[1:-1]
@@ -1585,7 +1590,7 @@ class MainWindow(QMainWindow):
         # cycling
         if self.zero_order < 0.0:
             self.Zero_order.setValue(360.0)
-            self.zero_order = float( self.Zero_order.value() )/ self.deg_rad
+            self.zero_order = float( self.Zero_order.value() ) / self.deg_rad
         else:
             pass
 
@@ -1605,7 +1610,7 @@ class MainWindow(QMainWindow):
         """
         A function to change the first order phase correction value
         """
-        self.first_order = float( self.First_order.value() )
+        self.first_order = float( self.First_order.value() ) / self.first_order_coef
 
         if self.opened == 0:
             try:
@@ -1617,9 +1622,7 @@ class MainWindow(QMainWindow):
         """
         A function to change the second order phase correction value
         """
-        self.second_order = float( self.Second_order.value() )
-        if self.second_order != 0.0:
-            self.second_order = self.sec_order_coef / ( float( self.Second_order.value() ) * 1000 )
+        self.second_order = float( self.Second_order.value() ) / self.sec_order_coef
         
         if self.opened == 0:
             try:
@@ -2196,8 +2199,8 @@ class MainWindow(QMainWindow):
         self.B_sech.setValue( float( lines[16].split(':  ')[1] ) )
 
         #self.live_mode.setCheckState(Qt.CheckState.Unchecked)
-        self.fft_box.setCheckState(Qt.CheckState.Unchecked)
-        self.Quad_cor.setCheckState(Qt.CheckState.Unchecked)
+        #self.fft_box.setCheckState(Qt.CheckState.Unchecked)
+        #self.Quad_cor.setCheckState(Qt.CheckState.Unchecked)
         self.Win_left.setValue( round(float( lines[19].split(':  ')[1] ), 1) )
         self.Win_right.setValue( round(float( lines[20].split(':  ')[1] ), 1) )
         self.Acq_number.setValue( int( lines[21].split(':  ')[1] ) )
@@ -2569,7 +2572,7 @@ class MainWindow(QMainWindow):
                 self.combo_cor, self.combo_synt,
                 self.laser_flag, self.combo_laser_num, self.laser_q_switch_delay, self.cur_phase,
                 self.iq_cor, self.cur_win_left, self.cur_win_right, self.zero_order,
-                self.cur_x0, self.cur_xdelta ) )
+                self.cur_x0, self.cur_xdelta, self.first_order, self.sec_order ) )
         elif self.cur_sweep == 'Field':
             self.digitizer_process = Process( target = worker.exp_field_test, args = ( 
                 self.child_conn_dig, 
@@ -2586,7 +2589,8 @@ class MainWindow(QMainWindow):
                 self.b_sech_cur, 
                 self.combo_cor, self.combo_synt,
                 self.laser_flag, self.combo_laser_num, self.laser_q_switch_delay, self.cur_phase,
-                self.iq_cor, self.cur_win_left, self.cur_win_right, self.zero_order ) )
+                self.iq_cor, self.cur_win_left, self.cur_win_right, self.zero_order, 
+                self.first_order, self.sec_order ) )
         elif self.cur_sweep == 'Log Time':
             self.digitizer_process = Process( target = worker.exp_log_test, args = ( 
                 self.child_conn_dig, 
@@ -2604,7 +2608,7 @@ class MainWindow(QMainWindow):
                 self.combo_cor, self.combo_synt,
                 self.laser_flag, self.combo_laser_num, self.laser_q_switch_delay, self.cur_phase,
                 self.iq_cor, self.cur_win_left, self.cur_win_right, self.zero_order,
-                self.cur_x0, self.cur_xdelta ) )
+                self.cur_x0, self.cur_xdelta, self.first_order, self.sec_order ) )
 
 
         self.button_start_exp.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(193, 202, 227); border-style: outset; color: rgb(63, 63, 97); font-weight: bold; } QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
@@ -2875,7 +2879,7 @@ class MainWindow(QMainWindow):
                 self.combo_cor, self.combo_synt,
                 self.laser_flag, self.combo_laser_num, self.laser_q_switch_delay, self.cur_phase,
                 self.iq_cor, self.cur_win_left, self.cur_win_right, self.zero_order,
-                self.cur_x0, self.cur_xdelta ) )
+                self.cur_x0, self.cur_xdelta, self.first_order, self.sec_order ) )
         elif self.cur_sweep == 'Field':
             self.digitizer_process = Process( target = worker.exp_field, args = ( 
                 self.child_conn_dig, 
@@ -2892,7 +2896,8 @@ class MainWindow(QMainWindow):
                 self.b_sech_cur, 
                 self.combo_cor, self.combo_synt,
                 self.laser_flag, self.combo_laser_num, self.laser_q_switch_delay, self.cur_phase,
-                self.iq_cor, self.cur_win_left, self.cur_win_right, self.zero_order ) )
+                self.iq_cor, self.cur_win_left, self.cur_win_right, self.zero_order, 
+                self.first_order, self.sec_order ) )
         elif self.cur_sweep == 'Log Time':
             self.digitizer_process = Process( target = worker.exp_log, args = ( 
                 self.child_conn_dig, 
@@ -2910,7 +2915,7 @@ class MainWindow(QMainWindow):
                 self.combo_cor, self.combo_synt,
                 self.laser_flag, self.combo_laser_num, self.laser_q_switch_delay, self.cur_phase,
                 self.iq_cor, self.cur_win_left, self.cur_win_right, self.zero_order,
-                self.cur_x0, self.cur_xdelta ) )
+                self.cur_x0, self.cur_xdelta, self.first_order, self.sec_order) )
 
         self.button_start_exp.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(211, 194, 78); border-style: outset; color: rgb(63, 63, 97); font-weight: bold; } QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }") 
 
@@ -2929,11 +2934,9 @@ class MainWindow(QMainWindow):
             
             s_clean = s.replace(' ', '')
             if ',' in s_clean:
-                if re.search(r'[xyi]', s_clean.lower()):
-                    parts = [p for p in s_clean.split(',') if p]
-                    return [phases.index(p) if p in phases else norm.get(p.lower(), 0) for p in parts]
-                return None
-                
+                parts = [p for p in s_clean.split(',') if p]
+                return [phases.index(p) if p in phases else norm.get(p.lower(), 0) for p in parts]
+               
             def get_recursive(st):
                 st = st.replace('D', '').lower().replace(' ', '')
                 if not st: return [0]
@@ -2943,29 +2946,40 @@ class MainWindow(QMainWindow):
                 inner = get_recursive(st[1:-1])
                 steps, shift = (4, 1) if is_quad else (2, 2)
                 return [(p_idx + step * shift) % 4 for step in range(steps) for p_idx in inner]
+            
             return get_recursive(s_clean)
 
-        pulses_indices = [parse_to_indices(arg) for arg in pulse_args]
+        raw_sequences = [parse_to_indices(arg) for arg in pulse_args]
         
-        lens = [len(s) for s in pulses_indices if s]
         target_len = 1
-        if lens:
-            for l in lens:
-                target_len = abs(target_len * l) // math.gcd(target_len, l)
+        for i, seq in enumerate(raw_sequences):
+            arg = pulse_args[i]
+            if isinstance(arg, str) and ('(' in arg or '[' in arg):
+                if len(seq) > 1: target_len *= len(seq)
+        
+        if target_len == 1:
+            for seq in raw_sequences:
+                if len(seq) > 1:
+                    target_len = abs(target_len * len(seq)) // math.gcd(target_len, len(seq))
+        
         if target_len < 2: target_len = 2
 
-        pulses_final = [(seq * (target_len // len(seq) + 1))[:target_len] for seq in pulses_indices]
+        pulses_final = []
+        current_repeat = 1
+        for i, seq in enumerate(raw_sequences):
+            arg = pulse_args[i]
+            if isinstance(arg, str) and ('(' in arg or '[' in arg):
+                expanded = [p for p in seq for _ in range(current_repeat)]
+                final = (expanded * (target_len // len(expanded) + 1))[:target_len]
+                current_repeat *= len(seq)
+            else:
+                final = (seq * (target_len // len(seq) + 1))[:target_len]
+            pulses_final.append(final)
 
-        is_coeff_str = isinstance(p_input, str) and ',' in p_input and not re.search(r'[xyi]', p_input.lower())
-        is_coeff_list = isinstance(p_input, list) and all(isinstance(x, (int, float)) for x in p_input)
 
-        if is_coeff_str or is_coeff_list:
-            if is_coeff_str:
-                parts = [p.strip() for p in p_input.split(',')]
-                coeffs = []
-                for p in parts:
-                    match = re.search(r'-?\d+\.?\d*', p)
-                    coeffs.append(float(match.group()) if match else 0.0)
+        if isinstance(p_input, (list, str)) and not any(ph in str(p_input).lower() for ph in ['x','y']):
+            if isinstance(p_input, str):
+                coeffs = [float(x) for x in re.findall(r'-?\d+\.?\d*', p_input)]
             else:
                 coeffs = p_input
                 
@@ -3289,7 +3303,7 @@ class Worker():
                     data_y = data[1].ravel()
 
                     if iq_cor == 1:
-                        data_x, data_y = pb.digitizer_iq(data_x, data_y, iq_freq, p28)
+                        data_x, data_y = pb.digitizer_iq(data_x, data_y, iq_freq, p28, p29, p30)
                     else:
                         pass
 
@@ -3319,7 +3333,8 @@ class Worker():
                                 general.message('Maximum length of the data achieved. A number of drop points was corrected.')
                             # fixed resolution of digitizer; 2 ns
                             freq, fft_x, fft_y = fft.fft( x_axis[p31:], data_x[p31:], data_y[p31:], t_res * 1, re = 'True' )
-                            data_fft = fft.ph_correction( freq * 1e6, fft_x, fft_y, p28, p29, p30 )
+                            data_fft = fft.ph_correction( freq * 1e6, fft_x, fft_y, 0, 0, 0)
+                            #, p28, p29, p30 )
                             general.plot_1d('FFT', freq, ( data_fft[0], data_fft[1] ), 
                                 xname = 'Offset', xscale = 'Hz', 
                                 yscale = 'A.U.', label = 'FFT'
@@ -3649,11 +3664,11 @@ class Worker():
                     data_y = data[1].ravel()
 
                     if iq_cor == 1:
-                        data_x, data_y = pb.digitizer_iq(data_x, data_y, iq_freq, p28)
+                        data_x, data_y = pb.digitizer_iq(data_x, data_y, iq_freq, p28, p29, p30)
                     else:
                         pass
 
-                    if p16 == 0:                
+                    if p16 == 0:
                         general.plot_1d('Dig', x_axis / 1e9, ( data_x, data_y ), 
                             xscale = 's', yscale = 'mV', label = 'ch', 
                             vline = (p4 * t_res / 1e9, p5 * t_res / 1e9)
@@ -3679,7 +3694,8 @@ class Worker():
                                 general.message('Maximum length of the data achieved. A number of drop points was corrected.')
                             # fixed resolution of digitizer; 2 ns
                             freq, fft_x, fft_y = fft.fft( x_axis[p31:], data_x[p31:], data_y[p31:], t_res * 1, re = 'True' )
-                            data_fft = fft.ph_correction( freq * 1e6, fft_x, fft_y, p28, p29, p30 )
+                            data_fft = fft.ph_correction( freq * 1e6, fft_x, fft_y, 0, 0, 0)
+                            #p28, p29, p30 )
                             general.plot_1d('FFT', freq, ( data_fft[0], data_fft[1] ), 
                                 xname = 'Offset', xscale = 'Hz', 
                                 yscale = 'A.U.', label = 'FFT'
@@ -3722,7 +3738,7 @@ class Worker():
             p5_awg_exp, p6_awg_exp, p7_awg_exp, p8_awg_exp, p9_awg_exp, 
             b_sech_cur, correction, synt, laser_flag, laser_num, 
             q_switch_delay, iq_phase, iq_corr, win_left, win_right, zero_phase, 
-            x0, xd):
+            x0, xd, first_order, sec_order):
 
         import traceback
 
@@ -4050,7 +4066,7 @@ class Worker():
                                         pr = process
                                     )
                             elif iq_cor == 1:
-                                data_x, data_y = pb.digitizer_iq(data[0], data[1], iq_freq, zp, integral = True)
+                                data_x, data_y = pb.digitizer_iq(data[0], data[1], iq_freq, zp, first_order, sec_order, integral = True)
                                 if step != 1:
                                     general.plot_1d(EXP_NAME, x_axis_plot, ( data_x, data_y ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j*STEP, 1)))
                                 else:
@@ -4126,7 +4142,7 @@ class Worker():
                             text = f"Scan / Time: {k} / {j * STEP:.1f}"
                         )
                 elif iq_cor == 1:
-                    data_x, data_y = pb.digitizer_iq(data[0], data[1], iq_freq, zp, integral = True)
+                    data_x, data_y = pb.digitizer_iq(data[0], data[1], iq_freq, zp, first_order, sec_order, integral = True)
                     if step != 1:
                         general.plot_1d(EXP_NAME, x_axis_plot, ( data_x, data_y ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j*STEP, 1)))
                     else:
@@ -4136,35 +4152,35 @@ class Worker():
                 now = datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")
                 w = 30
 
-                if iq_cor == 0:
-                    # Data saving
-                    header = (
-                        f"{'Date:':<{w}} {now}\n"
-                        f"{'Experiment:':<{w}} Pulsed EPR AWG Experiment\n"
-                        f"{'Field:':<{w}} {FIELD} G\n"
-                        f"{general.fmt(mw.mw_bridge_rotary_vane(), w)}\n"
-                        f"{general.fmt(mw.mw_bridge_att_prm(), w)}\n"
-                        f"{general.fmt(mw.mw_bridge_att2_prm(), w)}\n"
-                        f"{general.fmt(mw.mw_bridge_att2_prd(), w)}\n"
-                        f"{general.fmt(mw.mw_bridge_synthesizer(), w)}\n"
-                        f"{'Repetition Rate:':<{w}} {pb.pulser_repetition_rate()}\n"
-                        f"{'Number of Scans:':<{w}} {SCANS}\n"
-                        f"{'Averages:':<{w}} {AVERAGES}\n"
-                        f"{'Points:':<{w}} {POINTS}\n"
-                        f"{'Window:':<{w}} {p1_exp[2]}\n"
-                        f"{'Horizontal Resolution:':<{w}} {0.4 * DEC_COEF:.1g} ns\n"
-                        f"{'Vertical Resolution:':<{w}} {STEP} ns\n"
-                        f"{'Temperature:':<{w}} {ls335.tc_temperature('A')} K\n"
-                        f"{'Temperature Cernox:':<{w}} {ls335.tc_temperature('B')} K\n"
-                        f"{'-'*50}\n"
-                        f"Pulse List:\n{pb.pulser_pulse_list()}"
-                        f"{'-'*50}\n"
-                        f"AWG Pulse List:\n{pb.awg_pulse_list()}"
-                        f"{'-'*50}\n"
-                        f"2D Data"
-                    )
-                elif iq_cor == 1:
-                    header = (
+                # Data saving
+                header = (
+                    f"{'Date:':<{w}} {now}\n"
+                    f"{'Experiment:':<{w}} Pulsed EPR AWG Experiment\n"
+                    f"{'Field:':<{w}} {FIELD} G\n"
+                    f"{general.fmt(mw.mw_bridge_rotary_vane(), w)}\n"
+                    f"{general.fmt(mw.mw_bridge_att_prm(), w)}\n"
+                    f"{general.fmt(mw.mw_bridge_att2_prm(), w)}\n"
+                    f"{general.fmt(mw.mw_bridge_att2_prd(), w)}\n"
+                    f"{general.fmt(mw.mw_bridge_synthesizer(), w)}\n"
+                    f"{'Repetition Rate:':<{w}} {pb.pulser_repetition_rate()}\n"
+                    f"{'Number of Scans:':<{w}} {SCANS}\n"
+                    f"{'Averages:':<{w}} {AVERAGES}\n"
+                    f"{'Points:':<{w}} {POINTS}\n"
+                    f"{'Window:':<{w}} {p1_exp[2]}\n"
+                    f"{'Horizontal Resolution:':<{w}} {0.4 * DEC_COEF:.1g} ns\n"
+                    f"{'Vertical Resolution:':<{w}} {STEP} ns\n"
+                    f"{'Temperature:':<{w}} {ls335.tc_temperature('A')} K\n"
+                    f"{'Temperature Cernox:':<{w}} {ls335.tc_temperature('B')} K\n"
+                    f"{'-'*50}\n"
+                    f"Pulse List:\n{pb.pulser_pulse_list()}"
+                    f"{'-'*50}\n"
+                    f"AWG Pulse List:\n{pb.awg_pulse_list()}"
+                    f"{'-'*50}\n"
+                    f"2D Data"
+                )
+
+                if iq_cor == 1:
+                    header2 = (
                         f"{'Date:':<{w}} {now}\n"
                         f"{'Experiment:':<{w}} Pulsed EPR AWG Experiment\n"
                         f"{'Field:':<{w}} {FIELD} G\n"
@@ -4207,12 +4223,20 @@ class Worker():
                         mode = 'w'
                     )
                 elif iq_cor == 1:
+                    file_data2 = file_data.replace(".csv", "_2d.csv")
+
                     file_handler.save_data(
                         file_data, 
                         np.c_[x_axis, data_x, data_y], 
-                        header = header, 
+                        header = header2, 
                         mode = 'w'
                         )
+                    file_handler.save_data(
+                        file_data2, 
+                        data, 
+                        header = header, 
+                        mode = 'w'
+                    )
 
                 conn.send( ('', f'Experiment {EXP_NAME} finished') )
 
@@ -4228,7 +4252,7 @@ class Worker():
             p5_awg_exp, p6_awg_exp, p7_awg_exp, p8_awg_exp, p9_awg_exp, 
             b_sech_cur, correction, synt, laser_flag, laser_num, 
             q_switch_delay, iq_phase, iq_corr, win_left, win_right, zero_phase,
-            x0, xd):
+            x0, xd, first_order, sec_order):
 
         import traceback
 
@@ -4558,7 +4582,7 @@ class Worker():
                                             pr = process
                                         )
                                 elif iq_cor == 1:
-                                    data_x, data_y = pb.digitizer_iq(data[0], data[1], iq_freq, zp, integral = True)
+                                    data_x, data_y = pb.digitizer_iq(data[0], data[1], iq_freq, zp, first_order, sec_order, integral = True)
                                     if step != 1:
                                         general.plot_1d(EXP_NAME, x_axis_plot, ( data_x, data_y ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j*STEP, 1)))
                                     else:
@@ -4633,7 +4657,7 @@ class Worker():
                             text = f"Scan / Time: {k} / {j * STEP:.1f}"
                         )
                 elif iq_cor == 1:
-                    data_x, data_y = pb.digitizer_iq(data[0], data[1], iq_freq, zp, integral = True)
+                    data_x, data_y = pb.digitizer_iq(data[0], data[1], iq_freq, zp, first_order, sec_order, integral = True)
                     if step != 1:
                         general.plot_1d(EXP_NAME, x_axis_plot, ( data_x, data_y ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j*STEP, 1)))
                     else:
@@ -4644,35 +4668,33 @@ class Worker():
                 w = 30
 
                 # Data saving
-                if iq_cor == 0:
-                    # Data saving
-                    header = (
-                        f"{'Date:':<{w}} {now}\n"
-                        f"{'Experiment:':<{w}} Pulsed EPR AWG Experiment\n"
-                        f"{'Field:':<{w}} {FIELD} G\n"
-                        f"{general.fmt(mw.mw_bridge_rotary_vane(), w)}\n"
-                        f"{general.fmt(mw.mw_bridge_att_prm(), w)}\n"
-                        f"{general.fmt(mw.mw_bridge_att2_prm(), w)}\n"
-                        f"{general.fmt(mw.mw_bridge_att2_prd(), w)}\n"
-                        f"{general.fmt(mw.mw_bridge_synthesizer(), w)}\n"
-                        f"{'Repetition Rate:':<{w}} {pb.pulser_repetition_rate()}\n"
-                        f"{'Number of Scans:':<{w}} {SCANS}\n"
-                        f"{'Averages:':<{w}} {AVERAGES}\n"
-                        f"{'Points:':<{w}} {POINTS}\n"
-                        f"{'Window:':<{w}} {p1_exp[2]}\n"
-                        f"{'Horizontal Resolution:':<{w}} {0.4 * DEC_COEF:.1g} ns\n"
-                        f"{'Vertical Resolution:':<{w}} {STEP} ns\n"
-                        f"{'Temperature:':<{w}} {ls335.tc_temperature('A')} K\n"
-                        f"{'Temperature Cernox:':<{w}} {ls335.tc_temperature('B')} K\n"
-                        f"{'-'*50}\n"
-                        f"Pulse List:\n{pb.pulser_pulse_list()}"
-                        f"{'-'*50}\n"
-                        f"AWG Pulse List:\n{pb.awg_pulse_list()}"
-                        f"{'-'*50}\n"
-                        f"2D Data"
-                    )
-                elif iq_cor == 1:
-                    header = (
+                header = (
+                    f"{'Date:':<{w}} {now}\n"
+                    f"{'Experiment:':<{w}} Pulsed EPR AWG Experiment\n"
+                    f"{'Field:':<{w}} {FIELD} G\n"
+                    f"{general.fmt(mw.mw_bridge_rotary_vane(), w)}\n"
+                    f"{general.fmt(mw.mw_bridge_att_prm(), w)}\n"
+                    f"{general.fmt(mw.mw_bridge_att2_prm(), w)}\n"
+                    f"{general.fmt(mw.mw_bridge_att2_prd(), w)}\n"
+                    f"{general.fmt(mw.mw_bridge_synthesizer(), w)}\n"
+                    f"{'Repetition Rate:':<{w}} {pb.pulser_repetition_rate()}\n"
+                    f"{'Number of Scans:':<{w}} {SCANS}\n"
+                    f"{'Averages:':<{w}} {AVERAGES}\n"
+                    f"{'Points:':<{w}} {POINTS}\n"
+                    f"{'Window:':<{w}} {p1_exp[2]}\n"
+                    f"{'Horizontal Resolution:':<{w}} {0.4 * DEC_COEF:.1g} ns\n"
+                    f"{'Vertical Resolution:':<{w}} {STEP} ns\n"
+                    f"{'Temperature:':<{w}} {ls335.tc_temperature('A')} K\n"
+                    f"{'Temperature Cernox:':<{w}} {ls335.tc_temperature('B')} K\n"
+                    f"{'-'*50}\n"
+                    f"Pulse List:\n{pb.pulser_pulse_list()}"
+                    f"{'-'*50}\n"
+                    f"AWG Pulse List:\n{pb.awg_pulse_list()}"
+                    f"{'-'*50}\n"
+                    f"2D Data"
+                )
+                if iq_cor == 1:
+                    header2 = (
                         f"{'Date:':<{w}} {now}\n"
                         f"{'Experiment:':<{w}} Pulsed EPR AWG Experiment\n"
                         f"{'Field:':<{w}} {FIELD} G\n"
@@ -4724,7 +4746,8 @@ class Worker():
             ch1_ampl, p2_awg_exp, p3_awg_exp, p4_awg_exp, 
             p5_awg_exp, p6_awg_exp, p7_awg_exp, p8_awg_exp, p9_awg_exp, 
             b_sech_cur, correction, synt, laser_flag, laser_num, 
-            q_switch_delay, iq_phase, iq_corr, win_left, win_right, zero_phase):
+            q_switch_delay, iq_phase, iq_corr, win_left, win_right, zero_phase, 
+            first_order, sec_order):
         
         import traceback
 
@@ -4996,7 +5019,7 @@ class Worker():
                                     pr = process
                                 )
                             elif iq_cor == 1:
-                                data_x, data_y = pb.digitizer_iq(data[0], data[1], iq_freq, zp, integral = True)
+                                data_x, data_y = pb.digitizer_iq(data[0], data[1], iq_freq, zp, first_order, sec_order, integral = True)
                                 process = general.plot_1d(EXP_NAME, x_axis, ( data_x, data_y ), xname = 'Field', xscale = 'G', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Field: ' + str(k) + ' / ' + str(field), pr = process)
 
                             pb.awg_next_phase()
@@ -5055,43 +5078,42 @@ class Worker():
                         text = f"Scan / Field: {k} / {field}"
                         )
                 elif iq_cor == 1:
-                    data_x, data_y = pb.digitizer_iq(data[0], data[1], iq_freq, zp, integral = True)
+                    data_x, data_y = pb.digitizer_iq(data[0], data[1], iq_freq, zp, first_order, sec_order, integral = True)
                     general.plot_1d(EXP_NAME, x_axis, ( data_x, data_y ), xname = 'Field', xscale = 'G', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Field: ' + str(k) + ' / ' + str(field))
 
                 now = datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")
                 w = 30
 
                 # Data saving
-                if iq_cor == 0:
-                    header = (
-                        f"{'Date:':<{w}} {now}\n"
-                        f"{'Experiment:':<{w}} Pulsed EPR AWG Experiment\n"
-                        f"{'Start Field:':<{w}} {START_FIELD} G\n"
-                        f"{'End Field:':<{w}} {END_FIELD} G\n"
-                        f"{'Field Step:':<{w}} {FIELD_STEP} G\n"
-                        f"{general.fmt(mw.mw_bridge_rotary_vane(), w)}\n"
-                        f"{general.fmt(mw.mw_bridge_att_prm(), w)}\n"
-                        f"{general.fmt(mw.mw_bridge_att2_prm(), w)}\n"
-                        f"{general.fmt(mw.mw_bridge_att2_prd(), w)}\n"
-                        f"{general.fmt(mw.mw_bridge_synthesizer(), w)}\n"
-                        f"{'Repetition Rate:':<{w}} {pb.pulser_repetition_rate()}\n"
-                        f"{'Number of Scans:':<{w}} {SCANS}\n"
-                        f"{'Averages:':<{w}} {AVERAGES}\n"
-                        f"{'Points:':<{w}} {POINTS}\n"
-                        f"{'Window:':<{w}} {p1_exp[2]}\n"
-                        f"{'Horizontal Resolution:':<{w}} {0.4 * DEC_COEF:.1g} ns\n"
-                        f"{'Vertical Resolution:':<{w}} {FIELD_STEP} G\n"
-                        f"{'Temperature:':<{w}} {ls335.tc_temperature('A')} K\n"
-                        f"{'Temperature Cernox:':<{w}} {ls335.tc_temperature('B')} K\n"
-                        f"{'-'*50}\n"
-                        f"Pulse List:\n{pb.pulser_pulse_list()}"
-                        f"{'-'*50}\n"
-                        f"AWG Pulse List:\n{pb.awg_pulse_list()}"
-                        f"{'-'*50}\n"
-                        f"2D Data"
-                    )
-                elif iq_cor == 1:
-                    header = (
+                header = (
+                    f"{'Date:':<{w}} {now}\n"
+                    f"{'Experiment:':<{w}} Pulsed EPR AWG Experiment\n"
+                    f"{'Start Field:':<{w}} {START_FIELD} G\n"
+                    f"{'End Field:':<{w}} {END_FIELD} G\n"
+                    f"{'Field Step:':<{w}} {FIELD_STEP} G\n"
+                    f"{general.fmt(mw.mw_bridge_rotary_vane(), w)}\n"
+                    f"{general.fmt(mw.mw_bridge_att_prm(), w)}\n"
+                    f"{general.fmt(mw.mw_bridge_att2_prm(), w)}\n"
+                    f"{general.fmt(mw.mw_bridge_att2_prd(), w)}\n"
+                    f"{general.fmt(mw.mw_bridge_synthesizer(), w)}\n"
+                    f"{'Repetition Rate:':<{w}} {pb.pulser_repetition_rate()}\n"
+                    f"{'Number of Scans:':<{w}} {SCANS}\n"
+                    f"{'Averages:':<{w}} {AVERAGES}\n"
+                    f"{'Points:':<{w}} {POINTS}\n"
+                    f"{'Window:':<{w}} {p1_exp[2]}\n"
+                    f"{'Horizontal Resolution:':<{w}} {0.4 * DEC_COEF:.1g} ns\n"
+                    f"{'Vertical Resolution:':<{w}} {FIELD_STEP} G\n"
+                    f"{'Temperature:':<{w}} {ls335.tc_temperature('A')} K\n"
+                    f"{'Temperature Cernox:':<{w}} {ls335.tc_temperature('B')} K\n"
+                    f"{'-'*50}\n"
+                    f"Pulse List:\n{pb.pulser_pulse_list()}"
+                    f"{'-'*50}\n"
+                    f"AWG Pulse List:\n{pb.awg_pulse_list()}"
+                    f"{'-'*50}\n"
+                    f"2D Data"
+                )
+                if iq_cor == 1:
+                    header2 = (
                         f"{'Date:':<{w}} {now}\n"
                         f"{'Experiment:':<{w}} Pulsed EPR AWG Experiment\n"
                         f"{'Start Field:':<{w}} {START_FIELD} G\n"
@@ -5134,10 +5156,18 @@ class Worker():
                         mode = 'w'
                     )
                 elif iq_cor == 1:
+                    file_data2 = file_data.replace(".csv", "_2d.csv")
+                    
                     file_handler.save_data(
-                        file_data,
-                        np.c_[x_axis, data_x, data_y],
-                        header = header,
+                        file_data, 
+                        np.c_[x_axis, data_x, data_y], 
+                        header = header2, 
+                        mode = 'w'
+                        )
+                    file_handler.save_data(
+                        file_data2, 
+                        data, 
+                        header = header, 
                         mode = 'w'
                     )
 
@@ -5155,7 +5185,8 @@ class Worker():
             ch1_ampl, p2_awg_exp, p3_awg_exp, p4_awg_exp, 
             p5_awg_exp, p6_awg_exp, p7_awg_exp, p8_awg_exp, p9_awg_exp, 
             b_sech_cur, correction, synt, laser_flag, laser_num, 
-            q_switch_delay, iq_phase, iq_corr, win_left, win_right, zero_phase):
+            q_switch_delay, iq_phase, iq_corr, win_left, win_right, zero_phase,
+            first_order, sec_order):
 
         import traceback
 
@@ -5436,7 +5467,7 @@ class Worker():
                                         pr = process
                                     )
                                 elif iq_cor == 1:
-                                    data_x, data_y = pb.digitizer_iq(data[0], data[1], iq_freq, zp, integral = True)
+                                    data_x, data_y = pb.digitizer_iq(data[0], data[1], iq_freq, zp, first_order, sec_order, integral = True)
                                     process = general.plot_1d(EXP_NAME, x_axis, ( data_x, data_y ), xname = 'Field', xscale = 'G', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Field: ' + str(k) + ' / ' + str(field), pr = process)
                             
                             pb.awg_next_phase()
@@ -5495,43 +5526,42 @@ class Worker():
                         text = f"Scan / Field: {k} / {field}"
                         )
                 elif iq_cor == 1:
-                    data_x, data_y = pb.digitizer_iq(data[0], data[1], iq_freq, zp, integral = True)
+                    data_x, data_y = pb.digitizer_iq(data[0], data[1], iq_freq, zp, first_order, sec_order, integral = True)
                     general.plot_1d(EXP_NAME, x_axis, ( data_x, data_y ), xname = 'Field', xscale = 'G', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Field: ' + str(k) + ' / ' + str(field))
 
                 now = datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")
                 w = 30
 
                 # Data saving
-                if iq_cor == 0:
-                    header = (
-                        f"{'Date:':<{w}} {now}\n"
-                        f"{'Experiment:':<{w}} Pulsed EPR AWG Experiment\n"
-                        f"{'Start Field:':<{w}} {START_FIELD} G\n"
-                        f"{'End Field:':<{w}} {END_FIELD} G\n"
-                        f"{'Field Step:':<{w}} {FIELD_STEP} G\n"
-                        f"{general.fmt(mw.mw_bridge_rotary_vane(), w)}\n"
-                        f"{general.fmt(mw.mw_bridge_att_prm(), w)}\n"
-                        f"{general.fmt(mw.mw_bridge_att2_prm(), w)}\n"
-                        f"{general.fmt(mw.mw_bridge_att2_prd(), w)}\n"
-                        f"{general.fmt(mw.mw_bridge_synthesizer(), w)}\n"
-                        f"{'Repetition Rate:':<{w}} {pb.pulser_repetition_rate()}\n"
-                        f"{'Number of Scans:':<{w}} {SCANS}\n"
-                        f"{'Averages:':<{w}} {AVERAGES}\n"
-                        f"{'Points:':<{w}} {POINTS}\n"
-                        f"{'Window:':<{w}} {p1_exp[2]}\n"
-                        f"{'Horizontal Resolution:':<{w}} {0.4 * DEC_COEF:.1g} ns\n"
-                        f"{'Vertical Resolution:':<{w}} {FIELD_STEP} G\n"
-                        f"{'Temperature:':<{w}} {ls335.tc_temperature('A')} K\n"
-                        f"{'Temperature Cernox:':<{w}} {ls335.tc_temperature('B')} K\n"
-                        f"{'-'*50}\n"
-                        f"Pulse List:\n{pb.pulser_pulse_list()}"
-                        f"{'-'*50}\n"
-                        f"AWG Pulse List:\n{pb.awg_pulse_list()}"
-                        f"{'-'*50}\n"
-                        f"2D Data"
-                    )
-                elif iq_cor == 1:
-                    header = (
+                header = (
+                    f"{'Date:':<{w}} {now}\n"
+                    f"{'Experiment:':<{w}} Pulsed EPR AWG Experiment\n"
+                    f"{'Start Field:':<{w}} {START_FIELD} G\n"
+                    f"{'End Field:':<{w}} {END_FIELD} G\n"
+                    f"{'Field Step:':<{w}} {FIELD_STEP} G\n"
+                    f"{general.fmt(mw.mw_bridge_rotary_vane(), w)}\n"
+                    f"{general.fmt(mw.mw_bridge_att_prm(), w)}\n"
+                    f"{general.fmt(mw.mw_bridge_att2_prm(), w)}\n"
+                    f"{general.fmt(mw.mw_bridge_att2_prd(), w)}\n"
+                    f"{general.fmt(mw.mw_bridge_synthesizer(), w)}\n"
+                    f"{'Repetition Rate:':<{w}} {pb.pulser_repetition_rate()}\n"
+                    f"{'Number of Scans:':<{w}} {SCANS}\n"
+                    f"{'Averages:':<{w}} {AVERAGES}\n"
+                    f"{'Points:':<{w}} {POINTS}\n"
+                    f"{'Window:':<{w}} {p1_exp[2]}\n"
+                    f"{'Horizontal Resolution:':<{w}} {0.4 * DEC_COEF:.1g} ns\n"
+                    f"{'Vertical Resolution:':<{w}} {FIELD_STEP} G\n"
+                    f"{'Temperature:':<{w}} {ls335.tc_temperature('A')} K\n"
+                    f"{'Temperature Cernox:':<{w}} {ls335.tc_temperature('B')} K\n"
+                    f"{'-'*50}\n"
+                    f"Pulse List:\n{pb.pulser_pulse_list()}"
+                    f"{'-'*50}\n"
+                    f"AWG Pulse List:\n{pb.awg_pulse_list()}"
+                    f"{'-'*50}\n"
+                    f"2D Data"
+                )
+                if iq_cor == 1:
+                    header2 = (
                         f"{'Date:':<{w}} {now}\n"
                         f"{'Experiment:':<{w}} Pulsed EPR AWG Experiment\n"
                         f"{'Start Field:':<{w}} {START_FIELD} G\n"
@@ -5589,7 +5619,7 @@ class Worker():
             p5_awg_exp, p6_awg_exp, p7_awg_exp, p8_awg_exp, p9_awg_exp, 
             b_sech_cur, correction, synt, laser_flag, laser_num, 
             q_switch_delay, iq_phase, iq_corr, win_left, win_right, zero_phase,
-            x0, xd):
+            x0, xd, first_order, sec_order):
 
         import traceback
 
@@ -5917,7 +5947,7 @@ class Worker():
                                     text = f"Scan / Point: {k} / {j}"
                                 )
                             elif iq_cor == 1:
-                                data_x, data_y = pb.digitizer_iq(data[0], data[1], iq_freq, zp, integral = True)
+                                data_x, data_y = pb.digitizer_iq(data[0], data[1], iq_freq, zp, first_order, sec_order, integral = True)
                                 process = general.plot_1d(EXP_NAME, x_axis_plot, ( data_x, data_y ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Point: ' + str(k) + ' / ' + str(j), pr = process)
 
                             pb.awg_next_phase()
@@ -5975,60 +6005,59 @@ class Worker():
                         text = f"Scan / Point: {k} / {j}"
                     )
                 elif iq_cor == 1:
-                    data_x, data_y = pb.digitizer_iq(data[0], data[1], iq_freq, zp, integral = True)
+                    data_x, data_y = pb.digitizer_iq(data[0], data[1], iq_freq, zp, first_order, sec_order, integral = True)
                     general.plot_1d(EXP_NAME, x_axis_plot, ( data_x, data_y ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Point: ' + str(k) + ' / ' + str(j))
 
                 now = datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")
                 w = 30
 
                 # Data saving
-                if iq_cor == 0:
-                    max_val_len = len(f"{max(x_axis):.1f}")
-                    col_width = max_val_len + 2 
-                    
-                    cols_per_line = 6
+                max_val_len = len(f"{max(x_axis):.1f}")
+                col_width = max_val_len + 2 
+                
+                cols_per_line = 6
 
-                    formatted_values = [f"{val:<{col_width}.1f}" for val in x_axis]
+                formatted_values = [f"{val:<{col_width}.1f}" for val in x_axis]
 
-                    rows = []
-                    for i in range(0, len(formatted_values), cols_per_line):
-                        rows.append("".join(formatted_values[i : i + cols_per_line]))
+                rows = []
+                for i in range(0, len(formatted_values), cols_per_line):
+                    rows.append("".join(formatted_values[i : i + cols_per_line]))
 
-                    first_row = rows[0]
-                    indent = " " * (w + 1)
-                    other_rows = f"\n{indent}".join(rows[1:])
+                first_row = rows[0]
+                indent = " " * (w + 1)
+                other_rows = f"\n{indent}".join(rows[1:])
 
-                    v_res_formatted = f"{first_row}\n{indent}{other_rows}" if other_rows else first_row
+                v_res_formatted = f"{first_row}\n{indent}{other_rows}" if other_rows else first_row
 
-                    header = (
-                        f"{'Date:':<{w}} {now}\n"
-                        f"{'Experiment:':<{w}} Pulsed EPR AWG Log Experiment\n"
-                        f"{'Field:':<{w}} {FIELD} G\n"
-                        f"{general.fmt(mw.mw_bridge_rotary_vane(), w)}\n"
-                        f"{general.fmt(mw.mw_bridge_att_prm(), w)}\n"
-                        f"{general.fmt(mw.mw_bridge_att2_prm(), w)}\n"
-                        f"{general.fmt(mw.mw_bridge_att2_prd(), w)}\n"
-                        f"{general.fmt(mw.mw_bridge_synthesizer(), w)}\n"
-                        f"{'Repetition Rate:':<{w}} {pb.pulser_repetition_rate()}\n"
-                        f"{'Number of Scans:':<{w}} {SCANS}\n"
-                        f"{'Averages:':<{w}} {AVERAGES}\n"
-                        f"{'Points:':<{w}} {POINTS}\n"
-                        f"{'Window:':<{w}} {p1_exp[2]}\n"
-                        f"{'Horizontal Resolution:':<{w}} {0.4 * DEC_COEF:.1g} ns\n"
-                        f"{'Vertical Resolution (ns):':<{w}} {v_res_formatted}\n"
-                        f"{'Lg(X0/ns):':<{w}} {T_start}\n"
-                        f"{'Lg(ΔX/ns):':<{w}} {T_end}\n"
-                        f"{'Temperature:':<{w}} {ls335.tc_temperature('A')} K\n"
-                        f"{'Temperature Cernox:':<{w}} {ls335.tc_temperature('B')} K\n"
-                        f"{'-'*50}\n"
-                        f"Pulse List:\n{pb.pulser_pulse_list()}"
-                        f"{'-'*50}\n"
-                        f"AWG Pulse List:\n{pb.awg_pulse_list()}"
-                        f"{'-'*50}\n"
-                        f"2D Data"
-                    )
-                elif iq_cor == 1:
-                    header = (
+                header = (
+                    f"{'Date:':<{w}} {now}\n"
+                    f"{'Experiment:':<{w}} Pulsed EPR AWG Log Experiment\n"
+                    f"{'Field:':<{w}} {FIELD} G\n"
+                    f"{general.fmt(mw.mw_bridge_rotary_vane(), w)}\n"
+                    f"{general.fmt(mw.mw_bridge_att_prm(), w)}\n"
+                    f"{general.fmt(mw.mw_bridge_att2_prm(), w)}\n"
+                    f"{general.fmt(mw.mw_bridge_att2_prd(), w)}\n"
+                    f"{general.fmt(mw.mw_bridge_synthesizer(), w)}\n"
+                    f"{'Repetition Rate:':<{w}} {pb.pulser_repetition_rate()}\n"
+                    f"{'Number of Scans:':<{w}} {SCANS}\n"
+                    f"{'Averages:':<{w}} {AVERAGES}\n"
+                    f"{'Points:':<{w}} {POINTS}\n"
+                    f"{'Window:':<{w}} {p1_exp[2]}\n"
+                    f"{'Horizontal Resolution:':<{w}} {0.4 * DEC_COEF:.1g} ns\n"
+                    f"{'Vertical Resolution (ns):':<{w}} {v_res_formatted}\n"
+                    f"{'Lg(X0/ns):':<{w}} {T_start}\n"
+                    f"{'Lg(ΔX/ns):':<{w}} {T_end}\n"
+                    f"{'Temperature:':<{w}} {ls335.tc_temperature('A')} K\n"
+                    f"{'Temperature Cernox:':<{w}} {ls335.tc_temperature('B')} K\n"
+                    f"{'-'*50}\n"
+                    f"Pulse List:\n{pb.pulser_pulse_list()}"
+                    f"{'-'*50}\n"
+                    f"AWG Pulse List:\n{pb.awg_pulse_list()}"
+                    f"{'-'*50}\n"
+                    f"2D Data"
+                )
+                if iq_cor == 1:
+                    header2 = (
                         f"{'Date:':<{w}} {now}\n"
                         f"{'Experiment:':<{w}} Pulsed EPR AWG Log Experiment\n"
                         f"{'Field:':<{w}} {FIELD} G\n"
@@ -6072,10 +6101,18 @@ class Worker():
                         mode = 'w'
                     )
                 elif iq_cor == 1:
+                    file_data2 = file_data.replace(".csv", "_2d.csv")
+                    
                     file_handler.save_data(
-                        file_data,
-                        np.c_[x_axis, data_x, data_y],
-                        header = header,
+                        file_data, 
+                        np.c_[x_axis, data_x, data_y], 
+                        header = header2, 
+                        mode = 'w'
+                        )
+                    file_handler.save_data(
+                        file_data2, 
+                        data, 
+                        header = header, 
                         mode = 'w'
                     )
 
@@ -6094,7 +6131,7 @@ class Worker():
             p5_awg_exp, p6_awg_exp, p7_awg_exp, p8_awg_exp, p9_awg_exp, 
             b_sech_cur, correction, synt, laser_flag, laser_num, 
             q_switch_delay, iq_phase, iq_corr, win_left, win_right, zero_phase,
-            x0, xd):
+            x0, xd, first_order, sec_order):
         
         import traceback
 
@@ -6436,7 +6473,7 @@ class Worker():
                                         text = f"Scan / Point: {k} / {j}"
                                     )
                                 elif iq_cor == 1:
-                                    data_x, data_y = pb.digitizer_iq(data[0], data[1], iq_freq, zp, integral = True)
+                                    data_x, data_y = pb.digitizer_iq(data[0], data[1], iq_freq, zp, first_order, sec_order, integral = True)
                                     process = general.plot_1d(EXP_NAME, x_axis_plot, ( data_x, data_y ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Point: ' + str(k) + ' / ' + str(j), pr = process)
 
                             pb.awg_next_phase()
@@ -6496,59 +6533,58 @@ class Worker():
                         text = f"Scan / Point: {k} / {j}"
                     )
                 elif iq_cor == 1:
-                    data_x, data_y = pb.digitizer_iq(data[0], data[1], iq_freq, zp, integral = True)
+                    data_x, data_y = pb.digitizer_iq(data[0], data[1], iq_freq, zp, first_order, sec_order, integral = True)
                     general.plot_1d(EXP_NAME, x_axis_plot, ( data_x, data_y ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Point: ' + str(k) + ' / ' + str(j))
 
                 now = datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")
                 w = 30
 
                 # Data saving
-                if iq_cor == 0:
-                    max_val_len = len(f"{max(x_axis):.1f}")
-                    col_width = max_val_len + 2 
-                    
-                    cols_per_line = 6
+                max_val_len = len(f"{max(x_axis):.1f}")
+                col_width = max_val_len + 2 
+                
+                cols_per_line = 6
 
-                    formatted_values = [f"{val:<{col_width}.1f}" for val in x_axis]
+                formatted_values = [f"{val:<{col_width}.1f}" for val in x_axis]
 
-                    rows = []
-                    for i in range(0, len(formatted_values), cols_per_line):
-                        rows.append("".join(formatted_values[i : i + cols_per_line]))
+                rows = []
+                for i in range(0, len(formatted_values), cols_per_line):
+                    rows.append("".join(formatted_values[i : i + cols_per_line]))
 
-                    first_row = rows[0]
-                    indent = " " * (w + 1)
-                    other_rows = f"\n{indent}".join(rows[1:])
+                first_row = rows[0]
+                indent = " " * (w + 1)
+                other_rows = f"\n{indent}".join(rows[1:])
 
-                    v_res_formatted = f"{first_row}\n{indent}{other_rows}" if other_rows else first_row
+                v_res_formatted = f"{first_row}\n{indent}{other_rows}" if other_rows else first_row
 
-                    header = (
-                        f"{'Date:':<{w}} {now}\n"
-                        f"{'Experiment:':<{w}} Pulsed EPR AWG Log Experiment\n"
-                        f"{'Field:':<{w}} {FIELD} G\n"
-                        f"{general.fmt(mw.mw_bridge_rotary_vane(), w)}\n"
-                        f"{general.fmt(mw.mw_bridge_att_prm(), w)}\n"
-                        f"{general.fmt(mw.mw_bridge_att2_prm(), w)}\n"
-                        f"{general.fmt(mw.mw_bridge_att2_prd(), w)}\n"
-                        f"{general.fmt(mw.mw_bridge_synthesizer(), w)}\n"
-                        f"{'Repetition Rate:':<{w}} {pb.pulser_repetition_rate()}\n"
-                        f"{'Number of Scans:':<{w}} {SCANS}\n"
-                        f"{'Averages:':<{w}} {AVERAGES}\n"
-                        f"{'Points:':<{w}} {POINTS}\n"
-                        f"{'Window:':<{w}} {p1_exp[2]}\n"
-                        f"{'Horizontal Resolution:':<{w}} {0.4 * DEC_COEF:.1g} ns\n"
-                        f"{'Vertical Resolution (ns):':<{w}} {v_res_formatted}\n"
-                        f"{'Lg(X0/ns):':<{w}} {T_start}\n"
-                        f"{'Lg(ΔX/ns):':<{w}} {T_end}\n"
-                        f"{'Temperature:':<{w}} {ls335.tc_temperature('A')} K\n"
-                        f"{'Temperature Cernox:':<{w}} {ls335.tc_temperature('B')} K\n"
-                        f"{'-'*50}\n"
-                        f"Pulse List:\n{pb.pulser_pulse_list()}"
-                        f"{'-'*50}\n"
-                        f"AWG Pulse List:\n{pb.awg_pulse_list()}"
-                        f"{'-'*50}\n"
-                        f"2D Data"
-                    )
-                elif iq_cor == 1:
+                header = (
+                    f"{'Date:':<{w}} {now}\n"
+                    f"{'Experiment:':<{w}} Pulsed EPR AWG Log Experiment\n"
+                    f"{'Field:':<{w}} {FIELD} G\n"
+                    f"{general.fmt(mw.mw_bridge_rotary_vane(), w)}\n"
+                    f"{general.fmt(mw.mw_bridge_att_prm(), w)}\n"
+                    f"{general.fmt(mw.mw_bridge_att2_prm(), w)}\n"
+                    f"{general.fmt(mw.mw_bridge_att2_prd(), w)}\n"
+                    f"{general.fmt(mw.mw_bridge_synthesizer(), w)}\n"
+                    f"{'Repetition Rate:':<{w}} {pb.pulser_repetition_rate()}\n"
+                    f"{'Number of Scans:':<{w}} {SCANS}\n"
+                    f"{'Averages:':<{w}} {AVERAGES}\n"
+                    f"{'Points:':<{w}} {POINTS}\n"
+                    f"{'Window:':<{w}} {p1_exp[2]}\n"
+                    f"{'Horizontal Resolution:':<{w}} {0.4 * DEC_COEF:.1g} ns\n"
+                    f"{'Vertical Resolution (ns):':<{w}} {v_res_formatted}\n"
+                    f"{'Lg(X0/ns):':<{w}} {T_start}\n"
+                    f"{'Lg(ΔX/ns):':<{w}} {T_end}\n"
+                    f"{'Temperature:':<{w}} {ls335.tc_temperature('A')} K\n"
+                    f"{'Temperature Cernox:':<{w}} {ls335.tc_temperature('B')} K\n"
+                    f"{'-'*50}\n"
+                    f"Pulse List:\n{pb.pulser_pulse_list()}"
+                    f"{'-'*50}\n"
+                    f"AWG Pulse List:\n{pb.awg_pulse_list()}"
+                    f"{'-'*50}\n"
+                    f"2D Data"
+                )
+                if iq_cor == 1:
                     header = (
                         f"{'Date:':<{w}} {now}\n"
                         f"{'Experiment:':<{w}} Pulsed EPR AWG Log Experiment\n"

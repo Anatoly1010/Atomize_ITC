@@ -7,7 +7,7 @@ P6:  SINE,  0.0,  0.0,  0.0,  50,  350,  100,  [+x,+x],  0.0,  0.0
 P7:  SINE,  0.0,  0.0,  0.0,  50,  350,  100,  [+x,+x],  0.0,  0.0
 P8:  SINE,  0.0,  0.0,  0.0,  50,  350,  100,  [+x,+x],  0.0,  0.0
 P9:  SINE,  0.0,  0.0,  0.0,  50,  350,  100,  [+x,+x],  0.0,  0.0
-Rep rate:  1200.0
+Rep rate:  1000.0
 Field:  3322.0
 Delay:  0
 Ampl 1:  260
@@ -19,7 +19,7 @@ Points:  2016
 Horizontal offset:  1024
 Window left:  250.0
 Window right:  360.0
-Acquisitions:  15
+Acquisitions:  1
 Points to Drop:  0
 Zero order:  198.0
 First order:  0.0
@@ -27,7 +27,7 @@ Second order:  0.0
 Laser:  Nd:YaG
 Decimation:  1
 Points:  500
-Scans:  2
+Scans:  1
 Log Start:  1.0
 Log End:  7.0
 Start Field:  2400.0
