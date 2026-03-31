@@ -1948,20 +1948,24 @@ class MainWindow(QMainWindow):
 
         try:
             active_phases = []
+            num_pulses = []
             for i in range(1, 10):
                 attr_name = f"ph_{i}"
                 p_len = getattr(self, f"P{i}_len").value()
 
                 if not hasattr(self, attr_name) or p_len != 0.0:
                     phase_text = getattr(self, f"Phase_{i}").toPlainText().strip()
-                    active_phases.append(phase_text)
+                    if p_len != 0.0:
+                        active_phases.append(phase_text)
+                        num_pulses.append(i)
                     setattr(self, attr_name, phase_text)
 
             a = self.expand_phase_cycling(*active_phases)
             setattr(self, "ph_1", a['receiver'])
             
             for i, pulse_phase in enumerate(a['pulses']):
-                setattr(self, f"ph_{i+2}", pulse_phase)
+                setattr(self, f"ph_{num_pulses[i+1]}", pulse_phase)
+
                         
             #if len(temp) >= 2: #and temp[0] == '[' and temp[-1] == ']':
             #    content = temp[:].split(',') #[1:-1]
@@ -2169,7 +2173,7 @@ class MainWindow(QMainWindow):
                 self.repetition_rate.split(' ')[0], 
                 self.mag_field, self.combo_laser_num, self.laser_q_switch_delay,
                 self.cur_x0, self.cur_xdelta, 
-                self.zero_order, self.first_order, self.sec_order, self.quad
+                self.zero_order, self.first_order, self.second_order, self.quad
                 ) 
             )
         elif self.cur_sweep == 'Field':
@@ -2182,7 +2186,7 @@ class MainWindow(QMainWindow):
                 self.p5_exp, self.p6_exp, self.p7_exp, self.p8_exp, self.p9_exp, self.laser_flag, 
                 self.repetition_rate.split(' ')[0], 
                 self.combo_laser_num, self.laser_q_switch_delay,
-                self.zero_order, self.first_order, self.sec_order, self.quad
+                self.zero_order, self.first_order, self.second_order, self.quad
                 ) 
             )
         elif self.cur_sweep == 'Log Time':
@@ -2196,7 +2200,7 @@ class MainWindow(QMainWindow):
                 self.repetition_rate.split(' ')[0], self.mag_field,
                 self.combo_laser_num, self.laser_q_switch_delay,
                 self.cur_x0, self.cur_xdelta,
-                self.zero_order, self.first_order, self.sec_order, self.quad
+                self.zero_order, self.first_order, self.second_order, self.quad
                 ) 
             )
 
@@ -2443,7 +2447,7 @@ class MainWindow(QMainWindow):
                 self.repetition_rate.split(' ')[0], 
                 self.mag_field, self.combo_laser_num, self.laser_q_switch_delay,
                 self.cur_x0, self.cur_xdelta,
-                self.zero_order, self.first_order, self.sec_order, self.quad
+                self.zero_order, self.first_order, self.second_order, self.quad
                 ) 
             )
         elif self.cur_sweep == 'Field':
@@ -2456,7 +2460,7 @@ class MainWindow(QMainWindow):
                 self.p5_exp, self.p6_exp, self.p7_exp, self.p8_exp, self.p9_exp, self.laser_flag, 
                 self.repetition_rate.split(' ')[0], 
                 self.combo_laser_num, self.laser_q_switch_delay,
-                self.zero_order, self.first_order, self.sec_order, self.quad
+                self.zero_order, self.first_order, self.second_order, self.quad
                 ) 
             )
         elif self.cur_sweep == 'Log Time':
@@ -2470,7 +2474,7 @@ class MainWindow(QMainWindow):
                 self.repetition_rate.split(' ')[0], self.mag_field,
                 self.combo_laser_num, self.laser_q_switch_delay,
                 self.cur_x0, self.cur_xdelta,
-                self.zero_order, self.first_order, self.sec_order, self.quad
+                self.zero_order, self.first_order, self.second_order, self.quad
                 ) 
             )
 
@@ -2667,7 +2671,7 @@ class Worker():
             while self.command != 'exit':
                 # always test our self.command attribute for stopping the script when neccessary
 
-                if self.command[0:2] == 'PO':            
+                if self.command[0:2] == 'PO':
                     #points_value = int( self.command[2:] )
                     #dig.digitizer_stop()
                     #dig.digitizer_number_of_points( points_value )
@@ -3015,7 +3019,7 @@ class Worker():
                         if p17 == 0:
                             freq_axis, abs_values = fft.fft(x_axis, data_x, data_y, t_res * 1)
                             m_val = round( np.amax( abs_values ), 2 )
-                            i_max = abs(round( freq_axis[ np.argmax( abs_values ) ], 2))
+                            #i_max = abs(round( freq_axis[ np.argmax( abs_values ) ], 2))
                             general.plot_1d('FFT', freq_axis * 1e6, abs_values, xname = 'Offset', 
                                 label = 'FFT', xscale = 'Hz', 
                                 yscale = 'A.U.', text = 'Max ' + str(m_val))

@@ -250,21 +250,21 @@ class MainWindow(QMainWindow):
         self.copy_pulse_func(pulse_number)
 
         if pulse_number == 1:
-            values = [576, 816, 0, 0, "+x,-x", "DETECTION"]
+            values = [576, 816, 0, 0, 0, 0, 100, 0, "+x,-x", "DETECTION"]
         else:
-            values = [0, 0, 0, 0, "+x,+x", "MW"]
+            values = [0, 0, 0, 0, 50, 350, 100, 0, "+x,+x", "SINE"]
 
-        suffixes = ["_st", "_len", "_st_inc", "_len_inc"]
+        suffixes = ["_st", "_len", "_st_inc", "_len_inc", "_fr", "_sw", "_cf", "_sig"]
         
         for i, suffix in enumerate(suffixes):
             getattr(self, f"P{pulse_number}{suffix}").setValue(values[i])
 
         phase_widget = getattr(self, f"Phase_{pulse_number}")
-        new_phase_text = str(values[4])
+        new_phase_text = str(values[8])
         phase_widget.setPlainText(new_phase_text)
             
         combo_widget = getattr(self, f"P{pulse_number}_type")
-        new_combo_text = str(values[5])
+        new_combo_text = str(values[9])
         combo_widget.setCurrentText(new_combo_text)
 
     def paste_pulse_func(self, pulse_number):
@@ -277,6 +277,10 @@ class MainWindow(QMainWindow):
         getattr(self, f"P{pulse_number}_len_inc").setValue(self.pulse_buffer['len_inc'])
         getattr(self, f"Phase_{pulse_number}").setPlainText(self.pulse_buffer['phase'])
         getattr(self, f"P{pulse_number}_type").setCurrentText(self.pulse_buffer['type'])
+        getattr(self, f"P{pulse_number}_fr").setValue(self.pulse_buffer['freq'])
+        getattr(self, f"P{pulse_number}_sw").setValue(self.pulse_buffer['sweep'])
+        getattr(self, f"P{pulse_number}_cf").setValue(self.pulse_buffer['coef'])
+        getattr(self, f"P{pulse_number}_sig").setValue(self.pulse_buffer['sigma'])
     
     def copy_pulse_func(self, pulse_number):
         self.pulse_buffer = {
@@ -285,7 +289,11 @@ class MainWindow(QMainWindow):
             'st_inc': getattr(self, f"P{pulse_number}_st_inc").value(),
             'len_inc': getattr(self, f"P{pulse_number}_len_inc").value(),
             'phase': getattr(self, f"Phase_{pulse_number}").toPlainText(),
-            'type': getattr(self, f"P{pulse_number}_type").currentText()
+            'type': getattr(self, f"P{pulse_number}_type").currentText(),
+            'freq': getattr(self, f"P{pulse_number}_fr").value(),
+            'sweep': getattr(self, f"P{pulse_number}_sw").value(),
+            'coef': getattr(self, f"P{pulse_number}_cf").value(),
+            'sigma': getattr(self, f"P{pulse_number}_sig").value(),
         }
 
     def reset_pulse_func(self, pulse_number):
@@ -1441,20 +1449,23 @@ class MainWindow(QMainWindow):
 
         try:
             active_phases = []
+            num_pulses = []
             for i in range(1, 10):
                 attr_name = f"ph_{i}"
                 p_len = getattr(self, f"P{i}_len").value()
 
                 if not hasattr(self, attr_name) or p_len != 0.0:
                     phase_text = getattr(self, f"Phase_{i}").toPlainText().strip()
-                    active_phases.append(phase_text)
+                    if p_len != 0.0:
+                        active_phases.append(phase_text)
+                        num_pulses.append(i)
                     setattr(self, attr_name, phase_text)
 
             a = self.expand_phase_cycling(*active_phases)
             setattr(self, "ph_1", a['receiver'])
             
             for i, pulse_phase in enumerate(a['pulses']):
-                setattr(self, f"ph_{i+2}", pulse_phase)
+                setattr(self, f"ph_{num_pulses[i+1]}", pulse_phase)
             
             #print(f"P0: {self.ph_1}")
             #print(f"P1: {self.ph_2}")
@@ -2572,7 +2583,7 @@ class MainWindow(QMainWindow):
                 self.combo_cor, self.combo_synt,
                 self.laser_flag, self.combo_laser_num, self.laser_q_switch_delay, self.cur_phase,
                 self.iq_cor, self.cur_win_left, self.cur_win_right, self.zero_order,
-                self.cur_x0, self.cur_xdelta, self.first_order, self.sec_order ) )
+                self.cur_x0, self.cur_xdelta, self.first_order, self.second_order ) )
         elif self.cur_sweep == 'Field':
             self.digitizer_process = Process( target = worker.exp_field_test, args = ( 
                 self.child_conn_dig, 
@@ -2590,7 +2601,7 @@ class MainWindow(QMainWindow):
                 self.combo_cor, self.combo_synt,
                 self.laser_flag, self.combo_laser_num, self.laser_q_switch_delay, self.cur_phase,
                 self.iq_cor, self.cur_win_left, self.cur_win_right, self.zero_order, 
-                self.first_order, self.sec_order ) )
+                self.first_order, self.second_order ) )
         elif self.cur_sweep == 'Log Time':
             self.digitizer_process = Process( target = worker.exp_log_test, args = ( 
                 self.child_conn_dig, 
@@ -2608,7 +2619,7 @@ class MainWindow(QMainWindow):
                 self.combo_cor, self.combo_synt,
                 self.laser_flag, self.combo_laser_num, self.laser_q_switch_delay, self.cur_phase,
                 self.iq_cor, self.cur_win_left, self.cur_win_right, self.zero_order,
-                self.cur_x0, self.cur_xdelta, self.first_order, self.sec_order ) )
+                self.cur_x0, self.cur_xdelta, self.first_order, self.second_order ) )
 
 
         self.button_start_exp.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(193, 202, 227); border-style: outset; color: rgb(63, 63, 97); font-weight: bold; } QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
@@ -2879,7 +2890,7 @@ class MainWindow(QMainWindow):
                 self.combo_cor, self.combo_synt,
                 self.laser_flag, self.combo_laser_num, self.laser_q_switch_delay, self.cur_phase,
                 self.iq_cor, self.cur_win_left, self.cur_win_right, self.zero_order,
-                self.cur_x0, self.cur_xdelta, self.first_order, self.sec_order ) )
+                self.cur_x0, self.cur_xdelta, self.first_order, self.second_order ) )
         elif self.cur_sweep == 'Field':
             self.digitizer_process = Process( target = worker.exp_field, args = ( 
                 self.child_conn_dig, 
@@ -2897,7 +2908,7 @@ class MainWindow(QMainWindow):
                 self.combo_cor, self.combo_synt,
                 self.laser_flag, self.combo_laser_num, self.laser_q_switch_delay, self.cur_phase,
                 self.iq_cor, self.cur_win_left, self.cur_win_right, self.zero_order, 
-                self.first_order, self.sec_order ) )
+                self.first_order, self.second_order ) )
         elif self.cur_sweep == 'Log Time':
             self.digitizer_process = Process( target = worker.exp_log, args = ( 
                 self.child_conn_dig, 
@@ -2915,7 +2926,7 @@ class MainWindow(QMainWindow):
                 self.combo_cor, self.combo_synt,
                 self.laser_flag, self.combo_laser_num, self.laser_q_switch_delay, self.cur_phase,
                 self.iq_cor, self.cur_win_left, self.cur_win_right, self.zero_order,
-                self.cur_x0, self.cur_xdelta, self.first_order, self.sec_order) )
+                self.cur_x0, self.cur_xdelta, self.first_order, self.second_order) )
 
         self.button_start_exp.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(211, 194, 78); border-style: outset; color: rgb(63, 63, 97); font-weight: bold; } QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }") 
 
