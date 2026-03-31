@@ -478,6 +478,7 @@ class Insys_FPGA:
             self.awg_start                         = 0
 
             self.mes                               = 0
+            self.l_mode                            = 0
 
         elif self.test_flag == 'test':
 
@@ -527,6 +528,7 @@ class Insys_FPGA:
             self.awg_start                         = 0
 
             self.mes                               = 0
+            self.l_mode                            = 0
 
     # Module functions
     ####################GIM#################
@@ -1801,27 +1803,42 @@ class Insys_FPGA:
             if (j == int( sh_points - phases)) and (i != 0 ):
                 j = sh_points
 
+            #31/03/2026
+            if self.l_mode == 1:
+                i = 0 
+                j = len(self.count_nip)
+                #print(self.count_nip)
+
             counts_adc = int( adc_window * 8 / self.dec_coef )
             counts_adc_full = int( adc_window * 16 )
             points_to_cycle = int( j - i)
             points_to_cycle_ph = int( points_to_cycle//phases)
 
-            data_for_cycling = self.data_raw[int(i*counts_adc_full):int(j*counts_adc_full)]
+            # can be decimation error
+            #ValueError: cannot reshape array of size 10667 into shape (2,5333)
+            #adc_window * 8 / self.dec_coef is float
 
+            data_for_cycling = self.data_raw[int(i*counts_adc_full):int(j*counts_adc_full)]
             data_i =  self.adc_sens * (data_for_cycling[0::(2*self.dec_coef)]).reshape( points_to_cycle, counts_adc, order = 'C'  ) / self.count_nip[i:j,None] / self.gimSum_brd / phases
             data_q =  self.adc_sens * (data_for_cycling[1::(2*self.dec_coef)]).reshape( points_to_cycle, counts_adc, order = 'C'  ) / self.count_nip[i:j,None] / self.gimSum_brd / phases
+
 
             #SCANS:
             if (i == 0) and (k == 0):
                 self.n_scans += 1
 
-            if self.flag_phase_cycle == 0:
+            #31/03/2026
+            if self.l_mode == 1:
+                self.n_scans = 1
 
+            if self.flag_phase_cycle == 0:
                 self.answer = np.zeros( ( int( sh_points / phases), counts_adc ), dtype = np.complex64 )
-                self.flag_phase_cycle = 1
+                #31/03/2026
+                if self.l_mode == 0:
+                    self.flag_phase_cycle = 1
 
             #SCANS
-            if self.n_scans > 1:
+            if (self.n_scans > 1):
                 self.answer[(i//phases):(j//phases),:] = np.zeros( ( points_to_cycle_ph, counts_adc ), dtype = np.complex64 )
 
 
@@ -2004,6 +2021,7 @@ class Insys_FPGA:
         p - points
         ph - phases
         """
+        self.l_mode = live_mode
         if self.test_flag != 'test':
 
             total_points = int(p * ph)
@@ -2242,6 +2260,7 @@ class Insys_FPGA:
         p - points
         ph - phases
         """
+        self.l_mode = live_mode
         if self.test_flag != 'test':
             adc_window = self.adc_window
             total_points = int(p * ph)
@@ -2516,6 +2535,7 @@ class Insys_FPGA:
         """
         return ( self.win_right - self.win_left ) * 1000 / self.sample_rate
 
+    #mod
     def digitizer_decimation(self, *dec):
         """
         Special function for decimation
@@ -2528,7 +2548,7 @@ class Insys_FPGA:
 
         elif self.test_flag == 'test':
             if  len(dec) == 1:
-                assert ( (int(dec[0]) > 0) and ( int(dec[0]) <= 4 ) ), "Incorrect decimation coefficient. Should be 1-4"
+                assert ( (int(dec[0]) == 1) or (int(dec[0]) == 2) or (int(dec[0]) == 4) ), "Incorrect decimation coefficient. The available coefficients are [1, 2, 4]"
                 self.dec_coef = int(dec[0])
             elif len(dec) == 0:
                 return self.dec_coef

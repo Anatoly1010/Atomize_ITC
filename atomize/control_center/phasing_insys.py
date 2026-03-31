@@ -2024,7 +2024,17 @@ class MainWindow(QMainWindow):
         """
         A function to set decimation coefficient
         """
-        self.decimation = self.Dec.value()
+        current = self.Dec.value()
+        
+        if current == 3:
+            new_val = 4 if self.decimation == 2 else 2
+            self.Dec.blockSignals(True)
+            self.Dec.setValue(new_val)
+            self.Dec.blockSignals(False)
+            self.decimation = new_val
+        else:
+            self.decimation = current
+
         self.time_per_point = 0.4 * self.decimation
 
     ###
@@ -2331,7 +2341,9 @@ class MainWindow(QMainWindow):
             self.progress_bar.setValue(0)
             self.message(data)
             self.errors.appendPlainText(data)
-            self.button_blue()                   
+            self.button_blue()    
+        elif msg_type == 'Average':
+            self.Acq_number.setValue(int(data))
         else:
             self.timer.stop()
             if ( data.startswith('Exp') ) and (msg_type == 'test'):
@@ -2652,11 +2664,24 @@ class Worker():
             TR_ADC = round(3.2 / 8, 1)
             WIN_ADC = int( pb.adc_window * 8 / p1 )
 
+            #31/03/2026
+            if DETECTION_WINDOW <= 1200:
+                ms_per_point = 1e-3
+            else:
+                ms_per_point = 1e-2
+
             data = np.zeros( ( 2, WIN_ADC, 1 ) )
             ##data = np.random.random( ( 2, WIN_ADC, 1 ) )
             x_axis = np.linspace(0, ( DETECTION_WINDOW - TR_ADC), num = WIN_ADC) 
 
             t_res = 0.4 * p1
+            
+            #31/03/2026
+            p14 = float(p14)
+            if (p3 / p14 ) < ms_per_point:
+                p3 = int( ms_per_point * p14)
+                conn.send( ('Average', p3) )
+
             pb.digitizer_number_of_averages(p3)
             PHASES = len( p6[3] )
             
@@ -2688,9 +2713,15 @@ class Worker():
                     #p2 = int( self.command[2:] )
 
                 elif self.command[0:2] == 'NA':
-                    num_ave = int( self.command[2:] )
+                    p3 = int( self.command[2:] )
+                    
+                    #31/03/2026
+                    if (p3 / p14 ) < ms_per_point:
+                        p3 = int( ms_per_point * p14)
+                        conn.send( ('Average', p3) )
+
                     #print( num_ave )
-                    pb.digitizer_number_of_averages( num_ave )
+                    pb.digitizer_number_of_averages( p3 )
 
                 elif self.command[0:2] == 'WL':
                     p4 = int( self.command[2:] )
@@ -2698,6 +2729,13 @@ class Worker():
                     p5 = int( self.command[2:] )
                 elif self.command[0:2] == 'RR':
                     p14 = float( self.command[2:] )
+
+                    #31/03/2026
+                    if (p3 / p14 ) < ms_per_point:
+                        p3 = int( ms_per_point * p14)
+                        pb.digitizer_number_of_averages( p3 )
+                        conn.send( ('Average', p3) )
+
                     #print( p14 )
                     if p14 > 49:
                         pb.pulser_repetition_rate( str(p14) + ' Hz' )
@@ -2902,11 +2940,24 @@ class Worker():
             TR_ADC = round(3.2 / 8, 1)
             WIN_ADC = int( pb.adc_window * 8 / p1 )
 
+            #31/03/2026
+            if DETECTION_WINDOW <= 1200:
+                ms_per_point = 1e-3
+            else:
+                ms_per_point = 1e-2
+
             data = np.zeros( ( 2, WIN_ADC, 1 ) )
             ##data = np.random.random( ( 2, WIN_ADC, 1 ) )
             x_axis = np.linspace(0, ( DETECTION_WINDOW - TR_ADC), num = WIN_ADC) 
 
             t_res = 0.4 * p1
+
+            #31/03/2026
+            p14 = float(p14)
+            if (p3 / p14 ) < ms_per_point:
+                p3 = int( ms_per_point * p14)
+                #conn.send( ('Average', p3) )
+
             pb.digitizer_number_of_averages(p3)
             PHASES = len( p6[3] )
             
@@ -2936,7 +2987,13 @@ class Worker():
                     #p2 = int( self.command[2:] )
 
                 elif self.command[0:2] == 'NA':
-                    num_ave = int( self.command[2:] )
+                    p3 = int( self.command[2:] )
+                    
+                    #31/03/2026
+                    if (p3 / p14 ) < ms_per_point:
+                        p3 = int( ms_per_point * p14)
+                        #conn.send( ('Average', num_ave) )
+
                     #print( num_ave )
                     pb.digitizer_number_of_averages( num_ave )
 
@@ -2946,6 +3003,13 @@ class Worker():
                     p5 = int( self.command[2:] )
                 elif self.command[0:2] == 'RR':
                     p14 = float( self.command[2:] )
+
+                    #31/03/2026
+                    if (p3 / p14 ) < ms_per_point:
+                        p3 = int( ms_per_point * p14)
+                        pb.digitizer_number_of_averages( p3 )
+                        #conn.send( ('Average', num_ave) )
+
                     #print( p14 )
                     if p14 > 49:
                         pb.pulser_repetition_rate( str(p14) + ' Hz' )
