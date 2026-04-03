@@ -3126,7 +3126,6 @@ class Worker():
 
             #Laser flag
             if p40 != 1:
-                pb.pulser_repetition_rate( str(p14) + ' Hz' )
 
                 trigger_pulses = [p7, p8, p9, p10, p11, p12, p36, p37]
                 awg_params = [p21, p22, p23, p24, p25, p26, p38, p39]
@@ -3161,16 +3160,9 @@ class Worker():
                                 start=tp[0], 
                                 length=tp[1]
                             )
+                pb.pulser_repetition_rate( str(p14) + ' Hz' )
 
             else:
-                if p41 == 1:
-                    pb.pulser_repetition_rate( '9.9 Hz' )
-                    q_delay = p42
-                elif p41 == 2:
-                    pb.pulser_repetition_rate( str(p14) + ' Hz' )
-                    q_delay = p42
-                else:
-                    pb.pulser_repetition_rate( str(p14) + ' Hz' )
 
                 #p7 is LASER pulse
                 pb.pulser_pulse(
@@ -3218,7 +3210,17 @@ class Worker():
                                 channel='TRIGGER_AWG', 
                                 start=tp[0], 
                                 length=tp[1]
-                            )                
+                            )
+
+                if p41 == 1:
+                    pb.pulser_repetition_rate( '9.9 Hz' )
+                    q_delay = p42
+                elif p41 == 2:
+                    pb.pulser_repetition_rate( str(p14) + ' Hz' )
+                    q_delay = p42
+                else:
+                    pb.pulser_repetition_rate( str(p14) + ' Hz' )
+
 
             pb.pulser_default_synt(p34)
 
@@ -3512,7 +3514,6 @@ class Worker():
 
             #Laser flag
             if p40 != 1:
-                pb.pulser_repetition_rate( str(p14) + ' Hz' )
 
                 trigger_pulses = [p7, p8, p9, p10, p11, p12, p36, p37]
                 awg_params = [p21, p22, p23, p24, p25, p26, p38, p39]
@@ -3547,16 +3548,9 @@ class Worker():
                                 start=tp[0], 
                                 length=tp[1]
                             )
+                pb.pulser_repetition_rate( str(p14) + ' Hz' )
 
             else:
-                if p41 == 1:
-                    pb.pulser_repetition_rate( '9.9 Hz' )
-                    q_delay = p42
-                elif p41 == 2:
-                    pb.pulser_repetition_rate( str(p14) + ' Hz' )
-                    q_delay = p42
-                else:
-                    pb.pulser_repetition_rate( str(p14) + ' Hz' )
 
                 if int(float(p7[1].split(' ')[0])) != 0:
                     #p7 is LASER pulse
@@ -3608,6 +3602,16 @@ class Worker():
                                 start=tp[0], 
                                 length=tp[1]
                             )                
+
+                if p41 == 1:
+                    pb.pulser_repetition_rate( '9.9 Hz' )
+                    q_delay = p42
+                elif p41 == 2:
+                    pb.pulser_repetition_rate( str(p14) + ' Hz' )
+                    q_delay = p42
+                else:
+                    pb.pulser_repetition_rate( str(p14) + ' Hz' )
+
 
             pb.pulser_default_synt(p34)
             
@@ -3791,6 +3795,11 @@ class Worker():
                 ##print('exit')
                 pb.pulser_close()
                 conn.send( ('test', f'{pb.awg_pulse_list()}') )
+                
+                if PHASES >= pb.number_adc_window_in_buffer():
+                    str1 = '!!!TOO MANY PHASES FOR LIVE MODE!!!\n'
+                    str2 = 'ADC WINDOWS IN BUFFER: '
+                    conn.send( ('test', f'{str1}{str2}{pb.number_adc_window_in_buffer()}') )
 
         except BaseException as e:
             exc_info = f"{type(e)} \n{str(e)} \n{traceback.format_exc()}"
@@ -3963,7 +3972,6 @@ class Worker():
 
             #Laser flag
             if laser_flag != 1:
-                pb.pulser_repetition_rate( REP_RATE )
 
                 trigger_pulses = [p2_exp, p3_exp, p4_exp, p5_exp, p6_exp, p7_exp, p8_exp, p9_exp]
                 awg_params = [
@@ -4007,13 +4015,9 @@ class Worker():
                                 delta_start=tp[2], 
                                 length_increment=tp[3]
                             )
+                pb.pulser_repetition_rate( REP_RATE )
 
             else:
-                if laser_num == 1:
-                    pb.pulser_repetition_rate( '9.9 Hz' )
-                else:
-                    pb.pulser_repetition_rate( REP_RATE )
-
 
                 #p7 is LASER pulse
                 pb.pulser_pulse(
@@ -4072,6 +4076,12 @@ class Worker():
                                 delta_start=tp[2], 
                                 length_increment=tp[3]
                             )                
+
+                if laser_num == 1:
+                    pb.pulser_repetition_rate( '9.9 Hz' )
+                else:
+                    pb.pulser_repetition_rate( REP_RATE )
+
 
             pb.pulser_default_synt(synt)
 
@@ -4480,7 +4490,6 @@ class Worker():
 
             #Laser flag
             if laser_flag != 1:
-                pb.pulser_repetition_rate( REP_RATE )
 
                 trigger_pulses = [p2_exp, p3_exp, p4_exp, p5_exp, p6_exp, p7_exp, p8_exp, p9_exp]
                 awg_params = [
@@ -4524,12 +4533,9 @@ class Worker():
                                 delta_start=tp[2], 
                                 length_increment=tp[3]
                             )
+                pb.pulser_repetition_rate( REP_RATE )
 
             else:
-                if laser_num == 1:
-                    pb.pulser_repetition_rate( '9.9 Hz' )
-                else:
-                    pb.pulser_repetition_rate( REP_RATE )
 
                 if int(float(p2_exp[1].split(' ')[0])) != 0:
                     #p7 is LASER pulse
@@ -4591,6 +4597,11 @@ class Worker():
                                 delta_start=tp[2], 
                                 length_increment=tp[3]
                             )                
+                if laser_num == 1:
+                    pb.pulser_repetition_rate( '9.9 Hz' )
+                else:
+                    pb.pulser_repetition_rate( REP_RATE )
+
 
             pb.pulser_default_synt(synt)
 
@@ -4932,7 +4943,6 @@ class Worker():
 
             #Laser flag
             if laser_flag != 1:
-                pb.pulser_repetition_rate( REP_RATE )
 
                 trigger_pulses = [p2_exp, p3_exp, p4_exp, p5_exp, p6_exp, p7_exp, p8_exp, p9_exp]
                 awg_params = [
@@ -4973,13 +4983,9 @@ class Worker():
                                 delta_start=tp[2], 
                                 length_increment=tp[3]
                             )
+                pb.pulser_repetition_rate( REP_RATE )
 
             else:
-                if laser_num == 1:
-                    pb.pulser_repetition_rate( '9.9 Hz' )
-                else:
-                    pb.pulser_repetition_rate( REP_RATE )
-
 
                 #p7 is LASER pulse
                 pb.pulser_pulse(
@@ -5036,6 +5042,12 @@ class Worker():
                                 delta_start=tp[2], 
                                 length_increment=tp[3]
                             )                
+
+                if laser_num == 1:
+                    pb.pulser_repetition_rate( '9.9 Hz' )
+                else:
+                    pb.pulser_repetition_rate( REP_RATE )
+
 
             pb.pulser_default_synt(synt)
 
@@ -5374,7 +5386,6 @@ class Worker():
 
             #Laser flag
             if laser_flag != 1:
-                pb.pulser_repetition_rate( REP_RATE )
 
                 trigger_pulses = [p2_exp, p3_exp, p4_exp, p5_exp, p6_exp, p7_exp, p8_exp, p9_exp]
                 awg_params = [
@@ -5417,13 +5428,9 @@ class Worker():
                                 delta_start=tp[2], 
                                 length_increment=tp[3]
                             )
+                pb.pulser_repetition_rate( REP_RATE )
 
             else:
-                if laser_num == 1:
-                    pb.pulser_repetition_rate( '9.9 Hz' )
-                else:
-                    pb.pulser_repetition_rate( REP_RATE )
-
 
                 if int(float(p2_exp[1].split(' ')[0])) != 0:
                     #p7 is LASER pulse
@@ -5484,7 +5491,13 @@ class Worker():
                                 length=tp[1], 
                                 delta_start=tp[2], 
                                 length_increment=tp[3]
-                            )                
+                            )
+
+                if laser_num == 1:
+                    pb.pulser_repetition_rate( '9.9 Hz' )
+                else:
+                    pb.pulser_repetition_rate( REP_RATE )
+
 
             pb.pulser_default_synt(synt)
 
@@ -5872,7 +5885,6 @@ class Worker():
             
             #Laser flag
             if laser_flag != 1:
-                pb.pulser_repetition_rate( REP_RATE )
 
                 trigger_pulses = [p2_exp, p3_exp, p4_exp, p5_exp, p6_exp, p7_exp, p8_exp, p9_exp]
                 awg_params = [
@@ -5912,13 +5924,9 @@ class Worker():
                                 length=tp[1], 
                                 delta_start=f"{self.round_to_closest( nonlinear_time[0] * rel_shift[i + 1], 3.2 )} ns"
                             )
+                pb.pulser_repetition_rate( REP_RATE )
 
             else:
-                if laser_num == 1:
-                    pb.pulser_repetition_rate( '9.9 Hz' )
-                else:
-                    pb.pulser_repetition_rate( REP_RATE )
-
 
 
                 #p7 is LASER pulse
@@ -5976,6 +5984,11 @@ class Worker():
                                 length=tp[1], 
                                 delta_start=f"{self.round_to_closest( nonlinear_time[0] * rel_shift[i + 2], 3.2 )} ns"
                             )
+                if laser_num == 1:
+                    pb.pulser_repetition_rate( '9.9 Hz' )
+                else:
+                    pb.pulser_repetition_rate( REP_RATE )
+
 
             pb.pulser_default_synt(synt)
 
@@ -6389,7 +6402,6 @@ class Worker():
 
             #Laser flag
             if laser_flag != 1:
-                pb.pulser_repetition_rate( REP_RATE )
 
                 trigger_pulses = [p2_exp, p3_exp, p4_exp, p5_exp, p6_exp, p7_exp, p8_exp, p9_exp]
                 awg_params = [
@@ -6430,13 +6442,9 @@ class Worker():
                                 ## 
                                 delta_start=f"{self.round_to_closest( nonlinear_diff[0] * rel_shift[i + 1], 3.2 )} ns"
                             )
+                pb.pulser_repetition_rate( REP_RATE )
 
             else:
-                if laser_num == 1:
-                    pb.pulser_repetition_rate( '9.9 Hz' )
-                else:
-                    pb.pulser_repetition_rate( REP_RATE )
-
 
                 if int(float(p2_exp[1].split(' ')[0])) != 0:
                     #p7 is LASER pulse
@@ -6498,6 +6506,12 @@ class Worker():
                                 ##
                                 delta_start=f"{self.round_to_closest( nonlinear_diff[0] * rel_shift[i + 2], 3.2 )} ns"
                             )
+                
+                if laser_num == 1:
+                    pb.pulser_repetition_rate( '9.9 Hz' )
+                else:
+                    pb.pulser_repetition_rate( REP_RATE )
+
 
             pb.pulser_default_synt(synt)
 

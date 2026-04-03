@@ -2613,7 +2613,6 @@ class Worker():
             #p5 window right
             
             if p13 != 1:
-                pb.pulser_repetition_rate( str(p14) + ' Hz' )
                 pulses = [p6, p7, p8, p9, p10, p11, p12, p24, p25]
 
                 for i, p in enumerate(pulses):
@@ -2626,17 +2625,10 @@ class Worker():
                             length=p[2],
                             phase_list=p[3]
                         )
+                
+                pb.pulser_repetition_rate( str(p14) + ' Hz' )
 
             else:
-                if p22 == 1:
-                    pb.pulser_repetition_rate( '9.9 Hz' )
-                    q_delay = p23
-                elif p22 == 2:
-                    pb.pulser_repetition_rate( str(p14) + ' Hz' )
-                    q_delay = p23
-                else:
-                    pb.pulser_repetition_rate( str(p14) + ' Hz' )
-
                 pulses = [p6, p7, p8, p9, p10, p11, p12, p24, p25]
 
                 for i, p in enumerate(pulses):
@@ -2657,6 +2649,16 @@ class Worker():
                             kwargs['phase_list'] = p[3]
                             
                         pb.pulser_pulse(**kwargs)
+                
+                if p22 == 1:
+                    pb.pulser_repetition_rate( '9.9 Hz' )
+                    q_delay = p23
+                elif p22 == 2:
+                    pb.pulser_repetition_rate( str(p14) + ' Hz' )
+                    q_delay = p23
+                else:
+                    pb.pulser_repetition_rate( str(p14) + ' Hz' )
+
 
             POINTS = 1
             pb.digitizer_decimation(p1)
@@ -2886,7 +2888,6 @@ class Worker():
             #p5 window right
             
             if p13 != 1:
-                pb.pulser_repetition_rate( str(p14) + ' Hz' )
                 pulses = [p6, p7, p8, p9, p10, p11, p12, p24, p25]
 
                 for i, p in enumerate(pulses):
@@ -2899,16 +2900,9 @@ class Worker():
                             length=p[2],
                             phase_list=p[3]
                         )
+                pb.pulser_repetition_rate( str(p14) + ' Hz' )
 
             else:
-                if p22 == 1:
-                    pb.pulser_repetition_rate( '9.9 Hz' )
-                    q_delay = p23
-                elif p22 == 2:
-                    pb.pulser_repetition_rate( str(p14) + ' Hz' )
-                    q_delay = p23
-                else:
-                    pb.pulser_repetition_rate( str(p14) + ' Hz' )
 
                 pulses = [p6, p7, p8, p9, p10, p11, p12, p24, p25]
 
@@ -2933,6 +2927,16 @@ class Worker():
                             kwargs['phase_list'] = p[3]
                             
                         pb.pulser_pulse(**kwargs)
+
+                if p22 == 1:
+                    pb.pulser_repetition_rate( '9.9 Hz' )
+                    q_delay = p23
+                elif p22 == 2:
+                    pb.pulser_repetition_rate( str(p14) + ' Hz' )
+                    q_delay = p23
+                else:
+                    pb.pulser_repetition_rate( str(p14) + ' Hz' )
+
 
             POINTS = 1
             pb.digitizer_decimation(p1)
@@ -3119,6 +3123,11 @@ class Worker():
                 pb.pulser_close()
                 #pb.pulser_pulse_list()
                 conn.send( ('test', f'{pb.pulser_pulse_list()}') )
+                if PHASES >= pb.number_adc_window_in_buffer():
+                    str1 = '!!!TOO MANY PHASES FOR LIVE MODE!!!\n'
+                    str2 = 'ADC WINDOWS IN BUFFER: '
+                    conn.send( ('test', f'{str1}{str2}{pb.number_adc_window_in_buffer()}') )
+
                 conn.close()
 
         except BaseException as e:
@@ -3212,7 +3221,6 @@ class Worker():
             general.wait('2000 ms')
 
             if laser_flag != 1:
-                pb.pulser_repetition_rate( REP_RATE )
                 pulses = [
                         p1_exp, p2_exp, p3_exp, p4_exp, 
                         p5_exp, p6_exp, p7_exp, p8_exp, 
@@ -3231,14 +3239,9 @@ class Worker():
                             delta_start=p[4],
                             length_increment=p[5]
                         )
+                pb.pulser_repetition_rate( REP_RATE )
 
             else:
-                if laser_num == 1:
-                    pb.pulser_repetition_rate( '9.9 Hz' )
-                elif laser_num == 2:
-                    pb.pulser_repetition_rate( REP_RATE )
-                else:
-                    pb.pulser_repetition_rate( REP_RATE )
 
                 pulses = [
                         p1_exp, p2_exp, p3_exp, p4_exp, 
@@ -3267,6 +3270,13 @@ class Worker():
                             kwargs['phase_list'] = p[3]
                             
                         pb.pulser_pulse(**kwargs)
+                
+                if laser_num == 1:
+                    pb.pulser_repetition_rate( '9.9 Hz' )
+                elif laser_num == 2:
+                    pb.pulser_repetition_rate( REP_RATE )
+                else:
+                    pb.pulser_repetition_rate( REP_RATE )
 
             pb.digitizer_decimation(DEC_COEF)
             #points_window = pb.digitizer_window_points()
@@ -3464,7 +3474,6 @@ class Worker():
             general.wait('2000 ms')
 
             if laser_flag != 1:
-                pb.pulser_repetition_rate( REP_RATE )
                 pulses = [
                         p1_exp, p2_exp, p3_exp, p4_exp, 
                         p5_exp, p6_exp, p7_exp, p8_exp, 
@@ -3484,13 +3493,9 @@ class Worker():
                             length_increment=p[5]
                         )
 
+                pb.pulser_repetition_rate( REP_RATE )
+
             else:
-                if laser_num == 1:
-                    pb.pulser_repetition_rate( '9.9 Hz' )
-                elif laser_num == 2:
-                    pb.pulser_repetition_rate( REP_RATE )
-                else:
-                    pb.pulser_repetition_rate( REP_RATE )
 
                 pulses = [
                         p1_exp, p2_exp, p3_exp, p4_exp, 
@@ -3522,6 +3527,14 @@ class Worker():
                             kwargs['phase_list'] = p[3]
                             
                         pb.pulser_pulse(**kwargs)
+                
+                if laser_num == 1:
+                    pb.pulser_repetition_rate( '9.9 Hz' )
+                elif laser_num == 2:
+                    pb.pulser_repetition_rate( REP_RATE )
+                else:
+                    pb.pulser_repetition_rate( REP_RATE )
+
 
             pb.digitizer_decimation(DEC_COEF)
             #points_window = pb.digitizer_window_points()
@@ -3680,7 +3693,6 @@ class Worker():
             general.wait('2000 ms')
 
             if laser_flag != 1:
-                pb.pulser_repetition_rate( REP_RATE )
                 pulses = [
                         p1_exp, p2_exp, p3_exp, p4_exp, 
                         p5_exp, p6_exp, p7_exp, p8_exp, 
@@ -3700,14 +3712,9 @@ class Worker():
                             delta_start=p[4],
                             length_increment=p[5]
                         )
+                pb.pulser_repetition_rate( REP_RATE )
 
             else:
-                if laser_num == 1:
-                    pb.pulser_repetition_rate( '9.9 Hz' )
-                elif laser_num == 2:
-                    pb.pulser_repetition_rate( REP_RATE )
-                else:
-                    pb.pulser_repetition_rate( REP_RATE )
 
                 pulses = [
                         p1_exp, p2_exp, p3_exp, p4_exp, 
@@ -3736,6 +3743,14 @@ class Worker():
                             kwargs['phase_list'] = p[3]
                             
                         pb.pulser_pulse(**kwargs)
+
+                if laser_num == 1:
+                    pb.pulser_repetition_rate( '9.9 Hz' )
+                elif laser_num == 2:
+                    pb.pulser_repetition_rate( REP_RATE )
+                else:
+                    pb.pulser_repetition_rate( REP_RATE )
+
 
             pb.digitizer_decimation(DEC_COEF)
             #points_window = pb.digitizer_window_points()
@@ -3911,7 +3926,6 @@ class Worker():
             general.wait('2000 ms')
 
             if laser_flag != 1:
-                pb.pulser_repetition_rate( REP_RATE )
                 pulses = [
                         p1_exp, p2_exp, p3_exp, p4_exp, 
                         p5_exp, p6_exp, p7_exp, p8_exp, 
@@ -3933,14 +3947,9 @@ class Worker():
                             delta_start=p[4],
                             length_increment=p[5]
                         )
+                pb.pulser_repetition_rate( REP_RATE )
 
             else:
-                if laser_num == 1:
-                    pb.pulser_repetition_rate( '9.9 Hz' )
-                elif laser_num == 2:
-                    pb.pulser_repetition_rate( REP_RATE )
-                else:
-                    pb.pulser_repetition_rate( REP_RATE )
 
                 pulses = [
                         p1_exp, p2_exp, p3_exp, p4_exp, 
@@ -3975,6 +3984,14 @@ class Worker():
                             kwargs['phase_list'] = p[3]
                             
                         pb.pulser_pulse(**kwargs)
+
+                if laser_num == 1:
+                    pb.pulser_repetition_rate( '9.9 Hz' )
+                elif laser_num == 2:
+                    pb.pulser_repetition_rate( REP_RATE )
+                else:
+                    pb.pulser_repetition_rate( REP_RATE )
+
 
             pb.digitizer_decimation(DEC_COEF)
             #points_window = pb.digitizer_window_points()
@@ -4190,7 +4207,6 @@ class Worker():
             ####
 
             if laser_flag != 1:
-                pb.pulser_repetition_rate( REP_RATE )
 
                 for i, p in enumerate(pulses):
                     length_str = p[2].split(' ')[0]
@@ -4204,14 +4220,9 @@ class Worker():
                             phase_list=p[3],
                             delta_start=f"{self.round_to_closest( nonlinear_diff[0] * rel_shift[i], 3.2 )} ns"
                         )
+                pb.pulser_repetition_rate( REP_RATE )
 
             else:
-                if laser_num == 1:
-                    pb.pulser_repetition_rate( '9.9 Hz' )
-                elif laser_num == 2:
-                    pb.pulser_repetition_rate( REP_RATE )
-                else:
-                    pb.pulser_repetition_rate( REP_RATE )
 
                 for i, p in enumerate(pulses):
                     if i != 1:
@@ -4233,6 +4244,14 @@ class Worker():
                             kwargs['phase_list'] = p[3]
                             
                         pb.pulser_pulse(**kwargs)
+
+                if laser_num == 1:
+                    pb.pulser_repetition_rate( '9.9 Hz' )
+                elif laser_num == 2:
+                    pb.pulser_repetition_rate( REP_RATE )
+                else:
+                    pb.pulser_repetition_rate( REP_RATE )
+
 
             pb.digitizer_decimation(DEC_COEF)
             #points_window = pb.digitizer_window_points()
@@ -4448,7 +4467,6 @@ class Worker():
             ####
 
             if laser_flag != 1:
-                pb.pulser_repetition_rate( REP_RATE )
 
                 for i, p in enumerate(pulses):
                     length_str = p[2].split(' ')[0]
@@ -4463,14 +4481,9 @@ class Worker():
                             ##
                             delta_start=f"{self.round_to_closest( nonlinear_diff[0] * rel_shift[i], 3.2 )} ns"
                         )
+                pb.pulser_repetition_rate( REP_RATE )
 
             else:
-                if laser_num == 1:
-                    pb.pulser_repetition_rate( '9.9 Hz' )
-                elif laser_num == 2:
-                    pb.pulser_repetition_rate( REP_RATE )
-                else:
-                    pb.pulser_repetition_rate( REP_RATE )
 
                 for i, p in enumerate(pulses):
                     if i != 1:
@@ -4496,6 +4509,13 @@ class Worker():
                             kwargs['phase_list'] = p[3]
                             
                         pb.pulser_pulse(**kwargs)
+
+                if laser_num == 1:
+                    pb.pulser_repetition_rate( '9.9 Hz' )
+                elif laser_num == 2:
+                    pb.pulser_repetition_rate( REP_RATE )
+                else:
+                    pb.pulser_repetition_rate( REP_RATE )
 
             pb.digitizer_decimation(DEC_COEF)
             #points_window = pb.digitizer_window_points()
