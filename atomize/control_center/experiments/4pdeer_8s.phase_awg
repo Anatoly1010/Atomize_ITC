@@ -1,0 +1,40 @@
+P1:  DETECTION,  3456.0,  512.0,  0.0,  25,  350,  100,  [1,-2,0,2],  0.0,  0.0
+P2:  SINE,  0.0,  48.0,  0.0,  25,  350,  15,  [(x)],  0.0,  0.0
+P3:  SINE,  208.0,  48.0,  0.0,  25,  350,  30,  [x],  0.0,  0.0
+P4:  SINE,  320.0,  22.4,  0.0,  100,  350,  100,  [[x]],  3.2,  0.0
+P5:  SINE,  1936.0,  48.0,  0.0,  25,  350,  30,  [x],  0.0,  0.0
+P6:  SINE,  0.0,  0.0,  0.0,  50,  350,  100,  [+x,+x],  0.0,  0.0
+P7:  SINE,  0.0,  0.0,  0.0,  50,  350,  100,  [+x,+x],  0.0,  0.0
+P8:  SINE,  0.0,  0.0,  0.0,  50,  350,  100,  [+x,+x],  0.0,  0.0
+P9:  SINE,  0.0,  0.0,  0.0,  50,  350,  100,  [+x,+x],  0.0,  0.0
+Rep rate:  1000.0
+Field:  3324.0
+Delay:  0
+Ampl 1:  260
+Ampl 2:  260
+Phase:  90.0
+N WURST; SECH/TANH:  10
+B SECH/TANH:  0.02
+Points:  2016
+Horizontal offset:  1024
+Window left:  200.0
+Window right:  400.0
+Acquisitions:  1
+Points to Drop:  0
+Zero order:  198.0
+First order:  0.0
+Second order:  0.0
+Laser:  Nd:YaG
+Decimation:  1
+Points:  495
+Scans:  1
+Log Start:  1.0
+Log End:  7.0
+Start Field:  2400.0
+End Field:  4400.0
+Field Step:  1.0
+Sweep Type:  Linear Time
+IQ Correction:  2
+X0:  0.0
+dX:  0.0
+Amplitude Step:  1.0

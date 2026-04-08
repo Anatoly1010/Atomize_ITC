@@ -2629,11 +2629,13 @@ class Worker():
                 pb.pulser_repetition_rate( str(p14) + ' Hz' )
 
             else:
+
+
                 pulses = [p6, p7, p8, p9, p10, p11, p12, p24, p25]
 
                 for i, p in enumerate(pulses):
                     if i != 1:
-                        start_val = float(p[1].split(' ')[0]) + q_delay
+                        start_val = float(p[1].split(' ')[0]) + p23
                         p[1] = f"{self.round_to_closest(start_val, 3.2)} ns"
 
                     length_val = int(float(p[2].split(' ')[0]))
@@ -2652,10 +2654,8 @@ class Worker():
                 
                 if p22 == 1:
                     pb.pulser_repetition_rate( '9.9 Hz' )
-                    q_delay = p23
                 elif p22 == 2:
                     pb.pulser_repetition_rate( str(p14) + ' Hz' )
-                    q_delay = p23
                 else:
                     pb.pulser_repetition_rate( str(p14) + ' Hz' )
 
@@ -2908,7 +2908,7 @@ class Worker():
 
                 for i, p in enumerate(pulses):
                     if i != 1:
-                        start_val = float(p[1].split(' ')[0]) + q_delay
+                        start_val = float(p[1].split(' ')[0]) + p23
                         p[1] = f"{self.round_to_closest(start_val, 3.2)} ns"
 
                     length_val = int(float(p[2].split(' ')[0]))
@@ -2930,10 +2930,8 @@ class Worker():
 
                 if p22 == 1:
                     pb.pulser_repetition_rate( '9.9 Hz' )
-                    q_delay = p23
                 elif p22 == 2:
                     pb.pulser_repetition_rate( str(p14) + ' Hz' )
-                    q_delay = p23
                 else:
                     pb.pulser_repetition_rate( str(p14) + ' Hz' )
 

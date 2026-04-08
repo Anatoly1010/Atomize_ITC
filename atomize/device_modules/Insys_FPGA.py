@@ -1323,14 +1323,12 @@ class Insys_FPGA:
                         self.change_ini_file("streamBufSizeKb = 1024", "streamBufSizeKb = 512")
                 elif rep_time <= 20408163:
                     if (self.adc_window < 1000):
-                        print(f'wind {self.adc_window}')
                         self.change_ini_file("streamBufSizeKb = 128", "streamBufSizeKb = 1024")
                         self.change_ini_file("streamBufSizeKb = 256", "streamBufSizeKb = 1024")
                         self.change_ini_file("streamBufSizeKb = 512", "streamBufSizeKb = 1024")
                         self.change_ini_file("streamBufSizeKb = 2048", "streamBufSizeKb = 1024")
                         self.change_ini_file("streamBufSizeKb = 4096", "streamBufSizeKb = 1024")
                     else:
-                        print('3')
                         self.change_ini_file("streamBufSizeKb = 1024", "streamBufSizeKb = 4096")
 
 
@@ -4400,7 +4398,7 @@ class Insys_FPGA:
                 except UnboundLocalError:
                     pass
 
-                new_ans = self.process_and_merge_rect_awg(answer, target_channel=128, gap_threshold=71)
+                new_ans = self.process_and_merge_rect_awg(answer, target_channel=128, gap_threshold=55)
                 return new_ans
 
         elif self.test_flag == 'test':
@@ -4428,7 +4426,7 @@ class Insys_FPGA:
                 except UnboundLocalError:
                     pass
 
-                new_ans = self.process_and_merge_rect_awg(answer, target_channel=128, gap_threshold=71)
+                new_ans = self.process_and_merge_rect_awg(answer, target_channel=128, gap_threshold=55)
 
                 return new_ans
 

@@ -243,6 +243,18 @@ class MainWindow(QMainWindow):
             action.triggered.connect(lambda checked, name=full_path: self.set_preset_exp(name))
             deer_exp_menu.addAction(action)
 
+        setup_exp_menu = self.exp_menu.addMenu('Setup')
+
+        setup_sequences = {
+            'Amplitude Setup; 4S': 'ampl_4s.phase_awg',
+        }
+
+        for label, file_name in setup_sequences.items():
+            full_path = os.path.join(cwd, 'experiments', file_name)
+            action = QAction(label, self)
+            action.triggered.connect(lambda checked, name=full_path: self.set_preset_exp(name))
+            setup_exp_menu.addAction(action)
+
     def set_preset_exp(self, filename):
         self.open_file(filename)
 
@@ -405,7 +417,6 @@ class MainWindow(QMainWindow):
             QScrollBar::handle:horizontal:hover {{
                 background: rgb(211, 194, 78); 
             }}
-            /* Скрываем кнопки по бокам (стрелки) */
             QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
                 width: 0px;
             }}
@@ -516,7 +527,7 @@ class MainWindow(QMainWindow):
         awg_pulses = [
             (QSpinBox, -1000, 1000, 50, 5, 0, " MHz", "_fr", "_freq"),
             (QSpinBox, -1000, 1000, 350, 5, 0, " MHz", "_sw", "wurst_sweep_cur_"),
-            (QSpinBox, 1, 100, 100, 1, 0, " %", "_cf", "_coef")
+            (QDoubleSpinBox, 0.1, 100, 100, 0.5, 1, " %", "_cf", "_coef")
         ]
 
         for j in range(9, 12):
@@ -526,8 +537,13 @@ class MainWindow(QMainWindow):
 
             for i in range(1, 10):
                 spin_box = pulse_set[0]()
-                spin_box.setRange(int(pulse_set[1]), int(pulse_set[2]))
-                spin_box.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
+                if isinstance(spin_box, QDoubleSpinBox):
+                    spin_box.setRange(pulse_set[1], pulse_set[2])
+                    spin_box.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97); }")
+                else:
+                    spin_box.setRange(int(pulse_set[1]), int(pulse_set[2]))
+                    spin_box.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
+
                 spin_box.setSingleStep(pulse_set[4])
                 
                 if i == 1:
@@ -539,6 +555,9 @@ class MainWindow(QMainWindow):
                 else:
                     spin_box.setValue(pulse_set[3])
 
+                if isinstance(spin_box, QDoubleSpinBox):
+                    spin_box.setDecimals(pulse_set[5])
+
                 spin_box.setSuffix(pulse_set[6])
                 spin_box.setFixedSize(130, 26)
                 spin_box.setButtonSymbols(QSpinBox.ButtonSymbols.PlusMinus)
@@ -547,7 +566,7 @@ class MainWindow(QMainWindow):
 
                 attr_name = f"P{i}{pulse_set[7]}"
                 setattr(self, attr_name, spin_box)
-                
+                                
                 if pulse_set[7] == "_cf":
                     spin_box.valueChanged.connect(lambda _, idx = i: self.update_coef_param(idx))
                     self.update_coef_param(i)
@@ -1658,7 +1677,7 @@ class MainWindow(QMainWindow):
         """
         A function to change the number of points to drop
         """
-        self.p_to_drop = float( self.P_to_drop.value() )
+        self.p_to_drop = int( self.P_to_drop.value() )
 
         if self.opened == 0:
             try:
@@ -2256,6 +2275,8 @@ class MainWindow(QMainWindow):
                 self.IQ_corr.setChecked(False)
             self.X0.setValue( float( lines[37].split(':  ')[1] ) )
             self.XDelta.setValue( float( lines[38].split(':  ')[1] ) )
+
+            self.box_step_ampl.setValue( float( lines[39].split(':  ')[1] ) )
         except IndexError:
             pass
 
@@ -2283,7 +2304,7 @@ class MainWindow(QMainWindow):
 
         freq.setValue( int( array[4] ) )
         w_sweep.setValue( int( array[5] ) )
-        coef.setValue( int( array[6] ) )
+        coef.setValue( float( array[6] ) )
         phase.setPlainText( str( (array[7])[1:-1] ) )
         d_start.setValue( float( array[8] ) )
         len_inc.setValue( float( array[9] ) )
@@ -2346,6 +2367,8 @@ class MainWindow(QMainWindow):
 
             file.write( 'X0:  ' + str( self.X0.value() ) + '\n' )
             file.write( 'dX:  ' + str( self.XDelta.value() ) + '\n' )
+
+            file.write( 'Amplitude Step:  ' + str( self.box_step_ampl.value() ) + '\n' )
 
     def remove_ns(self, string1):
         return string1.split(' ')[0]
@@ -3227,9 +3250,9 @@ class Worker():
 
                     if int(float(tp[1].split(' ')[0])) != 0:
                         # add q_delay
-                        start_val = float(tp[0].split(' ')[0]) + q_delay
+                        start_val = float(tp[0].split(' ')[0]) + p42
                         tp[0] = f"{self.round_to_closest(start_val, 3.2)} ns"
-                        start_val_awg = float(ap[5].split(' ')[0]) + q_delay
+                        start_val_awg = float(ap[5].split(' ')[0]) + p42
                         ap[5] = f"{self.round_to_closest(start_val_awg, 3.2)} ns"
 
                         is_complex = ap[0] in ['WURST', 'SECH/TANH']
@@ -3262,10 +3285,10 @@ class Worker():
 
                 if p41 == 1:
                     pb.pulser_repetition_rate( '9.9 Hz' )
-                    q_delay = p42
+                    #q_delay = p42
                 elif p41 == 2:
                     pb.pulser_repetition_rate( str(p14) + ' Hz' )
-                    q_delay = p42
+                    #q_delay = p42
                 else:
                     pb.pulser_repetition_rate( str(p14) + ' Hz' )
 
@@ -3618,9 +3641,9 @@ class Worker():
 
                     if int(float(tp[1].split(' ')[0])) != 0:
                         # add q_delay
-                        start_val = float(tp[0].split(' ')[0]) + q_delay
+                        start_val = float(tp[0].split(' ')[0]) + p42
                         tp[0] = f"{self.round_to_closest(start_val, 3.2)} ns"
-                        start_val_awg = float(ap[5].split(' ')[0]) + q_delay
+                        start_val_awg = float(ap[5].split(' ')[0]) + p42
                         ap[5] = f"{self.round_to_closest(start_val_awg, 3.2)} ns"
 
                         is_complex = ap[0] in ['WURST', 'SECH/TANH']
@@ -3653,10 +3676,10 @@ class Worker():
 
                 if p41 == 1:
                     pb.pulser_repetition_rate( '9.9 Hz' )
-                    q_delay = p42
+                    #q_delay = p42
                 elif p41 == 2:
                     pb.pulser_repetition_rate( str(p14) + ' Hz' )
-                    q_delay = p42
+                    #q_delay = p42
                 else:
                     pb.pulser_repetition_rate( str(p14) + ' Hz' )
 
@@ -7056,57 +7079,57 @@ class Worker():
 
                         for i in range(PHASES):
 
-                            if j == 0:
-                                if iq_cor == 0:
-                                    if point_flag != 1:
-                                        process = general.plot_2d(
-                                            EXP_NAME, 
-                                            data, 
-                                            start_step = ((0, dec_calc), (f_delay, step)), 
-                                            xname = 'Time', 
-                                            xscale = 's', 
-                                            yname = 'Amplitude', 
-                                            yscale = '%', 
-                                            zname = 'Intensity', 
-                                            zscale = 'mV', 
-                                            text = f"Scan / Amplitude: {k} / { (f_delay + j * STEP):.1f}",
-                                            pr = process
-                                        )
-                                    else:
-                                        process = general.plot_2d(
-                                            EXP_NAME, 
-                                            data, 
-                                            start_step = ((0, dec_calc), (0, 1)), 
-                                            xname = 'Time', 
-                                            xscale = 's', 
-                                            yname = 'Point', 
-                                            yscale = '', 
-                                            zname = 'Intensity', 
-                                            zscale = 'mV', 
-                                            text = f"Scan / Point: {k} / {j}",
-                                            pr = process
-                                        )
-                                elif iq_cor == 1:
-                                    data_x, data_y = pb.digitizer_iq(data[0], data[1], iq_freq, zp, first_order, sec_order, integral = True)
-                                    if point_flag != 1:
-                                        general.plot_1d(EXP_NAME, x_axis_plot, ( data_x, data_y ), xname = 'Amplitude', xscale = '%', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Amplitude: ' + str(k) + ' / ' + str(round(f_delay + j * STEP, 1)))
-                                    else:
-                                        general.plot_1d(EXP_NAME, x_axis, ( data_x, data_y ), xname = 'Point', xscale = '', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j, 1)))
+                            if iq_cor == 0:
+                                if point_flag != 1:
+                                    process = general.plot_2d(
+                                        EXP_NAME, 
+                                        data, 
+                                        start_step = ((0, dec_calc), (f_delay, step)), 
+                                        xname = 'Time', 
+                                        xscale = 's', 
+                                        yname = 'Amplitude', 
+                                        yscale = '%', 
+                                        zname = 'Intensity', 
+                                        zscale = 'mV', 
+                                        text = f"Scan / Amplitude: {k} / { (f_delay + j * STEP):.1f}",
+                                        pr = process
+                                    )
+                                else:
+                                    process = general.plot_2d(
+                                        EXP_NAME, 
+                                        data, 
+                                        start_step = ((0, dec_calc), (0, 1)), 
+                                        xname = 'Time', 
+                                        xscale = 's', 
+                                        yname = 'Point', 
+                                        yscale = '', 
+                                        zname = 'Intensity', 
+                                        zscale = 'mV', 
+                                        text = f"Scan / Point: {k} / {j}",
+                                        pr = process
+                                    )
+                            elif iq_cor == 1:
+                                data_x, data_y = pb.digitizer_iq(data[0], data[1], iq_freq, zp, first_order, sec_order, integral = True)
+                                if point_flag != 1:
+                                    general.plot_1d(EXP_NAME, x_axis_plot, ( data_x, data_y ), xname = 'Amplitude', xscale = '%', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Amplitude: ' + str(k) + ' / ' + str(round(f_delay + j * STEP, 1)))
+                                else:
+                                    general.plot_1d(EXP_NAME, x_axis, ( data_x, data_y ), xname = 'Point', xscale = '', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j, 1)))
 
                             pb.awg_next_phase()
                             pb.pulser_update()
 
-                            if j == 0:
-                                data[0], data[1] = pb.digitizer_get_curve( 
-                                    POINTS, 
-                                    PHASES, 
-                                    current_scan = k, 
-                                    total_scan = SCANS ) 
+                            data[0], data[1] = pb.digitizer_get_curve( 
+                                POINTS, 
+                                PHASES, 
+                                current_scan = k, 
+                                total_scan = SCANS ) 
 
                         pb.pulser_shift()
                         pb.awg_pulse_reset()
                         
-                        ampl_list_cur = ampl_list + STEP * (j + 1)
+                        delta = STEP * (j + 1)
+                        ampl_list_cur = [x + delta for x in ampl_list]
+                        
                         pb.awg_redefine_amplitude(name = name_list, amplitude = ampl_list_cur )
 
                         conn.send( ('Status', int( 100 * (( k - 1 ) * POINTS + j + 1) / POINTS / SCANS)) )
@@ -7187,6 +7210,7 @@ class Worker():
                     f"{'Points:':<{w}} {POINTS}\n"
                     f"{'Window:':<{w}} {p1_exp[2]}\n"
                     f"{'Horizontal Resolution:':<{w}} {0.4 * DEC_COEF:.1g} ns\n"
+                    f"{'Start Amplitude:':<{w}} {f_delay} %\n"
                     f"{'Vertical Resolution:':<{w}} {STEP} %\n"
                     f"{'Temperature:':<{w}} {ls335.tc_temperature('A')} K\n"
                     f"{'Temperature Cernox:':<{w}} {ls335.tc_temperature('B')} K\n"
@@ -7212,6 +7236,7 @@ class Worker():
                         f"{'Averages:':<{w}} {AVERAGES}\n"
                         f"{'Points:':<{w}} {POINTS}\n"
                         f"{'Window:':<{w}} {tb} ns\n"
+                        f"{'Start Amplitude:':<{w}} {f_delay} %\n"
                         f"{'Horizontal Resolution:':<{w}} {STEP} %\n"
                         f"{'Temperature:':<{w}} {ls335.tc_temperature('A')} K\n"
                         f"{'Temperature Cernox:':<{w}} {ls335.tc_temperature('B')} K\n"
@@ -7602,7 +7627,9 @@ class Worker():
                         pb.pulser_shift()
                         pb.awg_pulse_reset()
                         
-                        ampl_list_cur = ampl_list + STEP * (j + 1)
+                        delta = STEP * (j + 1)
+                        ampl_list_cur = [x + delta for x in ampl_list]
+                        
                         pb.awg_redefine_amplitude(name = name_list, amplitude = ampl_list_cur )
 
                         #conn.send( ('Status', int( 100 * (( k - 1 ) * POINTS + j + 1) / POINTS / SCANS)) )
@@ -7683,6 +7710,7 @@ class Worker():
                     f"{'Points:':<{w}} {POINTS}\n"
                     f"{'Window:':<{w}} {p1_exp[2]}\n"
                     f"{'Horizontal Resolution:':<{w}} {0.4 * DEC_COEF:.1g} ns\n"
+                    f"{'Start Amplitude:':<{w}} {f_delay} %\n"
                     f"{'Vertical Resolution:':<{w}} {STEP} %\n"
                     f"{'Temperature:':<{w}} {ls335.tc_temperature('A')} K\n"
                     f"{'Temperature Cernox:':<{w}} {ls335.tc_temperature('B')} K\n"
@@ -7708,6 +7736,7 @@ class Worker():
                         f"{'Averages:':<{w}} {AVERAGES}\n"
                         f"{'Points:':<{w}} {POINTS}\n"
                         f"{'Window:':<{w}} {tb} ns\n"
+                        f"{'Start Amplitude:':<{w}} {f_delay} %\n"
                         f"{'Horizontal Resolution:':<{w}} {STEP} %\n"
                         f"{'Temperature:':<{w}} {ls335.tc_temperature('A')} K\n"
                         f"{'Temperature Cernox:':<{w}} {ls335.tc_temperature('B')} K\n"

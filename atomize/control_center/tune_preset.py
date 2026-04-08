@@ -519,7 +519,7 @@ class MainWindow(QMainWindow):
         """
         A function to open a new window for choosing a pulse list
         """
-        filedialog = QFileDialog(self, 'Open File', directory = self.path, filter = "Tune Parameters (*.tune)", options = QFileDialog.Option.DontUseNativeDialog)
+        filedialog = QFileDialog(self, 'Open File', directory = self.path, filter = "Tune Parameters (*.tn)", options = QFileDialog.Option.DontUseNativeDialog)
         
         tree = filedialog.findChild(QTreeView)
         header = tree.header()
@@ -747,7 +747,7 @@ class MainWindow(QMainWindow):
         """
         A function to open a new window for choosing a pulse list
         """
-        filedialog = QFileDialog(self, 'Save File', directory = self.path, filter = "Tune Parameters (*.tune)", options = QFileDialog.Option.DontUseNativeDialog)
+        filedialog = QFileDialog(self, 'Save File', directory = self.path, filter = "Tune Parameters (*.tn)", options = QFileDialog.Option.DontUseNativeDialog)
         filedialog.setAcceptMode(QFileDialog.AcceptMode.AcceptSave)
 
         tree = filedialog.findChild(QTreeView)
@@ -993,8 +993,8 @@ class MainWindow(QMainWindow):
         A function to save a new pulse list
         :param filename: string
         """
-        if filename[-4:] != 'tune':
-            filename = filename + '.tune'
+        if filename[-2:] != 'tn':
+            filename = filename + '.tn'
         with open(filename, 'w') as file:
             file.write( 'Pulse Length:  ' + str(self.box_length.value()) + '\n' )
             file.write( 'Repetition Rate:  ' + str(self.box_rep_rate.value()) + '\n' )
