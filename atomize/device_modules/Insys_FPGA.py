@@ -2756,9 +2756,9 @@ class Insys_FPGA:
 
         Buffer according to arguments will be filled after
         """
-        d_coef = 100 / amplitude
-
         if self.test_flag != 'test':
+            d_coef = 100 / amplitude
+
             pulse = {'name': name, 'channel': channel, 'function': func, 'frequency': frequency, 'phase' : phase, 'delta_phase': delta_phase, 'length': length, 'sigma': sigma, 'length_increment': length_increment, 'start': start, 'delta_start': delta_start, 'amp': d_coef, 'phase_list': phase_list, 'n': n, 'b': b }
 
             # length
@@ -2834,6 +2834,10 @@ class Insys_FPGA:
                 self.phase_array_length_0_awg.append(len(list(phase_list)))
             
         elif self.test_flag == 'test':
+            assert( amplitude > 0 ), 'Amplitude should be higher than 0%'
+
+            d_coef = 100 / amplitude
+
             pulse = {'name': name, 'channel': channel, 'function': func, 'frequency': frequency, 'phase' : phase, 'delta_phase' : delta_phase, 'length': length, 'sigma': sigma, 'length_increment': length_increment, 'start': start, 'delta_start': delta_start, 'amp': d_coef, 'phase_list': phase_list, 'n': n, 'b': b }
 
             if channel == 'CH0':
@@ -2979,7 +2983,7 @@ class Insys_FPGA:
             # d_coef
             temp_amp = float( d_coef )
             #assert(temp_amp != 0), 'Amplification coefficient should not be zero'
-            assert(temp_amp >= 1), 'Amplification coefficient should be more or equal to 1'
+            assert(temp_amp >= 1), 'Amplitude should be less or equal to 100%'
 
             # b
             temp_b = float( b )
@@ -3208,6 +3212,41 @@ class Insys_FPGA:
                     if pulse['name'] == name:
                         pulse['frequency'] = fr
                         self.shift_count_awg = 1
+
+    #new
+    def awg_redefine_amplitude(self, *, name, amplitude):
+        """
+        A function for redefining amplitude of the specified pulse.
+        awg_redefine_phase(name = 'P0', amplitude = 50) changes amplitude of the 'P0' pulse to 50%.
+
+        def func(*, name1, name2): defines a function without default values of key arguments
+        """
+        if self.test_flag != 'test':
+            names_list = [name] if isinstance(name, str) else name
+            amplitude_list = [amplitude] if isinstance(amplitude, str) else amplitude
+
+            for name, ampl in zip(names_list, amplitude_list):
+
+                for i, pulse in enumerate(self.pulse_array_awg):
+                    if pulse['name'] == name:
+                        pulse['amp'] = 100 / float(ampl)
+                        self.shift_count_awg = 1
+                        self.current_phase_index_awg = 0
+
+        elif self.test_flag == 'test':
+            names_list = [name] if isinstance(name, str) else name
+            amplitude_list = [amplitude] if isinstance(amplitude, str) else amplitude
+
+            for name, ampl in zip(names_list, amplitude_list):
+                assert( name in self.pulse_name_array_awg ), 'Pulse with the specified name is not defined'
+            
+                for i, pulse in enumerate(self.pulse_array_awg):
+                    if pulse['name'] == name:
+                        assert( ( float(ampl) > 0 ) and (float(ampl) <= 100 ) ), 'Pulse amplitude should be in the range of 0-100%'
+
+                        pulse['amp'] = 100 / float(ampl)
+                        self.shift_count_awg = 1
+                        self.current_phase_index_awg = 0
 
     def awg_redefine_phase(self, *, name, phase):
         """

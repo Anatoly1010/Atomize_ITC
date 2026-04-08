@@ -817,7 +817,8 @@ class MainWindow(QMainWindow):
 
         # ---- Labels & Inputs ----
         labels = [("Acquisitions", "label_17"), ("Integration Left", "label_18"), ("Integration Right", "label_19"), ("Decimation", "label_20"), ("Points", "label_e1"), ("Scans", "label_e2"), ("Experiment Name", "label_e3"), ("Curve Name", "label_e4"), ("Start Field", "label_f1"), ("End Field", "label_f2"), ("Field Step", "label_f3"), ("Sweep Type", "label_c1"), ('lg(X<sub style="font-size: 12pt;">0</sub> / 1 ns)', "label_e5"), ('lg(X<sub style="font-size: 12pt;">END</sub> / 1 ns)', "label_e6"), 
-            ('X<sub style="font-size: 12pt;">0</sub>', "label_e7"), ("ΔX ", "label_e8")]
+            ('X<sub style="font-size: 12pt;">0</sub>', "label_e7"), ("ΔX ", "label_e8"),
+            ("Amplitude Step", "label_f4")]
 
         for name, attr_name in labels:
             lbl = QLabel(name)
@@ -838,7 +839,8 @@ class MainWindow(QMainWindow):
                       (QDoubleSpinBox, "Log_start", "cur_log_start", self.log_start, 0, 10, 1, 0.01, 3, ""),
                       (QDoubleSpinBox, "Log_end", "cur_log_end", self.log_end, 0, 10, 7, 0.01, 3, ""),
                       (QDoubleSpinBox, "X0", "cur_x0", self.x0, 0, 100e6, 0, 3.2, 1, " ns"),
-                      (QDoubleSpinBox, "XDelta", "cur_xdelta", self.xdelta, 0, 100e6, 0, 3.2, 1, " ns")
+                      (QDoubleSpinBox, "XDelta", "cur_xdelta", self.xdelta, 0, 100e6, 0, 3.2, 1, " ns"),
+                      (QDoubleSpinBox, "box_step_ampl", "cur_ampl_step", self.step_ampl, 0.1, 5, 1, 0.1, 1, " %")
                         ]
 
         for widget_class, attr_name, par_name, func, v_min, v_max, cur_val, v_step, dec, suf in double_boxes:
@@ -893,7 +895,7 @@ class MainWindow(QMainWindow):
         # ---- Combo boxes----
         combo_boxes = [("Linear Time", "combo_sweep", "cur_sweep", self.sweep_type, 
                         [
-                        "Linear Time", "Field", "Log Time"
+                        "Linear Time", "Field", "Log Time", "Amplitude"
                         ])
                       ]
 
@@ -984,8 +986,13 @@ class MainWindow(QMainWindow):
         third_grid.addWidget(self.label_f3, 2, 0)
         third_grid.addWidget(self.box_step_field, 2, 1)
         third_grid.addWidget(hline(), 3, 0, 1, 2)
-        third_grid.setRowStretch(4, 1)
-        third_grid.setColumnStretch(4, 1)
+
+        third_grid.addWidget(self.label_f4, 4, 0)
+        third_grid.addWidget(self.box_step_ampl, 4, 1)
+
+        third_grid.addWidget(hline(), 5, 0, 1, 2)
+        third_grid.setRowStretch(6, 1)
+        third_grid.setColumnStretch(6, 1)
 
         forth_grid = QGridLayout()
         forth_grid.setVerticalSpacing(4)
@@ -1379,6 +1386,12 @@ class MainWindow(QMainWindow):
         A function to send a step field value
         """
         self.cur_step = round( float( self.box_step_field.value() ), 3 )
+
+    def step_ampl(self):
+        """
+        A function to send a step amplitude value
+        """
+        self.cur_ampl_step = round( float( self.box_step_ampl.value() ), 1 )
 
     def sweep_type(self):
         self.cur_sweep = self.combo_sweep.currentText()
@@ -2630,7 +2643,24 @@ class MainWindow(QMainWindow):
                 self.laser_flag, self.combo_laser_num, self.laser_q_switch_delay, self.cur_phase,
                 self.iq_cor, self.cur_win_left, self.cur_win_right, self.zero_order,
                 self.cur_x0, self.cur_xdelta, self.first_order, self.second_order ) )
-
+        elif self.cur_sweep == 'Amplitude':
+            self.digitizer_process = Process( target = worker.exp_amplitude_test, args = ( 
+                self.child_conn_dig, 
+                self.decimation, self.number_averages, self.cur_scan, self.cur_points,
+                self.cur_ampl_step, self.mag_field,
+                self.cur_exp_name, self.cur_curve_name,
+                self.p1_exp, self.p2_exp, self.p3_exp, 
+                self.p4_exp, self.p5_exp, self.p6_exp, self.p7_exp, self.p8_exp, self.p9_exp,
+                self.n_wurst_cur, self.repetition_rate.split(' ')[0], 
+                self.ch0_ampl, self.ch1_ampl, self.p2_awg_exp, self.p3_awg_exp, 
+                self.p4_awg_exp, 
+                self.p5_awg_exp, self.p6_awg_exp, self.p7_awg_exp, self.p8_awg_exp, 
+                self.p9_awg_exp,
+                self.b_sech_cur, 
+                self.combo_cor, self.combo_synt,
+                self.laser_flag, self.combo_laser_num, self.laser_q_switch_delay, self.cur_phase,
+                self.iq_cor, self.cur_win_left, self.cur_win_right, self.zero_order, 
+                self.first_order, self.second_order ) )
 
         self.button_start_exp.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(193, 202, 227); border-style: outset; color: rgb(63, 63, 97); font-weight: bold; } QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
 
@@ -2939,6 +2969,24 @@ class MainWindow(QMainWindow):
                 self.laser_flag, self.combo_laser_num, self.laser_q_switch_delay, self.cur_phase,
                 self.iq_cor, self.cur_win_left, self.cur_win_right, self.zero_order,
                 self.cur_x0, self.cur_xdelta, self.first_order, self.second_order) )
+        elif self.cur_sweep == 'Amplitude':
+            self.digitizer_process = Process( target = worker.exp_amplitude, args = ( 
+                self.child_conn_dig, 
+                self.decimation, self.number_averages, self.cur_scan, self.cur_points,
+                self.cur_ampl_step, self.mag_field,
+                self.cur_exp_name, self.cur_curve_name,
+                self.p1_exp, self.p2_exp, self.p3_exp, 
+                self.p4_exp, self.p5_exp, self.p6_exp, self.p7_exp, self.p8_exp, self.p9_exp,
+                self.n_wurst_cur, self.repetition_rate.split(' ')[0], 
+                self.ch0_ampl, self.ch1_ampl, self.p2_awg_exp, self.p3_awg_exp, 
+                self.p4_awg_exp, 
+                self.p5_awg_exp, self.p6_awg_exp, self.p7_awg_exp, self.p8_awg_exp, 
+                self.p9_awg_exp,
+                self.b_sech_cur, 
+                self.combo_cor, self.combo_synt,
+                self.laser_flag, self.combo_laser_num, self.laser_q_switch_delay, self.cur_phase,
+                self.iq_cor, self.cur_win_left, self.cur_win_right, self.zero_order, 
+                self.first_order, self.second_order ) )
 
         self.button_start_exp.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(211, 194, 78); border-style: outset; color: rgb(63, 63, 97); font-weight: bold; } QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }") 
 
@@ -6714,6 +6762,975 @@ class Worker():
                 #    header = header, 
                 #    mode = 'w'
                 #)
+
+                conn.send( ('test', f'') )
+
+        except BaseException as e:
+            exc_info = f"{type(e)} \n{str(e)} \n{traceback.format_exc()}"
+            conn.send( ('Error', exc_info) )
+
+    def exp_amplitude(self, conn, decimation, num_ave, scans, points, 
+            step_ampl, field, exp_name, 
+            curve_name, p1_exp, p2_exp, 
+            p3_exp, p4_exp, p5_exp, p6_exp, p7_exp, p8_exp, p9_exp, 
+            n_wurst, rep_rate, ch0_ampl, 
+            ch1_ampl, p2_awg_exp, p3_awg_exp, p4_awg_exp, 
+            p5_awg_exp, p6_awg_exp, p7_awg_exp, p8_awg_exp, p9_awg_exp, 
+            b_sech_cur, correction, synt, laser_flag, laser_num, 
+            q_switch_delay, iq_phase, iq_corr, win_left, win_right, zero_phase,
+            first_order, sec_order):
+
+        import traceback
+
+        try:
+            import time
+            import datetime
+            import numpy as np
+            import atomize.general_modules.general_functions as general
+            import atomize.device_modules.Insys_FPGA as pb_pro
+            import atomize.device_modules.Lakeshore_335 as ls
+            import atomize.device_modules.BH_15 as bh
+            import atomize.device_modules.Micran_X_band_MW_bridge_v2 as mwBridge
+            import atomize.general_modules.csv_opener_saver as openfile
+
+            file_handler = openfile.Saver_Opener()
+            pb = pb_pro.Insys_FPGA()
+            bh15 = bh.BH_15()
+            ls335 = ls.Lakeshore_335()
+            mw = mwBridge.Micran_X_band_MW_bridge_v2()
+
+            iq_cor = iq_corr
+            pb.win_left = win_left
+            pb.win_right = win_right
+            zp = zero_phase
+
+            #p1_exp DETECTION
+            iq_freq = -int( p1_exp[6].split(" MHz")[0] )
+            
+            pb.phase_shift_ch1_seq_mode_awg = iq_phase
+
+            # correction from file
+            if correction == 0:
+                pass
+            elif correction == 1:
+                path_to_main = os.path.abspath( os.getcwd() )
+                path_file = os.path.join(path_to_main, '../atomize/control_center/correction.param')
+                file_to_read = open(path_file, 'r')
+
+                text_from_file = file_to_read.read().split('\n')
+                # ['BL: 5.92087', 'A1: 412.868', 'X1: -124.647', 'W1: 62.0069', 'A2: 420.717', 'X2: -35.8879', 
+                # 'W2: 34.4214', A3: 9893.97', 'X3: 12.4056', 'W3: 150.304', 'LOW: 16', 'LIMIT: 23', '']
+
+                coef = [float( text_from_file[0].split(' ')[1] ), 
+                        float( text_from_file[1].split(' ')[1] ), 
+                        float( text_from_file[2].split(' ')[1] ), 
+                        float( text_from_file[3].split(' ')[1] ), 
+                        float( text_from_file[4].split(' ')[1] ), 
+                        float( text_from_file[5].split(' ')[1] ), 
+                        float( text_from_file[6].split(' ')[1] ), 
+                        float( text_from_file[7].split(' ')[1] ), 
+                        float( text_from_file[8].split(' ')[1] ), 
+                        float( text_from_file[9].split(' ')[1] )
+                        ]
+
+                pb.awg_correction(only_pi_half = 'True', 
+                    coef_array = coef, 
+                    low_level = float( text_from_file[10].split(' ')[1] ), 
+                    limit = float( text_from_file[11].split(' ')[1] )
+                    )
+
+            elif correction == 2:
+                path_to_main = os.path.abspath( os.getcwd() )
+                path_file = os.path.join(path_to_main, '../atomize/control_center/correction.param')
+                file_to_read = open(path_file, 'r')
+
+                text_from_file = file_to_read.read().split('\n')
+                # ['BL: 5.92087', 'A1: 412.868', 'X1: -124.647', 'W1: 62.0069', 'A2: 420.717', 'X2: -35.8879', 
+                # 'W2: 34.4214', A3: 9893.97', 'X3: 12.4056', 'W3: 150.304', 'LOW: 16', 'LIMIT: 23', '']
+                
+                coef = [float( text_from_file[0].split(' ')[1] ), 
+                        float( text_from_file[1].split(' ')[1] ), 
+                        float( text_from_file[2].split(' ')[1] ), 
+                        float( text_from_file[3].split(' ')[1] ), 
+                        float( text_from_file[4].split(' ')[1] ), 
+                        float( text_from_file[5].split(' ')[1] ), 
+                        float( text_from_file[6].split(' ')[1] ),
+                        float( text_from_file[7].split(' ')[1] ),  
+                        float( text_from_file[8].split(' ')[1] ), 
+                        float( text_from_file[9].split(' ')[1] )
+                        ]
+
+                pb.awg_correction(only_pi_half = 'False', 
+                    coef_array = coef, 
+                    low_level = float( text_from_file[10].split(' ')[1] ),
+                    limit = float( text_from_file[11].split(' ')[1] )
+                    )
+            
+            pb.awg_amplitude('CH0', str(ch0_ampl), 'CH1', str(ch1_ampl) )
+            
+            POINTS = points
+            STEP = step_ampl
+            FIELD = field
+
+            AVERAGES = num_ave
+            SCANS = scans
+            PHASES = len(p1_exp[3])
+            DEC_COEF = decimation
+            process = 'None'
+            REP_RATE = f'{rep_rate} Hz'
+
+            if iq_cor == 1:
+                EXP_NAME = f'{exp_name}_A'
+            elif iq_cor == 0:
+                EXP_NAME = f'{exp_name}_A_2D'
+
+            bh15.magnet_field( FIELD )
+            general.wait('2000 ms')
+
+            
+            name_list = []
+            ampl_list = []
+
+            # DETECTION pulse
+            iq_freq = -int( p1_exp[6].split(" MHz")[0] )
+            if int(float(p1_exp[2].split(' ')[0])) != 0:
+                pb.pulser_pulse(name='P1', channel=p1_exp[0], start=p1_exp[1], length=p1_exp[2], phase_list=p1_exp[3], delta_start=p1_exp[4], length_increment=p1_exp[5])
+
+            #Laser flag
+            if laser_flag != 1:
+
+
+                trigger_pulses = [p2_exp, p3_exp, p4_exp, p5_exp, p6_exp, p7_exp, p8_exp, p9_exp]
+                awg_params = [
+                                p2_awg_exp, p3_awg_exp, p4_awg_exp, p5_awg_exp, 
+                                p6_awg_exp, p7_awg_exp, p8_awg_exp, p9_awg_exp
+                             ]
+
+                for i, (tp, ap) in enumerate(zip(trigger_pulses, awg_params)):
+                    if int(float(tp[1].split(' ')[0])) != 0:
+                        if tp[2] != '0.0 ns':
+                            name_list.append(f'P{2*i + 2}')
+                            f_delay = float( ap[6] )
+                            ampl_list.append( float( ap[6] ) )
+
+                        is_complex = ap[0] in ['WURST', 'SECH/TANH']
+                        freq = (ap[1], ap[2]) if is_complex else ap[1]
+                        
+                        awg_kwargs = {
+                            'name': f'P{2*i + 2}',
+                            'channel': 'CH0',
+                            'func': ap[0],
+                            'frequency': freq,
+                            'length': ap[3],
+                            'sigma': ap[4],
+                            'start': ap[5],
+                            'amplitude': ap[6],
+                            'phase_list': ap[7],
+                            'length_increment': ap[9]
+                        }
+                        
+                        if is_complex:
+                            awg_kwargs.update({'n': n_wurst, 'b': b_sech_cur})
+                            
+                        pb.awg_pulse(**awg_kwargs)
+
+                        if ap[0] != 'BLANK':
+                            pb.pulser_pulse(
+                                name=f'P{2*i + 3}',
+                                channel='TRIGGER_AWG', 
+                                start=tp[0], 
+                                length=tp[1], 
+                                delta_start=tp[2], 
+                                length_increment=tp[3]
+                            )
+                pb.pulser_repetition_rate( REP_RATE )
+
+            else:
+
+                if int(float(p2_exp[1].split(' ')[0])) != 0:
+                    #p7 is LASER pulse
+                    pb.pulser_pulse(
+                        name=f'L1',
+                        channel='LASER', 
+                        start=p2_exp[0], 
+                        length=p2_exp[1], 
+                        delta_start=p2_exp[2], 
+                        length_increment=p2_exp[3]
+                    )
+                else:
+                    raise ValueError(f"LASER pulse has zero length")
+
+                trigger_pulses = [p3_exp, p4_exp, p5_exp, p6_exp, p7_exp, p8_exp, p9_exp]
+                awg_params = [
+                                p3_awg_exp, p4_awg_exp, p5_awg_exp, 
+                                p6_awg_exp, p7_awg_exp, p8_awg_exp, p9_awg_exp
+                             ]
+
+                for i, (tp, ap) in enumerate(zip(trigger_pulses, awg_params)):
+
+                    if int(float(tp[1].split(' ')[0])) != 0:
+                        if tp[2] != '0.0 ns':
+                            name_list.append(f'P{2*i + 2}')
+                            f_delay = float( ap[6] )
+                            ampl_list.append( float( ap[6] ) )
+
+                        start_val = float(tp[0].split(' ')[0]) + q_switch_delay
+                        tp[0] = f"{self.round_to_closest(start_val, 3.2)} ns"
+                        start_val_awg = float(ap[5].split(' ')[0]) + q_switch_delay
+                        ap[5] = f"{self.round_to_closest(start_val_awg, 3.2)} ns"
+
+                        is_complex = ap[0] in ['WURST', 'SECH/TANH']
+                        freq = (ap[1], ap[2]) if is_complex else ap[1]
+                        
+                        awg_kwargs = {
+                            'name': f'P{2*i + 2}',
+                            'channel': 'CH0',
+                            'func': ap[0],
+                            'frequency': freq,
+                            'length': ap[3],
+                            'sigma': ap[4],
+                            'start': ap[5],
+                            'amplitude': ap[6],
+                            'phase_list': ap[7],
+                            'length_increment': ap[9]
+                        }
+                        
+                        if is_complex:
+                            awg_kwargs.update({'n': n_wurst, 'b': b_sech_cur})
+                            
+                        pb.awg_pulse(**awg_kwargs)
+
+                        if ap[0] != 'BLANK':
+                            pb.pulser_pulse(
+                                name=f'P{2*i + 3}',
+                                channel='TRIGGER_AWG', 
+                                start=tp[0], 
+                                length=tp[1], 
+                                delta_start=tp[2], 
+                                length_increment=tp[3]
+                            )
+
+                if laser_num == 1:
+                    pb.pulser_repetition_rate( '9.9 Hz' )
+                else:
+                    pb.pulser_repetition_rate( REP_RATE )
+
+
+            if len(name_list) != 0:
+                point_flag = 0
+                pass
+            else:
+                step = step_ampl
+                f_delay = 0
+                point_flag = 1
+                conn.send( ('Message', 'No pulse is indicated for amplitude increment; the time axis corresponds to the number of points in the experiment') )
+
+            pb.pulser_default_synt(synt)
+
+            pb.digitizer_decimation(DEC_COEF)
+            points_window = pb.digitizer_window_points()
+
+            pb.pulser_open()
+            pb.digitizer_number_of_averages(AVERAGES)
+
+            data = np.zeros( ( 2, points_window, POINTS ) )
+            dec_calc = 0.4 * DEC_COEF / 1e9
+
+            x_axis = f_delay + np.linspace(0, (POINTS - 1)*STEP, num = POINTS) 
+            x_axis_plot = x_axis  
+            
+            while self.command != 'exit':
+
+                for k in general.scans(SCANS):
+
+                    sp = ls335.tc_setpoint()
+                    ct = ls335.tc_temperature('B')
+
+                    if np.abs(sp - ct) > 0.8:
+                        general.wait('8000 ms')
+
+                    if self.command == 'exit':
+                        break
+
+                    for j in range(POINTS):
+
+                        for i in range(PHASES):
+
+                            if j == 0:
+                                if iq_cor == 0:
+                                    if point_flag != 1:
+                                        process = general.plot_2d(
+                                            EXP_NAME, 
+                                            data, 
+                                            start_step = ((0, dec_calc), (f_delay, step)), 
+                                            xname = 'Time', 
+                                            xscale = 's', 
+                                            yname = 'Amplitude', 
+                                            yscale = '%', 
+                                            zname = 'Intensity', 
+                                            zscale = 'mV', 
+                                            text = f"Scan / Amplitude: {k} / { (f_delay + j * STEP):.1f}",
+                                            pr = process
+                                        )
+                                    else:
+                                        process = general.plot_2d(
+                                            EXP_NAME, 
+                                            data, 
+                                            start_step = ((0, dec_calc), (0, 1)), 
+                                            xname = 'Time', 
+                                            xscale = 's', 
+                                            yname = 'Point', 
+                                            yscale = '', 
+                                            zname = 'Intensity', 
+                                            zscale = 'mV', 
+                                            text = f"Scan / Point: {k} / {j}",
+                                            pr = process
+                                        )
+                                elif iq_cor == 1:
+                                    data_x, data_y = pb.digitizer_iq(data[0], data[1], iq_freq, zp, first_order, sec_order, integral = True)
+                                    if point_flag != 1:
+                                        general.plot_1d(EXP_NAME, x_axis_plot, ( data_x, data_y ), xname = 'Amplitude', xscale = '%', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Amplitude: ' + str(k) + ' / ' + str(round(f_delay + j * STEP, 1)))
+                                    else:
+                                        general.plot_1d(EXP_NAME, x_axis, ( data_x, data_y ), xname = 'Point', xscale = '', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j, 1)))
+
+                            pb.awg_next_phase()
+                            pb.pulser_update()
+
+                            if j == 0:
+                                data[0], data[1] = pb.digitizer_get_curve( 
+                                    POINTS, 
+                                    PHASES, 
+                                    current_scan = k, 
+                                    total_scan = SCANS ) 
+
+                        pb.pulser_shift()
+                        pb.awg_pulse_reset()
+                        
+                        ampl_list_cur = ampl_list + STEP * (j + 1)
+                        pb.awg_redefine_amplitude(name = name_list, amplitude = ampl_list_cur )
+
+                        conn.send( ('Status', int( 100 * (( k - 1 ) * POINTS + j + 1) / POINTS / SCANS)) )
+
+                        # check our polling data
+                        if self.command[0:2] == 'SC':
+                            SCANS = int( self.command[2:] )
+                            self.command = 'start'
+                        elif self.command == 'exit':
+                            data[0], data[1] = pb.digitizer_at_exit()
+                            break
+                        
+                        if conn.poll() == True:
+                            self.command = conn.recv()
+
+                    pb.pulser_pulse_reset()
+                    pb.awg_pulse_reset()
+
+                self.command = 'exit'
+
+            if self.command == 'exit':
+                tb = round( pb.digitizer_window(), 1)
+                pb.pulser_close()
+
+                if iq_cor == 0:
+                    if point_flag != 1:
+                        process = general.plot_2d(
+                            EXP_NAME, 
+                            data, 
+                            start_step = ((0, dec_calc), (f_delay, step)), 
+                            xname = 'Time', 
+                            xscale = 's', 
+                            yname = 'Amplitude', 
+                            yscale = '%', 
+                            zname = 'Intensity', 
+                            zscale = 'mV', 
+                            text = f"Scan / Amplitude: {k} / { (f_delay + j * STEP):.1f}",
+                            pr = process
+                        )
+                    else:
+                        process = general.plot_2d(
+                            EXP_NAME, 
+                            data, 
+                            start_step = ((0, dec_calc), (0, 1)), 
+                            xname = 'Time', 
+                            xscale = 's', 
+                            yname = 'Point', 
+                            yscale = '', 
+                            zname = 'Intensity', 
+                            zscale = 'mV', 
+                            text = f"Scan / Point: {k} / {j}",
+                            pr = process
+                        )
+                elif iq_cor == 1:
+                    data_x, data_y = pb.digitizer_iq(data[0], data[1], iq_freq, zp, first_order, sec_order, integral = True)
+                    if point_flag != 1:
+                        general.plot_1d(EXP_NAME, x_axis_plot, ( data_x, data_y ), xname = 'Amplitude', xscale = '%', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Amplitude: ' + str(k) + ' / ' + str(round(f_delay + j * STEP, 1)))
+                    else:
+                        general.plot_1d(EXP_NAME, x_axis, ( data_x, data_y ), xname = 'Point', xscale = '', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j, 1)))
+
+
+                now = datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")
+                w = 30
+
+                # Data saving
+                header = (
+                    f"{'Date:':<{w}} {now}\n"
+                    f"{'Experiment:':<{w}} Pulsed EPR AWG Experiment\n"
+                    f"{'Field:':<{w}} {FIELD} G\n"
+                    f"{general.fmt(mw.mw_bridge_rotary_vane(), w)}\n"
+                    f"{general.fmt(mw.mw_bridge_att_prm(), w)}\n"
+                    f"{general.fmt(mw.mw_bridge_att2_prm(), w)}\n"
+                    f"{general.fmt(mw.mw_bridge_att2_prd(), w)}\n"
+                    f"{general.fmt(mw.mw_bridge_synthesizer(), w)}\n"
+                    f"{'Repetition Rate:':<{w}} {pb.pulser_repetition_rate()}\n"
+                    f"{'Number of Scans:':<{w}} {SCANS}\n"
+                    f"{'Averages:':<{w}} {AVERAGES}\n"
+                    f"{'Points:':<{w}} {POINTS}\n"
+                    f"{'Window:':<{w}} {p1_exp[2]}\n"
+                    f"{'Horizontal Resolution:':<{w}} {0.4 * DEC_COEF:.1g} ns\n"
+                    f"{'Vertical Resolution:':<{w}} {STEP} %\n"
+                    f"{'Temperature:':<{w}} {ls335.tc_temperature('A')} K\n"
+                    f"{'Temperature Cernox:':<{w}} {ls335.tc_temperature('B')} K\n"
+                    f"{'-'*50}\n"
+                    f"Pulse List:\n{pb.pulser_pulse_list()}"
+                    f"{'-'*50}\n"
+                    f"AWG Pulse List:\n{pb.awg_pulse_list()}"
+                    f"{'-'*50}\n"
+                    f"2D Data"
+                )
+                if iq_cor == 1:
+                    header2 = (
+                        f"{'Date:':<{w}} {now}\n"
+                        f"{'Experiment:':<{w}} Pulsed EPR AWG Experiment\n"
+                        f"{'Field:':<{w}} {FIELD} G\n"
+                        f"{general.fmt(mw.mw_bridge_rotary_vane(), w)}\n"
+                        f"{general.fmt(mw.mw_bridge_att_prm(), w)}\n"
+                        f"{general.fmt(mw.mw_bridge_att2_prm(), w)}\n"
+                        f"{general.fmt(mw.mw_bridge_att2_prd(), w)}\n"
+                        f"{general.fmt(mw.mw_bridge_synthesizer(), w)}\n"
+                        f"{'Repetition Rate:':<{w}} {pb.pulser_repetition_rate()}\n"
+                        f"{'Number of Scans:':<{w}} {SCANS}\n"
+                        f"{'Averages:':<{w}} {AVERAGES}\n"
+                        f"{'Points:':<{w}} {POINTS}\n"
+                        f"{'Window:':<{w}} {tb} ns\n"
+                        f"{'Horizontal Resolution:':<{w}} {STEP} %\n"
+                        f"{'Temperature:':<{w}} {ls335.tc_temperature('A')} K\n"
+                        f"{'Temperature Cernox:':<{w}} {ls335.tc_temperature('B')} K\n"
+                        f"{'-'*50}\n"
+                        f"Pulse List:\n{pb.pulser_pulse_list()}"
+                        f"{'-'*50}\n"
+                        f"AWG Pulse List:\n{pb.awg_pulse_list()}"
+                        f"{'-'*50}\n"                        
+                        f"Time (ns), I (A.U.), Q (A.U.)"
+                    )
+
+                conn.send(('Open', ''))
+                
+                while True:
+                    if conn.poll():
+                        msg = conn.recv()
+                        if msg.startswith('FL'):
+                            file_data = msg[2:]
+                            break
+                    general.wait('200 ms')
+
+                if iq_cor == 0:
+                    file_handler.save_data(
+                        file_data, 
+                        data, 
+                        header = header, 
+                        mode = 'w'
+                    )
+                elif iq_cor == 1:
+                    file_data2 = file_data.replace(".csv", "_2d.csv")
+
+                    file_handler.save_data(
+                        file_data, 
+                        np.c_[x_axis, data_x, data_y], 
+                        header = header2, 
+                        mode = 'w'
+                        )
+                    file_handler.save_data(
+                        file_data2, 
+                        data, 
+                        header = header, 
+                        mode = 'w'
+                    )
+
+                conn.send( ('', f'Experiment {EXP_NAME} finished') )
+
+        except BaseException as e:
+            exc_info = f"{type(e)} \n{str(e)} \n{traceback.format_exc()}"
+            conn.send( ('Error', exc_info) )
+
+    def exp_amplitude_test(self, conn, decimation, num_ave, scans, points, 
+            step_ampl, field, exp_name, 
+            curve_name, p1_exp, p2_exp, 
+            p3_exp, p4_exp, p5_exp, p6_exp, p7_exp, p8_exp, p9_exp, 
+            n_wurst, rep_rate, ch0_ampl, 
+            ch1_ampl, p2_awg_exp, p3_awg_exp, p4_awg_exp, 
+            p5_awg_exp, p6_awg_exp, p7_awg_exp, p8_awg_exp, p9_awg_exp, 
+            b_sech_cur, correction, synt, laser_flag, laser_num, 
+            q_switch_delay, iq_phase, iq_corr, win_left, win_right, zero_phase,
+            first_order, sec_order):
+
+        import traceback
+
+        sys.argv = ['', 'test']
+
+        try:
+            import time
+            import datetime
+            import numpy as np
+            import atomize.general_modules.general_functions as general
+            general.test_flag = 'test'
+            import atomize.device_modules.Insys_FPGA as pb_pro
+            import atomize.device_modules.Lakeshore_335 as ls
+            import atomize.device_modules.BH_15 as bh
+            import atomize.device_modules.Micran_X_band_MW_bridge_v2 as mwBridge
+            import atomize.general_modules.csv_opener_saver as openfile
+
+            file_handler = openfile.Saver_Opener()
+            pb = pb_pro.Insys_FPGA()
+            bh15 = bh.BH_15()
+            ls335 = ls.Lakeshore_335()
+            mw = mwBridge.Micran_X_band_MW_bridge_v2()
+
+            iq_cor = iq_corr
+            pb.win_left = win_left
+            pb.win_right = win_right
+            zp = zero_phase
+
+            #p1_exp DETECTION
+            iq_freq = -int( p1_exp[6].split(" MHz")[0] )
+            
+            pb.phase_shift_ch1_seq_mode_awg = iq_phase
+
+            # correction from file
+            if correction == 0:
+                pass
+            elif correction == 1:
+                path_to_main = os.path.abspath( os.getcwd() )
+                path_file = os.path.join(path_to_main, '../atomize/control_center/correction.param')
+                file_to_read = open(path_file, 'r')
+
+                text_from_file = file_to_read.read().split('\n')
+                # ['BL: 5.92087', 'A1: 412.868', 'X1: -124.647', 'W1: 62.0069', 'A2: 420.717', 'X2: -35.8879', 
+                # 'W2: 34.4214', A3: 9893.97', 'X3: 12.4056', 'W3: 150.304', 'LOW: 16', 'LIMIT: 23', '']
+
+                coef = [float( text_from_file[0].split(' ')[1] ), 
+                        float( text_from_file[1].split(' ')[1] ), 
+                        float( text_from_file[2].split(' ')[1] ), 
+                        float( text_from_file[3].split(' ')[1] ), 
+                        float( text_from_file[4].split(' ')[1] ), 
+                        float( text_from_file[5].split(' ')[1] ), 
+                        float( text_from_file[6].split(' ')[1] ), 
+                        float( text_from_file[7].split(' ')[1] ), 
+                        float( text_from_file[8].split(' ')[1] ), 
+                        float( text_from_file[9].split(' ')[1] )
+                        ]
+
+                pb.awg_correction(only_pi_half = 'True', 
+                    coef_array = coef, 
+                    low_level = float( text_from_file[10].split(' ')[1] ), 
+                    limit = float( text_from_file[11].split(' ')[1] )
+                    )
+
+            elif correction == 2:
+                path_to_main = os.path.abspath( os.getcwd() )
+                path_file = os.path.join(path_to_main, '../atomize/control_center/correction.param')
+                file_to_read = open(path_file, 'r')
+
+                text_from_file = file_to_read.read().split('\n')
+                # ['BL: 5.92087', 'A1: 412.868', 'X1: -124.647', 'W1: 62.0069', 'A2: 420.717', 'X2: -35.8879', 
+                # 'W2: 34.4214', A3: 9893.97', 'X3: 12.4056', 'W3: 150.304', 'LOW: 16', 'LIMIT: 23', '']
+                
+                coef = [float( text_from_file[0].split(' ')[1] ), 
+                        float( text_from_file[1].split(' ')[1] ), 
+                        float( text_from_file[2].split(' ')[1] ), 
+                        float( text_from_file[3].split(' ')[1] ), 
+                        float( text_from_file[4].split(' ')[1] ), 
+                        float( text_from_file[5].split(' ')[1] ), 
+                        float( text_from_file[6].split(' ')[1] ),
+                        float( text_from_file[7].split(' ')[1] ),  
+                        float( text_from_file[8].split(' ')[1] ), 
+                        float( text_from_file[9].split(' ')[1] )
+                        ]
+
+                pb.awg_correction(only_pi_half = 'False', 
+                    coef_array = coef, 
+                    low_level = float( text_from_file[10].split(' ')[1] ),
+                    limit = float( text_from_file[11].split(' ')[1] )
+                    )
+            
+            pb.awg_amplitude('CH0', str(ch0_ampl), 'CH1', str(ch1_ampl) )
+            
+            POINTS = points
+            STEP = step_ampl
+            FIELD = field
+
+            AVERAGES = num_ave
+            SCANS = scans
+            PHASES = len(p1_exp[3])
+            DEC_COEF = decimation
+            process = 'None'
+            REP_RATE = f'{rep_rate} Hz'
+
+            if iq_cor == 1:
+                EXP_NAME = f'{exp_name}_A'
+            elif iq_cor == 0:
+                EXP_NAME = f'{exp_name}_A_2D'
+
+            bh15.magnet_field( FIELD )
+            general.wait('2000 ms')
+
+            
+            name_list = []
+            ampl_list = []
+
+            # DETECTION pulse
+            iq_freq = -int( p1_exp[6].split(" MHz")[0] )
+            if int(float(p1_exp[2].split(' ')[0])) != 0:
+                pb.pulser_pulse(name='P1', channel=p1_exp[0], start=p1_exp[1], length=p1_exp[2], phase_list=p1_exp[3], delta_start=p1_exp[4], length_increment=p1_exp[5])
+
+            #Laser flag
+            if laser_flag != 1:
+
+
+                trigger_pulses = [p2_exp, p3_exp, p4_exp, p5_exp, p6_exp, p7_exp, p8_exp, p9_exp]
+                awg_params = [
+                                p2_awg_exp, p3_awg_exp, p4_awg_exp, p5_awg_exp, 
+                                p6_awg_exp, p7_awg_exp, p8_awg_exp, p9_awg_exp
+                             ]
+
+                for i, (tp, ap) in enumerate(zip(trigger_pulses, awg_params)):
+                    if int(float(tp[1].split(' ')[0])) != 0:
+                        if tp[2] != '0.0 ns':
+                            name_list.append(f'P{2*i + 2}')
+                            f_delay = float( ap[6] )
+                            ampl_list.append( float( ap[6] ) )
+
+                        is_complex = ap[0] in ['WURST', 'SECH/TANH']
+                        freq = (ap[1], ap[2]) if is_complex else ap[1]
+                        
+                        awg_kwargs = {
+                            'name': f'P{2*i + 2}',
+                            'channel': 'CH0',
+                            'func': ap[0],
+                            'frequency': freq,
+                            'length': ap[3],
+                            'sigma': ap[4],
+                            'start': ap[5],
+                            'amplitude': ap[6],
+                            'phase_list': ap[7],
+                            'length_increment': ap[9]
+                        }
+                        
+                        if is_complex:
+                            awg_kwargs.update({'n': n_wurst, 'b': b_sech_cur})
+                            
+                        pb.awg_pulse(**awg_kwargs)
+
+                        if ap[0] != 'BLANK':
+                            pb.pulser_pulse(
+                                name=f'P{2*i + 3}',
+                                channel='TRIGGER_AWG', 
+                                start=tp[0], 
+                                length=tp[1], 
+                                delta_start=tp[2], 
+                                length_increment=tp[3]
+                            )
+                pb.pulser_repetition_rate( REP_RATE )
+
+            else:
+
+                if int(float(p2_exp[1].split(' ')[0])) != 0:
+                    #p7 is LASER pulse
+                    pb.pulser_pulse(
+                        name=f'L1',
+                        channel='LASER', 
+                        start=p2_exp[0], 
+                        length=p2_exp[1], 
+                        delta_start=p2_exp[2], 
+                        length_increment=p2_exp[3]
+                    )
+                else:
+                    raise ValueError(f"LASER pulse has zero length")
+
+                trigger_pulses = [p3_exp, p4_exp, p5_exp, p6_exp, p7_exp, p8_exp, p9_exp]
+                awg_params = [
+                                p3_awg_exp, p4_awg_exp, p5_awg_exp, 
+                                p6_awg_exp, p7_awg_exp, p8_awg_exp, p9_awg_exp
+                             ]
+
+                for i, (tp, ap) in enumerate(zip(trigger_pulses, awg_params)):
+
+                    if int(float(tp[1].split(' ')[0])) != 0:
+                        if tp[2] != '0.0 ns':
+                            name_list.append(f'P{2*i + 2}')
+                            f_delay = float( ap[6] )
+                            ampl_list.append( float( ap[6] ) )
+
+                        start_val = float(tp[0].split(' ')[0]) + q_switch_delay
+                        tp[0] = f"{self.round_to_closest(start_val, 3.2)} ns"
+                        start_val_awg = float(ap[5].split(' ')[0]) + q_switch_delay
+                        ap[5] = f"{self.round_to_closest(start_val_awg, 3.2)} ns"
+
+                        is_complex = ap[0] in ['WURST', 'SECH/TANH']
+                        freq = (ap[1], ap[2]) if is_complex else ap[1]
+                        
+                        awg_kwargs = {
+                            'name': f'P{2*i + 2}',
+                            'channel': 'CH0',
+                            'func': ap[0],
+                            'frequency': freq,
+                            'length': ap[3],
+                            'sigma': ap[4],
+                            'start': ap[5],
+                            'amplitude': ap[6],
+                            'phase_list': ap[7],
+                            'length_increment': ap[9]
+                        }
+                        
+                        if is_complex:
+                            awg_kwargs.update({'n': n_wurst, 'b': b_sech_cur})
+                            
+                        pb.awg_pulse(**awg_kwargs)
+
+                        if ap[0] != 'BLANK':
+                            pb.pulser_pulse(
+                                name=f'P{2*i + 3}',
+                                channel='TRIGGER_AWG', 
+                                start=tp[0], 
+                                length=tp[1], 
+                                delta_start=tp[2], 
+                                length_increment=tp[3]
+                            )
+
+                if laser_num == 1:
+                    pb.pulser_repetition_rate( '9.9 Hz' )
+                else:
+                    pb.pulser_repetition_rate( REP_RATE )
+
+
+            if len(name_list) != 0:
+                point_flag = 0
+                pass
+            else:
+                step = step_ampl
+                f_delay = 0
+                point_flag = 1
+                #conn.send( ('Message', 'No START or LENGTH increment; the time axis corresponds to the number of points in the experiment') )
+
+            pb.pulser_default_synt(synt)
+
+            pb.digitizer_decimation(DEC_COEF)
+            points_window = pb.digitizer_window_points()
+
+            pb.pulser_open()
+            pb.digitizer_number_of_averages(AVERAGES)
+
+            data = np.zeros( ( 2, points_window, POINTS ) )
+            dec_calc = 0.4 * DEC_COEF / 1e9
+
+            x_axis = f_delay + np.linspace(0, (POINTS - 1)*STEP, num = POINTS) 
+            x_axis_plot = x_axis  
+            
+            while self.command != 'exit':
+
+                for k in general.scans(SCANS):
+
+                    sp = ls335.tc_setpoint()
+                    ct = ls335.tc_temperature('B')
+
+                    if np.abs(sp - ct) > 0.8:
+                        general.wait('8000 ms')
+
+                    if self.command == 'exit':
+                        break
+
+                    for j in range(POINTS):
+
+                        for i in range(PHASES):
+
+                            if j == 0:
+                                if iq_cor == 0:
+                                    if point_flag != 1:
+                                        process = general.plot_2d(
+                                            EXP_NAME, 
+                                            data, 
+                                            start_step = ((0, dec_calc), (f_delay, step)), 
+                                            xname = 'Time', 
+                                            xscale = 's', 
+                                            yname = 'Amplitude', 
+                                            yscale = '%', 
+                                            zname = 'Intensity', 
+                                            zscale = 'mV', 
+                                            text = f"Scan / Amplitude: {k} / { (f_delay + j * STEP):.1f}",
+                                            pr = process
+                                        )
+                                    else:
+                                        process = general.plot_2d(
+                                            EXP_NAME, 
+                                            data, 
+                                            start_step = ((0, dec_calc), (0, 1)), 
+                                            xname = 'Time', 
+                                            xscale = 's', 
+                                            yname = 'Point', 
+                                            yscale = '', 
+                                            zname = 'Intensity', 
+                                            zscale = 'mV', 
+                                            text = f"Scan / Point: {k} / {j}",
+                                            pr = process
+                                        )
+                                elif iq_cor == 1:
+                                    data_x, data_y = pb.digitizer_iq(data[0], data[1], iq_freq, zp, first_order, sec_order, integral = True)
+                                    if point_flag != 1:
+                                        general.plot_1d(EXP_NAME, x_axis_plot, ( data_x, data_y ), xname = 'Amplitude', xscale = '%', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Amplitude: ' + str(k) + ' / ' + str(round(f_delay + j * STEP, 1)))
+                                    else:
+                                        general.plot_1d(EXP_NAME, x_axis, ( data_x, data_y ), xname = 'Point', xscale = '', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j, 1)))
+
+                            pb.awg_next_phase()
+                            pb.pulser_update()
+
+                            if j == 0:
+                                data[0], data[1] = pb.digitizer_get_curve( 
+                                    POINTS, 
+                                    PHASES, 
+                                    current_scan = k, 
+                                    total_scan = SCANS ) 
+
+                        pb.pulser_shift()
+                        pb.awg_pulse_reset()
+                        
+                        ampl_list_cur = ampl_list + STEP * (j + 1)
+                        pb.awg_redefine_amplitude(name = name_list, amplitude = ampl_list_cur )
+
+                        #conn.send( ('Status', int( 100 * (( k - 1 ) * POINTS + j + 1) / POINTS / SCANS)) )
+
+                        # check our polling data
+                        if self.command[0:2] == 'SC':
+                            SCANS = int( self.command[2:] )
+                            self.command = 'start'
+                        elif self.command == 'exit':
+                            data[0], data[1] = pb.digitizer_at_exit()
+                            break
+                        
+                        if conn.poll() == True:
+                            self.command = conn.recv()
+
+                    pb.pulser_pulse_reset()
+                    pb.awg_pulse_reset()
+
+                self.command = 'exit'
+
+            if self.command == 'exit':
+                tb = round( pb.digitizer_window(), 1)
+                pb.pulser_close()
+
+                if iq_cor == 0:
+                    if point_flag != 1:
+                        process = general.plot_2d(
+                            EXP_NAME, 
+                            data, 
+                            start_step = ((0, dec_calc), (f_delay, step)), 
+                            xname = 'Time', 
+                            xscale = 's', 
+                            yname = 'Amplitude', 
+                            yscale = '%', 
+                            zname = 'Intensity', 
+                            zscale = 'mV', 
+                            text = f"Scan / Amplitude: {k} / { (f_delay + j * STEP):.1f}",
+                            pr = process
+                        )
+                    else:
+                        process = general.plot_2d(
+                            EXP_NAME, 
+                            data, 
+                            start_step = ((0, dec_calc), (0, 1)), 
+                            xname = 'Time', 
+                            xscale = 's', 
+                            yname = 'Point', 
+                            yscale = '', 
+                            zname = 'Intensity', 
+                            zscale = 'mV', 
+                            text = f"Scan / Point: {k} / {j}",
+                            pr = process
+                        )
+                elif iq_cor == 1:
+                    data_x, data_y = pb.digitizer_iq(data[0], data[1], iq_freq, zp, first_order, sec_order, integral = True)
+                    if point_flag != 1:
+                        general.plot_1d(EXP_NAME, x_axis_plot, ( data_x, data_y ), xname = 'Amplitude', xscale = '%', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Amplitude: ' + str(k) + ' / ' + str(round(f_delay + j * STEP, 1)))
+                    else:
+                        general.plot_1d(EXP_NAME, x_axis, ( data_x, data_y ), xname = 'Point', xscale = '', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j, 1)))
+
+
+                now = datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")
+                w = 30
+
+                # Data saving
+                header = (
+                    f"{'Date:':<{w}} {now}\n"
+                    f"{'Experiment:':<{w}} Pulsed EPR AWG Experiment\n"
+                    f"{'Field:':<{w}} {FIELD} G\n"
+                    f"{general.fmt(mw.mw_bridge_rotary_vane(), w)}\n"
+                    f"{general.fmt(mw.mw_bridge_att_prm(), w)}\n"
+                    f"{general.fmt(mw.mw_bridge_att2_prm(), w)}\n"
+                    f"{general.fmt(mw.mw_bridge_att2_prd(), w)}\n"
+                    f"{general.fmt(mw.mw_bridge_synthesizer(), w)}\n"
+                    f"{'Repetition Rate:':<{w}} {pb.pulser_repetition_rate()}\n"
+                    f"{'Number of Scans:':<{w}} {SCANS}\n"
+                    f"{'Averages:':<{w}} {AVERAGES}\n"
+                    f"{'Points:':<{w}} {POINTS}\n"
+                    f"{'Window:':<{w}} {p1_exp[2]}\n"
+                    f"{'Horizontal Resolution:':<{w}} {0.4 * DEC_COEF:.1g} ns\n"
+                    f"{'Vertical Resolution:':<{w}} {STEP} %\n"
+                    f"{'Temperature:':<{w}} {ls335.tc_temperature('A')} K\n"
+                    f"{'Temperature Cernox:':<{w}} {ls335.tc_temperature('B')} K\n"
+                    f"{'-'*50}\n"
+                    f"Pulse List:\n{pb.pulser_pulse_list()}"
+                    f"{'-'*50}\n"
+                    f"AWG Pulse List:\n{pb.awg_pulse_list()}"
+                    f"{'-'*50}\n"
+                    f"2D Data"
+                )
+                if iq_cor == 1:
+                    header2 = (
+                        f"{'Date:':<{w}} {now}\n"
+                        f"{'Experiment:':<{w}} Pulsed EPR AWG Experiment\n"
+                        f"{'Field:':<{w}} {FIELD} G\n"
+                        f"{general.fmt(mw.mw_bridge_rotary_vane(), w)}\n"
+                        f"{general.fmt(mw.mw_bridge_att_prm(), w)}\n"
+                        f"{general.fmt(mw.mw_bridge_att2_prm(), w)}\n"
+                        f"{general.fmt(mw.mw_bridge_att2_prd(), w)}\n"
+                        f"{general.fmt(mw.mw_bridge_synthesizer(), w)}\n"
+                        f"{'Repetition Rate:':<{w}} {pb.pulser_repetition_rate()}\n"
+                        f"{'Number of Scans:':<{w}} {SCANS}\n"
+                        f"{'Averages:':<{w}} {AVERAGES}\n"
+                        f"{'Points:':<{w}} {POINTS}\n"
+                        f"{'Window:':<{w}} {tb} ns\n"
+                        f"{'Horizontal Resolution:':<{w}} {STEP} %\n"
+                        f"{'Temperature:':<{w}} {ls335.tc_temperature('A')} K\n"
+                        f"{'Temperature Cernox:':<{w}} {ls335.tc_temperature('B')} K\n"
+                        f"{'-'*50}\n"
+                        f"Pulse List:\n{pb.pulser_pulse_list()}"
+                        f"{'-'*50}\n"
+                        f"AWG Pulse List:\n{pb.awg_pulse_list()}"
+                        f"{'-'*50}\n"                        
+                        f"Time (ns), I (A.U.), Q (A.U.)"
+                    )
+
+                #conn.send(('Open', ''))
+                
+                #while True:
+                #    if conn.poll():
+                #        msg = conn.recv()
+                #        if msg.startswith('FL'):
+                #            file_data = msg[2:]
+                #            break
+                #    general.wait('200 ms')
+
+
+                #file_handler.save_data(file_data, np.c_[x_axis, data[0], data[1]], header = header, mode = 'w')
 
                 conn.send( ('test', f'') )
 
