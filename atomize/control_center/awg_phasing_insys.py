@@ -1049,7 +1049,7 @@ class MainWindow(QMainWindow):
         self.tab_pulse.tabBar().setTabTextColor(2, QColor(193, 202, 227))
 
         # ---- Labels & Inputs ----
-        labels = [("Points to Drop", "label_11"), ("Zero Order", "label_12"), ("First Order", "label_13"), ("Second Order", "label_14"), ("Live FFT", "label_15"), ("Phase Correction", "label_16"), ("Shift Offset", "label_fft1")]
+        labels = [("Points to Drop", "label_11"), ("Zero Order", "label_12"), ("First Order", "label_13"), ("Second Order", "label_14"), ("Live FFT", "label_15"), ("Phase Correction", "label_16"), ("Shift Offset", "label_fft1"), ("Save 2D", "label_fft2")]
 
         #
         for name, attr_name in labels:
@@ -1105,7 +1105,8 @@ class MainWindow(QMainWindow):
         # ---- Check Boxes ----
         check_boxes = [("fft_box", self.fft_online),
                        ("Quad_cor", self.quad_online),
-                       ("IQ_corr", self.iq_online)]
+                       ("IQ_corr", self.iq_online),
+                       ("Save2D", self.save_2d)]
 
         for attr_name, func in check_boxes:
             check = QCheckBox("")
@@ -1160,22 +1161,24 @@ class MainWindow(QMainWindow):
         gridLayout.addWidget(self.Quad_cor, 1, 1)
         gridLayout.addWidget(self.label_fft1, 2, 0)
         gridLayout.addWidget(self.IQ_corr, 2, 1)
+        gridLayout.addWidget(self.label_fft2, 3, 0)
+        gridLayout.addWidget(self.Save2D, 3, 1)
 
-        gridLayout.addWidget(hline(), 3, 0, 1, 2)
+        gridLayout.addWidget(hline(), 4, 0, 1, 2)
         
-        gridLayout.addWidget(self.label_11, 4, 0)
-        gridLayout.addWidget(self.P_to_drop, 4, 1)
-        gridLayout.addWidget(self.label_12, 5, 0)
-        gridLayout.addWidget(self.Zero_order, 5, 1)
-        gridLayout.addWidget(self.label_13, 6, 0)
-        gridLayout.addWidget(self.First_order, 6, 1)
-        gridLayout.addWidget(self.label_14, 7, 0)
-        gridLayout.addWidget(self.Second_order, 7, 1)
+        gridLayout.addWidget(self.label_11, 5, 0)
+        gridLayout.addWidget(self.P_to_drop, 5, 1)
+        gridLayout.addWidget(self.label_12, 6, 0)
+        gridLayout.addWidget(self.Zero_order, 6, 1)
+        gridLayout.addWidget(self.label_13, 7, 0)
+        gridLayout.addWidget(self.First_order, 7, 1)
+        gridLayout.addWidget(self.label_14, 8, 0)
+        gridLayout.addWidget(self.Second_order, 8, 1)
 
-        gridLayout.addWidget(hline(), 8, 0, 1, 2)
+        gridLayout.addWidget(hline(), 9, 0, 1, 2)
 
-        gridLayout.setRowStretch(9, 2)
-        gridLayout.setColumnStretch(9, 2)
+        gridLayout.setRowStretch(10, 2)
+        gridLayout.setColumnStretch(10, 2)
 
         # flag for not writing the data when digitizer is off
         self.opened = 0
@@ -1183,6 +1186,7 @@ class MainWindow(QMainWindow):
         self.quad = 0
         self.double_change = 0
         self.iq_cor = 1
+        self.save2d = 0
 
     def design_tab_4(self):
         laser_setting_page = QWidget()
@@ -1621,6 +1625,19 @@ class MainWindow(QMainWindow):
         
         #try:
         #    self.parent_conn_dig.send( 'QC' + str( self.quad ) )
+        #except AttributeError:
+        #    pass
+
+    def save_2d(self):
+        """
+        """
+        if self.Save2D.checkState().value == 2: # checked
+            self.save2d = 1
+        elif self.Save2D.checkState().value == 0: # unchecked
+            self.save2d = 0
+        
+        #try:
+        #    self.parent_conn_dig.send( 'SV' + str( self.quad ) )
         #except AttributeError:
         #    pass
 
@@ -2629,7 +2646,8 @@ class MainWindow(QMainWindow):
                 self.combo_cor, self.combo_synt,
                 self.laser_flag, self.combo_laser_num, self.laser_q_switch_delay, self.cur_phase,
                 self.iq_cor, self.cur_win_left, self.cur_win_right, self.zero_order,
-                self.cur_x0, self.cur_xdelta, self.first_order, self.second_order ) )
+                self.cur_x0, self.cur_xdelta, self.first_order, self.second_order,
+                self.save2d ) )
         elif self.cur_sweep == 'Field':
             self.digitizer_process = Process( target = worker.exp_field_test, args = ( 
                 self.child_conn_dig, 
@@ -2647,7 +2665,7 @@ class MainWindow(QMainWindow):
                 self.combo_cor, self.combo_synt,
                 self.laser_flag, self.combo_laser_num, self.laser_q_switch_delay, self.cur_phase,
                 self.iq_cor, self.cur_win_left, self.cur_win_right, self.zero_order, 
-                self.first_order, self.second_order ) )
+                self.first_order, self.second_order, self.save2d ) )
         elif self.cur_sweep == 'Log Time':
             self.digitizer_process = Process( target = worker.exp_log_test, args = ( 
                 self.child_conn_dig, 
@@ -2665,7 +2683,8 @@ class MainWindow(QMainWindow):
                 self.combo_cor, self.combo_synt,
                 self.laser_flag, self.combo_laser_num, self.laser_q_switch_delay, self.cur_phase,
                 self.iq_cor, self.cur_win_left, self.cur_win_right, self.zero_order,
-                self.cur_x0, self.cur_xdelta, self.first_order, self.second_order ) )
+                self.cur_x0, self.cur_xdelta, self.first_order, self.second_order,
+                self.save2d ) )
         elif self.cur_sweep == 'Amplitude':
             self.digitizer_process = Process( target = worker.exp_amplitude_test, args = ( 
                 self.child_conn_dig, 
@@ -2683,7 +2702,7 @@ class MainWindow(QMainWindow):
                 self.combo_cor, self.combo_synt,
                 self.laser_flag, self.combo_laser_num, self.laser_q_switch_delay, self.cur_phase,
                 self.iq_cor, self.cur_win_left, self.cur_win_right, self.zero_order, 
-                self.first_order, self.second_order ) )
+                self.first_order, self.second_order, self.save2d ) )
 
         self.button_start_exp.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(193, 202, 227); border-style: outset; color: rgb(63, 63, 97); font-weight: bold; } QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
 
@@ -2955,7 +2974,8 @@ class MainWindow(QMainWindow):
                 self.combo_cor, self.combo_synt,
                 self.laser_flag, self.combo_laser_num, self.laser_q_switch_delay, self.cur_phase,
                 self.iq_cor, self.cur_win_left, self.cur_win_right, self.zero_order,
-                self.cur_x0, self.cur_xdelta, self.first_order, self.second_order ) )
+                self.cur_x0, self.cur_xdelta, self.first_order, self.second_order,
+                self.save2d ) )
         elif self.cur_sweep == 'Field':
             self.digitizer_process = Process( target = worker.exp_field, args = ( 
                 self.child_conn_dig, 
@@ -2973,7 +2993,7 @@ class MainWindow(QMainWindow):
                 self.combo_cor, self.combo_synt,
                 self.laser_flag, self.combo_laser_num, self.laser_q_switch_delay, self.cur_phase,
                 self.iq_cor, self.cur_win_left, self.cur_win_right, self.zero_order, 
-                self.first_order, self.second_order ) )
+                self.first_order, self.second_order, self.save2d ) )
         elif self.cur_sweep == 'Log Time':
             self.digitizer_process = Process( target = worker.exp_log, args = ( 
                 self.child_conn_dig, 
@@ -2991,7 +3011,8 @@ class MainWindow(QMainWindow):
                 self.combo_cor, self.combo_synt,
                 self.laser_flag, self.combo_laser_num, self.laser_q_switch_delay, self.cur_phase,
                 self.iq_cor, self.cur_win_left, self.cur_win_right, self.zero_order,
-                self.cur_x0, self.cur_xdelta, self.first_order, self.second_order) )
+                self.cur_x0, self.cur_xdelta, self.first_order, self.second_order,
+                self.save2d) )
         elif self.cur_sweep == 'Amplitude':
             self.digitizer_process = Process( target = worker.exp_amplitude, args = ( 
                 self.child_conn_dig, 
@@ -3009,7 +3030,7 @@ class MainWindow(QMainWindow):
                 self.combo_cor, self.combo_synt,
                 self.laser_flag, self.combo_laser_num, self.laser_q_switch_delay, self.cur_phase,
                 self.iq_cor, self.cur_win_left, self.cur_win_right, self.zero_order, 
-                self.first_order, self.second_order ) )
+                self.first_order, self.second_order, self.save2d ) )
 
         self.button_start_exp.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(211, 194, 78); border-style: outset; color: rgb(63, 63, 97); font-weight: bold; } QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }") 
 
@@ -3890,7 +3911,7 @@ class Worker():
             p5_awg_exp, p6_awg_exp, p7_awg_exp, p8_awg_exp, p9_awg_exp, 
             b_sech_cur, correction, synt, laser_flag, laser_num, 
             q_switch_delay, iq_phase, iq_corr, win_left, win_right, zero_phase, 
-            x0, xd, first_order, sec_order):
+            x0, xd, first_order, sec_order, save2d):
 
         import traceback
 
@@ -4376,19 +4397,21 @@ class Worker():
                         mode = 'w'
                     )
                 elif iq_cor == 1:
-                    file_data2 = file_data.replace(".csv", "_2d.csv")
-
+                    
                     file_handler.save_data(
                         file_data, 
                         np.c_[x_axis, data_x, data_y], 
                         header = header2, 
                         mode = 'w'
                         )
-                    file_handler.save_data(
-                        file_data2, 
-                        data, 
-                        header = header, 
-                        mode = 'w'
+                    if save2d == 1:
+                        file_data2 = file_data.replace(".csv", "_2d.csv")
+
+                        file_handler.save_data(
+                            file_data2, 
+                            data, 
+                            header = header, 
+                            mode = 'w'
                     )
 
                 conn.send( ('', f'Experiment {EXP_NAME} finished') )
@@ -4405,7 +4428,7 @@ class Worker():
             p5_awg_exp, p6_awg_exp, p7_awg_exp, p8_awg_exp, p9_awg_exp, 
             b_sech_cur, correction, synt, laser_flag, laser_num, 
             q_switch_delay, iq_phase, iq_corr, win_left, win_right, zero_phase,
-            x0, xd, first_order, sec_order):
+            x0, xd, first_order, sec_order, save2d):
 
         import traceback
 
@@ -4901,7 +4924,7 @@ class Worker():
             p5_awg_exp, p6_awg_exp, p7_awg_exp, p8_awg_exp, p9_awg_exp, 
             b_sech_cur, correction, synt, laser_flag, laser_num, 
             q_switch_delay, iq_phase, iq_corr, win_left, win_right, zero_phase, 
-            first_order, sec_order):
+            first_order, sec_order, save2d):
         
         import traceback
 
@@ -5311,7 +5334,6 @@ class Worker():
                         mode = 'w'
                     )
                 elif iq_cor == 1:
-                    file_data2 = file_data.replace(".csv", "_2d.csv")
                     
                     file_handler.save_data(
                         file_data, 
@@ -5319,12 +5341,16 @@ class Worker():
                         header = header2, 
                         mode = 'w'
                         )
-                    file_handler.save_data(
-                        file_data2, 
-                        data, 
-                        header = header, 
-                        mode = 'w'
-                    )
+
+                    if save2d == 1:
+                        file_data2 = file_data.replace(".csv", "_2d.csv")
+
+                        file_handler.save_data(
+                            file_data2, 
+                            data, 
+                            header = header, 
+                            mode = 'w'
+                        )
 
                 conn.send( ('', f'Experiment {EXP_NAME} finished') )
 
@@ -5341,7 +5367,7 @@ class Worker():
             p5_awg_exp, p6_awg_exp, p7_awg_exp, p8_awg_exp, p9_awg_exp, 
             b_sech_cur, correction, synt, laser_flag, laser_num, 
             q_switch_delay, iq_phase, iq_corr, win_left, win_right, zero_phase,
-            first_order, sec_order):
+            first_order, sec_order, save2d):
 
         import traceback
 
@@ -5775,7 +5801,7 @@ class Worker():
             p5_awg_exp, p6_awg_exp, p7_awg_exp, p8_awg_exp, p9_awg_exp, 
             b_sech_cur, correction, synt, laser_flag, laser_num, 
             q_switch_delay, iq_phase, iq_corr, win_left, win_right, zero_phase,
-            x0, xd, first_order, sec_order):
+            x0, xd, first_order, sec_order, save2d):
 
         import traceback
 
@@ -6257,20 +6283,22 @@ class Worker():
                         mode = 'w'
                     )
                 elif iq_cor == 1:
-                    file_data2 = file_data.replace(".csv", "_2d.csv")
-                    
+                                        
                     file_handler.save_data(
                         file_data, 
                         np.c_[x_axis, data_x, data_y], 
                         header = header2, 
                         mode = 'w'
                         )
-                    file_handler.save_data(
-                        file_data2, 
-                        data, 
-                        header = header, 
-                        mode = 'w'
-                    )
+
+                    if save2d == 1:
+                        file_data2 = file_data.replace(".csv", "_2d.csv")
+                        file_handler.save_data(
+                            file_data2, 
+                            data, 
+                            header = header, 
+                            mode = 'w'
+                        )
 
                 conn.send( ('', f'Experiment {EXP_NAME} finished') )
 
@@ -6287,7 +6315,7 @@ class Worker():
             p5_awg_exp, p6_awg_exp, p7_awg_exp, p8_awg_exp, p9_awg_exp, 
             b_sech_cur, correction, synt, laser_flag, laser_num, 
             q_switch_delay, iq_phase, iq_corr, win_left, win_right, zero_phase,
-            x0, xd, first_order, sec_order):
+            x0, xd, first_order, sec_order, save2d):
         
         import traceback
 
@@ -6801,7 +6829,7 @@ class Worker():
             p5_awg_exp, p6_awg_exp, p7_awg_exp, p8_awg_exp, p9_awg_exp, 
             b_sech_cur, correction, synt, laser_flag, laser_num, 
             q_switch_delay, iq_phase, iq_corr, win_left, win_right, zero_phase,
-            first_order, sec_order):
+            first_order, sec_order, save2d):
 
         import traceback
 
@@ -7266,7 +7294,6 @@ class Worker():
                         mode = 'w'
                     )
                 elif iq_cor == 1:
-                    file_data2 = file_data.replace(".csv", "_2d.csv")
 
                     file_handler.save_data(
                         file_data, 
@@ -7274,12 +7301,15 @@ class Worker():
                         header = header2, 
                         mode = 'w'
                         )
-                    file_handler.save_data(
-                        file_data2, 
-                        data, 
-                        header = header, 
-                        mode = 'w'
-                    )
+                    if save2d == 1:
+                        file_data2 = file_data.replace(".csv", "_2d.csv")
+
+                        file_handler.save_data(
+                            file_data2, 
+                            data, 
+                            header = header, 
+                            mode = 'w'
+                        )
 
                 conn.send( ('', f'Experiment {EXP_NAME} finished') )
 
@@ -7296,7 +7326,7 @@ class Worker():
             p5_awg_exp, p6_awg_exp, p7_awg_exp, p8_awg_exp, p9_awg_exp, 
             b_sech_cur, correction, synt, laser_flag, laser_num, 
             q_switch_delay, iq_phase, iq_corr, win_left, win_right, zero_phase,
-            first_order, sec_order):
+            first_order, sec_order, save2d):
 
         import traceback
 
