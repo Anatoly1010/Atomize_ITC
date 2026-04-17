@@ -2788,23 +2788,17 @@ class Worker():
                     else:
                         pass
 
-                    if p16 == 0:
-                        # acquisition cycle
-                        int_x = round( np.sum( data_x[p4:p5] ) * 1 * t_res , 1 ) #( 10**(10) * t_res )
-                        int_y = round( np.sum( data_y[p4:p5] ) * 1 * t_res , 1 )
 
-                        general.plot_1d('Dig', x_axis / 1e9, ( data_x, data_y ), 
-                            xscale = 's', yscale = 'mV', label = 'ch', 
-                            vline = (p4 * t_res / 1e9, p5 * t_res / 1e9), 
-                            text = 'I/Q ' + str(int_x) + '/' + str(int_y)
-                            )
+                    int_x = round( np.sum( data_x[p4:p5] ) * 1 * t_res , 1 )
+                    int_y = round( np.sum( data_y[p4:p5] ) * 1 * t_res , 1 )
 
-                    else:
-                        # acquisition cycle
-                        general.plot_1d('Dig', x_axis / 1e9, ( data_x, data_y ), xscale = 's', 
-                            yscale = 'mV', label = 'ch', 
-                            vline = (p4 * t_res / 1e9, p5 * t_res / 1e9)
-                            )
+                    general.plot_1d('Dig', x_axis / 1e9, ( data_x, data_y ), 
+                        xscale = 's', yscale = 'mV', label = 'ch', 
+                        vline = (p4 * t_res / 1e9, p5 * t_res / 1e9), 
+                        text = 'I/Q ' + str(int_x) + '/' + str(int_y)
+                        )
+
+                    if p16 == 1:
 
                         if p17 == 0:
                             freq_axis, abs_values = fft.fft(x_axis, data_x, data_y, t_res * 1)

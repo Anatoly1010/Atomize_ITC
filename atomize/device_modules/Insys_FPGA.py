@@ -4744,11 +4744,12 @@ class Insys_FPGA:
                 # combine all pulses
                 #np.concatenate( (self.convertion_to_numpy_pulser( self.pulse_array_pulser ), cor_pulses_amp_final, cor_pulses_lna_final), axis = None)
                 try:
-                    #return np.row_stack( (self.extending_rect_awg_pulser( self.pulse_array_pulser ), cor_pulses_amp_final, cor_pulses_lna_final))
-
-                    raw = np.row_stack( (self.extending_rect_awg_pulser( self.pulse_array_pulser ), cor_pulses_amp_final, cor_pulses_lna_final))
-                    answer = self.process_and_merge_rect_awg(raw, target_channel=128, gap_threshold=75)
-                    return answer
+                    if self.awg_pulses_pulser == 0:
+                        return np.row_stack( (self.extending_rect_awg_pulser( self.pulse_array_pulser ), cor_pulses_amp_final, cor_pulses_lna_final))
+                    else:
+                        raw = np.row_stack( (self.extending_rect_awg_pulser( self.pulse_array_pulser ), cor_pulses_amp_final, cor_pulses_lna_final))
+                        answer = self.process_and_merge_rect_awg(raw, target_channel=128, gap_threshold=75)
+                        return answer
 
                 # when we do not MW pulses at all
                 except UnboundLocalError:
@@ -4857,9 +4858,12 @@ class Insys_FPGA:
                 # combine all pulses
                 #np.concatenate( (self.convertion_to_numpy_pulser( self.pulse_array_pulser ), cor_pulses_amp_final, cor_pulses_lna_final), axis = None) 
                 try:
-                    raw = np.row_stack( (self.extending_rect_awg_pulser( self.pulse_array_pulser ), cor_pulses_amp_final, cor_pulses_lna_final))
-                    answer = self.process_and_merge_rect_awg(raw, target_channel=128, gap_threshold=75)
-                    return answer
+                    if self.awg_pulses_pulser == 0:
+                        return np.row_stack( (self.extending_rect_awg_pulser( self.pulse_array_pulser ), cor_pulses_amp_final, cor_pulses_lna_final))
+                    else:
+                        raw = np.row_stack( (self.extending_rect_awg_pulser( self.pulse_array_pulser ), cor_pulses_amp_final, cor_pulses_lna_final))
+                        answer = self.process_and_merge_rect_awg(raw, target_channel=128, gap_threshold=75)
+                        return answer
                     
                     #return np.row_stack( (self.extending_rect_awg_pulser( self.pulse_array_pulser ), cor_pulses_amp_final, cor_pulses_lna_final))
 
