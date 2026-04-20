@@ -2781,6 +2781,9 @@ class Insys_FPGA:
                 if p_sigma != p_sigma_raw:
                     general.message(f"Pulse sigma is not divisible by 3.2. The closest available Pulse sigma of {p_sigma} is used")
 
+                if (p_sigma == 0) and (func == 'GAUSS'):
+                    general.message(f"GAUSS pulse {temp_name} with sigma = 0.0 ns is used")
+
                 pulse['sigma'] = str(p_sigma) + ' ns'
 
             # increment
@@ -2916,6 +2919,9 @@ class Insys_FPGA:
                 p_sigma = self.round_to_closest(p_sigma_raw, 3.2)
                 if p_sigma != p_sigma_raw:
                     general.message(f"Pulse sigma is not divisible by 3.2. The closest available Pulse sigma of {p_sigma} is used")
+
+                if (p_sigma == 0) and (temp_func == 'GAUSS'):
+                    general.message_test(f"GAUSS pulse {temp_name} with sigma = 0.0 ns is used")
 
                 pulse['sigma'] = str(p_sigma) + ' ns'
 
@@ -4443,7 +4449,8 @@ class Insys_FPGA:
         other_rows = all_data[~target_mask]
         
         if len(target_rows) == 0:
-            return np.split(all_data, np.where(np.diff(all_data[:, 0]))[0] + 1)
+            #return np.split(all_data, np.where(np.diff(all_data[:, 0]))[0] + 1)
+            return all_data[all_data[:, 0].argsort()]
 
         target_rows = target_rows[target_rows[:, 1].argsort()]
         
@@ -4470,6 +4477,9 @@ class Insys_FPGA:
             final_result = np.vstack([other_rows, merged_target_arr])
 
         final_result = final_result[final_result[:, 0].argsort()]
+        #sort
+        #final_result = final_result[np.lexsort((final_result[:, 1], final_result[:, 0]))]
+        
         #diff_indices = np.where(np.diff(final_result[:, 0].astype(float)))[0] + 1
         #res_list = np.split(final_result, diff_indices)
 
@@ -4744,12 +4754,9 @@ class Insys_FPGA:
                 # combine all pulses
                 #np.concatenate( (self.convertion_to_numpy_pulser( self.pulse_array_pulser ), cor_pulses_amp_final, cor_pulses_lna_final), axis = None)
                 try:
-                    if self.awg_pulses_pulser == 0:
-                        return np.row_stack( (self.extending_rect_awg_pulser( self.pulse_array_pulser ), cor_pulses_amp_final, cor_pulses_lna_final))
-                    else:
-                        raw = np.row_stack( (self.extending_rect_awg_pulser( self.pulse_array_pulser ), cor_pulses_amp_final, cor_pulses_lna_final))
-                        answer = self.process_and_merge_rect_awg(raw, target_channel=128, gap_threshold=75)
-                        return answer
+                    raw = np.row_stack( (self.extending_rect_awg_pulser( self.pulse_array_pulser ), cor_pulses_amp_final, cor_pulses_lna_final))
+                    answer = self.process_and_merge_rect_awg(raw, target_channel=128, gap_threshold=75)
+                    return answer
 
                 # when we do not MW pulses at all
                 except UnboundLocalError:
@@ -4858,14 +4865,9 @@ class Insys_FPGA:
                 # combine all pulses
                 #np.concatenate( (self.convertion_to_numpy_pulser( self.pulse_array_pulser ), cor_pulses_amp_final, cor_pulses_lna_final), axis = None) 
                 try:
-                    if self.awg_pulses_pulser == 0:
-                        return np.row_stack( (self.extending_rect_awg_pulser( self.pulse_array_pulser ), cor_pulses_amp_final, cor_pulses_lna_final))
-                    else:
-                        raw = np.row_stack( (self.extending_rect_awg_pulser( self.pulse_array_pulser ), cor_pulses_amp_final, cor_pulses_lna_final))
-                        answer = self.process_and_merge_rect_awg(raw, target_channel=128, gap_threshold=75)
-                        return answer
-                    
-                    #return np.row_stack( (self.extending_rect_awg_pulser( self.pulse_array_pulser ), cor_pulses_amp_final, cor_pulses_lna_final))
+                    raw = np.row_stack( (self.extending_rect_awg_pulser( self.pulse_array_pulser ), cor_pulses_amp_final, cor_pulses_lna_final))
+                    answer = self.process_and_merge_rect_awg(raw, target_channel=128, gap_threshold=75)
+                    return answer
 
                 except UnboundLocalError:
                     return self.extending_rect_awg_pulser( self.pulse_array_pulser )

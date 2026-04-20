@@ -782,6 +782,7 @@ class MainWindow(QMainWindow):
         txt = QPlainTextEdit()
         txt.setReadOnly(True)
         txt.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
+        txt.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
         setattr(self, "errors", txt)
 
         txt.setStyleSheet("""
@@ -815,7 +816,29 @@ class MainWindow(QMainWindow):
             QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
                 background: none;
             }
-        """)   
+
+            QScrollBar:horizontal {
+                    border: none;
+                    background: rgb(43, 43, 77); 
+                    height: 10px;
+                    margin: 0px;
+                }
+                QScrollBar::handle:horizontal {
+                    background: rgb(193, 202, 227); 
+                    min-width: 20px;
+                    border-radius: 5px;
+                }
+                QScrollBar::handle:horizontal:hover {
+                    background: rgb(211, 194, 78); 
+                }
+                QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
+                    width: 0px;
+                }
+                QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
+                    background: none;
+                }
+
+        """)
 
         self.buttons_layout.addWidget(txt, 3, 2, 3, 10)
 
@@ -3885,7 +3908,21 @@ class Worker():
             if self.command == 'exit':
                 ##print('exit')
                 pb.pulser_close()
-                conn.send( ('test', f'{pb.awg_pulse_list()}') )
+                
+                pulse_list_mod = ''
+
+                for element in pb.pulse_array_awg:
+                    if isinstance(element, dict):
+                        if 'amp' in element:
+                            element['amp'] = round(float(element['amp']), 3)
+    
+                    element.pop('phase', None)
+                    element.pop('channel', None)
+                    element.pop('delta_phase', None)
+
+                    pulse_list_mod = pulse_list_mod + str(element) + '\n'
+
+                conn.send( ('test', f'{pulse_list_mod}') )
                 
                 if PHASES >= pb.number_adc_window_in_buffer():
                     str1 = '!!!TOO MANY PHASES FOR LIVE MODE!!!\n'
