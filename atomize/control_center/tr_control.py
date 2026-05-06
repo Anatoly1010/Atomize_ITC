@@ -1084,19 +1084,20 @@ class MainWindow(QMainWindow):
         self.box_step_field.setValue( float( lines[2].split(':  ')[1] ) )
         self.box_off_res_field.setValue( float( lines[3].split(':  ')[1] ) )
         self.box_ave_offres.setValue( int( lines[4].split(':  ')[1] ) )
-        self.box_scan.setValue( int( lines[5].split(':  ')[1] ) )
+        self.box_ave.setValue( int( lines[5].split(':  ')[1] ) )
+        self.box_scan.setValue( int( lines[6].split(':  ')[1] ) )
 
-        if int( lines[6].split(':  ')[1] ) == 2:
+        if int( lines[7].split(':  ')[1] ) == 2:
             self.check_scan.setCheckState(Qt.CheckState.Checked)
         else:
             self.check_scan.setCheckState(Qt.CheckState.Unchecked)
-        if int( lines[7].split(':  ')[1] ) == 2:
+        if int( lines[8].split(':  ')[1] ) == 2:
             self.checkbox_back_scan.setCheckState(Qt.CheckState.Checked)
         else:
             self.checkbox_back_scan.setCheckState(Qt.CheckState.Unchecked)
 
-        self.combo_num_osc.setCurrentText( str( lines[8].split(':  ')[1] ) )
-        self.combo_trig_ch.setCurrentText( str( lines[9].split(':  ')[1] ) )
+        self.combo_num_osc.setCurrentText( str( lines[9].split(':  ')[1] ) )
+        self.combo_trig_ch.setCurrentText( str( lines[10].split(':  ')[1] ) )
 
     def save_file(self, filename):
         """
