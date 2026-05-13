@@ -4628,7 +4628,7 @@ class Insys_FPGA:
             no_duplicate_array = np.unique(np_array, axis = 0)
             return no_duplicate_array
 
-    #mod
+    #mod2
     def preparing_to_bit_pulse_pulser(self, np_array):
         """
         For pulses at each channel we check whether there is overlapping pulses using 
@@ -4719,14 +4719,14 @@ class Insys_FPGA:
                         elif cor_pulses_amp[0][0] == 0:
                             # nothing to concatenate
                             amp_on_pulses = self.convert_to_bit_pulse_amp_lna_pulser(prob_pulses_amp, self.channel_dict_pulser['AMP_ON'])
-                            cor_pulses_amp_final = self.instruction_pulse_short_lna_amp_pulser(amp_on_pulses)
+                            cor_pulses_amp_final = amp_on_pulses
                         else:
                             amp_on_pulses = self.convert_to_bit_pulse_amp_lna_pulser(prob_pulses_amp, self.channel_dict_pulser['AMP_ON'])
                             try:
                                 #cor_pulses_amp_final = cor_pulses_amp, self.instruction_pulse_short_lna_amp_pulser(amp_on_pulses)
-                                cor_pulses_amp_final = np.concatenate((cor_pulses_amp, self.instruction_pulse_short_lna_amp_pulser(amp_on_pulses)), axis = 0)
+                                cor_pulses_amp_final = np.concatenate((cor_pulses_amp, samp_on_pulses), axis = 0)
                             except ValueError:
-                                cor_pulses_amp_final = np.concatenate((cor_pulses_amp, self.instruction_pulse_short_lna_amp_pulser(amp_on_pulses)), axis = 0)
+                                cor_pulses_amp_final = np.concatenate((cor_pulses_amp, amp_on_pulses), axis = 0)
 
                         # combining short distance LNA_PROTECT pulses
                         if prob_pulses_lna[0][0] == 0:
@@ -4734,10 +4734,10 @@ class Insys_FPGA:
                         elif cor_pulses_lna[0][0] == 0:
                             # nothing to concatenate
                             lna_pulses = self.convert_to_bit_pulse_amp_lna_pulser(prob_pulses_lna, self.channel_dict_pulser['LNA_PROTECT'])
-                            cor_pulses_lna_final = self.instruction_pulse_short_lna_amp_pulser(lna_pulses)
+                            cor_pulses_lna_final = lna_pulses
                         else:
                             lna_pulses = self.convert_to_bit_pulse_amp_lna_pulser(prob_pulses_lna, self.channel_dict_pulser['LNA_PROTECT'])
-                            cor_pulses_lna_final =  np.concatenate((cor_pulses_lna, self.instruction_pulse_short_lna_amp_pulser(lna_pulses)), axis = 0)
+                            cor_pulses_lna_final =  np.concatenate((cor_pulses_lna, lna_pulses), axis = 0)
 
 
                     elif element[0, 0] == 2**self.channel_dict_pulser['-X'] or element[0, 0] == 2**self.channel_dict_pulser['+Y']:
@@ -4781,7 +4781,7 @@ class Insys_FPGA:
                 shifted_back_awg_pulses = []
 
                 split_pulse_array = self.splitting_acc_to_channel_pulser( self.convertion_to_numpy_pulser( np_array ) )
-
+                
                 for index, element in enumerate(split_pulse_array):
                     if element[0, 0] == 2**self.channel_dict_pulser['MW'] or element[0, 0] == 2**self.channel_dict_pulser['AWG']:
 
@@ -4830,19 +4830,22 @@ class Insys_FPGA:
                         cor_pulses_amp, prob_pulses_amp = self.check_problem_pulses_amp_lna_pulser(amp_on_pulses)
                         cor_pulses_lna, prob_pulses_lna = self.check_problem_pulses_amp_lna_pulser(lna_pulses)
 
+
                         # combining short distance AMP_ON pulses
                         if prob_pulses_amp[0][0] == 0:
                             cor_pulses_amp_final = cor_pulses_amp
                         elif cor_pulses_amp[0][0] == 0:
                             # nothing to concatenate
                             amp_on_pulses = self.convert_to_bit_pulse_amp_lna_pulser(prob_pulses_amp, self.channel_dict_pulser['AMP_ON'])
-                            cor_pulses_amp_final = self.instruction_pulse_short_lna_amp_pulser(amp_on_pulses)
+                            cor_pulses_amp_final = amp_on_pulses
                         else:
                             amp_on_pulses = self.convert_to_bit_pulse_amp_lna_pulser(prob_pulses_amp, self.channel_dict_pulser['AMP_ON'])
                             try:
-                                cor_pulses_amp_final = np.concatenate((cor_pulses_amp, self.instruction_pulse_short_lna_amp_pulser(amp_on_pulses)), axis = 0)
+                                cor_pulses_amp_final = np.concatenate((cor_pulses_amp, amp_on_pulses), axis = 0)
                             except ValueError:
-                                cor_pulses_amp_final = np.concatenate((cor_pulses_amp, self.instruction_pulse_short_lna_amp_pulser(amp_on_pulses)), axis = 0)
+                                #self.instruction_pulse_short_lna_amp_pulser(amp_on_pulses)
+                                cor_pulses_amp_final = np.concatenate((cor_pulses_amp, amp_on_pulses), axis = 0)
+
 
                         # combining short distance LNA_PROTECT pulses
                         if prob_pulses_lna[0][0] == 0:
@@ -4850,10 +4853,13 @@ class Insys_FPGA:
                         elif cor_pulses_lna[0][0] == 0:
                             # nothing to concatenate
                             lna_pulses = self.convert_to_bit_pulse_amp_lna_pulser(prob_pulses_lna, self.channel_dict_pulser['LNA_PROTECT'])
-                            cor_pulses_lna_final =  self.instruction_pulse_short_lna_amp_pulser(lna_pulses)
+                            cor_pulses_lna_final =  lna_pulses
+
                         else:
                             lna_pulses = self.convert_to_bit_pulse_amp_lna_pulser(prob_pulses_lna, self.channel_dict_pulser['LNA_PROTECT'])
-                            cor_pulses_lna_final =  np.concatenate((cor_pulses_lna, self.instruction_pulse_short_lna_amp_pulser(lna_pulses)), axis = 0)
+                            cor_pulses_lna_final =  np.concatenate((cor_pulses_lna, lna_pulses), axis = 0)
+
+
 
                     elif element[0, 0] == 2**self.channel_dict_pulser['-X'] or element[0, 0] == 2**self.channel_dict_pulser['+Y']:
                         # for phases pulses just check 10 ns distance
@@ -4861,6 +4867,7 @@ class Insys_FPGA:
                     else:
                         # for non-MW pulses just check 40 ns distance
                         self.check_problem_pulses_pulser(element)
+
 
                 # combine all pulses
                 #np.concatenate( (self.convertion_to_numpy_pulser( self.pulse_array_pulser ), cor_pulses_amp_final, cor_pulses_lna_final), axis = None) 
@@ -4948,8 +4955,8 @@ class Insys_FPGA:
         elif self.test_flag == 'test':
             answer = []
             min_list = []
+
             pulses = self.preparing_to_bit_pulse_pulser(np_array)
-            
 
             sorted_pulses_start = np.asarray(sorted(pulses, key = lambda x: int(x[1])), dtype = np.int64)
             # self.max_pulse_length_pulser is 2000 ns now
@@ -5470,6 +5477,7 @@ class Insys_FPGA:
                 else:
                     return self.delete_duplicates_pulser(np.asarray(no_problem_list)), self.delete_duplicates_pulser(np.asarray(problem_list))
 
+    #mod2
     def convert_to_bit_pulse_amp_lna_pulser(self, p_list, channel):
         """
         A function to calculate in which time interval
@@ -5488,79 +5496,35 @@ class Insys_FPGA:
         Generally, this function is close to convert_to_bit_pulse_pulser() and other convertion
         functions
         """
-        if self.test_flag != 'test':
-            if self.auto_defense_pulser == 'False':
-                pass
-            elif self.auto_defense_pulser == 'True':
-                max_pulse = np.amax(p_list[:,2])
-                bit_array = np.zeros(max_pulse, dtype = np.int64)
-                #bit_array2 = np.zeros(max_pulse, dtype = np.int64)
-                # two types of pulses: AMP_ON and SHAPER; LNA_PROTECT and VIDEO_PROTECT
-                #first_channel = p_list[1, 0]
-                i = 0
-                while i < len(p_list):
-                    # convert each pulse in an array of 0 and 1,
-                    # 1 corresponds to the time interval, where the channel is on
-                    translation_array = np.concatenate( (np.zeros(p_list[i, 1], dtype = np.int64), \
-                            np.ones(p_list[i, 2] - p_list[i, 1], dtype = np.int64), \
-                            np.zeros(max_pulse - p_list[i, 2], dtype = np.int64)), axis = None)
+        if self.auto_defense_pulser == 'False':
+            pass
+        elif self.auto_defense_pulser == 'True':
+            return self.process_pulses(p_list, channel)
 
-                    bit_array = bit_array | translation_array
+    def process_pulses(self, p_list, channel):
+        """
+        """
+        if len(p_list) == 0:
+            return np.empty((0, 3), dtype=np.int64)
 
-                    #if p_list[i, 0] == first_channel:
-                    #    bit_array = bit_array | translation_array
-                    #else:
-                    #    second_channel = p_list[i, 0]
-                    #    bit_array2 = bit_array2 | translation_array
+        threshold = self.min_pulse_length_pulser + self.minimal_distance_amp_lna_pulser
 
-                    i += 1
+        p_sorted = p_list[p_list[:, 1].argsort()]
+        max_stops = np.maximum.accumulate(p_sorted[:, 2])
 
-                bit_array = 2**(channel)*self.check_short_pulses_pulser(bit_array, channel)
-                #bit_array = (first_channel)*self.check_short_pulses_pulser(bit_array, first_channel)
-                #try:
-                #    bit_array2 = (second_channel)*self.check_short_pulses_pulser(bit_array2, second_channel)
-                #except UnboundLocalError:
-                #    return bit_array, bit_array2
+        gaps = p_sorted[1:, 1] > (max_stops[:-1] + threshold)
+        
+        group_starts = np.concatenate(([True], gaps))
+        group_ends = np.concatenate((gaps, [True]))
 
-                return bit_array#, bit_array2
+        final_starts = p_sorted[group_starts, 1]
+        final_stops = max_stops[group_ends]
+        
+        final_channels = np.full_like(final_starts, channel)
 
-        elif self.test_flag == 'test':
-            if self.auto_defense_pulser == 'False':
-                pass
-            elif self.auto_defense_pulser == 'True':            
-                max_pulse = np.amax(p_list[:,2])
-                bit_array = np.zeros(max_pulse, dtype = np.int64)
-                #bit_array2 = np.zeros(max_pulse, dtype = np.int64)
-                # two types of pulses: AMP_ON and SHAPER; LNA_PROTECT and VIDEO_PROTECT
-                #first_channel = p_list[1, 0]
-                i = 0
-                while i < len(p_list):
-                    # convert each pulse in an array of 0 and 1,
-                    # 1 corresponds to the time interval, where the channel is on
-                    translation_array = np.concatenate( (np.zeros(p_list[i, 1], dtype = np.int64), \
-                            np.ones(p_list[i, 2] - p_list[i, 1], dtype = np.int64), \
-                            np.zeros(max_pulse - p_list[i, 2], dtype = np.int64)), axis = None)
+        return np.column_stack((final_channels, final_starts, final_stops))
 
-                    bit_array = bit_array | translation_array
-
-                    #if p_list[i, 0] == first_channel:
-                    #    bit_array = bit_array | translation_array
-                    #else:
-                    #    second_channel = p_list[i, 0]
-                    #    bit_array2 = bit_array2 | translation_array
-
-                    i += 1
-
-                bit_array = 2**(channel)*self.check_short_pulses_pulser(bit_array, channel)
-
-                #bit_array = (first_channel)*self.check_short_pulses_pulser(bit_array, first_channel)
-                #try:
-                #    bit_array2 = (second_channel)*self.check_short_pulses_pulser(bit_array2, second_channel)
-                #except UnboundLocalError:
-                #    return bit_array, bit_array2
-
-                return bit_array#, bit_array2
-
+    #unused
     def instruction_pulse_short_lna_amp_pulser(self, np_array):
         """
         Final convertion to the pulse blaster instruction pulses
@@ -5618,6 +5582,7 @@ class Insys_FPGA:
 
                 return final_pulse_array
 
+    #unused
     def check_short_pulses_pulser(self, np_array, channel):
         """
         A function for checking whether there is two pulses with
@@ -5651,58 +5616,47 @@ class Insys_FPGA:
                     return final_array
 
         if self.test_flag == 'test':
-            # checking where the pulses are
-            one_indexes = np.argwhere(np_array == 1).flatten()
+            threshold = self.min_pulse_length_pulser + self.minimal_distance_amp_lna_pulser
+
+            one_indexes = np.flatnonzero(np_array == 1)
             difference = np.diff(one_indexes)
 
-            if channel != self.channel_dict_pulser['LNA_PROTECT'] and channel != self.channel_dict_pulser['AMP_ON']:
-                if any(1 < element < (self.min_pulse_length_pulser + self.minimal_distance_amp_lna_pulser) for element in difference) == False:
-                    pass
-                else:
-                    assert(1 == 2), 'There are two pulses with shorter than ' + str(self.min_pulse_length_pulser) + ' ns distance between them'
+            has_short_distance = np.any((difference > 1) & (difference < threshold))
+
+            is_special_channel = (channel == self.channel_dict_pulser['LNA_PROTECT']) or (channel == self.channel_dict_pulser['AMP_ON'])
+
+            if not is_special_channel:
+                if has_short_distance:
+                    raise AssertionError(f'There are two pulses with shorter than {self.min_pulse_length_pulser} ns distance between them')
+                return np_array
             else:
-                if any(1 < element < (self.min_pulse_length_pulser + self.minimal_distance_amp_lna_pulser) for element in difference) == False:
+                if not has_short_distance:
                     return np_array
                 else:
-                    final_array = self.joining_pulses_pulser(np_array)
-                    return final_array
-    
+                    return self.joining_pulses_pulser(np_array)
+
+    #unused
     def joining_pulses_pulser(self, np_array):
         """
-        A function that joing two short pulses in one
-        It is used for LNA_PROTECT and AMP_ON pulses
         """
-        i = 0
-        j = 0
-        counter = 0
+        threshold = self.min_pulse_length_pulser + self.minimal_distance_amp_lna_pulser
+        
+        kernel_size = threshold + 1
+        kernel = np.ones(kernel_size, dtype=np.int64)
+        
+        convolved = np.convolve(np_array, kernel, mode='same')
+        
+        one_indexes = np.flatnonzero(np_array == 1)
+        if len(one_indexes) == 0:
+            return np_array
+            
+        first_one, last_one = one_indexes[0], one_indexes[-1]
+        
+        final_array = np_array.copy()
 
-        array_len = len(np_array)
-        # drop several first and last zeros
-        index_first_one = np.argwhere(np_array == 1)[0]
-        index_last_one = np.argwhere(np_array == 1)[-1]
-        short_array = np_array[index_first_one[0]:(index_last_one[0] + 1)]
-
-        while i < len(short_array):
-            if short_array[i] == 0:
-                # looking for several 0 in a row
-                if short_array[i + 1] == 0:
-                    counter += 1
-                elif short_array[i + 1] == 1:
-                    # (minimal_distance + 1) is 13 now
-                    if counter < (self.min_pulse_length_pulser + self.minimal_distance_amp_lna_pulser):
-                        # replace 0 with 1
-                        while j <= counter:
-                            short_array[i + j - counter] = 1
-                            j += 1
-                        counter = 0
-                        j = 0
-                    else:
-                        counter = 0
-
-            i += 1
-
-        final_array = np.concatenate( (np.zeros(index_first_one[0], dtype = np.int64), short_array, np.zeros( array_len - index_last_one[0] - 1, dtype = np.int64)), axis = None)
-
+        mask = (convolved > 0)
+        final_array[first_one:last_one + 1] = np.where(mask[first_one:last_one + 1], 1, 0)
+        
         return final_array
 
     def change_pulse_settings_pulser(self, parameter, delay):
