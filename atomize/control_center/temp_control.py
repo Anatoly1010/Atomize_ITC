@@ -72,6 +72,7 @@ class MainWindow(QMainWindow):
                 spin_box.setRange(int(v_min), int(v_max))
                 spin_box.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")                
             spin_box.setSingleStep(v_step)
+            spin_box.blockSignals(True)
             spin_box.setValue(cur_val)
             if isinstance(spin_box, QDoubleSpinBox):
                 spin_box.setDecimals(dec)
@@ -80,7 +81,7 @@ class MainWindow(QMainWindow):
             spin_box.setFixedSize(130, 26)
             spin_box.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.PlusMinus)
             spin_box.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
-            
+
             spin_box.setKeyboardTracking( False )
             
             setattr(self, attr_name, spin_box)
@@ -88,7 +89,8 @@ class MainWindow(QMainWindow):
                 setattr(self, par_name, float(spin_box.value()))
             else:
                 setattr(self, par_name, int(spin_box.value()))
-
+                
+            spin_box.blockSignals(False)
 
         # ---- Combo boxes----
         combo_boxes = [("Off", "combo_range", "cur_range", self.heater_range, 
@@ -99,11 +101,13 @@ class MainWindow(QMainWindow):
 
         for cur_text, attr_name, par_name, func, item in combo_boxes:
             combo = QComboBox()
+            combo.blockSignals(True)
             setattr(self, attr_name, combo)
             setattr(self, par_name, combo.currentText())
             combo.currentIndexChanged.connect(func)
             combo.addItems(item)
             combo.setCurrentText(cur_text)
+            combo.blockSignals(False)
             combo.setFixedSize(130, 26)
             combo.setStyleSheet("""
                 QComboBox 

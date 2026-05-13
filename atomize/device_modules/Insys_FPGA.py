@@ -1316,7 +1316,7 @@ class Insys_FPGA:
 
                 if rep_time > 20408163:
                     if self.adc_window <= 256:
-                        self.change_ini_file("streamBufSizeKb = 1024", "streamBufSizeKb = 128")
+                        self.change_ini_file("streamBufSizeKb = 1024", "streamBufSizeKb = 256")
                     elif (self.adc_window > 256) and (self.adc_window <= 511):
                         self.change_ini_file("streamBufSizeKb = 1024", "streamBufSizeKb = 256")
                     elif (self.adc_window > 511) and (self.adc_window <= 1022):

@@ -614,11 +614,11 @@ class CrosshairDock(CloseableDock):
                         if self.ver_line_1 != float(vline_arg[0]):
                             self.plot_widget.removeItem(self.vl1)
                             self.ver_line_1 = float(vline_arg[0])
-                            self.vl1 = self.plot_widget.addLine( x = self.ver_line_1 )
+                            self.vl1 = self.plot_widget.addLine( x = self.ver_line_1, pen='g' )
                         if self.ver_line_2 != float(vline_arg[1]):
                             self.plot_widget.removeItem(self.vl2)
                             self.ver_line_2 = float(vline_arg[1])
-                            self.vl2 = self.plot_widget.addLine( x = self.ver_line_2 )
+                            self.vl2 = self.plot_widget.addLine( x = self.ver_line_2, pen='g' )
                     except IndexError:
                         pass
         else:
@@ -745,8 +745,8 @@ class CrosshairDock(CloseableDock):
                 # vertical lines
                 if vline_arg != 'False':
                     try:
-                        self.vl1 = self.plot_widget.addLine( x = float(vline_arg[0]) )
-                        self.vl2 = self.plot_widget.addLine( x = float(vline_arg[1]) )
+                        self.vl1 = self.plot_widget.addLine( x = float(vline_arg[0]), pen='g' )
+                        self.vl2 = self.plot_widget.addLine( x = float(vline_arg[1]), pen='g' )
                     except IndexError:
                         pass
 
