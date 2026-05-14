@@ -1189,7 +1189,7 @@ class Insys_FPGA:
                 #temp, visualizer = self.convert_to_bit_pulse( self.pulse_array_pulser )
                 
                 #to_spinapi = self.instruction_pulse( temp, rep_time )
-                to_spinapi = self.split_into_parts_pulser( self.pulse_array_pulser, rep_time )            
+                to_spinapi = self.split_into_parts_pulser( self.pulse_array_pulser, rep_time )
                 
                 to_spinapi2 = np.array(to_spinapi, dtype = np.int64)
                 if self.awg_pulses_pulser == 1:
@@ -1314,22 +1314,22 @@ class Insys_FPGA:
 
                 rep_time = self.round_to_closest(rep_time, 3.2)
 
-                if rep_time > 20408163:
-                    if self.adc_window <= 256:
-                        self.change_ini_file("streamBufSizeKb = 1024", "streamBufSizeKb = 256")
-                    elif (self.adc_window > 256) and (self.adc_window <= 511):
-                        self.change_ini_file("streamBufSizeKb = 1024", "streamBufSizeKb = 256")
-                    elif (self.adc_window > 511) and (self.adc_window <= 1022):
-                        self.change_ini_file("streamBufSizeKb = 1024", "streamBufSizeKb = 512")
-                elif rep_time <= 20408163:
-                    if (self.adc_window < 1000):
-                        self.change_ini_file("streamBufSizeKb = 128", "streamBufSizeKb = 1024")
-                        self.change_ini_file("streamBufSizeKb = 256", "streamBufSizeKb = 1024")
-                        self.change_ini_file("streamBufSizeKb = 512", "streamBufSizeKb = 1024")
-                        self.change_ini_file("streamBufSizeKb = 2048", "streamBufSizeKb = 1024")
-                        self.change_ini_file("streamBufSizeKb = 4096", "streamBufSizeKb = 1024")
-                    else:
-                        self.change_ini_file("streamBufSizeKb = 1024", "streamBufSizeKb = 4096")
+                #if rep_time > 20408163:
+                #    if self.adc_window <= 256:
+                #        self.change_ini_file("streamBufSizeKb = 1024", "streamBufSizeKb = 256")
+                #    elif (self.adc_window > 256) and (self.adc_window <= 511):
+                #        self.change_ini_file("streamBufSizeKb = 1024", "streamBufSizeKb = 256")
+                #    elif (self.adc_window > 511) and (self.adc_window <= 1022):
+                #        self.change_ini_file("streamBufSizeKb = 1024", "streamBufSizeKb = 512")
+                #elif rep_time <= 20408163:
+                #    if (self.adc_window < 1000):
+                #        self.change_ini_file("streamBufSizeKb = 128", "streamBufSizeKb = 1024")
+                #        self.change_ini_file("streamBufSizeKb = 256", "streamBufSizeKb = 1024")
+                #        self.change_ini_file("streamBufSizeKb = 512", "streamBufSizeKb = 1024")
+                #        self.change_ini_file("streamBufSizeKb = 2048", "streamBufSizeKb = 1024")
+                #        self.change_ini_file("streamBufSizeKb = 4096", "streamBufSizeKb = 1024")
+                #    else:
+                #        self.change_ini_file("streamBufSizeKb = 1024", "streamBufSizeKb = 4096")
 
 
                 self.rep_rate_count_pulser = 1
@@ -4724,7 +4724,7 @@ class Insys_FPGA:
                             amp_on_pulses = self.convert_to_bit_pulse_amp_lna_pulser(prob_pulses_amp, self.channel_dict_pulser['AMP_ON'])
                             try:
                                 #cor_pulses_amp_final = cor_pulses_amp, self.instruction_pulse_short_lna_amp_pulser(amp_on_pulses)
-                                cor_pulses_amp_final = np.concatenate((cor_pulses_amp, samp_on_pulses), axis = 0)
+                                cor_pulses_amp_final = np.concatenate((cor_pulses_amp, amp_on_pulses), axis = 0)
                             except ValueError:
                                 cor_pulses_amp_final = np.concatenate((cor_pulses_amp, amp_on_pulses), axis = 0)
 
@@ -4867,7 +4867,6 @@ class Insys_FPGA:
                     else:
                         # for non-MW pulses just check 40 ns distance
                         self.check_problem_pulses_pulser(element)
-
 
                 # combine all pulses
                 #np.concatenate( (self.convertion_to_numpy_pulser( self.pulse_array_pulser ), cor_pulses_amp_final, cor_pulses_lna_final), axis = None) 
@@ -5502,25 +5501,31 @@ class Insys_FPGA:
             return self.process_pulses(p_list, channel)
 
     def process_pulses(self, p_list, channel):
-        """
-        """
         if len(p_list) == 0:
             return np.empty((0, 3), dtype=np.int64)
 
-        threshold = self.min_pulse_length_pulser + self.minimal_distance_amp_lna_pulser
+        threshold = (
+            self.min_pulse_length_pulser + self.minimal_distance_amp_lna_pulser
+        )
 
-        p_sorted = p_list[p_list[:, 1].argsort()]
-        max_stops = np.maximum.accumulate(p_sorted[:, 2])
+        sort_idx = p_list[:, 1].argsort()
+        p_sorted = p_list[sort_idx]
 
-        gaps = p_sorted[1:, 1] > (max_stops[:-1] + threshold)
-        
+        starts = p_sorted[:, 1]
+        stops = p_sorted[:, 2]
+
+        max_stops = np.maximum.accumulate(stops)
+
+        gaps = starts[1:] > (max_stops[:-1] + threshold)
+
         group_starts = np.concatenate(([True], gaps))
         group_ends = np.concatenate((gaps, [True]))
 
-        final_starts = p_sorted[group_starts, 1]
+        final_starts = starts[group_starts]
         final_stops = max_stops[group_ends]
-        
-        final_channels = np.full_like(final_starts, channel)
+
+        channel_power_of_two = 1 << channel
+        final_channels = np.full_like(final_starts, channel_power_of_two)
 
         return np.column_stack((final_channels, final_starts, final_stops))
 
@@ -5616,47 +5621,59 @@ class Insys_FPGA:
                     return final_array
 
         if self.test_flag == 'test':
-            threshold = self.min_pulse_length_pulser + self.minimal_distance_amp_lna_pulser
-
-            one_indexes = np.flatnonzero(np_array == 1)
+            # checking where the pulses are
+            one_indexes = np.argwhere(np_array == 1).flatten()
             difference = np.diff(one_indexes)
 
-            has_short_distance = np.any((difference > 1) & (difference < threshold))
-
-            is_special_channel = (channel == self.channel_dict_pulser['LNA_PROTECT']) or (channel == self.channel_dict_pulser['AMP_ON'])
-
-            if not is_special_channel:
-                if has_short_distance:
-                    raise AssertionError(f'There are two pulses with shorter than {self.min_pulse_length_pulser} ns distance between them')
-                return np_array
+            if channel != self.channel_dict_pulser['LNA_PROTECT'] and channel != self.channel_dict_pulser['AMP_ON']:
+                if any(1 < element < (self.min_pulse_length_pulser + self.minimal_distance_amp_lna_pulser) for element in difference) == False:
+                    pass
+                else:
+                    assert(1 == 2), 'There are two pulses with shorter than ' + str(self.min_pulse_length_pulser) + ' ns distance between them'
             else:
-                if not has_short_distance:
+                if any(1 < element < (self.min_pulse_length_pulser + self.minimal_distance_amp_lna_pulser) for element in difference) == False:
                     return np_array
                 else:
-                    return self.joining_pulses_pulser(np_array)
+                    final_array = self.joining_pulses_pulser(np_array)
+                    return final_array
 
     #unused
     def joining_pulses_pulser(self, np_array):
         """
+        A function that joing two short pulses in one
+        It is used for LNA_PROTECT and AMP_ON pulses
         """
-        threshold = self.min_pulse_length_pulser + self.minimal_distance_amp_lna_pulser
-        
-        kernel_size = threshold + 1
-        kernel = np.ones(kernel_size, dtype=np.int64)
-        
-        convolved = np.convolve(np_array, kernel, mode='same')
-        
-        one_indexes = np.flatnonzero(np_array == 1)
-        if len(one_indexes) == 0:
-            return np_array
-            
-        first_one, last_one = one_indexes[0], one_indexes[-1]
-        
-        final_array = np_array.copy()
+        i = 0
+        j = 0
+        counter = 0
 
-        mask = (convolved > 0)
-        final_array[first_one:last_one + 1] = np.where(mask[first_one:last_one + 1], 1, 0)
-        
+        array_len = len(np_array)
+        # drop several first and last zeros
+        index_first_one = np.argwhere(np_array == 1)[0]
+        index_last_one = np.argwhere(np_array == 1)[-1]
+        short_array = np_array[index_first_one[0]:(index_last_one[0] + 1)]
+
+        while i < len(short_array):
+            if short_array[i] == 0:
+                # looking for several 0 in a row
+                if short_array[i + 1] == 0:
+                    counter += 1
+                elif short_array[i + 1] == 1:
+                    # (minimal_distance + 1) is 13 now
+                    if counter < (self.min_pulse_length_pulser + self.minimal_distance_amp_lna_pulser):
+                        # replace 0 with 1
+                        while j <= counter:
+                            short_array[i + j - counter] = 1
+                            j += 1
+                        counter = 0
+                        j = 0
+                    else:
+                        counter = 0
+
+            i += 1
+
+        final_array = np.concatenate( (np.zeros(index_first_one[0], dtype = np.int64), short_array, np.zeros( array_len - index_last_one[0] - 1, dtype = np.int64)), axis = None)
+
         return final_array
 
     def change_pulse_settings_pulser(self, parameter, delay):

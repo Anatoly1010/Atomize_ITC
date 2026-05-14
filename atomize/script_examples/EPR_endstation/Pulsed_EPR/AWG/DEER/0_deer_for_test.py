@@ -40,7 +40,7 @@ PULSE_1_LENGTH = '320.0 ns'
 PULSE_2_LENGTH = '44.8 ns'
 PULSE_PUMP_LENGTH = '16 ns'
 PULSE_3_LENGTH = '44.8 ns'
-PULSE_DETECTION_LENGTH = '480 ns'
+PULSE_DETECTION_LENGTH = '3840 ns'
 
 PULSE_1_START = '0 ns'
 PULSE_2_START = '320 ns'
@@ -78,59 +78,6 @@ pb.pulser_pulse(name = 'P2', channel = 'TRIGGER_AWG', start = PULSE_PUMP_START,
 pb.pulser_pulse(name = 'P3', channel = 'TRIGGER_AWG', start = PULSE_3_START, 
             length = PULSE_3_LENGTH)
 
-pb.pulser_pulse(name = 'P5', channel = 'TRIGGER_AWG', start = '2640 ns', 
-            length = PULSE_3_LENGTH)
-pb.pulser_pulse(name = 'P6', channel = 'TRIGGER_AWG', start = '2960 ns', 
-            length = PULSE_3_LENGTH)
-pb.pulser_pulse(name = 'P7', channel = 'TRIGGER_AWG', start = '3280 ns', 
-            length = PULSE_3_LENGTH)
-pb.pulser_pulse(name = 'P8', channel = 'TRIGGER_AWG', start = '3600 ns', 
-            length = PULSE_3_LENGTH)
-pb.pulser_pulse(name = 'P9', channel = 'TRIGGER_AWG', start = '3920 ns', 
-            length = PULSE_3_LENGTH)
-pb.pulser_pulse(name = 'P10', channel = 'TRIGGER_AWG', start = '4240 ns', 
-            length = PULSE_3_LENGTH)
-pb.pulser_pulse(name = 'P11', channel = 'TRIGGER_AWG', start = '4560 ns', 
-            length = PULSE_3_LENGTH)
-pb.pulser_pulse(name = 'P12', channel = 'TRIGGER_AWG', start = '4880 ns', 
-            length = PULSE_3_LENGTH)
-pb.pulser_pulse(name = 'P13', channel = 'TRIGGER_AWG', start = '5200 ns', 
-            length = PULSE_3_LENGTH)
-pb.pulser_pulse(name = 'P14', channel = 'TRIGGER_AWG', start = '5520 ns', 
-            length = PULSE_3_LENGTH)
-pb.pulser_pulse(name = 'P15', channel = 'TRIGGER_AWG', start = '5840 ns', 
-            length = PULSE_3_LENGTH)
-pb.pulser_pulse(name = 'P16', channel = 'TRIGGER_AWG', start = '6160 ns', 
-            length = PULSE_3_LENGTH)
-pb.pulser_pulse(name = 'P17', channel = 'TRIGGER_AWG', start = '6480 ns', 
-            length = PULSE_3_LENGTH)
-pb.pulser_pulse(name = 'P18', channel = 'TRIGGER_AWG', start = '6800 ns', 
-            length = PULSE_3_LENGTH)
-pb.pulser_pulse(name = 'P19', channel = 'TRIGGER_AWG', start = '7120 ns', 
-            length = PULSE_3_LENGTH)
-pb.pulser_pulse(name = 'P20', channel = 'TRIGGER_AWG', start = '7440 ns', 
-            length = PULSE_3_LENGTH)
-pb.pulser_pulse(name = 'P21', channel = 'TRIGGER_AWG', start = '7760 ns', 
-            length = PULSE_3_LENGTH)
-pb.pulser_pulse(name = 'P22', channel = 'TRIGGER_AWG', start = '8080 ns', 
-            length = PULSE_3_LENGTH)
-pb.pulser_pulse(name = 'P23', channel = 'TRIGGER_AWG', start = '8400 ns', 
-            length = PULSE_3_LENGTH)
-pb.pulser_pulse(name = 'P24', channel = 'TRIGGER_AWG', start = '8720 ns', 
-            length = PULSE_3_LENGTH)
-pb.pulser_pulse(name = 'P25', channel = 'TRIGGER_AWG', start = '9040 ns', 
-            length = PULSE_3_LENGTH)
-pb.pulser_pulse(name = 'P26', channel = 'TRIGGER_AWG', start = '9360 ns', 
-            length = PULSE_3_LENGTH)
-pb.pulser_pulse(name = 'P27', channel = 'TRIGGER_AWG', start = '9680 ns', 
-            length = PULSE_3_LENGTH)
-pb.pulser_pulse(name = 'P28', channel = 'TRIGGER_AWG', start = '10000 ns', 
-            length = PULSE_3_LENGTH)
-pb.pulser_pulse(name = 'P29', channel = 'TRIGGER_AWG', start = '10320 ns', 
-            length = PULSE_3_LENGTH)
-pb.pulser_pulse(name = 'P30', channel = 'TRIGGER_AWG', start = '10640 ns', 
-            length = PULSE_3_LENGTH)
-
 #['+x', '+x', '+x', '+x', '-x', '-x', '-x', '-x']
 #['+x', '+x', '+x', '+x', '+x', '+x', '+x', '+x']
 #['+x', '+y', '-x', '-y', '+x', '+y', '-x', '-y']
@@ -158,112 +105,6 @@ pb.pulser_pulse(name = 'P4', channel = 'DETECTION', start = PULSE_DETECTION,
             length = PULSE_DETECTION_LENGTH,
             phase_list = [
             '+x', '+x'])
-
-pb.awg_pulse(name = 'A5', channel = 'CH0', func = SHAPE, frequency = FREQ_OBSERVE, phase = 0, 
-            length = PULSE_3_LENGTH, sigma = PULSE_3_LENGTH, start = '2640 ns', 
-            phase_list = [
-            '+x', '+x'], amplitude = AMPL_3)
-pb.awg_pulse(name = 'A6', channel = 'CH0', func = SHAPE, frequency = FREQ_OBSERVE, phase = 0, 
-            length = PULSE_3_LENGTH, sigma = PULSE_3_LENGTH, start = '2960 ns', 
-            phase_list = [
-            '+x', '+x'], amplitude = AMPL_3)
-pb.awg_pulse(name = 'A7', channel = 'CH0', func = SHAPE, frequency = FREQ_OBSERVE, phase = 0, 
-            length = PULSE_3_LENGTH, sigma = PULSE_3_LENGTH, start = '3280 ns', 
-            phase_list = [
-            '+x', '+x'], amplitude = AMPL_3)
-pb.awg_pulse(name = 'A8', channel = 'CH0', func = SHAPE, frequency = FREQ_OBSERVE, phase = 0, 
-            length = PULSE_3_LENGTH, sigma = PULSE_3_LENGTH, start = '3600 ns', 
-            phase_list = [
-            '+x', '+x'], amplitude = AMPL_3)
-pb.awg_pulse(name = 'A9', channel = 'CH0', func = SHAPE, frequency = FREQ_OBSERVE, phase = 0, 
-            length = PULSE_3_LENGTH, sigma = PULSE_3_LENGTH, start = '3920 ns', 
-            phase_list = [
-            '+x', '+x'], amplitude = AMPL_3)
-pb.awg_pulse(name = 'A10', channel = 'CH0', func = SHAPE, frequency = FREQ_OBSERVE, phase = 0, 
-            length = PULSE_3_LENGTH, sigma = PULSE_3_LENGTH, start = '4240 ns', 
-            phase_list = [
-            '+x', '+x'], amplitude = AMPL_3)
-pb.awg_pulse(name = 'A11', channel = 'CH0', func = SHAPE, frequency = FREQ_OBSERVE, phase = 0, 
-            length = PULSE_3_LENGTH, sigma = PULSE_3_LENGTH, start = '4560 ns', 
-            phase_list = [
-            '+x', '+x'], amplitude = AMPL_3)
-pb.awg_pulse(name = 'A12', channel = 'CH0', func = SHAPE, frequency = FREQ_OBSERVE, phase = 0, 
-            length = PULSE_3_LENGTH, sigma = PULSE_3_LENGTH, start = '4880 ns', 
-            phase_list = [
-            '+x', '+x'], amplitude = AMPL_3)
-pb.awg_pulse(name = 'A13', channel = 'CH0', func = SHAPE, frequency = FREQ_OBSERVE, phase = 0, 
-            length = PULSE_3_LENGTH, sigma = PULSE_3_LENGTH, start = '5200 ns', 
-            phase_list = [
-            '+x', '+x'], amplitude = AMPL_3)
-pb.awg_pulse(name = 'A14', channel = 'CH0', func = SHAPE, frequency = FREQ_OBSERVE, phase = 0, 
-            length = PULSE_3_LENGTH, sigma = PULSE_3_LENGTH, start = '5520 ns', 
-            phase_list = [
-            '+x', '+x'], amplitude = AMPL_3)
-pb.awg_pulse(name = 'A15', channel = 'CH0', func = SHAPE, frequency = FREQ_OBSERVE, phase = 0, 
-            length = PULSE_3_LENGTH, sigma = PULSE_3_LENGTH, start = '5840 ns', 
-            phase_list = [
-            '+x', '+x'], amplitude = AMPL_3)
-pb.awg_pulse(name = 'A16', channel = 'CH0', func = SHAPE, frequency = FREQ_OBSERVE, phase = 0, 
-            length = PULSE_3_LENGTH, sigma = PULSE_3_LENGTH, start = '6160 ns', 
-            phase_list = [
-            '+x', '+x'], amplitude = AMPL_3)
-pb.awg_pulse(name = 'A17', channel = 'CH0', func = SHAPE, frequency = FREQ_OBSERVE, phase = 0, 
-            length = PULSE_3_LENGTH, sigma = PULSE_3_LENGTH, start = '6480 ns', 
-            phase_list = [
-            '+x', '+x'], amplitude = AMPL_3)
-pb.awg_pulse(name = 'A18', channel = 'CH0', func = SHAPE, frequency = FREQ_OBSERVE, phase = 0, 
-            length = PULSE_3_LENGTH, sigma = PULSE_3_LENGTH, start = '6800 ns', 
-            phase_list = [
-            '+x', '+x'], amplitude = AMPL_3)
-pb.awg_pulse(name = 'A19', channel = 'CH0', func = SHAPE, frequency = FREQ_OBSERVE, phase = 0, 
-            length = PULSE_3_LENGTH, sigma = PULSE_3_LENGTH, start = '7120 ns', 
-            phase_list = [
-            '+x', '+x'], amplitude = AMPL_3)
-pb.awg_pulse(name = 'A20', channel = 'CH0', func = SHAPE, frequency = FREQ_OBSERVE, phase = 0, 
-            length = PULSE_3_LENGTH, sigma = PULSE_3_LENGTH, start = '7440 ns', 
-            phase_list = [
-            '+x', '+x'], amplitude = AMPL_3)
-pb.awg_pulse(name = 'A21', channel = 'CH0', func = SHAPE, frequency = FREQ_OBSERVE, phase = 0, 
-            length = PULSE_3_LENGTH, sigma = PULSE_3_LENGTH, start = '7760 ns', 
-            phase_list = [
-            '+x', '+x'], amplitude = AMPL_3)
-pb.awg_pulse(name = 'A22', channel = 'CH0', func = SHAPE, frequency = FREQ_OBSERVE, phase = 0, 
-            length = PULSE_3_LENGTH, sigma = PULSE_3_LENGTH, start = '8080 ns', 
-            phase_list = [
-            '+x', '+x'], amplitude = AMPL_3)
-pb.awg_pulse(name = 'A23', channel = 'CH0', func = SHAPE, frequency = FREQ_OBSERVE, phase = 0, 
-            length = PULSE_3_LENGTH, sigma = PULSE_3_LENGTH, start = '8400 ns', 
-            phase_list = [
-            '+x', '+x'], amplitude = AMPL_3)
-pb.awg_pulse(name = 'A24', channel = 'CH0', func = SHAPE, frequency = FREQ_OBSERVE, phase = 0, 
-            length = PULSE_3_LENGTH, sigma = PULSE_3_LENGTH, start = '8720 ns', 
-            phase_list = [
-            '+x', '+x'], amplitude = AMPL_3)
-pb.awg_pulse(name = 'A25', channel = 'CH0', func = SHAPE, frequency = FREQ_OBSERVE, phase = 0, 
-            length = PULSE_3_LENGTH, sigma = PULSE_3_LENGTH, start = '9040 ns', 
-            phase_list = [
-            '+x', '+x'], amplitude = AMPL_3)
-pb.awg_pulse(name = 'A26', channel = 'CH0', func = SHAPE, frequency = FREQ_OBSERVE, phase = 0, 
-            length = PULSE_3_LENGTH, sigma = PULSE_3_LENGTH, start = '9360 ns', 
-            phase_list = [
-            '+x', '+x'], amplitude = AMPL_3)
-pb.awg_pulse(name = 'A27', channel = 'CH0', func = SHAPE, frequency = FREQ_OBSERVE, phase = 0, 
-            length = PULSE_3_LENGTH, sigma = PULSE_3_LENGTH, start = '9680 ns', 
-            phase_list = [
-            '+x', '+x'], amplitude = AMPL_3)
-pb.awg_pulse(name = 'A28', channel = 'CH0', func = SHAPE, frequency = FREQ_OBSERVE, phase = 0, 
-            length = PULSE_3_LENGTH, sigma = PULSE_3_LENGTH, start = '10000 ns', 
-            phase_list = [
-            '+x', '+x'], amplitude = AMPL_3)
-pb.awg_pulse(name = 'A29', channel = 'CH0', func = SHAPE, frequency = FREQ_OBSERVE, phase = 0, 
-            length = PULSE_3_LENGTH, sigma = PULSE_3_LENGTH, start = '10320 ns', 
-            phase_list = [
-            '+x', '+x'], amplitude = AMPL_3)
-pb.awg_pulse(name = 'A30', channel = 'CH0', func = SHAPE, frequency = FREQ_OBSERVE, phase = 0, 
-            length = PULSE_3_LENGTH, sigma = PULSE_3_LENGTH, start = '10640 ns', 
-            phase_list = [
-            '+x', '+x'], amplitude = AMPL_3)
-
 
 pb.digitizer_decimation(DEC_COEF)
 length_val = float(PULSE_DETECTION_LENGTH.split(' ')[0])
