@@ -1314,22 +1314,22 @@ class Insys_FPGA:
 
                 rep_time = self.round_to_closest(rep_time, 3.2)
 
-                #if rep_time > 20408163:
-                #    if self.adc_window <= 256:
-                #        self.change_ini_file("streamBufSizeKb = 1024", "streamBufSizeKb = 256")
-                #    elif (self.adc_window > 256) and (self.adc_window <= 511):
-                #        self.change_ini_file("streamBufSizeKb = 1024", "streamBufSizeKb = 256")
-                #    elif (self.adc_window > 511) and (self.adc_window <= 1022):
-                #        self.change_ini_file("streamBufSizeKb = 1024", "streamBufSizeKb = 512")
-                #elif rep_time <= 20408163:
-                #    if (self.adc_window < 1000):
-                #        self.change_ini_file("streamBufSizeKb = 128", "streamBufSizeKb = 1024")
-                #        self.change_ini_file("streamBufSizeKb = 256", "streamBufSizeKb = 1024")
-                #        self.change_ini_file("streamBufSizeKb = 512", "streamBufSizeKb = 1024")
-                #        self.change_ini_file("streamBufSizeKb = 2048", "streamBufSizeKb = 1024")
-                #        self.change_ini_file("streamBufSizeKb = 4096", "streamBufSizeKb = 1024")
-                #    else:
-                #        self.change_ini_file("streamBufSizeKb = 1024", "streamBufSizeKb = 4096")
+                if rep_time > 20408163:
+                    if self.adc_window <= 256:
+                        self.change_ini_file("streamBufSizeKb = 1024", "streamBufSizeKb = 128")
+                    elif (self.adc_window > 256) and (self.adc_window <= 511):
+                        self.change_ini_file("streamBufSizeKb = 1024", "streamBufSizeKb = 256")
+                    elif (self.adc_window > 511) and (self.adc_window <= 1022):
+                        self.change_ini_file("streamBufSizeKb = 1024", "streamBufSizeKb = 512")
+                elif rep_time <= 20408163:
+                    if (self.adc_window < 1000):
+                        self.change_ini_file("streamBufSizeKb = 128", "streamBufSizeKb = 1024")
+                        self.change_ini_file("streamBufSizeKb = 256", "streamBufSizeKb = 1024")
+                        self.change_ini_file("streamBufSizeKb = 512", "streamBufSizeKb = 1024")
+                        self.change_ini_file("streamBufSizeKb = 2048", "streamBufSizeKb = 1024")
+                        self.change_ini_file("streamBufSizeKb = 4096", "streamBufSizeKb = 1024")
+                    else:
+                        self.change_ini_file("streamBufSizeKb = 1024", "streamBufSizeKb = 4096")
 
 
                 self.rep_rate_count_pulser = 1
