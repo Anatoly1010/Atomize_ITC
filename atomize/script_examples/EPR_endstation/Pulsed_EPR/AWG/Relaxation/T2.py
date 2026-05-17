@@ -194,13 +194,12 @@ for k in general.scans(SCANS):
                 total_scan = SCANS ) 
 
         pb.pulser_shift()
-        pb.awg_pulse_reset()
+        pb.awg_shift()
 
     pb.pulser_pulse_reset()
-
+    pb.awg_pulse_reset()
 
 pb.pulser_close()
-
 
 general.plot_2d(
     EXP_NAME, 

@@ -1,18 +1,92 @@
 import os
+import re
 import sys
 import time
 import ctypes
 import threading
+import numpy as np
+import pyqtgraph as pg
 from pathlib import Path
 from PyQt6 import QtWidgets, uic, QtCore, QtGui
+from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import QWidget, QGridLayout, QLabel, QPushButton, QComboBox, QCheckBox, QVBoxLayout, QApplication
 from PyQt6.QtGui import QColor
-from atomize.main.main_window import MainWindow
+from atomize.main.main_window import MainWindow, NameList
 os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "1"
 
 ###
 # All modifications can be found with # mod
 ###
+class MyExtendedNameList(NameList):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        
+        open_action_tr = QAction('Open TR Data', self)
+        open_action_tr.triggered.connect(lambda: self.file_dialog_2d(is_2d = True))
+        self.namelist_view.addAction(open_action_tr)
+
+    def open_file_tr(self, filename):
+        """
+        A function to open 2d data
+        :param filename: string
+        """
+        file_path = filename
+
+        header_lines = []
+
+        with open(file_path, 'r') as file_to_read:
+            for line in file_to_read:
+                if line.startswith('#'):
+                    header_lines.append(line)
+                else:
+                    break
+
+        header_count = len(header_lines)
+        header_text = "".join(header_lines)
+
+        start_field_match = re.search(r'Start\s*Field\s*[:=]\s*([+-]?\d*\.\d+|[+-]?\d+)', header_text, re.IGNORECASE)
+        field_step_match = re.search(r'Field\s*Step\s*[:=]\s*([+-]?\d*\.\d+|[+-]?\d+)', header_text, re.IGNORECASE)
+        time_res_match = re.search(r'Time\s*Resolution\s*[:=]\s*([+-]?\d*\.\d+\s*[a-zA-Zμµ]+|[+-]?\d+\s*[a-zA-Zμµ]+)', header_text, re.IGNORECASE)
+
+        t_step_2 = 1
+        if time_res_match:
+            t_res_2 = time_res_match.group(1).strip()
+            try:
+                t_step_2 = float(f"{pg.siEval(t_res_2):.4g}") 
+            except Exception as e:
+                pass
+
+        start_field = float(start_field_match.group(1)) if start_field_match else 0
+        field_step = float(field_step_match.group(1)) if field_step_match else 1
+
+        temp = np.genfromtxt(file_path, dtype = float, delimiter = ',', skip_header = header_count) 
+
+        data_modified = temp.copy()
+
+        data_modified[:, 0] = data_modified[:, 0] - data_modified[:, 0]
+        data_modified[:, :] = data_modified[:, :] - data_modified[0, :]
+
+        data_3d = np.stack([temp, data_modified], axis=0)
+
+        #name_plot = datetime.now().strftime('%d-%m-%Y %H:%M:%S')
+        name_plot = os.path.splitext(os.path.basename(file_path))[0]
+
+        pw = self.window.add_new_plot(2, name_plot)
+
+        if start_field != 0 and t_step_2 != 1 and field_step != 1:
+            pw.setAxisLabels(xname = 'Time', xscale = 's',yname = 'Field', yscale = 'G',
+                zname = 'Intensity', zscale = 'V')
+        else:
+            pw.setAxisLabels(xname = 'X', xscale = 'Arb. U.',yname = 'Y', yscale = 'Arb. U.',
+                zname = 'Z', zscale = 'Arb. U.')
+
+        pw.setImage(
+            data_3d, 
+            axes={'t': 0, 'y': 1, 'x': 2}, 
+            autoLevels=False,
+            pos=(0, start_field),
+            scale=(t_step_2, field_step)
+        )
 
 class MainExtended(MainWindow):
 
@@ -59,6 +133,9 @@ class MainExtended(MainWindow):
         self.set_control_center()
 
         self.skip_lines = 0
+
+    def create_namelist(self):
+        return MyExtendedNameList(self)
 
     def handle_output_control_center(self):
         sending_process = self.sender()
@@ -283,8 +360,10 @@ class MainExtended(MainWindow):
         if text_errors_script == '':
             self.text_errors.appendPlainText("No errors are found")
             self.test_flag = 0
+            self.checked = 1
         elif text_errors_script != '':
             self.test_flag = 1
+            self.checked = 0
             self.text_errors.appendPlainText(text_errors_script)
             # mod
             path_status_file = os.path.join(self.path_to_main, 'status')

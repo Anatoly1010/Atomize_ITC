@@ -3301,6 +3301,7 @@ class Worker():
             data = np.zeros( ( 2, POINTS ) )
             x_axis = f_delay + np.linspace(0, (POINTS - 1)*STEP, num = POINTS) 
             x_axis_plot = x_axis / 1e9
+            a = 0
 
             while self.command != 'exit':
 
@@ -3323,12 +3324,15 @@ class Worker():
                             
                             pb.pulser_next_phase()
 
-                            if step != 1:
-                                general.plot_1d(EXP_NAME, x_axis_plot, ( data[0], data[1] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j*STEP, 1)))
-                            else:
-                                general.plot_1d(EXP_NAME, x_axis, ( data[0], data[1] ), xname = 'Point', xscale = '', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j, 1)))
+                            if a is not None:
+                                if step != 1:
+                                    general.plot_1d(EXP_NAME, x_axis_plot, ( data[0], data[1] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j*STEP, 1)))
+                                else:
+                                    general.plot_1d(EXP_NAME, x_axis, ( data[0], data[1] ), xname = 'Point', xscale = '', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j, 1)))
 
-                            data[0], data[1] = pb.digitizer_get_curve( POINTS, PHASES, current_scan = k, total_scan = SCANS, integral = True )
+                            a, b = pb.digitizer_get_curve( POINTS, PHASES, current_scan = k, total_scan = SCANS, integral = True )
+                            if a is not None:
+                                data[0], data[1] = a, b
 
                         pb.pulser_shift()
                         pb.pulser_increment()
@@ -3559,6 +3563,7 @@ class Worker():
             data = np.zeros( ( 2, POINTS ) )
             x_axis = f_delay + np.linspace(0, (POINTS - 1)*STEP, num = POINTS) 
             x_axis_plot = x_axis / 1e9
+            a = 0
 
             while self.command != 'exit':
 
@@ -3580,12 +3585,15 @@ class Worker():
 
                             if j == 0:
                                 ##data = np.random.random( ( 2, POINTS ) )
-                                if step != 1:
-                                    general.plot_1d(EXP_NAME, x_axis_plot, ( data[0], data[1] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j*STEP, 1)))
-                                else:
-                                    general.plot_1d(EXP_NAME, x_axis, ( data[0], data[1] ), xname = 'Point', xscale = '', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j, 1)))
+                                if a is not None:
+                                    if step != 1:
+                                        general.plot_1d(EXP_NAME, x_axis_plot, ( data[0], data[1] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j*STEP, 1)))
+                                    else:
+                                        general.plot_1d(EXP_NAME, x_axis, ( data[0], data[1] ), xname = 'Point', xscale = '', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j, 1)))
 
-                                data[0], data[1] = pb.digitizer_get_curve( POINTS, PHASES, current_scan = k, total_scan = SCANS, integral = True )
+                                a, b = pb.digitizer_get_curve( POINTS, PHASES, current_scan = k, total_scan = SCANS, integral = True )
+                                if a is not None:
+                                    data[0], data[1] = a, b
 
                         pb.pulser_shift()
                         pb.pulser_increment()
@@ -3776,6 +3784,7 @@ class Worker():
             POINTS = int( (END_FIELD - START_FIELD) / FIELD_STEP ) + 1
             data = np.zeros( ( 2, POINTS ) )
             x_axis = np.linspace(START_FIELD, END_FIELD, num = POINTS)
+            a = 0
 
             while self.command != 'exit':
                 k = 1
@@ -3803,13 +3812,14 @@ class Worker():
                             #r_data = np.random.random( 2 )
                             #data[0, j] = r_data[0]
                             #data[1, j] = r_data[1]
-
-                            process = general.plot_1d(EXP_NAME, x_axis, ( data[0], data[1] ), xname = 'Field', xscale = 'G', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Field: ' + str(k) + ' / ' + str(field), pr = process)
+                            if a is not None:
+                                process = general.plot_1d(EXP_NAME, x_axis, ( data[0], data[1] ), xname = 'Field', xscale = 'G', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Field: ' + str(k) + ' / ' + str(field), pr = process)
 
                             pb.pulser_next_phase()
 
-
-                            data[0], data[1] = pb.digitizer_get_curve( POINTS, PHASES, current_scan = k, total_scan = SCANS, integral = True )
+                            a, b = pb.digitizer_get_curve( POINTS, PHASES, current_scan = k, total_scan = SCANS, integral = True )
+                            if a is not None:
+                                data[0], data[1] = a, b
 
                         field = round( (FIELD_STEP + field), 3 )
 
@@ -4017,6 +4027,7 @@ class Worker():
             POINTS = int( (END_FIELD - START_FIELD) / FIELD_STEP ) + 1
             data = np.zeros( ( 2, POINTS ) )
             x_axis = np.linspace(START_FIELD, END_FIELD, num = POINTS)
+            a = 0
 
             while self.command != 'exit':
 
@@ -4043,12 +4054,15 @@ class Worker():
                             #speed-up tests
                             if j == 0:
                                 ##data = np.random.random( ( 2, POINTS ) )
-                                process = general.plot_1d(EXP_NAME, x_axis, ( data[0], data[1] ), xname = 'Field', xscale = 'G', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Field: ' + str(k) + ' / ' + str(field), pr = process)
+                                if a is not None:
+                                    process = general.plot_1d(EXP_NAME, x_axis, ( data[0], data[1] ), xname = 'Field', xscale = 'G', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Field: ' + str(k) + ' / ' + str(field), pr = process)
 
                             pb.pulser_next_phase()
 
                             if j == 0:
-                                data[0], data[1] = pb.digitizer_get_curve( POINTS, PHASES, current_scan = k, total_scan = SCANS, integral = True )
+                                a, b = pb.digitizer_get_curve( POINTS, PHASES, current_scan = k, total_scan = SCANS, integral = True )
+                                if a is not None:
+                                    data[0], data[1] = a, b
 
                         field = round( (FIELD_STEP + field), 3 )
 
@@ -4275,6 +4289,7 @@ class Worker():
             pb.digitizer_number_of_averages(AVERAGES)
             data = np.zeros( ( 2, POINTS ) )
             x_axis_plot = x_axis / 1e9
+            a = 0
 
             while self.command != 'exit':
 
@@ -4299,10 +4314,12 @@ class Worker():
                             #data[1, j] = r_data[1]
                             pb.pulser_next_phase()
 
-                            process = general.plot_1d(EXP_NAME, x_axis_plot, ( data[0], data[1] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Point: ' + str(k) + ' / ' + str(j), pr = process)
+                            if a is not None:
+                                process = general.plot_1d(EXP_NAME, x_axis_plot, ( data[0], data[1] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Point: ' + str(k) + ' / ' + str(j), pr = process)
 
-
-                            data[0], data[1] = pb.digitizer_get_curve( POINTS, PHASES, current_scan = k, total_scan = SCANS, integral = True )
+                            a, b = pb.digitizer_get_curve( POINTS, PHASES, current_scan = k, total_scan = SCANS, integral = True )
+                            if a is not None:
+                                data[0], data[1] = a, b
 
                         # nonlinear_time_shift is calculated from the initial position of the pulses
                         if j > 0:
@@ -4539,7 +4556,7 @@ class Worker():
             pb.digitizer_number_of_averages(AVERAGES)
             data = np.zeros( ( 2, POINTS ) )
             x_axis_plot = x_axis / 1e9
-
+            a = 0
             ##general.message_test(f'X: {x_axis}')
             
             while self.command != 'exit':
@@ -4564,9 +4581,12 @@ class Worker():
                             pb.pulser_next_phase()
 
                             if j == 0:
-                                process = general.plot_1d(EXP_NAME, x_axis_plot, ( data[0], data[1] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Point: ' + str(k) + ' / ' + str(j), pr = process)
+                                if a is not None:
+                                    process = general.plot_1d(EXP_NAME, x_axis_plot, ( data[0], data[1] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Point: ' + str(k) + ' / ' + str(j), pr = process)
 
-                                data[0], data[1] = pb.digitizer_get_curve( POINTS, PHASES, current_scan = k, total_scan = SCANS, integral = True )
+                                a, b = pb.digitizer_get_curve( POINTS, PHASES, current_scan = k, total_scan = SCANS, integral = True )
+                                if a is not None:
+                                    data[0], data[1] = a, b
 
                         # nonlinear_time_shift is calculated from the initial position of the pulses
                         ##

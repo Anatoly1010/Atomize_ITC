@@ -36,7 +36,7 @@ process = 'None'
 
 # PULSES
 REP_RATE = '1000 Hz'
-PULSE_1_LENGTH = '320.0 ns'
+PULSE_1_LENGTH = '320 ns'
 PULSE_2_LENGTH = '44.8 ns'
 PULSE_PUMP_LENGTH = '16 ns'
 PULSE_3_LENGTH = '44.8 ns'
@@ -176,9 +176,10 @@ for k in general.scans(SCANS):
 
 
         pb.pulser_shift()
-        pb.awg_pulse_reset()
+        pb.awg_shift()
 
     pb.pulser_pulse_reset()
+    pb.awg_pulse_reset()
 
     if k != SCANS:
         scan_time = scan_time + round(1000*(time.time() - st_time2), 1)

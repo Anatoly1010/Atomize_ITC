@@ -4225,6 +4225,7 @@ class Worker():
 
             x_axis = f_delay + np.linspace(0, (POINTS - 1)*STEP, num = POINTS) 
             x_axis_plot = x_axis / 1e9  
+            a = 0
 
             while self.command != 'exit':
 
@@ -4245,57 +4246,61 @@ class Worker():
                             #r_data = np.random.random( ( 2, points_window ) )
                             #data[0, :, j] = r_data[0]
                             #data[1, :, j] = r_data[1]
-
-                            if iq_cor == 0:
-                                if step != 1:
-                                    process = general.plot_2d(
-                                        EXP_NAME, 
-                                        data, 
-                                        start_step = ((0, dec_calc), (f_delay/1e9, step_ns)), 
-                                        xname = 'Time', 
-                                        xscale = 's', 
-                                        yname = 'Delay', 
-                                        yscale = 's', 
-                                        zname = 'Intensity', 
-                                        zscale = 'mV', 
-                                        text = f"Scan / Time: {k} / {j * STEP:.1f}",
-                                        pr = process
-                                    )
-                                else:
-                                    process = general.plot_2d(
-                                        EXP_NAME, 
-                                        data, 
-                                        start_step = ((0, dec_calc), (0, 1)), 
-                                        xname = 'Time', 
-                                        xscale = 's', 
-                                        yname = 'Point', 
-                                        yscale = '', 
-                                        zname = 'Intensity', 
-                                        zscale = 'mV', 
-                                        text = f"Scan / Time: {k} / {j * STEP:.1f}",
-                                        pr = process
-                                    )
-                            elif iq_cor == 1:
-                                data_x, data_y = pb.digitizer_iq(data[0], data[1], iq_freq, zp, first_order, sec_order, integral = True)
-                                if step != 1:
-                                    general.plot_1d(EXP_NAME, x_axis_plot, ( data_x, data_y ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j*STEP, 1)))
-                                else:
-                                    general.plot_1d(EXP_NAME, x_axis, ( data_x, data_y ), xname = 'Point', xscale = '', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j, 1)))
+                            if a is not None:
+                                if iq_cor == 0:
+                                    if step != 1:
+                                        process = general.plot_2d(
+                                            EXP_NAME, 
+                                            data, 
+                                            start_step = ((0, dec_calc), (f_delay/1e9, step_ns)), 
+                                            xname = 'Time', 
+                                            xscale = 's', 
+                                            yname = 'Delay', 
+                                            yscale = 's', 
+                                            zname = 'Intensity', 
+                                            zscale = 'mV', 
+                                            text = f"Scan / Time: {k} / {j * STEP:.1f}",
+                                            pr = process
+                                        )
+                                    else:
+                                        process = general.plot_2d(
+                                            EXP_NAME, 
+                                            data, 
+                                            start_step = ((0, dec_calc), (0, 1)), 
+                                            xname = 'Time', 
+                                            xscale = 's', 
+                                            yname = 'Point', 
+                                            yscale = '', 
+                                            zname = 'Intensity', 
+                                            zscale = 'mV', 
+                                            text = f"Scan / Time: {k} / {j * STEP:.1f}",
+                                            pr = process
+                                        )
+                                elif iq_cor == 1:
+                                    data_x, data_y = pb.digitizer_iq(data[0], data[1], iq_freq, zp, first_order, sec_order, integral = True)
+                                    if step != 1:
+                                        general.plot_1d(EXP_NAME, x_axis_plot, ( data_x, data_y ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j*STEP, 1)))
+                                    else:
+                                        general.plot_1d(EXP_NAME, x_axis, ( data_x, data_y ), xname = 'Point', xscale = '', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j, 1)))
 
                             pb.awg_next_phase()
                             pb.pulser_update()
 
-                            data[0], data[1] = pb.digitizer_get_curve( 
+                            a, b = pb.digitizer_get_curve( 
                                 POINTS, 
                                 PHASES, 
                                 current_scan = k, 
                                 total_scan = SCANS )
 
+                            if a is not None:
+                                data[0], data[1] = a, b
+
                         pb.pulser_shift()
                         if increment == 1:
                             pb.awg_increment()
                         else:
-                            pb.awg_pulse_reset()
+                            #pb.awg_pulse_reset()
+                            pb.awg_shift()
 
                         pb.pulser_increment()
 
@@ -4313,8 +4318,8 @@ class Worker():
                             self.command = conn.recv()
 
                     pb.pulser_pulse_reset()
-                    if increment == 1:
-                        pb.awg_pulse_reset()
+                    #if increment == 1:
+                    pb.awg_pulse_reset()
 
                     k += 1
 
@@ -4746,6 +4751,7 @@ class Worker():
 
             x_axis = f_delay + np.linspace(0, (POINTS - 1)*STEP, num = POINTS) 
             x_axis_plot = x_axis / 1e9  
+            a = 0
 
             while self.command != 'exit':
 
@@ -4765,57 +4771,61 @@ class Worker():
                         for i in range(PHASES):
 
                             if j == 0:
-                                if iq_cor == 0:
-                                    if step != 1:
-                                        process = general.plot_2d(
-                                            EXP_NAME, 
-                                            data, 
-                                            start_step = ((0, dec_calc), (f_delay/1e9, step_ns)), 
-                                            xname = 'Time', 
-                                            xscale = 's', 
-                                            yname = 'Delay', 
-                                            yscale = 's', 
-                                            zname = 'Intensity', 
-                                            zscale = 'mV', 
-                                            text = f"Scan / Time: {k} / {j * STEP:.1f}",
-                                            pr = process
-                                        )
-                                    else:
-                                        process = general.plot_2d(
-                                            EXP_NAME, 
-                                            data, 
-                                            start_step = ((0, dec_calc), (0, 1)), 
-                                            xname = 'Time', 
-                                            xscale = 's', 
-                                            yname = 'Point', 
-                                            yscale = '', 
-                                            zname = 'Intensity', 
-                                            zscale = 'mV', 
-                                            text = f"Scan / Time: {k} / {j * STEP:.1f}",
-                                            pr = process
-                                        )
-                                elif iq_cor == 1:
-                                    data_x, data_y = pb.digitizer_iq(data[0], data[1], iq_freq, zp, first_order, sec_order, integral = True)
-                                    if step != 1:
-                                        general.plot_1d(EXP_NAME, x_axis_plot, ( data_x, data_y ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j*STEP, 1)))
-                                    else:
-                                        general.plot_1d(EXP_NAME, x_axis, ( data_x, data_y ), xname = 'Point', xscale = '', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j, 1)))
+                                if a is not None:
+                                    if iq_cor == 0:
+                                        if step != 1:
+                                            process = general.plot_2d(
+                                                EXP_NAME, 
+                                                data, 
+                                                start_step = ((0, dec_calc), (f_delay/1e9, step_ns)), 
+                                                xname = 'Time', 
+                                                xscale = 's', 
+                                                yname = 'Delay', 
+                                                yscale = 's', 
+                                                zname = 'Intensity', 
+                                                zscale = 'mV', 
+                                                text = f"Scan / Time: {k} / {j * STEP:.1f}",
+                                                pr = process
+                                            )
+                                        else:
+                                            process = general.plot_2d(
+                                                EXP_NAME, 
+                                                data, 
+                                                start_step = ((0, dec_calc), (0, 1)), 
+                                                xname = 'Time', 
+                                                xscale = 's', 
+                                                yname = 'Point', 
+                                                yscale = '', 
+                                                zname = 'Intensity', 
+                                                zscale = 'mV', 
+                                                text = f"Scan / Time: {k} / {j * STEP:.1f}",
+                                                pr = process
+                                            )
+                                    elif iq_cor == 1:
+                                        data_x, data_y = pb.digitizer_iq(data[0], data[1], iq_freq, zp, first_order, sec_order, integral = True)
+                                        if step != 1:
+                                            general.plot_1d(EXP_NAME, x_axis_plot, ( data_x, data_y ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j*STEP, 1)))
+                                        else:
+                                            general.plot_1d(EXP_NAME, x_axis, ( data_x, data_y ), xname = 'Point', xscale = '', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j, 1)))
 
                             pb.awg_next_phase()
                             pb.pulser_update()
 
                             if j == 0:
-                                data[0], data[1] = pb.digitizer_get_curve( 
+                                a, b = pb.digitizer_get_curve( 
                                     POINTS, 
                                     PHASES, 
                                     current_scan = k, 
-                                    total_scan = SCANS ) 
+                                    total_scan = SCANS )
+                                if a is not None:
+                                    data[0], data[1] = a, b
 
                         pb.pulser_shift()
                         if increment == 1:
                             pb.awg_increment()
                         else:
-                            pb.awg_pulse_reset()
+                            #pb.awg_pulse_reset()
+                            pb.awg_shift()
 
                         pb.pulser_increment()
 
@@ -4833,8 +4843,8 @@ class Worker():
                             self.command = conn.recv()
 
                     pb.pulser_pulse_reset()
-                    if increment == 1:
-                        pb.awg_pulse_reset()
+                    #if increment == 1:
+                    pb.awg_pulse_reset()
 
                 self.command = 'exit'
 
@@ -5192,6 +5202,7 @@ class Worker():
             dec_calc = 0.4 * DEC_COEF / 1e9
 
             x_axis = np.linspace(START_FIELD, END_FIELD, num = POINTS)
+            a = 0
 
             while self.command != 'exit':
 
@@ -5218,37 +5229,41 @@ class Worker():
                             #r_data = np.random.random( (2, POINTS) )
                             #data[0, :, j] = r_data[0]
                             #data[1, :, j] = r_data[1]
-                            if iq_cor == 0:
-                                process = general.plot_2d(
-                                    EXP_NAME, 
-                                    data, 
-                                    start_step = ((0, dec_calc), (START_FIELD, FIELD_STEP)), 
-                                    xname = 'Time', 
-                                    xscale = 's', 
-                                    yname = 'Field', 
-                                    yscale = 'G', 
-                                    zname = 'Intensity', 
-                                    zscale = 'mV', 
-                                    text = f"Scan / Field: {k} / {field}",
-                                    pr = process
-                                )
-                            elif iq_cor == 1:
-                                data_x, data_y = pb.digitizer_iq(data[0], data[1], iq_freq, zp, first_order, sec_order, integral = True)
-                                process = general.plot_1d(EXP_NAME, x_axis, ( data_x, data_y ), xname = 'Field', xscale = 'G', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Field: ' + str(k) + ' / ' + str(field), pr = process)
+                            if a is not None:
+                                if iq_cor == 0:
+                                    process = general.plot_2d(
+                                        EXP_NAME, 
+                                        data, 
+                                        start_step = ((0, dec_calc), (START_FIELD, FIELD_STEP)), 
+                                        xname = 'Time', 
+                                        xscale = 's', 
+                                        yname = 'Field', 
+                                        yscale = 'G', 
+                                        zname = 'Intensity', 
+                                        zscale = 'mV', 
+                                        text = f"Scan / Field: {k} / {field}",
+                                        pr = process
+                                    )
+                                elif iq_cor == 1:
+                                    data_x, data_y = pb.digitizer_iq(data[0], data[1], iq_freq, zp, first_order, sec_order, integral = True)
+                                    process = general.plot_1d(EXP_NAME, x_axis, ( data_x, data_y ), xname = 'Field', xscale = 'G', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Field: ' + str(k) + ' / ' + str(field), pr = process)
 
                             pb.awg_next_phase()
                             pb.pulser_update()
 
-                            data[0], data[1] = pb.digitizer_get_curve( 
+                            a, b = pb.digitizer_get_curve( 
                                 POINTS, 
                                 PHASES, 
                                 current_scan = k, 
-                                total_scan = SCANS ) 
+                                total_scan = SCANS )
+                            if a is not None:
+                                data[0], data[1] = a, b
 
                         field = round( (FIELD_STEP + field), 3 )
 
                         pb.pulser_shift()
-                        pb.awg_pulse_reset()
+                        pb.awg_shift()
+                        #pb.awg_pulse_reset()
 
                         conn.send( ('Status', int( 100 * (( k - 1 ) * POINTS + j + 1) / POINTS / SCANS)) )
 
@@ -5264,6 +5279,7 @@ class Worker():
                             self.command = conn.recv()
 
                     pb.pulser_pulse_reset()
+                    pb.awg_pulse_reset()
                     general.wait('1000 ms')
                     
                     while field > START_FIELD:
@@ -5645,7 +5661,8 @@ class Worker():
             dec_calc = 0.4 * DEC_COEF / 1e9
 
             x_axis = np.linspace(START_FIELD, END_FIELD, num = POINTS)
-            
+            a = 0
+
             while self.command != 'exit':
 
                 for k in general.scans(SCANS):
@@ -5670,38 +5687,42 @@ class Worker():
 
                             #speed-up tests
                             if j == 0:
-                                if iq_cor == 0:
-                                    process = general.plot_2d(
-                                        EXP_NAME, 
-                                        data, 
-                                        start_step = ((0, dec_calc), (START_FIELD, FIELD_STEP)), 
-                                        xname = 'Time', 
-                                        xscale = 's', 
-                                        yname = 'Field', 
-                                        yscale = 'G', 
-                                        zname = 'Intensity', 
-                                        zscale = 'mV', 
-                                        text = f"Scan / Field: {k} / {field}",
-                                        pr = process
-                                    )
-                                elif iq_cor == 1:
-                                    data_x, data_y = pb.digitizer_iq(data[0], data[1], iq_freq, zp, first_order, sec_order, integral = True)
-                                    process = general.plot_1d(EXP_NAME, x_axis, ( data_x, data_y ), xname = 'Field', xscale = 'G', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Field: ' + str(k) + ' / ' + str(field), pr = process)
+                                if a is not None:
+                                    if iq_cor == 0:
+                                        process = general.plot_2d(
+                                            EXP_NAME, 
+                                            data, 
+                                            start_step = ((0, dec_calc), (START_FIELD, FIELD_STEP)), 
+                                            xname = 'Time', 
+                                            xscale = 's', 
+                                            yname = 'Field', 
+                                            yscale = 'G', 
+                                            zname = 'Intensity', 
+                                            zscale = 'mV', 
+                                            text = f"Scan / Field: {k} / {field}",
+                                            pr = process
+                                        )
+                                    elif iq_cor == 1:
+                                        data_x, data_y = pb.digitizer_iq(data[0], data[1], iq_freq, zp, first_order, sec_order, integral = True)
+                                        process = general.plot_1d(EXP_NAME, x_axis, ( data_x, data_y ), xname = 'Field', xscale = 'G', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Field: ' + str(k) + ' / ' + str(field), pr = process)
                             
                             pb.awg_next_phase()
                             pb.pulser_update()
 
                             if j == 0:
-                                data[0], data[1] = pb.digitizer_get_curve( 
+                                a, b = pb.digitizer_get_curve( 
                                     POINTS, 
                                     PHASES, 
                                     current_scan = k, 
-                                    total_scan = SCANS ) 
+                                    total_scan = SCANS )
+                                if a is not None:
+                                    data[0], data[1] = a, b
 
                         field = round( (FIELD_STEP + field), 3 )
 
                         pb.pulser_shift()
-                        pb.awg_pulse_reset()
+                        #pb.awg_pulse_reset()
+                        pb.awg_shift()
 
                         #conn.send( ('Status', int( 100 * (( k - 1 ) * POINTS + j + 1) / POINTS / SCANS)) )
 
@@ -5717,7 +5738,7 @@ class Worker():
                             self.command = conn.recv()
 
                     pb.pulser_pulse_reset()
-                    
+                    pb.awg_pulse_reset()
                     general.wait('1000 ms')
 
                     while field > START_FIELD:
@@ -6133,6 +6154,7 @@ class Worker():
             data = np.zeros( ( 2, points_window, POINTS ) )
             dec_calc = 0.4 * DEC_COEF / 1e9
             x_axis_plot = x_axis / 1e9
+            a = 0
 
             while self.command != 'exit':
 
@@ -6150,32 +6172,34 @@ class Worker():
 
                     for j in range(POINTS):
                         for i in range(PHASES):
-
-                            if iq_cor == 0:
-                                general.plot_2d(
-                                    EXP_NAME, 
-                                    data, 
-                                    start_step = ((0, dec_calc), (0, 1)), 
-                                    xname = 'Time', 
-                                    xscale = 's', 
-                                    yname = 'Point', 
-                                    yscale = '', 
-                                    zname = 'Intensity', 
-                                    zscale = 'mV', 
-                                    text = f"Scan / Point: {k} / {j}"
-                                )
-                            elif iq_cor == 1:
-                                data_x, data_y = pb.digitizer_iq(data[0], data[1], iq_freq, zp, first_order, sec_order, integral = True)
-                                process = general.plot_1d(EXP_NAME, x_axis_plot, ( data_x, data_y ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Point: ' + str(k) + ' / ' + str(j), pr = process)
+                            if a is not None:
+                                if iq_cor == 0:
+                                    general.plot_2d(
+                                        EXP_NAME, 
+                                        data, 
+                                        start_step = ((0, dec_calc), (0, 1)), 
+                                        xname = 'Time', 
+                                        xscale = 's', 
+                                        yname = 'Point', 
+                                        yscale = '', 
+                                        zname = 'Intensity', 
+                                        zscale = 'mV', 
+                                        text = f"Scan / Point: {k} / {j}"
+                                    )
+                                elif iq_cor == 1:
+                                    data_x, data_y = pb.digitizer_iq(data[0], data[1], iq_freq, zp, first_order, sec_order, integral = True)
+                                    process = general.plot_1d(EXP_NAME, x_axis_plot, ( data_x, data_y ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Point: ' + str(k) + ' / ' + str(j), pr = process)
 
                             pb.awg_next_phase()
                             pb.pulser_update()
 
-                            data[0], data[1] = pb.digitizer_get_curve( 
+                            a, b = pb.digitizer_get_curve( 
                                 POINTS, 
                                 PHASES, 
                                 current_scan = k, 
-                                total_scan = SCANS ) 
+                                total_scan = SCANS )
+                            if a is not None:
+                                data[0], data[1] = a, b
 
                         # nonlinear_time_shift is calculated from the initial position of the pulses
                         if j > 0:
@@ -6185,7 +6209,8 @@ class Worker():
                             pb.pulser_redefine_delta_start(name = name_list, delta_start = delta_starts )
 
                         pb.pulser_shift()
-                        pb.awg_pulse_reset()
+                        #pb.awg_pulse_reset()
+                        pb.awg_shift()
 
                         conn.send( ('Status', int( 100 * (( k - 1 ) * POINTS + j + 1) / POINTS / SCANS)) )
 
@@ -6201,6 +6226,7 @@ class Worker():
                             self.command = conn.recv()
 
                     pb.pulser_pulse_reset()
+                    pb.awg_pulse_reset()
                     k += 1
                 
                 self.command = 'exit'
@@ -6658,6 +6684,7 @@ class Worker():
             data = np.zeros( ( 2, points_window, POINTS ) )
             dec_calc = 0.4 * DEC_COEF / 1e9
             x_axis_plot = x_axis / 1e9
+            a = 0
 
             ##general.message_test(f'X: {x_axis}')
 
@@ -6680,32 +6707,35 @@ class Worker():
                         for i in range(PHASES):
 
                             if j == 0:
-                                if iq_cor == 0:
-                                    general.plot_2d(
-                                        EXP_NAME, 
-                                        data, 
-                                        start_step = ((0, dec_calc), (0, 1)), 
-                                        xname = 'Time', 
-                                        xscale = 's', 
-                                        yname = 'Point', 
-                                        yscale = '', 
-                                        zname = 'Intensity', 
-                                        zscale = 'mV', 
-                                        text = f"Scan / Point: {k} / {j}"
-                                    )
-                                elif iq_cor == 1:
-                                    data_x, data_y = pb.digitizer_iq(data[0], data[1], iq_freq, zp, first_order, sec_order, integral = True)
-                                    process = general.plot_1d(EXP_NAME, x_axis_plot, ( data_x, data_y ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Point: ' + str(k) + ' / ' + str(j), pr = process)
+                                if a is not None:
+                                    if iq_cor == 0:
+                                        general.plot_2d(
+                                            EXP_NAME, 
+                                            data, 
+                                            start_step = ((0, dec_calc), (0, 1)), 
+                                            xname = 'Time', 
+                                            xscale = 's', 
+                                            yname = 'Point', 
+                                            yscale = '', 
+                                            zname = 'Intensity', 
+                                            zscale = 'mV', 
+                                            text = f"Scan / Point: {k} / {j}"
+                                        )
+                                    elif iq_cor == 1:
+                                        data_x, data_y = pb.digitizer_iq(data[0], data[1], iq_freq, zp, first_order, sec_order, integral = True)
+                                        process = general.plot_1d(EXP_NAME, x_axis_plot, ( data_x, data_y ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Point: ' + str(k) + ' / ' + str(j), pr = process)
 
                             pb.awg_next_phase()
                             pb.pulser_update()
 
                             if j == 0:
-                                data[0], data[1] = pb.digitizer_get_curve( 
+                                a, b = pb.digitizer_get_curve( 
                                     POINTS, 
                                     PHASES, 
                                     current_scan = k, 
-                                    total_scan = SCANS ) 
+                                    total_scan = SCANS )
+                                if a is not None:
+                                    data[0], data[1] = a, b
 
                         # nonlinear_time_shift is calculated from the initial position of the pulses
                         ##
@@ -6716,7 +6746,8 @@ class Worker():
                             pb.pulser_redefine_delta_start(name = name_list, delta_start = delta_starts )
 
                         pb.pulser_shift()
-                        pb.awg_pulse_reset()
+                        #pb.awg_pulse_reset()
+                        pb.awg_shift()
 
                         #conn.send( ('Status', int( 100 * (( k - 1 ) * POINTS + j + 1) / POINTS / SCANS)) )
 
@@ -6731,8 +6762,8 @@ class Worker():
                         if conn.poll() == True:
                             self.command = conn.recv()
 
-                    
                     pb.pulser_pulse_reset()
+                    pb.awg_pulse_reset()
 
                 self.command = 'exit'
 
@@ -7125,7 +7156,8 @@ class Worker():
 
             x_axis = f_delay + np.linspace(0, (POINTS - 1)*STEP, num = POINTS) 
             x_axis_plot = x_axis  
-            
+            a = 0
+
             while self.command != 'exit':
 
                 for k in general.scans(SCANS):
@@ -7142,51 +7174,53 @@ class Worker():
                     for j in range(POINTS):
 
                         for i in range(PHASES):
-
-                            if iq_cor == 0:
-                                if point_flag != 1:
-                                    process = general.plot_2d(
-                                        EXP_NAME, 
-                                        data, 
-                                        start_step = ((0, dec_calc), (f_delay, step)), 
-                                        xname = 'Time', 
-                                        xscale = 's', 
-                                        yname = 'Amplitude', 
-                                        yscale = '%', 
-                                        zname = 'Intensity', 
-                                        zscale = 'mV', 
-                                        text = f"Scan / Amplitude: {k} / { (f_delay + j * STEP):.1f}",
-                                        pr = process
-                                    )
-                                else:
-                                    process = general.plot_2d(
-                                        EXP_NAME, 
-                                        data, 
-                                        start_step = ((0, dec_calc), (0, 1)), 
-                                        xname = 'Time', 
-                                        xscale = 's', 
-                                        yname = 'Point', 
-                                        yscale = '', 
-                                        zname = 'Intensity', 
-                                        zscale = 'mV', 
-                                        text = f"Scan / Point: {k} / {j}",
-                                        pr = process
-                                    )
-                            elif iq_cor == 1:
-                                data_x, data_y = pb.digitizer_iq(data[0], data[1], iq_freq, zp, first_order, sec_order, integral = True)
-                                if point_flag != 1:
-                                    general.plot_1d(EXP_NAME, x_axis_plot, ( data_x, data_y ), xname = 'Amplitude', xscale = '%', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Amplitude: ' + str(k) + ' / ' + str(round(f_delay + j * STEP, 1)))
-                                else:
-                                    general.plot_1d(EXP_NAME, x_axis, ( data_x, data_y ), xname = 'Point', xscale = '', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j, 1)))
+                            if a is not None:
+                                if iq_cor == 0:
+                                    if point_flag != 1:
+                                        process = general.plot_2d(
+                                            EXP_NAME, 
+                                            data, 
+                                            start_step = ((0, dec_calc), (f_delay, step)), 
+                                            xname = 'Time', 
+                                            xscale = 's', 
+                                            yname = 'Amplitude', 
+                                            yscale = '%', 
+                                            zname = 'Intensity', 
+                                            zscale = 'mV', 
+                                            text = f"Scan / Amplitude: {k} / { (f_delay + j * STEP):.1f}",
+                                            pr = process
+                                        )
+                                    else:
+                                        process = general.plot_2d(
+                                            EXP_NAME, 
+                                            data, 
+                                            start_step = ((0, dec_calc), (0, 1)), 
+                                            xname = 'Time', 
+                                            xscale = 's', 
+                                            yname = 'Point', 
+                                            yscale = '', 
+                                            zname = 'Intensity', 
+                                            zscale = 'mV', 
+                                            text = f"Scan / Point: {k} / {j}",
+                                            pr = process
+                                        )
+                                elif iq_cor == 1:
+                                    data_x, data_y = pb.digitizer_iq(data[0], data[1], iq_freq, zp, first_order, sec_order, integral = True)
+                                    if point_flag != 1:
+                                        general.plot_1d(EXP_NAME, x_axis_plot, ( data_x, data_y ), xname = 'Amplitude', xscale = '%', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Amplitude: ' + str(k) + ' / ' + str(round(f_delay + j * STEP, 1)))
+                                    else:
+                                        general.plot_1d(EXP_NAME, x_axis, ( data_x, data_y ), xname = 'Point', xscale = '', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j, 1)))
 
                             pb.awg_next_phase()
                             pb.pulser_update()
 
-                            data[0], data[1] = pb.digitizer_get_curve( 
+                            a, b = pb.digitizer_get_curve( 
                                 POINTS, 
                                 PHASES, 
                                 current_scan = k, 
-                                total_scan = SCANS ) 
+                                total_scan = SCANS )
+                            if a is not None:
+                                data[0], data[1] = a, b
 
                         pb.pulser_shift()
                         pb.awg_pulse_reset()
@@ -7625,6 +7659,7 @@ class Worker():
 
             x_axis = f_delay + np.linspace(0, (POINTS - 1)*STEP, num = POINTS) 
             x_axis_plot = x_axis  
+            a = 0
             
             while self.command != 'exit':
 
@@ -7644,51 +7679,54 @@ class Worker():
                         for i in range(PHASES):
 
                             if j == 0:
-                                if iq_cor == 0:
-                                    if point_flag != 1:
-                                        process = general.plot_2d(
-                                            EXP_NAME, 
-                                            data, 
-                                            start_step = ((0, dec_calc), (f_delay, step)), 
-                                            xname = 'Time', 
-                                            xscale = 's', 
-                                            yname = 'Amplitude', 
-                                            yscale = '%', 
-                                            zname = 'Intensity', 
-                                            zscale = 'mV', 
-                                            text = f"Scan / Amplitude: {k} / { (f_delay + j * STEP):.1f}",
-                                            pr = process
-                                        )
-                                    else:
-                                        process = general.plot_2d(
-                                            EXP_NAME, 
-                                            data, 
-                                            start_step = ((0, dec_calc), (0, 1)), 
-                                            xname = 'Time', 
-                                            xscale = 's', 
-                                            yname = 'Point', 
-                                            yscale = '', 
-                                            zname = 'Intensity', 
-                                            zscale = 'mV', 
-                                            text = f"Scan / Point: {k} / {j}",
-                                            pr = process
-                                        )
-                                elif iq_cor == 1:
-                                    data_x, data_y = pb.digitizer_iq(data[0], data[1], iq_freq, zp, first_order, sec_order, integral = True)
-                                    if point_flag != 1:
-                                        general.plot_1d(EXP_NAME, x_axis_plot, ( data_x, data_y ), xname = 'Amplitude', xscale = '%', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Amplitude: ' + str(k) + ' / ' + str(round(f_delay + j * STEP, 1)))
-                                    else:
-                                        general.plot_1d(EXP_NAME, x_axis, ( data_x, data_y ), xname = 'Point', xscale = '', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j, 1)))
+                                if a is not None:
+                                    if iq_cor == 0:
+                                        if point_flag != 1:
+                                            process = general.plot_2d(
+                                                EXP_NAME, 
+                                                data, 
+                                                start_step = ((0, dec_calc), (f_delay, step)), 
+                                                xname = 'Time', 
+                                                xscale = 's', 
+                                                yname = 'Amplitude', 
+                                                yscale = '%', 
+                                                zname = 'Intensity', 
+                                                zscale = 'mV', 
+                                                text = f"Scan / Amplitude: {k} / { (f_delay + j * STEP):.1f}",
+                                                pr = process
+                                            )
+                                        else:
+                                            process = general.plot_2d(
+                                                EXP_NAME, 
+                                                data, 
+                                                start_step = ((0, dec_calc), (0, 1)), 
+                                                xname = 'Time', 
+                                                xscale = 's', 
+                                                yname = 'Point', 
+                                                yscale = '', 
+                                                zname = 'Intensity', 
+                                                zscale = 'mV', 
+                                                text = f"Scan / Point: {k} / {j}",
+                                                pr = process
+                                            )
+                                    elif iq_cor == 1:
+                                        data_x, data_y = pb.digitizer_iq(data[0], data[1], iq_freq, zp, first_order, sec_order, integral = True)
+                                        if point_flag != 1:
+                                            general.plot_1d(EXP_NAME, x_axis_plot, ( data_x, data_y ), xname = 'Amplitude', xscale = '%', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Amplitude: ' + str(k) + ' / ' + str(round(f_delay + j * STEP, 1)))
+                                        else:
+                                            general.plot_1d(EXP_NAME, x_axis, ( data_x, data_y ), xname = 'Point', xscale = '', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j, 1)))
 
                             pb.awg_next_phase()
                             pb.pulser_update()
 
                             if j == 0:
-                                data[0], data[1] = pb.digitizer_get_curve( 
+                                a, b = pb.digitizer_get_curve( 
                                     POINTS, 
                                     PHASES, 
                                     current_scan = k, 
-                                    total_scan = SCANS ) 
+                                    total_scan = SCANS )
+                                if a is not None:
+                                    data[0], data[1] = a, b
 
                         pb.pulser_shift()
                         pb.awg_pulse_reset()
