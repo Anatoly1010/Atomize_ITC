@@ -476,6 +476,10 @@ class MainWindow(QMainWindow):
                     self.run_main_experiment()
                 else:
                     self.last_error = False
+                    field_param.clear_lock()
+            else:
+                field_param.clear_lock()
+                self.button_start.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }  ")
 
     def check_process_status(self):
         if self.exp_process.is_alive():
@@ -486,7 +490,7 @@ class MainWindow(QMainWindow):
         #self.timer.stop()
         self.progress_bar.setValue(0)
         self.button_start.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }  ")
-        field_param.release_lock()
+        field_param.clear_lock()
 
         if self.exit_clicked == 1:
             sys.exit()
@@ -535,7 +539,7 @@ class MainWindow(QMainWindow):
         
         self.exp_process.start()
         self.parent_conn.send('start')
-        field_param.acquire_lock('cw_control')
+        field_param.set_lock('cw_control')
         
         self.is_testing = True
         self.timer.start(200)
@@ -544,7 +548,6 @@ class MainWindow(QMainWindow):
 
         worker = Worker()
         self.parent_conn, self.child_conn = Pipe()
-        field_param.acquire_lock('cw_control')
         
         self.exp_process = Process(
             target = worker.exp_on, 

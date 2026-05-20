@@ -140,17 +140,21 @@ class MainWindow(QMainWindow):
         gridLayout.setColumnStretch(6, 2)
 
     def refresh_field_status(self):
-        self.read_no_set_field()
-        self.Set_point.blockSignals(True)
-        self.Set_point.setValue(self.cur_field_2)
-        self.Set_point.blockSignals(False)
-        self.apply_field_lock_state()
-
-    def apply_field_lock_state(self):
         locked = field_param.is_locked()
+        if locked:
+            self.read_no_set_field()
+            self.Set_point.blockSignals(True)
+            self.Set_point.setValue(self.cur_field_2)
+            self.Set_point.blockSignals(False)
+        self.apply_field_lock_state(locked)
+
+    def apply_field_lock_state(self, locked=None):
+        if locked is None:
+            locked = field_param.is_locked()
         self.field_locked = locked
 
         self.Set_point.setReadOnly(locked)
+        self.Set_point.setEnabled(True)
         self.box_ini.setEnabled(not locked)
         self.button_stop.setEnabled(not locked)
 

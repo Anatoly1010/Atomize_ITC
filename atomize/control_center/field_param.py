@@ -6,9 +6,8 @@ import threading
 
 _KEY_SEP = ':  '
 _DEFAULTS = {'Field': '0', 'Lock': 'Off', 'Source': ''}
-_lock = threading.Lock()
-_lock_count = 0
-_lock_source = ''
+_io_lock = threading.Lock()
+
 
 def path():
     base = os.path.dirname(os.path.abspath(__file__))
@@ -60,7 +59,7 @@ def write(data):
 
 
 def write_field(field):
-    with _lock:
+    with _io_lock:
         data = read()
         data['Field'] = str(field)
         write(data)
@@ -81,44 +80,27 @@ def lock_source():
     return read().get('Source', '')
 
 
-def acquire_lock(source):
-    global _lock_count, _lock_source
-    with _lock:
-        _lock_count += 1
-        if _lock_count == 1:
-            _lock_source = source
-            data = read()
-            data['Lock'] = 'On'
-            data['Source'] = source
-            write(data)
-        elif _lock_source != source:
-            _lock_source = source
-            data = read()
-            data['Lock'] = 'On'
-            data['Source'] = source
-            write(data)
-
-
-def release_lock():
-    global _lock_count, _lock_source
-    with _lock:
-        if _lock_count <= 0:
-            return
-        _lock_count -= 1
-        if _lock_count == 0:
-            data = read()
-            data['Lock'] = 'Off'
-            data['Source'] = ''
-            write(data)
-            _lock_source = ''
+def set_lock(source):
+    """Lock field control for other apps (stored in field.param)."""
+    with _io_lock:
+        data = read()
+        data['Lock'] = 'On'
+        data['Source'] = source
+        write(data)
 
 
 def clear_lock():
-    global _lock_count, _lock_source
-    with _lock:
-        _lock_count = 0
-        _lock_source = ''
+    """Allow field control again."""
+    with _io_lock:
         data = read()
         data['Lock'] = 'Off'
         data['Source'] = ''
         write(data)
+
+
+def acquire_lock(source):
+    set_lock(source)
+
+
+def release_lock():
+    clear_lock()

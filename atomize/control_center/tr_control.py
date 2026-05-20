@@ -448,7 +448,7 @@ class MainWindow(QMainWindow):
         #self.timer.stop()
         self.progress_bar.setValue(0)
         self.button_start.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; } QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; } ")
-        field_param.release_lock()
+        field_param.clear_lock()
         
         if self.exit_clicked == 1:
             sys.exit()
@@ -499,7 +499,7 @@ class MainWindow(QMainWindow):
 
         # send a command in a different thread about the current state
         self.parent_conn.send('start')
-        field_param.acquire_lock('tr_control')
+        field_param.set_lock('tr_control')
 
         self.is_testing = True 
         self.timer.start(300)
@@ -591,6 +591,10 @@ class MainWindow(QMainWindow):
                     self.run_main_experiment()
                 else:
                     self.last_error = False
+                    field_param.clear_lock()
+            else:
+                field_param.clear_lock()
+                self.button_start.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; } QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; } ")
 
     def open_dialog(self):
         file_data = self.file_handler.create_file_dialog(multiprocessing = True)
@@ -607,7 +611,6 @@ class MainWindow(QMainWindow):
         worker = Worker()
         
         self.parent_conn, self.child_conn = Pipe()
-        field_param.acquire_lock('tr_control')
 
         self.exp_process = Process( target = worker.exp_on, args = ( self.child_conn, self.cur_offres_field, self.cur_exp_name, self.cur_end_field, self.cur_start_field, self.cur_step, self.cur_ave_offres, self.cur_scan, self.cur_ave, self.cur_num_osc, self.cur_trig_ch, self.save_scan, self.two_side, ) )
             

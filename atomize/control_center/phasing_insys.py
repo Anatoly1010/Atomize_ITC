@@ -2248,7 +2248,7 @@ class MainWindow(QMainWindow):
         ###
         self.is_testing = True
         self.is_experiment = True
-        field_param.acquire_lock('phasing_insys')
+        field_param.set_lock('phasing_insys')
         self.timer.start(200)
 
     def dig_start(self):
@@ -2418,6 +2418,9 @@ class MainWindow(QMainWindow):
                         self.run_experiment()
                 else:
                     self.last_error = False
+                    field_param.clear_lock()
+            else:
+                field_param.clear_lock()
 
     def check_process_status(self):
         if self.digitizer_process.is_alive():
@@ -2435,7 +2438,7 @@ class MainWindow(QMainWindow):
         
         #self.timer.stop()
         self.is_experiment = False
-        field_param.release_lock()
+        field_param.clear_lock()
 
         if self.exit_clicked == 1:
             sys.exit()
@@ -2520,7 +2523,6 @@ class MainWindow(QMainWindow):
 
         self.digitizer_process.start()
         self.parent_conn_dig.send('start')
-        field_param.acquire_lock('phasing_insys')
         self.timer.start(200)
 
     def expand_phase_cycling(self, p_input, *pulse_args):
