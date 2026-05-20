@@ -1,2 +1,4 @@
-from atomize.main.main_window import main
-main()
+from atomize.main.main import main
+
+if __name__ == '__main__':
+    main()

@@ -4,11 +4,12 @@
 import os
 import sys
 from PyQt6.QtGui import QIcon
-from PyQt6.QtCore import Qt, QObject, QEventLoop, QTimer, QEvent
+from PyQt6.QtCore import Qt, QEventLoop, QTimer, QEvent
 from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QLabel, QDoubleSpinBox, QSpinBox, QPushButton, QGridLayout, QFrame
 #import atomize.device_modules.ITC_FC as itc
 import atomize.device_modules.BH_15 as itc
 import atomize.general_modules.general_functions as general
+import atomize.control_center.field_param as field_param
 
 class MainWindow(QMainWindow):
     """
@@ -25,22 +26,18 @@ class MainWindow(QMainWindow):
 
         self.cur_field = 0
         self.cur_field_2 = 0
-        #self.itc_fc.magnet_setup(100, 1)
+        self.field_locked = False
+        self.path_status_file = field_param.path()
 
-        #self.itc_fc.device
-        #self.itc_fc.act_field
         self.design()
-        #print('CF: ' + str(self.cur_field))
-        #print('F: ' + str(self.field))
 
-        try:
-            path_to_main_status = os.path.dirname(os.path.abspath(__file__))
-            self.path_status_file = os.path.join(path_to_main_status, '..', 'control_center/field.param')
-        except FileNotFoundError:
-            pass
+        self.status_timer = QTimer(self)
+        self.status_timer.timeout.connect(self.refresh_field_status)
+        self.status_timer.start(300)
 
         self.read_no_set_field()
         self.cur_field = self.cur_field_2
+        self.apply_field_lock_state()
 
     def design(self):
 
@@ -70,6 +67,10 @@ class MainWindow(QMainWindow):
             lbl.setFixedSize(190, 26)
             setattr(self, attr_name, lbl)
             lbl.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
+
+        self.label_lock = QLabel("")
+        self.label_lock.setFixedSize(320, 26)
+        self.label_lock.setStyleSheet("QLabel { color : rgb(211, 194, 78); font-weight: bold; }")
 
         # ---- Boxes ----
         double_boxes = [(QDoubleSpinBox, "Set_point", "field", self.set_field, 0, 15100, 0, 0.5, 2, " G"), 
@@ -128,18 +129,46 @@ class MainWindow(QMainWindow):
         gridLayout.addWidget(self.Set_point, 0, 1)
         gridLayout.addWidget(self.label_2, 1, 0)
         gridLayout.addWidget(self.box_ini, 1, 1)
+        gridLayout.addWidget(self.label_lock, 2, 0, 1, 2)
 
-        gridLayout.addWidget(hline(), 2, 0, 1, 2)
+        gridLayout.addWidget(hline(), 3, 0, 1, 2)
 
-        gridLayout.addWidget(self.button_stop, 3, 0)
-        gridLayout.addWidget(self.button_off, 4, 0)
+        gridLayout.addWidget(self.button_stop, 4, 0)
+        gridLayout.addWidget(self.button_off, 5, 0)
 
-        gridLayout.setRowStretch(5, 2)
-        gridLayout.setColumnStretch(5, 2)
+        gridLayout.setRowStretch(6, 2)
+        gridLayout.setColumnStretch(6, 2)
+
+    def refresh_field_status(self):
+        self.read_no_set_field()
+        self.Set_point.blockSignals(True)
+        self.Set_point.setValue(self.cur_field_2)
+        self.Set_point.blockSignals(False)
+        self.apply_field_lock_state()
+
+    def apply_field_lock_state(self):
+        locked = field_param.is_locked()
+        self.field_locked = locked
+
+        self.Set_point.setReadOnly(locked)
+        self.box_ini.setEnabled(not locked)
+        self.button_stop.setEnabled(not locked)
+
+        if locked:
+            source = field_param.lock_source()
+            source_text = source.replace('_', ' ') if source else 'experiment'
+            self.label_1.setText("Current Magnetic Field")
+            self.label_lock.setText(f"Field control locked ({source_text} running)")
+        else:
+            self.label_1.setText("Set Magnetic Field")
+            self.label_lock.setText("")
 
     def closeEvent(self, event):
         event.ignore()
-        
+
+        if self.field_locked:
+            sys.exit()
+
         self.button_stop.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(211, 194, 78); border-style: outset; color: rgb(63, 63, 97); font-weight: bold; } ")
 
         QApplication.processEvents()
@@ -155,15 +184,12 @@ class MainWindow(QMainWindow):
             
             QApplication.processEvents()
 
-        #self.cur_field = self.itc_fc.magnet_field( 0 )
         self.cur_field = 0
         self.cur_field_2 = 0
         self.field = 0
         self.itc_fc.magnet_field( self.cur_field )
         self.Set_point.setValue(self.cur_field)
         self.button_stop.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; } ")
-        #print('CF: ' + str(self.cur_field))
-        #print('F: ' + str(self.field))
 
         sys.exit()
 
@@ -174,15 +200,15 @@ class MainWindow(QMainWindow):
         super().changeEvent(event)
 
     def on_window_focused(self):
-        self.Set_point.blockSignals(True)
-        self.read_no_set_field()
-        self.Set_point.setValue(self.cur_field_2)
-        self.Set_point.blockSignals(False)
+        self.refresh_field_status()
 
     def quit(self):
         """
         A function to quit the programm
         """
+        if self.field_locked:
+            sys.exit()
+
         self.button_stop.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(211, 194, 78); border-style: outset; color: rgb(63, 63, 97); font-weight: bold; } ")
 
         QApplication.processEvents()
@@ -198,15 +224,12 @@ class MainWindow(QMainWindow):
             
             QApplication.processEvents()
 
-        #self.cur_field = self.itc_fc.magnet_field( 0 )
         self.cur_field = 0
         self.cur_field_2 = 0
         self.field = 0
         self.itc_fc.magnet_field( self.cur_field )
         self.Set_point.setValue(self.cur_field)
         self.button_stop.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; } ")
-        #print('CF: ' + str(self.cur_field))
-        #print('F: ' + str(self.field))
 
         sys.exit()
 
@@ -214,12 +237,23 @@ class MainWindow(QMainWindow):
         """
         A function to change inizialization step
         """
+        if self.field_locked:
+            self.box_ini.blockSignals(True)
+            self.box_ini.setValue(self.initialization_step)
+            self.box_ini.blockSignals(False)
+            return
         self.initialization_step = int( self.box_ini.value() )
 
     def set_field(self):
         """
         A function to change set point
         """
+        if self.field_locked:
+            self.Set_point.blockSignals(True)
+            self.Set_point.setValue(self.cur_field_2)
+            self.Set_point.blockSignals(False)
+            return
+
         self.read_no_set_field()
         self.field = float( self.Set_point.value() )
         self.write_field(self.field)
@@ -244,10 +278,7 @@ class MainWindow(QMainWindow):
                 QTimer.singleShot(15, loop.quit)
                 loop.exec()
                 
-                QApplication.processEvents()                
-                #self.cur_field = self.cur_field + self.initialization_step
-                #print('CF: ' + str(self.cur_field))
-                #print('F: ' + str(self.field))
+                QApplication.processEvents()
 
             self.cur_field = self.itc_fc.magnet_field( self.field )
             self.cur_field = self.field
@@ -255,8 +286,6 @@ class MainWindow(QMainWindow):
             self.Set_point.blockSignals(True)
             self.Set_point.setValue(self.cur_field)
             self.Set_point.blockSignals(False)
-            #print('CF: ' + str(self.cur_field))
-            #print('F: ' + str(self.field))
         else:
             while self.cur_field > self.field:
                 self.cur_field = self.itc_fc.magnet_field( self.cur_field - self.initialization_step )
@@ -268,9 +297,6 @@ class MainWindow(QMainWindow):
                 loop.exec()
                 
                 QApplication.processEvents()
-                #self.cur_field = self.cur_field - self.initialization_step
-                #print('CF: ' + str(self.cur_field))
-                #print('F: ' + str(self.field))
 
             self.cur_field = self.itc_fc.magnet_field( self.field )
             self.cur_field =  self.field 
@@ -278,15 +304,14 @@ class MainWindow(QMainWindow):
             self.Set_point.setValue(self.cur_field)
             self.Set_point.blockSignals(False)
 
-            #print('CF: ' + str(self.cur_field))
-            #print('F: ' + str(self.field))
-
         self.button_stop.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; } ")
 
     def update_stop(self):
         """
         A function to stop oscilloscope
         """
+        if self.field_locked:
+            return
         self.Set_point.setValue( 0 )
 
     def turn_off(self):
@@ -296,31 +321,23 @@ class MainWindow(QMainWindow):
         self.quit()
 
     def read_field(self):
-        try:
-            text = open( self.path_status_file ).read()
-            lines = text.split('\n')
-            self.cur_field = float( lines[0].split(':  ')[1] )
-            self.Set_point.setValue(self.cur_field)
-
-        except FileNotFoundError:
-            pass
+        self.read_no_set_field()
+        self.cur_field = self.cur_field_2
+        self.Set_point.setValue(self.cur_field)
 
     def read_no_set_field(self):
         try:
-            text = open( self.path_status_file ).read()
-            lines = text.split('\n')
-            self.cur_field_2 = float( lines[0].split(':  ')[1] )
-
-        except FileNotFoundError:
+            self.cur_field_2 = field_param.current_field()
+        except (FileNotFoundError, ValueError):
             pass
 
     def write_field(self, field):
+        if self.field_locked:
+            return
         try:
-            file_to_write = open(self.path_status_file, 'w')
-            file_to_write.write(f'Field:  {field}\n')
-            file_to_write.close()
-        except FileNotFoundError:
-            pass        
+            field_param.write_field(field)
+        except OSError:
+            pass
 
 def main():
     """

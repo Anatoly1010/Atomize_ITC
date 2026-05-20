@@ -6,6 +6,7 @@ import gc
 import sys
 import math
 import atomize.main.local_config as lconf
+import atomize.control_center.field_param as field_param
 import atomize.device_modules.config.config_utils as cutil
 import atomize.general_modules.general_functions as general
 
@@ -134,16 +135,14 @@ class BH_15:
             self.max_sw = self.max_field - self.min_field
 
 
-        try:
-            path_to_main_status = os.path.dirname(os.path.abspath(__file__))
-            self.path_status_file = os.path.join(path_to_main_status, '..', 'control_center/field.param')
-            text = open( self.path_status_file ).read()
-            lines = text.split('\n')
-            cur_field = float( lines[0].split(':  ')[1] )
-            self.magnet_setup(cur_field, 1)
-            self.magnet_field(cur_field)
+        self.path_status_file = field_param.path()
 
-        except FileNotFoundError:
+        try:
+            if os.path.exists(self.path_status_file):
+                cur_field = field_param.current_field()
+                self.magnet_setup(cur_field, 1)
+                self.magnet_field(cur_field)
+        except (FileNotFoundError, IndexError, ValueError):
             pass
 
     def magnet_name(self):
@@ -327,12 +326,7 @@ class BH_15:
     def magnet_field(self, *field):
         if self.test_flag != 'test':
             if len(field) == 1:
-                try:
-                    file_to_write = open(self.path_status_file, 'w')
-                    file_to_write.write(f'Field:  {field[0]}\n')
-                    file_to_write.close()
-                except FileNotFoundError:
-                    pass
+                self._write_field_status(field[0])
 
                 self.set_field(field[0])
                 return self.get_field()
@@ -919,6 +913,23 @@ class BH_15:
 
         if d > self.max_field_dev:
             self.max_field_dev = d
+
+    def _write_field_status(self, field):
+        if self.test_flag == 'test':
+            return
+        try:
+            field_param.write_field(field)
+        except OSError:
+            pass
+
+    def close_connection(self):
+        if self.test_flag != 'test' and getattr(self, 'status_flag', 0) == 1:
+            try:
+                self.device.close()
+            except (AttributeError, OSError):
+                pass
+            self.status_flag = 0
+            gc.collect()
 
     def field_check(self, field):
         field = float(field)

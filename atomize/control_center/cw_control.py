@@ -10,6 +10,7 @@ from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QLabel, QDoubleS
 from PyQt6.QtGui import QIcon, QAction
 from PyQt6.QtCore import Qt, QTimer
 import atomize.general_modules.csv_opener_saver as openfile
+import atomize.control_center.field_param as field_param
 
 
 class MainWindow(QMainWindow):
@@ -485,6 +486,7 @@ class MainWindow(QMainWindow):
         #self.timer.stop()
         self.progress_bar.setValue(0)
         self.button_start.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }  ")
+        field_param.release_lock()
 
         if self.exit_clicked == 1:
             sys.exit()
@@ -533,6 +535,7 @@ class MainWindow(QMainWindow):
         
         self.exp_process.start()
         self.parent_conn.send('start')
+        field_param.acquire_lock('cw_control')
         
         self.is_testing = True
         self.timer.start(200)
@@ -541,6 +544,7 @@ class MainWindow(QMainWindow):
 
         worker = Worker()
         self.parent_conn, self.child_conn = Pipe()
+        field_param.acquire_lock('cw_control')
         
         self.exp_process = Process(
             target = worker.exp_on, 

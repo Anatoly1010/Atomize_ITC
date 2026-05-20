@@ -13,6 +13,7 @@ from PyQt6.QtGui import QIcon, QColor, QAction
 from PyQt6.QtCore import Qt, QTimer
 import atomize.general_modules.general_functions as general
 import atomize.general_modules.csv_opener_saver as openfile
+import atomize.control_center.field_param as field_param
 
 class MainWindow(QMainWindow):
     """
@@ -2737,6 +2738,7 @@ class MainWindow(QMainWindow):
         ###
         self.is_testing = True
         self.is_experiment = True
+        field_param.acquire_lock('awg_phasing_insys')
         self.timer.start(200)
 
     def dig_start(self):
@@ -2937,6 +2939,7 @@ class MainWindow(QMainWindow):
         
         #self.timer.stop()
         self.is_experiment = False
+        field_param.release_lock()
 
         if self.exit_clicked == 1:
             sys.exit()
@@ -3059,6 +3062,7 @@ class MainWindow(QMainWindow):
 
         self.digitizer_process.start()
         self.parent_conn_dig.send('start')
+        field_param.acquire_lock('awg_phasing_insys')
         self.timer.start(200)
 
     def expand_phase_cycling(self, p_input, *pulse_args):
