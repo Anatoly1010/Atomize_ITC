@@ -115,6 +115,22 @@ class CrosshairPlotWidget(pg.PlotWidget):
 
         self.getViewBox().setLimits(maxYRange=1e30, minYRange=1e-30)
 
+        # Ruler (Shift + left-drag) — state, items, and viewbox drag hook
+        self._ruler_start_scene = None
+        self._ruler_p1 = None
+        self._ruler_p2 = None
+        self._ruler_line = None
+        self._ruler_marks = None
+        self._ruler_label = None
+        self._ruler_locked_item = None
+        self._ruler_locked_color = None
+
+        self.clear_ruler_action = QtGui.QAction('Clear Ruler', self)
+        self.clear_ruler_action.triggered.connect(self._clear_ruler)
+        self.plot_item.vb.menu.addAction(self.clear_ruler_action)
+
+        self._install_ruler_drag()
+
     def on_fft_toggled(self, enabled):
         if enabled:
             self.hide_cross_hair()
@@ -140,23 +156,11 @@ class CrosshairPlotWidget(pg.PlotWidget):
                 view_coords = vb.mapSceneToView(mouse_event.scenePos())
                 view_x, view_y = view_coords.x(), view_coords.y()
                 self.add_cross_hair(view_x, view_y)
-
-                if not hasattr(self, 'y_units'):
-                    self.y_units = self.getPlotItem().getAxis('left').labelUnits
-                if not hasattr(self, 'x_units'):
-                    self.x_units = self.getPlotItem().getAxis('bottom').labelUnits
-
-                y_parsed = pg.siFormat(view_x, suffix=self.y_units, precision = 5)
-                x_parsed = pg.siFormat(view_y, suffix=self.x_units, precision = 5)
-
-                #label
-                label_text = f"X: {x_parsed}\nY: {y_parsed}"
-                #label_text = f"X: {view_x:.4g}\nY: {view_x:.4g}"
-                self.cursor_label.border = pg.mkPen((255, 255, 255, 255), width=1.5)
-                self.cursor_label.setText(label_text)
-                self.cursor_label.setPos(view_x, view_y)
-                #self.cursor_label.show()
-                self.update_label_visibility()
+                # Immediately snap to the nearest curve at the double-click
+                # position so the cross-hair lands on the data on first show.
+                # Reuses the standard snap pipeline → works in FFT / log /
+                # derivative / phasemap / subtractMean modes uniformly.
+                self.handle_mouse_move(mouse_event.scenePos())
 
         elif mouse_event.button() == QtCore.Qt.MouseButton.MiddleButton:
             if self.cross_section_enabled:
@@ -191,171 +195,380 @@ class CrosshairPlotWidget(pg.PlotWidget):
                 self.handle_mouse_move(mouse_event.scenePos())
 
     def handle_mouse_move(self, mouse_event):
-        if self.cross_section_enabled and self.search_mode:
-            item = self.getPlotItem()
-            vb = item.getViewBox()
-            view_coords = vb.mapSceneToView(mouse_event)
-            x_log_mode, y_log_mode = vb.state['logMode'][0], vb.state['logMode'][1]
+        if not (self.cross_section_enabled and self.search_mode):
+            return
 
-            if not hasattr(self, 'y_units'):
-                self.y_units = item.getAxis('left').labelUnits
-            if not hasattr(self, 'x_units'):
-                self.x_units = item.getAxis('bottom').labelUnits
+        res = self._snap_to_nearest_point(mouse_event)
+        if res is None:
+            self.cursor_label.hide()
+            return
 
-            # mouse coordinates; log-mode - already log values
-            v_x, v_y = view_coords.x(), view_coords.y()
+        v_pos = res['view_x']
+        h_pos = res['view_y']
 
-            best_guesses = []
-            for data_item in item.items:
-                if isinstance(data_item, pg.PlotDataItem) and data_item.isVisible():
-                    xdata_0, ydata_0 = data_item.xData, data_item.yData
+        self.cursor_label.border = pg.mkPen(res['color'], width=1.5)
+        self.cursor_label.setText(f"X: {res['x_text']}\nY: {res['y_text']}")
 
-                    # for shift and scale
-                    offset = data_item.pos()
-                    scale_y = data_item.transform().m22()
-                    
-                    local_v_x = v_x - offset.x()
-                    local_v_y = (v_y - offset.y()) / scale_y
-                    # for shift and scale
+        vb = self.getPlotItem().getViewBox()
+        view_range = vb.viewRange()
+        x_min, x_max = view_range[0]
+        y_min, y_max = view_range[1]
+        anchor_x = 1 if v_pos > (x_max + x_min) / 2 else 0
+        anchor_y = 0 if h_pos > (y_max + y_min) / 2 else 1
 
-                    if xdata_0 is None or len(xdata_0) < 2: continue
+        self.cursor_label.setAnchor((anchor_x, anchor_y))
+        self.cursor_label.setPos(v_pos, h_pos)
+        self.update_label_visibility()
 
-                    try:
-                        if data_item.opts['fftMode'] == True:
-                            xdata, ydata = self._fourierTransform(xdata_0, ydata_0)
-                            if data_item.opts['logMode'][0]:
-                                xdata = xdata[1:]
-                                ydata = ydata[1:]
-                        elif data_item.opts['subtractMeanMode'] == True:
-                            xdata, ydata = xdata_0, ydata_0 - np.mean(ydata_0)
-                        elif data_item.opts['derivativeMode'] == True:
-                            xdata, ydata = xdata_0[:-1], np.diff(ydata_0) / np.diff(xdata_0)
-                        elif data_item.opts['phasemapMode'] == True:
-                            xdata, ydata = ydata_0[:-1], np.diff(ydata_0) / np.diff(xdata_0)
-                        else:
-                            xdata, ydata = xdata_0, ydata_0
-                    except KeyError:
-                        if data_item.opts['fftMode'] == True:
-                            xdata, ydata = self._fourierTransform(xdata_0, ydata_0)
-                            if data_item.opts['logMode'][0]:
-                                xdata = xdata[1:]
-                                ydata = ydata[1:]
-                        elif data_item.opts['derivativeMode'] == True:
-                            xdata, ydata = xdata_0[:-1], np.diff(ydata_0) / np.diff(xdata_0)
-                        elif data_item.opts['phasemapMode'] == True:
-                            xdata, ydata = ydata_0[:-1], np.diff(ydata_0) / np.diff(xdata_0)
-                        else:
-                            xdata, ydata = xdata_0, ydata_0
+        self.v_line.setPos(v_pos)
+        self.h_line.setPos(h_pos)
+        self.label2.setText("cur_x=%.4e, cur_y=%.4e" % (res['cur_view_x'], res['cur_view_y']))
 
-                    # screen coordinates
-                    search_x = np.log10(np.maximum(xdata, 1e-15)) if x_log_mode else xdata
-                    search_y = np.log10(np.maximum(ydata, 1e-15)) if y_log_mode else ydata
+    def _snap_to_nearest_point(self, scene_pos, restrict_to=None):
+        """Find nearest data point across visible curves.
 
-                    # normalization
-                    view_range = vb.viewRange() # [[xmin, xmax], [ymin, ymax]]
-                    sx = view_range[0][1] - view_range[0][0]
-                    sy = view_range[1][1] - view_range[1][0]
-                    sx = sx if sx > 0 else 1
-                    sy = sy if sy > 0 else 1
+        Returns dict {view_x, view_y, x_text, y_text, color, item, cur_view_x, cur_view_y}
+        in display coordinates (with siFormat labels), or None if no eligible curves.
+        When `restrict_to` is a PlotDataItem, only that curve is searched (used by
+        the ruler after the drag has locked onto a specific curve).
+        """
+        item = self.getPlotItem()
+        vb = item.getViewBox()
+        view_coords = vb.mapSceneToView(scene_pos)
+        x_log_mode, y_log_mode = vb.state['logMode'][0], vb.state['logMode'][1]
 
-                    # v_x -> local_v_x
-                    dist_sq = ((search_x - local_v_x) / sx)**2 + ((search_y - local_v_y) / sy)**2
-                    
-                    if not self.parametric:
-                        real_view_x = 10**v_x if x_log_mode else v_x
-                        idx_near = np.searchsorted(xdata, real_view_x)
-                        idx_near = np.clip(idx_near, 0, len(xdata)-1)
-                        
-                        # only closest 100 points
-                        i_start = max(0, idx_near - 50)
-                        i_end = min(len(xdata), idx_near + 50)
-                        
-                        sub_dist = dist_sq[i_start:i_end]
-                        local_idx = np.argmin(sub_dist)
-                        index = i_start + local_idx
-                    else:
-                        index = np.argmin(dist_sq)
+        if not hasattr(self, 'y_units'):
+            self.y_units = item.getAxis('left').labelUnits
+        if not hasattr(self, 'x_units'):
+            self.x_units = item.getAxis('bottom').labelUnits
 
-                    vis_x = xdata[index] + offset.x()
-                    vis_y = (ydata[index] * scale_y) + offset.y()
+        v_x, v_y = view_coords.x(), view_coords.y()
 
-                    best_guesses.append({
-                        'point': (vis_x, vis_y),
-                        'raw_point': (xdata[index], ydata[index]),
-                        'dist': dist_sq[index],
-                        'item': data_item
-                    })
+        best_guesses = []
+        for data_item in item.items:
+            if not (isinstance(data_item, pg.PlotDataItem) and data_item.isVisible()):
+                continue
+            if restrict_to is not None and data_item is not restrict_to:
+                continue
+            xdata_0, ydata_0 = data_item.xData, data_item.yData
+            if xdata_0 is None or len(xdata_0) < 2:
+                continue
 
-            if not best_guesses:
-                self.cursor_label.hide()
-                return
+            offset = data_item.pos()
+            scale_y = data_item.transform().m22()
+            local_v_x = v_x - offset.x()
+            local_v_y = (v_y - offset.y()) / scale_y
 
-            # best point
-            best_res = min(best_guesses, key=lambda x: x['dist'])
-            (v_pos, h_pos) = best_res['point']
-            (raw_x, raw_y) = best_res['raw_point']
-            target_item = best_res['item']
+            try:
+                if data_item.opts['fftMode'] == True:
+                    xdata, ydata = self._fourierTransform(xdata_0, ydata_0)
+                    if data_item.opts['logMode'][0]:
+                        xdata = xdata[1:]
+                        ydata = ydata[1:]
+                elif data_item.opts['subtractMeanMode'] == True:
+                    xdata, ydata = xdata_0, ydata_0 - np.mean(ydata_0)
+                elif data_item.opts['derivativeMode'] == True:
+                    xdata, ydata = xdata_0[:-1], np.diff(ydata_0) / np.diff(xdata_0)
+                elif data_item.opts['phasemapMode'] == True:
+                    xdata, ydata = ydata_0[:-1], np.diff(ydata_0) / np.diff(xdata_0)
+                else:
+                    xdata, ydata = xdata_0, ydata_0
+            except KeyError:
+                if data_item.opts['fftMode'] == True:
+                    xdata, ydata = self._fourierTransform(xdata_0, ydata_0)
+                    if data_item.opts['logMode'][0]:
+                        xdata = xdata[1:]
+                        ydata = ydata[1:]
+                elif data_item.opts['derivativeMode'] == True:
+                    xdata, ydata = xdata_0[:-1], np.diff(ydata_0) / np.diff(xdata_0)
+                elif data_item.opts['phasemapMode'] == True:
+                    xdata, ydata = ydata_0[:-1], np.diff(ydata_0) / np.diff(xdata_0)
+                else:
+                    xdata, ydata = xdata_0, ydata_0
 
-            #for log-scale
-            offset = target_item.pos()
-            scale_y = target_item.transform().m22()
-            #for log-scale
+            search_x = np.log10(np.maximum(xdata, 1e-15)) if x_log_mode else xdata
+            search_y = np.log10(np.maximum(ydata, 1e-15)) if y_log_mode else ydata
 
-            #border color
-            raw_pen = target_item.opts.get('pen')
-
-            if isinstance(raw_pen, tuple):
-                raw_pen = raw_pen[0]
-
-            if hasattr(raw_pen, 'color'):
-                curve_color = raw_pen.color()
-            else:
-                curve_color = pg.mkColor(raw_pen)
-
-            self.cursor_label.border = pg.mkPen(curve_color, width=1.5)
-            #border color
-            
-            #for shift ans scale
-            if x_log_mode:
-                v_pos = math.log10(max(raw_x, 1e-15)) + offset.x()
-                x_parsed = pg.siFormat(10**v_pos, suffix=self.x_units, precision=5)
-            else:
-                x_parsed = pg.siFormat(v_pos, suffix=self.x_units, precision=5)
-                v_pos = raw_x + offset.x()
-
-            if y_log_mode:
-                h_pos = (math.log10(max(raw_y, 1e-15)) * scale_y) + offset.y()
-                y_parsed = pg.siFormat(10**h_pos, suffix=self.y_units, precision=5)
-            else:
-                y_parsed = pg.siFormat(h_pos, suffix=self.y_units, precision=5)
-                h_pos = (raw_y * scale_y) + offset.y()
-            #for shift ans scale
-
-
-            label_text = f"X: {x_parsed}\nY: {y_parsed}"
-            self.cursor_label.setText(label_text)
-
-            #label
             view_range = vb.viewRange()
-            x_min, x_max = view_range[0]
-            y_min, y_max = view_range[1]
+            sx = view_range[0][1] - view_range[0][0]
+            sy = view_range[1][1] - view_range[1][0]
+            sx = sx if sx > 0 else 1
+            sy = sy if sy > 0 else 1
 
-            anchor_x = 1 if v_pos > (x_max + x_min) / 2 else 0
-            anchor_y = 0 if h_pos > (y_max + y_min) / 2 else 1
+            dist_sq = ((search_x - local_v_x) / sx)**2 + ((search_y - local_v_y) / sy)**2
 
-            self.cursor_label.setAnchor((anchor_x, anchor_y))
-            self.cursor_label.setPos(v_pos, h_pos)
-            #self.cursor_label.show()
-            self.update_label_visibility()
+            if not self.parametric:
+                real_view_x = 10**v_x if x_log_mode else v_x
+                idx_near = np.searchsorted(xdata, real_view_x)
+                idx_near = np.clip(idx_near, 0, len(xdata)-1)
+                i_start = max(0, idx_near - 50)
+                i_end = min(len(xdata), idx_near + 50)
+                sub_dist = dist_sq[i_start:i_end]
+                local_idx = np.argmin(sub_dist)
+                index = i_start + local_idx
+            else:
+                index = np.argmin(dist_sq)
 
-            self.v_line.setPos(v_pos)
-            self.h_line.setPos(h_pos)
+            vis_x = xdata[index] + offset.x()
+            vis_y = (ydata[index] * scale_y) + offset.y()
 
-            #self.label.setText("x=%.3e, y=%.3e" % (pt_x, pt_y))
-            self.label2.setText("cur_x=%.4e, cur_y=%.4e" % (v_x, v_y))
+            best_guesses.append({
+                'point': (vis_x, vis_y),
+                'raw_point': (xdata[index], ydata[index]),
+                'dist': dist_sq[index],
+                'item': data_item
+            })
+
+        if not best_guesses:
+            return None
+
+        best_res = min(best_guesses, key=lambda x: x['dist'])
+        (v_pos, h_pos) = best_res['point']
+        (raw_x, raw_y) = best_res['raw_point']
+        target_item = best_res['item']
+        offset = target_item.pos()
+        scale_y = target_item.transform().m22()
+
+        raw_pen = target_item.opts.get('pen')
+        if isinstance(raw_pen, tuple):
+            raw_pen = raw_pen[0]
+        if hasattr(raw_pen, 'color'):
+            curve_color = raw_pen.color()
+        else:
+            curve_color = pg.mkColor(raw_pen)
+
+        if x_log_mode:
+            v_pos = math.log10(max(raw_x, 1e-15)) + offset.x()
+            x_parsed = pg.siFormat(10**v_pos, suffix=self.x_units, precision=5)
+        else:
+            x_parsed = pg.siFormat(v_pos, suffix=self.x_units, precision=5)
+            v_pos = raw_x + offset.x()
+
+        if y_log_mode:
+            h_pos = (math.log10(max(raw_y, 1e-15)) * scale_y) + offset.y()
+            y_parsed = pg.siFormat(10**h_pos, suffix=self.y_units, precision=5)
+        else:
+            y_parsed = pg.siFormat(h_pos, suffix=self.y_units, precision=5)
+            h_pos = (raw_y * scale_y) + offset.y()
+
+        return {
+            'view_x': v_pos,
+            'view_y': h_pos,
+            'x_text': x_parsed,
+            'y_text': y_parsed,
+            'color': curve_color,
+            'item': target_item,
+            'cur_view_x': v_x,
+            'cur_view_y': v_y,
+        }
+
+    # ----- Ruler (Shift + left-drag) -----
+    def _install_ruler_drag(self):
+        vb = self.plot_item.vb
+        orig = vb.mouseDragEvent
+        widget = self
+
+        def wrapper(ev, axis=None):
+            modifiers = QtGui.QGuiApplication.keyboardModifiers()
+            is_left = (ev.button() == QtCore.Qt.MouseButton.LeftButton or
+                       bool(ev.buttons() & QtCore.Qt.MouseButton.LeftButton))
+            if is_left and (modifiers & QtCore.Qt.KeyboardModifier.ShiftModifier):
+                ev.accept()
+                widget._on_ruler_drag(ev)
+                return
+            orig(ev, axis=axis)
+
+        vb.mouseDragEvent = wrapper
+
+    def _on_ruler_drag(self, ev):
+        modifiers = QtGui.QGuiApplication.keyboardModifiers()
+        # Shift alone = snap to data; Shift+Ctrl = free coordinates
+        snap = not bool(modifiers & QtCore.Qt.KeyboardModifier.ControlModifier)
+
+        if ev.isStart():
+            self._ruler_start_scene = ev.buttonDownScenePos()
+            self.cursor_label.hide()
+            # Lock to the curve under the press point (if any and snap is on)
+            if snap:
+                lock_res = self._snap_to_nearest_point(self._ruler_start_scene)
+                if lock_res is not None:
+                    self._ruler_locked_item = lock_res['item']
+                    self._ruler_locked_color = lock_res['color']
+                else:
+                    self._ruler_locked_item = None
+                    self._ruler_locked_color = None
+            else:
+                self._ruler_locked_item = None
+                self._ruler_locked_color = None
+
+        if self._ruler_start_scene is None:
+            return
+
+        # Honor the lock only while the locked curve is still alive and visible
+        locked = self._ruler_locked_item
+        if locked is not None and (
+            locked not in self.plot_item.items or not locked.isVisible()
+        ):
+            locked = None
+
+        p1 = self._ruler_point_at(self._ruler_start_scene, snap, locked_item=locked)
+        p2 = self._ruler_point_at(ev.scenePos(), snap, locked_item=locked)
+        self._ruler_p1, self._ruler_p2 = p1, p2
+
+        # Color: locked curve color when snap is on and lock is valid; else yellow
+        color = self._ruler_locked_color if (snap and locked is not None) else None
+        self._update_ruler(p1, p2, color)
+
+    def _ruler_point_at(self, scene_pos, snap, locked_item=None):
+        """Return {x, y, x_text, y_text} for a ruler endpoint at `scene_pos`.
+
+        When `snap` is True, snaps to nearest data point on the `locked_item`
+        curve if provided (and any curve otherwise). Falls back to raw view
+        coordinates with siFormat labels (log-mode aware) if snapping is
+        disabled or yields nothing.
+        """
+        if snap:
+            res = self._snap_to_nearest_point(scene_pos, restrict_to=locked_item)
+            if res is not None:
+                return {
+                    'x': res['view_x'],
+                    'y': res['view_y'],
+                    'x_text': res['x_text'],
+                    'y_text': res['y_text'],
+                }
+
+        vb = self.plot_item.vb
+        view = vb.mapSceneToView(scene_pos)
+        vx, vy = view.x(), view.y()
+
+        if not hasattr(self, 'y_units'):
+            self.y_units = self.getPlotItem().getAxis('left').labelUnits
+        if not hasattr(self, 'x_units'):
+            self.x_units = self.getPlotItem().getAxis('bottom').labelUnits
+
+        x_log_mode, y_log_mode = vb.state['logMode'][0], vb.state['logMode'][1]
+        x_disp = 10**vx if x_log_mode else vx
+        y_disp = 10**vy if y_log_mode else vy
+        return {
+            'x': vx,
+            'y': vy,
+            'x_text': pg.siFormat(x_disp, suffix=self.x_units, precision=5),
+            'y_text': pg.siFormat(y_disp, suffix=self.y_units, precision=5),
+        }
+
+    def _ensure_ruler_items(self):
+        # Route through vb.addItem (not self.addItem -> PlotItem.addItem) so the
+        # ruler doesn't get registered in PlotItem.curves. Otherwise FFT/log
+        # toggles iterate self.curves and call setFftMode on every item, which
+        # PlotCurveItem / ScatterPlotItem don't implement.
+        vb = self.plot_item.vb
+        if self._ruler_line is None:
+            self._ruler_line = pg.PlotCurveItem(pen=pg.mkPen((255, 255, 0, 220), width=1.5))
+            self._ruler_line.setZValue(95)
+            vb.addItem(self._ruler_line, ignoreBounds=True)
+        if self._ruler_marks is None:
+            self._ruler_marks = pg.ScatterPlotItem(
+                size=8, symbol='o',
+                pen=pg.mkPen((255, 255, 255, 255), width=1),
+                brush=pg.mkBrush(255, 255, 0, 255),
+            )
+            self._ruler_marks.setZValue(96)
+            vb.addItem(self._ruler_marks, ignoreBounds=True)
+        if self._ruler_label is None:
+            self._ruler_label = pg.TextItem(anchor=(0.5, 1.0), color='w', fill=(42, 42, 64, 150))
+            self._ruler_label.border = pg.mkPen((255, 255, 0, 255), width=1.5)
+            self._ruler_label.setZValue(100)
+            vb.addItem(self._ruler_label, ignoreBounds=True)
+
+    def _update_ruler(self, p1, p2, color=None):
+        self._ensure_ruler_items()
+
+        x1, y1 = p1['x'], p1['y']
+        x2, y2 = p2['x'], p2['y']
+
+        # Color: when None (no lock / snap off), fall back to yellow
+        ruler_color = color if color is not None else pg.mkColor(255, 255, 0)
+        self._ruler_line.setPen(pg.mkPen(ruler_color, width=1.5))
+        self._ruler_marks.setBrush(pg.mkBrush(ruler_color))
+        self._ruler_label.border = pg.mkPen(ruler_color, width=1.5)
+
+        self._ruler_line.setData([x1, x2], [y1, y2])
+        self._ruler_marks.setData([x1, x2], [y1, y2])
+        self._ruler_line.show()
+        self._ruler_marks.show()
+
+        vb = self.plot_item.vb
+        x_log_mode, y_log_mode = vb.state['logMode'][0], vb.state['logMode'][1]
+
+        dx_disp = (10**x2 - 10**x1) if x_log_mode else (x2 - x1)
+        dy_disp = (10**y2 - 10**y1) if y_log_mode else (y2 - y1)
+
+        if not hasattr(self, 'y_units'):
+            self.y_units = self.getPlotItem().getAxis('left').labelUnits
+        if not hasattr(self, 'x_units'):
+            self.x_units = self.getPlotItem().getAxis('bottom').labelUnits
+
+        dx_text = pg.siFormat(dx_disp, suffix=self.x_units, precision=5)
+        dy_text = pg.siFormat(dy_disp, suffix=self.y_units, precision=5)
+
+        self._ruler_label.setText(
+            f"ΔX: {dx_text}\n"
+            f"ΔY: {dy_text}\n"
+            f"P1: ({p1['x_text']}, {p1['y_text']})\n"
+            f"P2: ({p2['x_text']}, {p2['y_text']})"
+        )
+
+        # Anchor at P1, on the side opposite P2 so the segment doesn't run
+        # through the label. Mirror at viewbox edges to keep it inside.
+        view_range = vb.viewRange()
+        x_min, x_max = view_range[0]
+        y_min, y_max = view_range[1]
+
+        dx, dy = x2 - x1, y2 - y1
+        anchor_x = 1 if dx >= 0 else 0
+        anchor_y = 0 if dy >= 0 else 1
+
+        try:
+            pxw, pxh = vb.viewPixelSize()
+            rect = self._ruler_label.boundingRect()
+            w_view = rect.width() * pxw
+            h_view = rect.height() * pxh
+        except Exception:
+            w_view = h_view = 0
+
+        if w_view > 0:
+            if x1 - anchor_x * w_view < x_min:
+                anchor_x = 0
+            elif x1 + (1 - anchor_x) * w_view > x_max:
+                anchor_x = 1
+        if h_view > 0:
+            if y1 - (1 - anchor_y) * h_view < y_min:
+                anchor_y = 1
+            elif y1 + anchor_y * h_view > y_max:
+                anchor_y = 0
+
+        self._ruler_label.setAnchor((anchor_x, anchor_y))
+        self._ruler_label.setPos(x1, y1)
+        self._ruler_label.show()
+
+    def _clear_ruler(self):
+        for attr in ('_ruler_line', '_ruler_marks', '_ruler_label'):
+            item = getattr(self, attr, None)
+            if item is not None:
+                item.hide()
+        self._ruler_start_scene = None
+        self._ruler_p1 = None
+        self._ruler_p2 = None
+        self._ruler_locked_item = None
+        self._ruler_locked_color = None
 
     def add_cross_hair(self, x, y):
         if hasattr(self, 'v_line'):
+            # Reset positions to (x, y) — after a mode toggle (FFT/log/...)
+            # the axis range may have changed and the stored line positions
+            # would otherwise sit far outside the new view.
+            self.v_line.setPos(x)
+            self.h_line.setPos(y)
             self.h_line.show()
             self.v_line.show()
             #self.cursor_label.show()
@@ -428,6 +641,7 @@ class CrosshairPlotWidget(pg.PlotWidget):
             self.click_count = (self.click_count + 1 ) % 2
         if len(enabled) != 0:
             self.click_count_1d ^= 1
+        self._clear_ruler()
 
     def _fourierTransform(self, x, y):
         # Perform Fourier transform. If x values are not sampled uniformly,
@@ -522,11 +736,15 @@ class CrosshairDock(CloseableDock):
                 pass
 
     def plot(self, *args, **kwargs):
+        # Fresh plot (no existing curves) → drop any stale ruler from a prior dataset
+        if not self.curves:
+            self.plot_widget._clear_ruler()
+
         if not hasattr(self.plot_widget, 'y_units'):
             self.plot_widget.y_units = kwargs.get('yscale', '')
         if not hasattr(self.plot_widget, 'x_units'):
             self.plot_widget.x_units = kwargs.get('xscale', '')
-        
+
         self.plot_widget.parametric = kwargs.pop('parametric', False)
         vline_arg = kwargs.get('vline', '')
 
@@ -812,13 +1030,18 @@ class CrosshairDock(CloseableDock):
         is_left_click = ev.button() == QtCore.Qt.MouseButton.LeftButton or (ev.buttons() & QtCore.Qt.MouseButton.LeftButton)
 
         if is_left_click:
+            modifiers = QtGui.QGuiApplication.keyboardModifiers()
+            if modifiers & QtCore.Qt.KeyboardModifier.ShiftModifier:
+                ev.accept()
+                self.plot_widget._on_ruler_drag(ev)
+                return
+
             ev.accept()
 
             if ev.isStart():
                 self.flash_curve(curve)
 
             if not ev.isFinish():
-                modifiers = QtGui.QGuiApplication.keyboardModifiers()
                 delta_scene = ev.scenePos() - ev.lastScenePos()
                 
                 if modifiers == QtCore.Qt.KeyboardModifier.ControlModifier:
@@ -1128,6 +1351,7 @@ class CrosshairDock(CloseableDock):
         filedialog.show()
 
     def clear(self):
+        self.plot_widget._clear_ruler()
         self.plot_widget.clear()
 
     def get_data(self, label):

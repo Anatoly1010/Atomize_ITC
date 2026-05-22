@@ -6,7 +6,10 @@ import gc
 import sys
 import math
 import atomize.main.local_config as lconf
-import atomize.control_center.field_param as field_param
+try:
+    import atomize.control_center.field_param as field_param
+except ImportError:
+    field_param = None
 import atomize.device_modules.config.config_utils as cutil
 import atomize.general_modules.general_functions as general
 
@@ -135,15 +138,16 @@ class BH_15:
             self.max_sw = self.max_field - self.min_field
 
 
-        self.path_status_file = field_param.path()
+        self.path_status_file = field_param.path() if field_param is not None else None
 
-        try:
-            if os.path.exists(self.path_status_file):
-                cur_field = field_param.current_field()
-                self.magnet_setup(cur_field, 1)
-                self.magnet_field(cur_field)
-        except (FileNotFoundError, IndexError, ValueError):
-            pass
+        if field_param is not None:
+            try:
+                if os.path.exists(self.path_status_file):
+                    cur_field = field_param.current_field()
+                    self.magnet_setup(cur_field, 1)
+                    self.magnet_field(cur_field)
+            except (FileNotFoundError, IndexError, ValueError):
+                pass
 
     def magnet_name(self):
         if self.test_flag != 'test':
@@ -915,7 +919,7 @@ class BH_15:
             self.max_field_dev = d
 
     def _write_field_status(self, field):
-        if self.test_flag == 'test':
+        if self.test_flag == 'test' or field_param is None:
             return
         try:
             field_param.write_field(field)
