@@ -5,6 +5,7 @@ import os
 import gc
 import sys
 import math
+import time
 import atomize.main.local_config as lconf
 try:
     import atomize.control_center.field_param as field_param
@@ -72,6 +73,14 @@ class BH_15:
         Remember, this is a device by Bruker...
         """
         self.max_set_retries = 2
+
+        # fc_test_leds throttle: in a tight magnet_field() loop the LED GPIB
+        # query dominates per-call latency, so the routine skips it when the
+        # previous check was less than this many seconds ago. One-shot paths
+        # (init, sweep start) pass force=True to bypass the throttle. Set
+        # to 0 to disable throttling and always query.
+        self.fc_test_leds_min_interval = 0.5
+        self._fc_test_leds_last_t = 0.0
 
         self.max_sweep_width = 16000.0
         self.min_field = -50.0
@@ -258,8 +267,8 @@ class BH_15:
             self.fc_set_swa(self.swa)
             self.cf = fc_set_cf(new_cf)
 
- 
-        self.fc_test_leds()
+
+        self.fc_test_leds(force=True)
 
         self.fc_deviation(self.act_field + self.field_step)
         self.act_field = self.cf + (self.swa - self.center_swa )*self.swa_step
@@ -312,7 +321,7 @@ class BH_15:
             self.fc_set_swa(self.swa)
             self.cf = self.fc_set_cf(new_cf)
 
-        self.fc_test_leds()
+        self.fc_test_leds(force=True)
 
         self.fc_deviation(self.act_field - self.field_step)
         self.act_field = self.cf + (self.swa - self.center_swa )*self.swa_step
@@ -424,7 +433,7 @@ class BH_15:
             self.fc_set_swa(self.swa)
             self.sw = self.fc_set_sw(self.max_swa*rem)
 
-        self.fc_test_leds()
+        self.fc_test_leds(force=True)
 
         self.fc_deviation(self.act_field)
 
@@ -558,7 +567,7 @@ class BH_15:
         self.fc_set_swa(self.swa)
         self.fc_set_sw(self.sw)
 
-        self.fc_test_leds()
+        self.fc_test_leds(force=True)
 
         self.is_sw = True
         self.fc_deviation(self.start_field)
@@ -861,11 +870,19 @@ class BH_15:
 
         return True
 
-    def fc_test_leds(self):
+    def fc_test_leds(self, force=False):
         """
         Function for testing LED indicators.
+
+        Throttled by self.fc_test_leds_min_interval: in tight magnet_field()
+        loops the GPIB query for LE dominates per-call latency, so successive
+        calls within the throttle window are skipped. Pass force=True to
+        bypass the throttle (used by init / sweep-start paths).
         """
         if self.test_flag != 'test':
+            if not force and (time.monotonic() - self._fc_test_leds_last_t) < self.fc_test_leds_min_interval:
+                return
+            self._fc_test_leds_last_t = time.monotonic()
             while True:
                 is_overload = is_remote = False
                 answer = self.device_query('LE')

@@ -2198,44 +2198,44 @@ class MainWindow(QMainWindow):
         # sending parameters for initial initialization
 
         if self.cur_sweep == 'Linear Time':
-            self.digitizer_process = Process( target = worker.exp_test, args = ( 
+            self.digitizer_process = Process( target = worker.exp, args = (
                 self.child_conn_dig,
                 self.decimation, self.number_averages, self.cur_scan, self.cur_points,
                 self.cur_win_left, self.cur_exp_name, self.cur_curve_name,
-                self.cur_win_right, self.p1_exp, self.p2_exp, self.p3_exp, self.p4_exp, 
-                self.p5_exp, self.p6_exp, self.p7_exp, self.p8_exp, self.p9_exp, self.laser_flag, 
-                self.repetition_rate.split(' ')[0], 
+                self.cur_win_right, self.p1_exp, self.p2_exp, self.p3_exp, self.p4_exp,
+                self.p5_exp, self.p6_exp, self.p7_exp, self.p8_exp, self.p9_exp, self.laser_flag,
+                self.repetition_rate.split(' ')[0],
                 self.mag_field, self.combo_laser_num, self.laser_q_switch_delay,
-                self.cur_x0, self.cur_xdelta, 
-                self.zero_order, self.first_order, self.second_order, self.quad
-                ) 
+                self.cur_x0, self.cur_xdelta,
+                self.zero_order, self.first_order, self.second_order, self.quad, True
+                )
             )
         elif self.cur_sweep == 'Field':
-            self.digitizer_process = Process( target = worker.exp_field_test, args = ( 
+            self.digitizer_process = Process( target = worker.exp_field, args = (
                 self.child_conn_dig,
                 self.decimation, self.number_averages, self.cur_scan, self.cur_start_field,
                 self.cur_end_field, self.cur_step,
                 self.cur_win_left, self.cur_exp_name, self.cur_curve_name,
-                self.cur_win_right, self.p1_exp, self.p2_exp, self.p3_exp, self.p4_exp, 
-                self.p5_exp, self.p6_exp, self.p7_exp, self.p8_exp, self.p9_exp, self.laser_flag, 
-                self.repetition_rate.split(' ')[0], 
+                self.cur_win_right, self.p1_exp, self.p2_exp, self.p3_exp, self.p4_exp,
+                self.p5_exp, self.p6_exp, self.p7_exp, self.p8_exp, self.p9_exp, self.laser_flag,
+                self.repetition_rate.split(' ')[0],
                 self.combo_laser_num, self.laser_q_switch_delay,
-                self.zero_order, self.first_order, self.second_order, self.quad
-                ) 
+                self.zero_order, self.first_order, self.second_order, self.quad, True
+                )
             )
         elif self.cur_sweep == 'Log Time':
-            self.digitizer_process = Process( target = worker.exp_log_test, args = ( 
+            self.digitizer_process = Process( target = worker.exp_log, args = (
                 self.child_conn_dig,
                 self.decimation, self.number_averages, self.cur_scan, self.cur_points,
                 self.cur_log_start, self.cur_log_end,
                 self.cur_win_left, self.cur_exp_name, self.cur_curve_name,
-                self.cur_win_right, self.p1_exp, self.p2_exp, self.p3_exp, self.p4_exp, 
-                self.p5_exp, self.p6_exp, self.p7_exp, self.p8_exp, self.p9_exp, self.laser_flag, 
+                self.cur_win_right, self.p1_exp, self.p2_exp, self.p3_exp, self.p4_exp,
+                self.p5_exp, self.p6_exp, self.p7_exp, self.p8_exp, self.p9_exp, self.laser_flag,
                 self.repetition_rate.split(' ')[0], self.mag_field,
                 self.combo_laser_num, self.laser_q_switch_delay,
                 self.cur_x0, self.cur_xdelta,
-                self.zero_order, self.first_order, self.second_order, self.quad
-                ) 
+                self.zero_order, self.first_order, self.second_order, self.quad, True
+                )
             )
 
         self.button_start_exp.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(193, 202, 227); border-style: outset; color: rgb(63, 63, 97); font-weight: bold; } QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
@@ -2285,14 +2285,14 @@ class MainWindow(QMainWindow):
         self.parent_conn_dig, self.child_conn_dig = Pipe()
         # a process for running function script 
         # sending parameters for initial initialization
-        self.digitizer_process = Process( target = worker.dig_test, args = ( self.child_conn_dig,
-            self.decimation, self.l_mode, self.number_averages, self.cur_win_left, 
-            self.cur_win_right, self.p1_list, self.p2_list, self.p3_list, self.p4_list, 
-            self.p5_list, self.p6_list, self.p7_list, self.laser_flag, 
-            self.repetition_rate.split(' ')[0], 
-            self.mag_field, self.fft, self.quad, self.zero_order, self.first_order, 
-            self.second_order, self.p_to_drop, self.combo_laser_num, self.laser_q_switch_delay, 
-            self.p8_list, self.p9_list ) )
+        self.digitizer_process = Process( target = worker.dig_on, args = ( self.child_conn_dig,
+            self.decimation, self.l_mode, self.number_averages, self.cur_win_left,
+            self.cur_win_right, self.p1_list, self.p2_list, self.p3_list, self.p4_list,
+            self.p5_list, self.p6_list, self.p7_list, self.laser_flag,
+            self.repetition_rate.split(' ')[0],
+            self.mag_field, self.fft, self.quad, self.zero_order, self.first_order,
+            self.second_order, self.p_to_drop, self.combo_laser_num, self.laser_q_switch_delay,
+            self.p8_list, self.p9_list, True ) )
 
         self.button_update.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(193, 202, 227); border-style: outset; color: rgb(63, 63, 97); font-weight: bold; } QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
 
@@ -2607,18 +2607,27 @@ class Worker():
 
         self.command = 'start'
     
-    def dig_on(self, conn, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11, p12, p13, p14, p15, p16, p17, p18, p19, p20, p21, p22, p23, p24, p25):
+    def dig_on(self, conn, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11, p12, p13, p14, p15, p16, p17, p18, p19, p20, p21, p22, p23, p24, p25, script_test=False):
         """
-        function that contains updating of the digitizer
+        function that contains updating of the digitizer.
+
+        When script_test is True, run a single-shot phasing validation pass
+        (enforce extra input checks, suppress 'Average'/'Message' callbacks,
+        plot without I/Q text in FFT mode, emit the composed pulse list at the end).
         """
         # should be inside dig_on() function;
         # freezing after digitizer restart otherwise
         import traceback
 
+        if script_test:
+            sys.argv = ['', 'test']
+
         try:
             import time
             import numpy as np
             import atomize.general_modules.general_functions as general
+            if script_test:
+                general.test_flag = 'test'
             import atomize.device_modules.Insys_FPGA as pb_pro
             import atomize.math_modules.fft as fft_module
             import atomize.device_modules.BH_15 as itc
@@ -2668,6 +2677,9 @@ class Worker():
                         p[1] = f"{self.round_to_closest(start_val, 3.2)} ns"
 
                     length_val = int(float(p[2].split(' ')[0]))
+                    if script_test and i == 1 and length_val == 0:
+                        raise ValueError("LASER pulse has zero length")
+
                     if length_val != 0:
                         kwargs = {
                             'name': f'P{i}',
@@ -2675,12 +2687,12 @@ class Worker():
                             'start': p[1],
                             'length': p[2]
                         }
-                        
+
                         if i != 1:
                             kwargs['phase_list'] = p[3]
-                            
+
                         pb.pulser_pulse(**kwargs)
-                
+
                 if p22 == 1:
                     pb.pulser_repetition_rate( '9.9 Hz' )
                 elif p22 == 2:
@@ -2703,15 +2715,16 @@ class Worker():
 
             data = np.zeros( ( 2, WIN_ADC, 1 ) )
             ##data = np.random.random( ( 2, WIN_ADC, 1 ) )
-            x_axis = np.linspace(0, ( DETECTION_WINDOW - TR_ADC), num = WIN_ADC) 
+            x_axis = np.linspace(0, ( DETECTION_WINDOW - TR_ADC), num = WIN_ADC)
 
             t_res = 0.4 * p1
-            
+
             #31/03/2026
             p14 = float(p14)
             if (p3 / p14 ) < ms_per_point:
                 p3 = int( ms_per_point * p14)
-                conn.send( ('Average', p3) )
+                if not script_test:
+                    conn.send( ('Average', p3) )
 
             pb.digitizer_number_of_averages(p3)
             PHASES = len( p6[3] )
@@ -2745,13 +2758,13 @@ class Worker():
 
                 elif self.command[0:2] == 'NA':
                     p3 = int( self.command[2:] )
-                    
+
                     #31/03/2026
                     if (p3 / p14 ) < ms_per_point:
                         p3 = int( ms_per_point * p14)
-                        conn.send( ('Average', p3) )
+                        if not script_test:
+                            conn.send( ('Average', p3) )
 
-                    #print( num_ave )
                     pb.digitizer_number_of_averages( p3 )
 
                 elif self.command[0:2] == 'WL':
@@ -2765,14 +2778,14 @@ class Worker():
                     if (p3 / p14 ) < ms_per_point:
                         p3 = int( ms_per_point * p14)
                         pb.digitizer_number_of_averages( p3 )
-                        conn.send( ('Average', p3) )
+                        if not script_test:
+                            conn.send( ('Average', p3) )
 
-                    #print( p14 )
                     if p14 > 49:
                         pb.pulser_repetition_rate( str(p14) + ' Hz' )
-                    else:
+                    elif not script_test:
                         conn.send( ('Message', 'For REPETITION RATE lower then 50 Hz, please, press RUN PULSES') )
-                    
+
                 elif self.command[0:2] == 'FI':
                     p15 = float( self.command[2:] )
                     bh15.magnet_field( p15 ) #, calibration = 'True'
@@ -2817,15 +2830,21 @@ class Worker():
                     else:
                         pass
 
+                    if script_test and p16 == 1:
+                        # FFT mode in test: omit the I/Q text on the Dig plot since FFT is shown
+                        general.plot_1d('Dig', x_axis / 1e9, ( data_x, data_y ),
+                            xscale = 's', yscale = 'mV', label = 'ch',
+                            vline = (p4 * t_res / 1e9, p5 * t_res / 1e9)
+                            )
+                    else:
+                        int_x = round( np.sum( data_x[p4:p5] ) * 1 * t_res , 1 )
+                        int_y = round( np.sum( data_y[p4:p5] ) * 1 * t_res , 1 )
 
-                    int_x = round( np.sum( data_x[p4:p5] ) * 1 * t_res , 1 )
-                    int_y = round( np.sum( data_y[p4:p5] ) * 1 * t_res , 1 )
-
-                    general.plot_1d('Dig', x_axis / 1e9, ( data_x, data_y ), 
-                        xscale = 's', yscale = 'mV', label = 'ch', 
-                        vline = (p4 * t_res / 1e9, p5 * t_res / 1e9), 
-                        text = 'I/Q ' + str(int_x) + '/' + str(int_y)
-                        )
+                        general.plot_1d('Dig', x_axis / 1e9, ( data_x, data_y ),
+                            xscale = 's', yscale = 'mV', label = 'ch',
+                            vline = (p4 * t_res / 1e9, p5 * t_res / 1e9),
+                            text = 'I/Q ' + str(int_x) + '/' + str(int_y)
+                            )
 
                     if p16 == 1:
 
@@ -2833,8 +2852,8 @@ class Worker():
                             freq_axis, abs_values = fft.fft(x_axis, data_x, data_y, t_res * 1)
                             m_val = round( np.amax( abs_values ), 2 )
                             #i_max = abs(round( freq_axis[ np.argmax( abs_values ) ], 2))
-                            general.plot_1d('FFT', freq_axis * 1e6, abs_values, xname = 'Offset', 
-                                label = 'FFT', xscale = 'Hz', 
+                            general.plot_1d('FFT', freq_axis * 1e6, abs_values, xname = 'Offset',
+                                label = 'FFT', xscale = 'Hz',
                                 yscale = 'A.U.', text = 'Max ' + str(m_val)
                                 ) #str(m_val)
                         else:
@@ -2845,293 +2864,21 @@ class Worker():
                             freq, fft_x, fft_y = fft.fft( x_axis[p21:] , data_x[p21:], data_y[p21:], t_res * 1, re = 'True' )
                             data_fft = fft.ph_correction( freq * 1e6, fft_x, fft_y, 0, 0, 0)
                                 #p18, p19, p20 )
-                            general.plot_1d('FFT', freq, ( data_fft[0], data_fft[1] ), 
-                                xname = 'Offset', xscale = 'Hz', 
+                            general.plot_1d('FFT', freq, ( data_fft[0], data_fft[1] ),
+                                xname = 'Offset', xscale = 'Hz',
                                 yscale = 'A.U.', label = 'FFT'
                                 )
 
-                self.command = 'start'
-                
-                if PHASES != 1:
-                    pb.pulser_pulse_reset()
-                else:
-                    pass
-                
-                # poll() checks whether there is data in the Pipe to read
-                # we use it to stop the script if the exit command was sent from the main window
-                # we read data by conn.recv() only when there is the data to read
-                if conn.poll() == True:
-                    self.command = conn.recv()
-
-            if self.command == 'exit':
-                #print('exit')
-                pb.pulser_close()
-                conn.send( ('', f'Pulses are stopped') )
-
-        except BaseException as e:
-            exc_info = f"{type(e)} \n{str(e)} \n{traceback.format_exc()}"
-            conn.send( ('Error', exc_info) )
-
-    def dig_test(self, conn, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11, p12, p13, p14, p15, p16, p17, p18, p19, p20, p21, p22, p23, p24, p25):
-        """
-        function that contains updating of the digitizer
-        """
-        # should be inside dig_on() function;
-        # freezing after digitizer restart otherwise
-        #import time
-        import traceback
-
-        sys.argv = ['', 'test']
-
-        try:
-            import time
-            import numpy as np
-            import atomize.general_modules.general_functions as general
-            general.test_flag = 'test'
-            import atomize.device_modules.Insys_FPGA as pb_pro
-            import atomize.math_modules.fft as fft_module
-            import atomize.device_modules.BH_15 as itc
-
-            pb = pb_pro.Insys_FPGA()
-            
-            fft = fft_module.Fast_Fourier()
-            bh15 = itc.BH_15()
-            
-            #bh15.magnet_setup( p15, 0.5 )
-            bh15.magnet_field( p15 ) #, calibration = 'True'
-
-            process = 'None'
-            
-            # p1 decimation
-            # p2 LIVE MODE
-
-            #parameters for initial initialization
-
-            #p4 window left
-            #p5 window right
-            
-            if p13 != 1:
-                pulses = [p6, p7, p8, p9, p10, p11, p12, p24, p25]
-
-                for i, p in enumerate(pulses):
-                    length_str = p[2].split(' ')[0]
-                    if int(float(length_str)) != 0:
-                        pb.pulser_pulse(
-                            name=f'P{i}',
-                            channel=p[0],
-                            start=p[1],
-                            length=p[2],
-                            phase_list=p[3]
-                        )
-                pb.pulser_repetition_rate( str(p14) + ' Hz' )
-
-            else:
-
-                pulses = [p6, p7, p8, p9, p10, p11, p12, p24, p25]
-
-                for i, p in enumerate(pulses):
-                    if i != 1:
-                        start_val = float(p[1].split(' ')[0]) + p23
-                        p[1] = f"{self.round_to_closest(start_val, 3.2)} ns"
-
-                    length_val = int(float(p[2].split(' ')[0]))
-                    if i == 1 and length_val == 0:
-                        raise ValueError(f"LASER pulse has zero length")
-
-                    if length_val != 0:
-                        kwargs = {
-                            'name': f'P{i}',
-                            'channel': p[0],
-                            'start': p[1],
-                            'length': p[2]
-                        }
-                        
-                        if i != 1:
-                            kwargs['phase_list'] = p[3]
-                            
-                        pb.pulser_pulse(**kwargs)
-
-                if p22 == 1:
-                    pb.pulser_repetition_rate( '9.9 Hz' )
-                elif p22 == 2:
-                    pb.pulser_repetition_rate( str(p14) + ' Hz' )
-                else:
-                    pb.pulser_repetition_rate( str(p14) + ' Hz' )
-
-
-            POINTS = 1
-            pb.digitizer_decimation(p1)
-            DETECTION_WINDOW = round( pb.adc_window * 3.2, 1 )
-            TR_ADC = round(3.2 / 8, 1)
-            WIN_ADC = int( pb.adc_window * 8 / p1 )
-
-            #31/03/2026
-            if DETECTION_WINDOW <= 1200:
-                ms_per_point = 1e-3
-            else:
-                ms_per_point = 1e-2
-
-            data = np.zeros( ( 2, WIN_ADC, 1 ) )
-            ##data = np.random.random( ( 2, WIN_ADC, 1 ) )
-            x_axis = np.linspace(0, ( DETECTION_WINDOW - TR_ADC), num = WIN_ADC) 
-
-            t_res = 0.4 * p1
-
-            #31/03/2026
-            p14 = float(p14)
-            if (p3 / p14 ) < ms_per_point:
-                p3 = int( ms_per_point * p14)
-                #conn.send( ('Average', p3) )
-
-            pb.digitizer_number_of_averages(p3)
-            PHASES = len( p6[3] )
-            
-            pb.pulser_open()
-            
-            # the idea of automatic and dynamic changing is
-            # sending a new value of repetition rate via self.command
-            # in each cycle we will check the current value of self.command
-            # self.command = 'exit' will stop the digitizer
-            while self.command != 'exit':
-                # always test our self.command attribute for stopping the script when neccessary
-
-                if self.command[0:2] == 'PO':            
-                    #points_value = int( self.command[2:] )
-                    #dig.digitizer_stop()
-                    #dig.digitizer_number_of_points( points_value )
-                    pass
-
-                elif self.command[0:2] == 'HO':
-                    #posstrigger_value = int( self.command[2:] )
-                    #dig.digitizer_stop()
-                    #dig.digitizer_posttrigger( posstrigger_value )
-                    pass
-
-                elif self.command[0:2] == 'LM':
-                    pass
-                    #p2 = int( self.command[2:] )
-
-                elif self.command[0:2] == 'NA':
-                    p3 = int( self.command[2:] )
-                    
-                    #31/03/2026
-                    if (p3 / p14 ) < ms_per_point:
-                        p3 = int( ms_per_point * p14)
-                        #conn.send( ('Average', num_ave) )
-
-                    #print( num_ave )
-                    pb.digitizer_number_of_averages( num_ave )
-
-                elif self.command[0:2] == 'WL':
-                    p4 = int( self.command[2:] )
-                elif self.command[0:2] == 'WR':
-                    p5 = int( self.command[2:] )
-                elif self.command[0:2] == 'RR':
-                    p14 = float( self.command[2:] )
-
-                    #31/03/2026
-                    if (p3 / p14 ) < ms_per_point:
-                        p3 = int( ms_per_point * p14)
-                        pb.digitizer_number_of_averages( p3 )
-                        #conn.send( ('Average', num_ave) )
-
-                    #print( p14 )
-                    if p14 > 49:
-                        pb.pulser_repetition_rate( str(p14) + ' Hz' )
-                    else:
-                        pass
-                        #conn.send( ('Message', 'For REPETITION RATE lower then 50 Hz, please, press RUN PULSES') )
-                
-                elif self.command[0:2] == 'FI':
-                    p15 = float( self.command[2:] )
-                    bh15.magnet_field( p15 ) #, calibration = 'True'
-                elif self.command[0:2] == 'FF':
-                    p16 = int( self.command[2:] )
-                elif self.command[0:2] == 'QC':
-                    p17 = int( self.command[2:] )
-                elif self.command[0:2] == 'ZO':
-                    p18 = float( self.command[2:] )
-                elif self.command[0:2] == 'FO':
-                    p19 = float( self.command[2:] )
-                elif self.command[0:2] == 'SO':
-                    p20 = float( self.command[2:] )
-                elif self.command[0:2] == 'PD':
-                    p21 = int( self.command[2:] )
-
-                # check integration window
-                if p4 > WIN_ADC:
-                    p4 = WIN_ADC
-                if p5 > WIN_ADC:
-                    p5 = WIN_ADC
-
-                # phase cycle
-                PHASES = len( p6[3] )
-
-                #pb.pulser_visualize()
-
-                for i in range( PHASES ):
-                    pb.pulser_next_phase()
-
-                    if p2 == 0:
-                        data[0], data[1] = pb.digitizer_get_curve(POINTS, PHASES, live_mode = 1)
-                    elif p2 == 1:
-                        data[0], data[1] = pb.digitizer_get_curve(POINTS, PHASES, live_mode = 0)
-                    ##general.wait('100 ms')
-                    ##data = np.random.random( ( 2, WIN_ADC, 1 ) )
-
-                    data_x = data[0].ravel()
-                    data_y = data[1].ravel()
-
-                    if p17 == 1:
-                        data_x, data_y = pb.digitizer_iq(data_x, data_y, 0, p18, p19, p20)
-                    else:
-                        pass
-
-                    if p16 == 0:
-                        # acquisition cycle
-                        int_x = round( np.sum( data_x[p4:p5] ) * 1 * t_res , 1 ) #( 10**(10) * t_res )
-                        int_y = round( np.sum( data_y[p4:p5] ) * 1 * t_res , 1 )
-
-                        general.plot_1d('Dig', x_axis / 1e9, ( data_x, data_y ), 
-                            xscale = 's', yscale = 'mV', label = 'ch', 
-                            vline = (p4 * t_res / 1e9, p5 * t_res / 1e9), 
-                            text = 'I/Q ' + str(int_x) + '/' + str(int_y)
-                            )
-
-                    else:
-                        # acquisition cycle
-                        general.plot_1d('Dig', x_axis / 1e9, ( data_x, data_y ), xscale = 's', 
-                            yscale = 'mV', label = 'ch', 
-                            vline = (p4 * t_res / 1e9, p5 * t_res / 1e9)
-                            )
-
-                        if p17 == 0:
-                            freq_axis, abs_values = fft.fft(x_axis, data_x, data_y, t_res * 1)
-                            m_val = round( np.amax( abs_values ), 2 )
-                            #i_max = abs(round( freq_axis[ np.argmax( abs_values ) ], 2))
-                            general.plot_1d('FFT', freq_axis * 1e6, abs_values, xname = 'Offset', 
-                                label = 'FFT', xscale = 'Hz', 
-                                yscale = 'A.U.', text = 'Max ' + str(m_val))
-                                 #str(m_val)
-                        else:
-                            if p21 > len( data_x ) - 0.4 * p1:
-                                p21 = len( data_x ) - 0.8 * p1
-                                general.message('Maximum length of the data achieved. A number of drop points was corrected.')
-                            # fixed resolution of digitizer; 0.4 ns
-                            freq, fft_x, fft_y = fft.fft( x_axis[p21:] , data_x[p21:], data_y[p21:], t_res * 1, re = 'True' )
-                            data_fft = fft.ph_correction( freq * 1e6, fft_x, fft_y, 0, 0, 0)
-                                #, p18, p19, p20 )
-                            general.plot_1d('FFT', freq, ( data_fft[0], data_fft[1] ), 
-                                xname = 'Offset', xscale = 'Hz', 
-                                yscale = 'A.U.', label = 'FFT'
-                                )
+                if not script_test:
+                    self.command = 'start'
 
                 if PHASES != 1:
                     pb.pulser_pulse_reset()
                 else:
                     pass
-                
-                self.command = 'exit'
+
+                if script_test:
+                    self.command = 'exit'
 
                 # poll() checks whether there is data in the Pipe to read
                 # we use it to stop the script if the exit command was sent from the main window
@@ -3142,14 +2889,15 @@ class Worker():
             if self.command == 'exit':
                 #print('exit')
                 pb.pulser_close()
-                #pb.pulser_pulse_list()
-                conn.send( ('test', f'{pb.pulser_pulse_list()}') )
-                if PHASES >= pb.number_adc_window_in_buffer():
-                    str1 = '!!!TOO MANY PHASES FOR LIVE MODE!!!\n'
-                    str2 = 'ADC WINDOWS IN BUFFER: '
-                    conn.send( ('test', f'{str1}{str2}{pb.number_adc_window_in_buffer()}') )
-
-                conn.close()
+                if not script_test:
+                    conn.send( ('', f'Pulses are stopped') )
+                else:
+                    conn.send( ('test', f'{pb.pulser_pulse_list()}') )
+                    if PHASES >= pb.number_adc_window_in_buffer():
+                        str1 = '!!!TOO MANY PHASES FOR LIVE MODE!!!\n'
+                        str2 = 'ADC WINDOWS IN BUFFER: '
+                        conn.send( ('test', f'{str1}{str2}{pb.number_adc_window_in_buffer()}') )
+                    conn.close()
 
         except BaseException as e:
             exc_info = f"{type(e)} \n{str(e)} \n{traceback.format_exc()}"
@@ -3163,12 +2911,15 @@ class Worker():
 
     def exp(self, conn, decimation, num_ave, scans, points,
             win_left, exp_name, curve_name,
-            win_right, p1_exp, p2_exp, p3_exp, p4_exp, 
-            p5_exp, p6_exp, p7_exp, p8_exp, p9_exp, laser_flag, 
+            win_right, p1_exp, p2_exp, p3_exp, p4_exp,
+            p5_exp, p6_exp, p7_exp, p8_exp, p9_exp, laser_flag,
             rep_rate, field, laser_num, q_switch_delay, x0, xd,
-            zero_order, first_order, sec_order, ph_cor):
-        
+            zero_order, first_order, sec_order, ph_cor, script_test=False):
+
         import traceback
+
+        if script_test:
+            sys.argv = ['', 'test']
 
         try:
             #import random
@@ -3176,6 +2927,8 @@ class Worker():
             import datetime
             import numpy as np
             import atomize.general_modules.general_functions as general
+            if script_test:
+                general.test_flag = 'test'
             import atomize.device_modules.Insys_FPGA as pb_pro
             import atomize.device_modules.Lakeshore_335 as ls
             import atomize.device_modules.BH_15 as bh
@@ -3222,7 +2975,7 @@ class Worker():
                 step = round( xd, 1 )
                 f_delay =  self.round_to_closest( x0, 3.2 )
 
-            if step == 1: 
+            if step == 1 and not script_test:
                 conn.send( ('Message', 'No START or LENGTH increment; the time axis corresponds to the number of points in the experiment') )
                 general.plot_remove(exp_name)
 
@@ -3276,6 +3029,9 @@ class Worker():
                         p[1] = f"{self.round_to_closest(start_val, 3.2)} ns"
 
                     length_val = int(float(p[2].split(' ')[0]))
+                    if script_test and i == 1 and length_val == 0:
+                        raise ValueError("LASER pulse has zero length")
+
                     if length_val != 0:
                         kwargs = {
                             'name': f'P{i}',
@@ -3286,12 +3042,12 @@ class Worker():
                             'length_increment': p[5]
 
                         }
-                        
+
                         if i != 1:
                             kwargs['phase_list'] = p[3]
-                            
+
                         pb.pulser_pulse(**kwargs)
-                
+
                 if laser_num == 1:
                     pb.pulser_repetition_rate( '9.9 Hz' )
                 elif laser_num == 2:
@@ -3305,276 +3061,22 @@ class Worker():
             pb.pulser_open()
             pb.digitizer_number_of_averages(AVERAGES)
             data = np.zeros( ( 2, POINTS ) )
-            x_axis = f_delay + np.linspace(0, (POINTS - 1)*STEP, num = POINTS) 
+            x_axis = f_delay + np.linspace(0, (POINTS - 1)*STEP, num = POINTS)
             x_axis_plot = x_axis / 1e9
             a = 0
 
-            while self.command != 'exit':
-
-                k = 1
-                while k <= SCANS:
-                    sp = ls335.tc_setpoint()
-                    ct = ls335.tc_temperature('B')
-
-                    if np.abs(sp - ct) > 0.8:
-                        general.wait('8000 ms')
-                    
-                    if self.command == 'exit':
-                        break
-
-                    for j in range(POINTS):
-                        for i in range(PHASES):
-                            #r_data = np.random.random( 2 )
-                            #data[0, j] = r_data[0]
-                            #data[1, j] = r_data[1]
-                            
-                            pb.pulser_next_phase()
-
-                            if a is not None:
-                                if step != 1:
-                                    general.plot_1d(EXP_NAME, x_axis_plot, ( data[0], data[1] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j*STEP, 1)))
-                                else:
-                                    general.plot_1d(EXP_NAME, x_axis, ( data[0], data[1] ), xname = 'Point', xscale = '', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j, 1)))
-
-                            a, b = pb.digitizer_get_curve( POINTS, PHASES, current_scan = k, total_scan = SCANS, integral = True )
-                            if a is not None:
-                                data[0], data[1] = a, b
-
-                        pb.pulser_shift()
-                        pb.pulser_increment()
-
-                        conn.send( ('Status', int( 100 * (( k - 1 ) * POINTS + j + 1) / POINTS / SCANS)) )
-
-                        # check our polling data
-                        if self.command[0:2] == 'SC':
-                            SCANS = int( self.command[2:] )
-                            self.command = 'start'
-                        elif self.command == 'exit':
-                            data[0], data[1] = pb.digitizer_at_exit(integral = True)
-                            break
-                        
-                        if conn.poll() == True:
-                            self.command = conn.recv()
-
-                    pb.pulser_pulse_reset()
-                    k += 1
-
-                self.command = 'exit'
-
-            if self.command == 'exit':
-                tb = round( pb.digitizer_window(), 1)
-                pb.pulser_close()
-
-                if step != 1:
-                    general.plot_1d(EXP_NAME, x_axis_plot, ( data[0], data[1] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j*STEP, 1)))
+            def _scan_iter():
+                if script_test:
+                    yield from general.scans(SCANS)
                 else:
-                    general.plot_1d(EXP_NAME, x_axis, ( data[0], data[1] ), xname = 'Point', xscale = '', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j, 1)))
-
-                now = datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")
-                w = 30
-                
-                # Data saving
-                header = (
-                    f"{'Date:':<{w}} {now}\n"
-                    f"{'Experiment:':<{w}} Pulsed EPR Experiment\n"
-                    f"{'Field:':<{w}} {FIELD} G\n"
-                    f"{general.fmt(mw.mw_bridge_rotary_vane(), w)}\n"
-                    f"{general.fmt(mw.mw_bridge_att_prm(), w)}\n"
-                    f"{general.fmt(mw.mw_bridge_att2_prm(), w)}\n"
-                    f"{general.fmt(mw.mw_bridge_att1_prd(), w)}\n"
-                    f"{general.fmt(mw.mw_bridge_synthesizer(), w)}\n"
-                    f"{'Repetition Rate:':<{w}} {pb.pulser_repetition_rate()}\n"
-                    f"{'Number of Scans:':<{w}} {SCANS}\n"
-                    f"{'Averages:':<{w}} {AVERAGES}\n"
-                    f"{'Points:':<{w}} {POINTS}\n"
-                    f"{'Window:':<{w}} {tb} ns\n"
-                    f"{'Horizontal Resolution:':<{w}} {STEP} ns\n"
-                    f"{'Temperature:':<{w}} {ls335.tc_temperature('A')} K\n"
-                    f"{'Temperature Cernox:':<{w}} {ls335.tc_temperature('B')} K\n"
-                    f"{'-'*50}\n"
-                    f"Pulse List:\n{pb.pulser_pulse_list()}"
-                    f"{'-'*50}\n"
-                    f"Time (ns), I (A.U.), Q (A.U.)"
-                )
-
-                conn.send(('Open', ''))
-                
-                while True:
-                    if conn.poll():
-                        msg = conn.recv()
-                        if msg.startswith('FL'):
-                            file_data = msg[2:]
-                            break
-                    general.wait('200 ms')
-
-
-                file_handler.save_data(file_data, np.c_[x_axis, data[0], data[1]], header = header, mode = 'w')
-
-                conn.send( ('', f'Experiment {EXP_NAME} finished') )
-
-        except BaseException as e:
-            exc_info = f"{type(e)} \n{str(e)} \n{traceback.format_exc()}"
-            conn.send( ('Error', exc_info) )
-
-    def exp_test(self, conn, decimation, num_ave, scans, points,
-            win_left, exp_name, curve_name,
-            win_right, p1_exp, p2_exp, p3_exp, p4_exp, 
-            p5_exp, p6_exp, p7_exp, p8_exp, p9_exp, laser_flag, 
-            rep_rate, field, laser_num, q_switch_delay, x0, xd,
-            zero_order, first_order, sec_order, ph_cor):
-        
-        import traceback
-
-        sys.argv = ['', 'test']
-
-        try:
-            import time
-            import datetime
-            import numpy as np
-            import atomize.general_modules.general_functions as general
-            general.test_flag = 'test'
-            import atomize.device_modules.Insys_FPGA as pb_pro
-            import atomize.device_modules.Lakeshore_335 as ls
-            import atomize.device_modules.BH_15 as bh
-            import atomize.device_modules.Micran_X_band_MW_bridge_v2 as mwBridge
-            import atomize.general_modules.csv_opener_saver as openfile
-
-            file_handler = openfile.Saver_Opener()
-            pb = pb_pro.Insys_FPGA()
-            bh15 = bh.BH_15()
-            ls335 = ls.Lakeshore_335()
-            mw = mwBridge.Micran_X_band_MW_bridge_v2()
-
-            pb.win_left = win_left
-            pb.win_right = win_right
-
-            if xd == 0.0:
-                pulses2 = [p2_exp, p3_exp, p4_exp, p5_exp, p6_exp, p7_exp, p8_exp, p9_exp]
-                #p1_exp DETECTION
-                if p1_exp[4] != '0.0 ns':
-                    #delta_start
-                    step = round( float( p1_exp[4].split(' ')[0] ), 1)
-                    for p in pulses2:
-                        if p[5] != '0.0 ns':
-                            f_delay = self.round_to_closest( float(p[2].split(' ')[0]), 3.2)
-                            break
-                        else:
-                            f_delay = self.round_to_closest( float(p1_exp[1].split(' ')[0]), 3.2)
-                elif p1_exp[5] != '0.0 ns':
-                    #length_increment
-                    step = round( float( p1_exp[5].split(' ')[0] ), 1)
-                    f_delay = self.round_to_closest( float(p1_exp[2].split(' ')[0]), 3.2)
-                else:                
-                    for p in pulses2:
-                        if p[4] != '0.0 ns':
-                            step = round( float( p[4].split(' ')[0] ), 1)
-                            f_delay = self.round_to_closest( float(p[1].split(' ')[0]), 3.2)
-                            break
-                        else:
-                            #prevent no increment
-                            step = 1
-                            f_delay = 0
-            
-            else:
-                step = round( xd, 1 )
-                f_delay =  self.round_to_closest( x0, 3.2 )
-                        
-            if step == 1: 
-                pass
-                #conn.send( ('Message', 'No START or LENGTH increment; the time axis corresponds to the number of points in the experiment') )
-
-            POINTS = points
-            STEP = step
-            FIELD = field
-            AVERAGES = num_ave
-            SCANS = scans
-            PHASES = len(p1_exp[3])
-            DEC_COEF = decimation
-            process = 'None'
-            REP_RATE = f'{rep_rate} Hz'
-            EXP_NAME = exp_name
-            CURVE_NAME = curve_name
-
-            bh15.magnet_field( field )
-            general.wait('2000 ms')
-
-            if laser_flag != 1:
-                pulses = [
-                        p1_exp, p2_exp, p3_exp, p4_exp, 
-                        p5_exp, p6_exp, p7_exp, p8_exp, 
-                        p9_exp
-                        ]
-
-                for i, p in enumerate(pulses):
-                    length_str = p[2].split(' ')[0]
-                    if int(float(length_str)) != 0:
-                        pb.pulser_pulse(
-                            name=f'P{i}',
-                            channel=p[0],
-                            start=p[1],
-                            length=p[2],
-                            phase_list=p[3],
-                            delta_start=p[4],
-                            length_increment=p[5]
-                        )
-
-                pb.pulser_repetition_rate( REP_RATE )
-
-            else:
-
-                pulses = [
-                        p1_exp, p2_exp, p3_exp, p4_exp, 
-                        p5_exp, p6_exp, p7_exp, p8_exp, 
-                        p9_exp
-                        ]
-
-                for i, p in enumerate(pulses):
-                    if i != 1:
-                        start_val = float(p[1].split(' ')[0]) + q_switch_delay
-                        p[1] = f"{self.round_to_closest(start_val, 3.2)} ns"
-
-                    length_val = int(float(p[2].split(' ')[0]))
-                    if i == 1 and length_val == 0:
-                        raise ValueError(f"LASER pulse has zero length")
-
-                    if length_val != 0:
-                        kwargs = {
-                            'name': f'P{i}',
-                            'channel': p[0],
-                            'start': p[1],
-                            'length': p[2],
-                            'delta_start': p[4],
-                            'length_increment': p[5]
-
-                        }
-                        
-                        if i != 1:
-                            kwargs['phase_list'] = p[3]
-                            
-                        pb.pulser_pulse(**kwargs)
-                
-                if laser_num == 1:
-                    pb.pulser_repetition_rate( '9.9 Hz' )
-                elif laser_num == 2:
-                    pb.pulser_repetition_rate( REP_RATE )
-                else:
-                    pb.pulser_repetition_rate( REP_RATE )
-
-
-            pb.digitizer_decimation(DEC_COEF)
-            #points_window = pb.digitizer_window_points()
-
-            pb.pulser_open()
-            pb.digitizer_number_of_averages(AVERAGES)
-            data = np.zeros( ( 2, POINTS ) )
-            x_axis = f_delay + np.linspace(0, (POINTS - 1)*STEP, num = POINTS) 
-            x_axis_plot = x_axis / 1e9
-            a = 0
+                    k = 1
+                    while k <= SCANS:
+                        yield k
+                        k += 1
 
             while self.command != 'exit':
 
-                for k in general.scans(SCANS):
-                    
+                for k in _scan_iter():
                     sp = ls335.tc_setpoint()
                     ct = ls335.tc_temperature('B')
 
@@ -3586,11 +3088,10 @@ class Worker():
 
                     for j in range(POINTS):
                         for i in range(PHASES):
-                            
+
                             pb.pulser_next_phase()
 
-                            if j == 0:
-                                ##data = np.random.random( ( 2, POINTS ) )
+                            if (not script_test) or j == 0:
                                 if a is not None:
                                     if step != 1:
                                         general.plot_1d(EXP_NAME, x_axis_plot, ( data[0], data[1] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j*STEP, 1)))
@@ -3604,7 +3105,8 @@ class Worker():
                         pb.pulser_shift()
                         pb.pulser_increment()
 
-                        #conn.send( ('Status', int( 100 * (( k - 1 ) * POINTS + j + 1) / POINTS / SCANS)) )
+                        if not script_test:
+                            conn.send( ('Status', int( 100 * (( k - 1 ) * POINTS + j + 1) / POINTS / SCANS)) )
 
                         # check our polling data
                         if self.command[0:2] == 'SC':
@@ -3613,10 +3115,9 @@ class Worker():
                         elif self.command == 'exit':
                             data[0], data[1] = pb.digitizer_at_exit(integral = True)
                             break
-                        
+
                         if conn.poll() == True:
                             self.command = conn.recv()
-
 
                     pb.pulser_pulse_reset()
 
@@ -3633,7 +3134,7 @@ class Worker():
 
                 now = datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")
                 w = 30
-
+                
                 # Data saving
                 header = (
                     f"{'Date:':<{w}} {now}\n"
@@ -3658,20 +3159,23 @@ class Worker():
                     f"Time (ns), I (A.U.), Q (A.U.)"
                 )
 
-                #conn.send(('Open', ''))
-                
-                #while True:
-                #    if conn.poll():
-                #        msg = conn.recv()
-                #        if msg.startswith('FL'):
-                #            file_data = msg[2:]
-                #            break
-                #    general.wait('200 ms')
+                if script_test:
+                    conn.send( ('test', f'') )
+                else:
+                    conn.send(('Open', ''))
+
+                    while True:
+                        if conn.poll():
+                            msg = conn.recv()
+                            if msg.startswith('FL'):
+                                file_data = msg[2:]
+                                break
+                        general.wait('200 ms')
 
 
-                #file_handler.save_data(file_data, np.c_[x_axis, data[0], data[1]], header = header, mode = 'w')
+                    file_handler.save_data(file_data, np.c_[x_axis, data[0], data[1]], header = header, mode = 'w')
 
-                conn.send( ('test', f'') )
+                    conn.send( ('', f'Experiment {EXP_NAME} finished') )
 
         except BaseException as e:
             exc_info = f"{type(e)} \n{str(e)} \n{traceback.format_exc()}"
@@ -3679,17 +3183,23 @@ class Worker():
 
     def exp_field(self, conn, decimation, num_ave, scans, start_field,
             end_field, step_field, win_left, exp_name, curve_name,
-            win_right, p1_exp, p2_exp, p3_exp, p4_exp, 
-            p5_exp, p6_exp, p7_exp, p8_exp, p9_exp, laser_flag, 
+            win_right, p1_exp, p2_exp, p3_exp, p4_exp,
+            p5_exp, p6_exp, p7_exp, p8_exp, p9_exp, laser_flag,
             rep_rate, laser_num, q_switch_delay,
-            zero_order, first_order, sec_order, ph_cor):
+            zero_order, first_order, sec_order, ph_cor, script_test=False):
+
         import traceback
+
+        if script_test:
+            sys.argv = ['', 'test']
 
         try:
             import time
             import datetime
             import numpy as np
             import atomize.general_modules.general_functions as general
+            if script_test:
+                general.test_flag = 'test'
             import atomize.device_modules.Insys_FPGA as pb_pro
             import atomize.device_modules.Lakeshore_335 as ls
             import atomize.device_modules.BH_15 as bh
@@ -3730,7 +3240,9 @@ class Worker():
 
                 for i, p in enumerate(pulses):
                     length_str = p[2].split(' ')[0]
-                    
+                    if script_test and p[4] != '0.0 ns':
+                        raise ValueError("Please remove Start Increments for all pulses")
+
                     if int(float(length_str)) != 0:
                         pb.pulser_pulse(
                             name=f'P{i}',
@@ -3746,17 +3258,23 @@ class Worker():
             else:
 
                 pulses = [
-                        p1_exp, p2_exp, p3_exp, p4_exp, 
-                        p5_exp, p6_exp, p7_exp, p8_exp, 
+                        p1_exp, p2_exp, p3_exp, p4_exp,
+                        p5_exp, p6_exp, p7_exp, p8_exp,
                         p9_exp
                         ]
 
                 for i, p in enumerate(pulses):
+                    if script_test and p[4] != '0.0 ns':
+                        raise ValueError("Please remove Start Increments for all pulses")
+
                     if i != 1:
                         start_val = float(p[1].split(' ')[0]) + q_switch_delay
                         p[1] = f"{self.round_to_closest(start_val, 3.2)} ns"
 
                     length_val = int(float(p[2].split(' ')[0]))
+                    if script_test and i == 1 and length_val == 0:
+                        raise ValueError("LASER pulse has zero length")
+
                     if length_val != 0:
                         kwargs = {
                             'name': f'P{i}',
@@ -3767,10 +3285,10 @@ class Worker():
                             'length_increment': p[5]
 
                         }
-                        
+
                         if i != 1:
                             kwargs['phase_list'] = p[3]
-                            
+
                         pb.pulser_pulse(**kwargs)
 
                 if laser_num == 1:
@@ -3792,252 +3310,18 @@ class Worker():
             x_axis = np.linspace(START_FIELD, END_FIELD, num = POINTS)
             a = 0
 
-            while self.command != 'exit':
-                k = 1
-
-                while k <= SCANS:
-
-                    field = START_FIELD
-                    bh15.magnet_field(field)
-
-                    sp = ls335.tc_setpoint()
-                    ct = ls335.tc_temperature('B')
-
-                    if np.abs(sp - ct) > 0.8:
-                        general.wait('8000 ms')
-
-                    if self.command == 'exit':
-                        break
-
-                    for j in range(POINTS):
-
-                        bh15.magnet_field(field)#, calibration = 'True')
-
-                        for i in range(PHASES):
-                        
-                            #r_data = np.random.random( 2 )
-                            #data[0, j] = r_data[0]
-                            #data[1, j] = r_data[1]
-                            if a is not None:
-                                process = general.plot_1d(EXP_NAME, x_axis, ( data[0], data[1] ), xname = 'Field', xscale = 'G', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Field: ' + str(k) + ' / ' + str(field), pr = process)
-
-                            pb.pulser_next_phase()
-
-                            a, b = pb.digitizer_get_curve( POINTS, PHASES, current_scan = k, total_scan = SCANS, integral = True )
-                            if a is not None:
-                                data[0], data[1] = a, b
-
-                        field = round( (FIELD_STEP + field), 3 )
-
-                        pb.pulser_shift()
-
-                        conn.send( ('Status', int( 100 * (( k - 1 ) * POINTS + j + 1) / POINTS / SCANS)) )
-
-                        # check our polling data
-                        if self.command[0:2] == 'SC':
-                            SCANS = int( self.command[2:] )
-                            self.command = 'start'
-                        elif self.command == 'exit':
-                            data[0], data[1] = pb.digitizer_at_exit(integral = True)
-                            break
-                        
-                        if conn.poll() == True:
-                            self.command = conn.recv()
-
-                    pb.pulser_pulse_reset()
-
-                    k += 1
-                    
-                    general.wait('1000 ms')
-                    
-                    while field > START_FIELD:
-                        field -= 100
-                        bh15.magnet_field( field )
-                
-                self.command = 'exit'
-
-            if self.command == 'exit':
-                tb = round( pb.digitizer_window(), 1)
-                pb.pulser_close()
-
-                general.plot_1d(EXP_NAME, x_axis, ( data[0], data[1] ), xname = 'Field', xscale = 'G', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Field: ' + str(k) + ' / ' + str(field))
-
-                now = datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")
-                w = 30
-
-                # Data saving
-                header = (
-                    f"{'Date:':<{w}} {now}\n"
-                    f"{'Experiment:':<{w}} Pulsed EPR Experiment\n"
-                    f"{'Start Field:':<{w}} {START_FIELD} G\n"
-                    f"{'End Field:':<{w}} {END_FIELD} G\n"
-                    f"{'Field Step:':<{w}} {FIELD_STEP} G\n"
-                    f"{general.fmt(mw.mw_bridge_rotary_vane(), w)}\n"
-                    f"{general.fmt(mw.mw_bridge_att_prm(), w)}\n"
-                    f"{general.fmt(mw.mw_bridge_att2_prm(), w)}\n"
-                    f"{general.fmt(mw.mw_bridge_att1_prd(), w)}\n"
-                    f"{general.fmt(mw.mw_bridge_synthesizer(), w)}\n"
-                    f"{'Repetition Rate:':<{w}} {pb.pulser_repetition_rate()}\n"
-                    f"{'Number of Scans:':<{w}} {SCANS}\n"
-                    f"{'Averages:':<{w}} {AVERAGES}\n"
-                    f"{'Window:':<{w}} {tb} ns\n"
-                    f"{'Temperature:':<{w}} {ls335.tc_temperature('A')} K\n"
-                    f"{'Temperature Cernox:':<{w}} {ls335.tc_temperature('B')} K\n"
-                    f"{'-'*50}\n"
-                    f"Pulse List:\n{pb.pulser_pulse_list()}"
-                    f"{'-'*50}\n"
-                    f"Field (G), I (A.U.), Q (A.U.)"
-                )
-
-                conn.send(('Open', ''))
-                
-                while True:
-                    if conn.poll():
-                        msg = conn.recv()
-                        if msg.startswith('FL'):
-                            file_data = msg[2:]
-                            break
-                    general.wait('200 ms')
-
-
-                file_handler.save_data(file_data, np.c_[x_axis, data[0], data[1]], header = header, mode = 'w')
-
-                conn.send( ('', f'Experiment {EXP_NAME} finished') )
-
-        except BaseException as e:
-            exc_info = f"{type(e)} \n{str(e)} \n{traceback.format_exc()}"
-            conn.send( ('Error', exc_info) )
-
-    def exp_field_test(self, conn, decimation, num_ave, scans, start_field,
-            end_field, step_field, win_left, exp_name, curve_name,
-            win_right, p1_exp, p2_exp, p3_exp, p4_exp, 
-            p5_exp, p6_exp, p7_exp, p8_exp, p9_exp, laser_flag, 
-            rep_rate, laser_num, q_switch_delay, 
-            zero_order, first_order, sec_order, ph_cor):
-
-        import traceback
-
-        sys.argv = ['', 'test']
-
-        try:
-            import time
-            import datetime
-            import numpy as np
-            import atomize.general_modules.general_functions as general
-            general.test_flag = 'test'
-            import atomize.device_modules.Insys_FPGA as pb_pro
-            import atomize.device_modules.Lakeshore_335 as ls
-            import atomize.device_modules.BH_15 as bh
-            import atomize.device_modules.Micran_X_band_MW_bridge_v2 as mwBridge
-            import atomize.general_modules.csv_opener_saver as openfile
-
-            file_handler = openfile.Saver_Opener()
-            pb = pb_pro.Insys_FPGA()
-            bh15 = bh.BH_15()
-            ls335 = ls.Lakeshore_335()
-            mw = mwBridge.Micran_X_band_MW_bridge_v2()
-
-            pb.win_left = win_left
-            pb.win_right = win_right
-
-            START_FIELD = start_field
-            END_FIELD = end_field
-            FIELD_STEP = step_field
-            
-            AVERAGES = num_ave
-            SCANS = scans
-            PHASES = len(p1_exp[3])
-            DEC_COEF = decimation
-            process = 'None'
-            REP_RATE = f'{rep_rate} Hz'
-            EXP_NAME = exp_name
-            CURVE_NAME = curve_name
-
-            bh15.magnet_field( start_field )
-            general.wait('2000 ms')
-
-            if laser_flag != 1:
-                pulses = [
-                        p1_exp, p2_exp, p3_exp, p4_exp, 
-                        p5_exp, p6_exp, p7_exp, p8_exp, 
-                        p9_exp
-                        ]
-
-                for i, p in enumerate(pulses):
-                    length_str = p[2].split(' ')[0]
-                    if p[4] != '0.0 ns':
-                        raise ValueError(f"Please remove Start Increments for all pulses")
-
-                    if int(float(length_str)) != 0:
-                        pb.pulser_pulse(
-                            name=f'P{i}',
-                            channel=p[0],
-                            start=p[1],
-                            length=p[2],
-                            phase_list=p[3],
-                            delta_start=p[4],
-                            length_increment=p[5]
-                        )
-                pb.pulser_repetition_rate( REP_RATE )
-
-            else:
-
-                pulses = [
-                        p1_exp, p2_exp, p3_exp, p4_exp, 
-                        p5_exp, p6_exp, p7_exp, p8_exp, 
-                        p9_exp
-                        ]
-
-                for i, p in enumerate(pulses):
-                    if p[4] != '0.0 ns':
-                        raise ValueError(f"Please remove Start Increments for all pulses")
-
-                    if i != 1:
-                        start_val = float(p[1].split(' ')[0]) + q_switch_delay
-                        p[1] = f"{self.round_to_closest(start_val, 3.2)} ns"
-
-                    length_val = int(float(p[2].split(' ')[0]))
-                    if i == 1 and length_val == 0:
-                        raise ValueError(f"LASER pulse has zero length")
-
-                    if length_val != 0:
-                        kwargs = {
-                            'name': f'P{i}',
-                            'channel': p[0],
-                            'start': p[1],
-                            'length': p[2],
-                            'delta_start': p[4],
-                            'length_increment': p[5]
-
-                        }
-                        
-                        if i != 1:
-                            kwargs['phase_list'] = p[3]
-                            
-                        pb.pulser_pulse(**kwargs)
-
-                if laser_num == 1:
-                    pb.pulser_repetition_rate( '9.9 Hz' )
-                elif laser_num == 2:
-                    pb.pulser_repetition_rate( REP_RATE )
+            def _scan_iter():
+                if script_test:
+                    yield from general.scans(SCANS)
                 else:
-                    pb.pulser_repetition_rate( REP_RATE )
-
-
-            pb.digitizer_decimation(DEC_COEF)
-            #points_window = pb.digitizer_window_points()
-
-            pb.pulser_open()
-            pb.digitizer_number_of_averages(AVERAGES)
-
-            POINTS = int( (END_FIELD - START_FIELD) / FIELD_STEP ) + 1
-            data = np.zeros( ( 2, POINTS ) )
-            x_axis = np.linspace(START_FIELD, END_FIELD, num = POINTS)
-            a = 0
+                    k = 1
+                    while k <= SCANS:
+                        yield k
+                        k += 1
 
             while self.command != 'exit':
 
-                for k in general.scans(SCANS):
+                for k in _scan_iter():
 
                     field = START_FIELD
                     bh15.magnet_field(field)
@@ -4057,15 +3341,13 @@ class Worker():
 
                         for i in range(PHASES):
 
-                            #speed-up tests
-                            if j == 0:
-                                ##data = np.random.random( ( 2, POINTS ) )
+                            if (not script_test) or j == 0:
                                 if a is not None:
                                     process = general.plot_1d(EXP_NAME, x_axis, ( data[0], data[1] ), xname = 'Field', xscale = 'G', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Field: ' + str(k) + ' / ' + str(field), pr = process)
 
                             pb.pulser_next_phase()
 
-                            if j == 0:
+                            if (not script_test) or j == 0:
                                 a, b = pb.digitizer_get_curve( POINTS, PHASES, current_scan = k, total_scan = SCANS, integral = True )
                                 if a is not None:
                                     data[0], data[1] = a, b
@@ -4074,7 +3356,8 @@ class Worker():
 
                         pb.pulser_shift()
 
-                        #conn.send( ('Status', int( 100 * (( k - 1 ) * POINTS + j + 1) / POINTS / SCANS)) )
+                        if not script_test:
+                            conn.send( ('Status', int( 100 * (( k - 1 ) * POINTS + j + 1) / POINTS / SCANS)) )
 
                         # check our polling data
                         if self.command[0:2] == 'SC':
@@ -4083,17 +3366,18 @@ class Worker():
                         elif self.command == 'exit':
                             data[0], data[1] = pb.digitizer_at_exit(integral = True)
                             break
-                        
+
                         if conn.poll() == True:
                             self.command = conn.recv()
 
                     pb.pulser_pulse_reset()
+
                     general.wait('1000 ms')
 
                     while field > START_FIELD:
                         field -= 100
                         bh15.magnet_field( field )
-                
+
                 self.command = 'exit'
 
             if self.command == 'exit':
@@ -4129,20 +3413,23 @@ class Worker():
                     f"Field (G), I (A.U.), Q (A.U.)"
                 )
 
-                #conn.send(('Open', ''))
-                
-                #while True:
-                #    if conn.poll():
-                #        msg = conn.recv()
-                #        if msg.startswith('FL'):
-                #            file_data = msg[2:]
-                #            break
-                #    general.wait('200 ms')
+                if script_test:
+                    conn.send( ('test', f'') )
+                else:
+                    conn.send(('Open', ''))
+
+                    while True:
+                        if conn.poll():
+                            msg = conn.recv()
+                            if msg.startswith('FL'):
+                                file_data = msg[2:]
+                                break
+                        general.wait('200 ms')
 
 
-                #file_handler.save_data(file_data, np.c_[x_axis, data[0], data[1]], header = header, mode = 'w')
+                    file_handler.save_data(file_data, np.c_[x_axis, data[0], data[1]], header = header, mode = 'w')
 
-                conn.send( ('test', f'') )
+                    conn.send( ('', f'Experiment {EXP_NAME} finished') )
 
         except BaseException as e:
             exc_info = f"{type(e)} \n{str(e)} \n{traceback.format_exc()}"
@@ -4150,18 +3437,23 @@ class Worker():
 
     def exp_log(self, conn, decimation, num_ave, scans, points,
             log_start, log_end, win_left, exp_name, curve_name,
-            win_right, p1_exp, p2_exp, p3_exp, p4_exp, 
-            p5_exp, p6_exp, p7_exp, p8_exp, p9_exp, laser_flag, 
+            win_right, p1_exp, p2_exp, p3_exp, p4_exp,
+            p5_exp, p6_exp, p7_exp, p8_exp, p9_exp, laser_flag,
             rep_rate, field, laser_num, q_switch_delay, x0, xd,
-            zero_order, first_order, sec_order, ph_cor):
+            zero_order, first_order, sec_order, ph_cor, script_test=False):
 
         import traceback
+
+        if script_test:
+            sys.argv = ['', 'test']
 
         try:
             import time
             import datetime
             import numpy as np
             import atomize.general_modules.general_functions as general
+            if script_test:
+                general.test_flag = 'test'
             import atomize.device_modules.Insys_FPGA as pb_pro
             import atomize.device_modules.Lakeshore_335 as ls
             import atomize.device_modules.BH_15 as bh
@@ -4265,6 +3557,9 @@ class Worker():
                         p[1] = f"{self.round_to_closest(start_val, 3.2)} ns"
 
                     length_val = int(float(p[2].split(' ')[0]))
+                    if script_test and i == 1 and length_val == 0:
+                        raise ValueError("LASER pulse has zero length")
+
                     if length_val != 0:
                         name_list.append(f'P{i}')
                         kwargs = {
@@ -4274,10 +3569,10 @@ class Worker():
                             'length': p[2],
                             'delta_start': f"{self.round_to_closest( nonlinear_diff[0] * rel_shift[i], 3.2 )} ns"
                         }
-                        
+
                         if i != 1:
                             kwargs['phase_list'] = p[3]
-                            
+
                         pb.pulser_pulse(**kwargs)
 
                 if laser_num == 1:
@@ -4297,10 +3592,18 @@ class Worker():
             x_axis_plot = x_axis / 1e9
             a = 0
 
+            def _scan_iter():
+                if script_test:
+                    yield from general.scans(SCANS)
+                else:
+                    k = 1
+                    while k <= SCANS:
+                        yield k
+                        k += 1
+
             while self.command != 'exit':
 
-                k = 1
-                while k <= SCANS:
+                for k in _scan_iter():
 
                     sp = ls335.tc_setpoint()
                     ct = ls335.tc_temperature('B')
@@ -4314,279 +3617,10 @@ class Worker():
                     for j in range(POINTS):
 
                         for i in range(PHASES):
-                            
-                            #r_data = np.random.random( 2 )
-                            #data[0, j] = r_data[0]
-                            #data[1, j] = r_data[1]
+
                             pb.pulser_next_phase()
 
-                            if a is not None:
-                                process = general.plot_1d(EXP_NAME, x_axis_plot, ( data[0], data[1] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Point: ' + str(k) + ' / ' + str(j), pr = process)
-
-                            a, b = pb.digitizer_get_curve( POINTS, PHASES, current_scan = k, total_scan = SCANS, integral = True )
-                            if a is not None:
-                                data[0], data[1] = a, b
-
-                        # nonlinear_time_shift is calculated from the initial position of the pulses
-                        if j > 0:
-                            new_delta_start = nonlinear_diff[j]
-
-                            delta_starts = [f"{self.round_to_closest(x * new_delta_start, 3.2)} ns" for x in rel_shift]
-                            pb.pulser_redefine_delta_start(name = name_list, delta_start = delta_starts )
-
-                        pb.pulser_shift()
-
-                        conn.send( ('Status', int( 100 * (( k - 1 ) * POINTS + j + 1) / POINTS / SCANS)) )
-
-                        # check our polling data
-                        if self.command[0:2] == 'SC':
-                            SCANS = int( self.command[2:] )
-                            self.command = 'start'
-                        elif self.command == 'exit':
-                            data[0], data[1] = pb.digitizer_at_exit(integral = True)
-                            break
-                        
-                        if conn.poll() == True:
-                            self.command = conn.recv()
-
-                    pb.pulser_pulse_reset()
-                    k += 1
-
-                self.command = 'exit'
-
-            if self.command == 'exit':
-                tb = round( pb.digitizer_window(), 1)
-                pb.pulser_close()
-
-                general.plot_1d(EXP_NAME, x_axis_plot, ( data[0], data[1] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Point: ' + str(k) + ' / ' + str(j))
-
-                now = datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")
-                w = 30
-
-                # Data saving
-                header = (
-                    f"{'Date:':<{w}} {now}\n"
-                    f"{'Experiment:':<{w}} Pulsed EPR Log Experiment\n"
-                    f"{'Field:':<{w}} {FIELD} G\n"
-                    f"{general.fmt(mw.mw_bridge_rotary_vane(), w)}\n"
-                    f"{general.fmt(mw.mw_bridge_att_prm(), w)}\n"
-                    f"{general.fmt(mw.mw_bridge_att2_prm(), w)}\n"
-                    f"{general.fmt(mw.mw_bridge_att1_prd(), w)}\n"
-                    f"{general.fmt(mw.mw_bridge_synthesizer(), w)}\n"
-                    f"{'Repetition Rate:':<{w}} {pb.pulser_repetition_rate()}\n"
-                    f"{'Number of Scans:':<{w}} {SCANS}\n"
-                    f"{'Averages:':<{w}} {AVERAGES}\n"
-                    f"{'Points:':<{w}} {POINTS}\n"
-                    f"{'Window:':<{w}} {tb} ns\n"
-                    f"{'Lg(X0/ns):':<{w}} {T_start}\n"
-                    f"{'Lg(ΔX/ns):':<{w}} {T_end}\n"
-                    f"{'Temperature:':<{w}} {ls335.tc_temperature('A')} K\n"
-                    f"{'Temperature Cernox:':<{w}} {ls335.tc_temperature('B')} K\n"
-                    f"{'-'*50}\n"
-                    f"Pulse List:\n{pb.pulser_pulse_list()}"
-                    f"{'-'*50}\n"
-                    f"Time (ns), I (A.U.), Q (A.U.)"
-                )
-
-                conn.send(('Open', ''))
-                
-                while True:
-                    if conn.poll():
-                        msg = conn.recv()
-                        if msg.startswith('FL'):
-                            file_data = msg[2:]
-                            break
-                    general.wait('200 ms')
-
-                file_handler.save_data(file_data, np.c_[x_axis, data[0], data[1]], header = header, mode = 'w')
-
-                conn.send( ('', f'Experiment {EXP_NAME} finished') )
-
-        except BaseException as e:
-            exc_info = f"{type(e)} \n{str(e)} \n{traceback.format_exc()}"
-            conn.send( ('Error', exc_info) )
-
-    def exp_log_test(self, conn, decimation, num_ave, scans, points,
-            log_start, log_end, win_left, exp_name, curve_name,
-            win_right, p1_exp, p2_exp, p3_exp, p4_exp, 
-            p5_exp, p6_exp, p7_exp, p8_exp, p9_exp, laser_flag, 
-            rep_rate, field, laser_num, q_switch_delay, x0, xd, 
-            zero_order, first_order, sec_order, ph_cor):
-        import traceback
-
-        sys.argv = ['', 'test']
-
-        try:
-            import time
-            import datetime
-            import numpy as np
-            import atomize.general_modules.general_functions as general
-            general.test_flag = 'test'
-            import atomize.device_modules.Insys_FPGA as pb_pro
-            import atomize.device_modules.Lakeshore_335 as ls
-            import atomize.device_modules.BH_15 as bh
-            import atomize.device_modules.Micran_X_band_MW_bridge_v2 as mwBridge
-            import atomize.general_modules.csv_opener_saver as openfile
-
-            ### Nonlinear axis
-            POINTS = points
-            T_start = log_start
-            T_end = log_end
-
-            nonlinear_time_raw = 10 ** np.linspace( T_start, T_end, POINTS )
-            nonlinear_time = np.unique( general.numpy_round( nonlinear_time_raw, 3.2 ) )
-            ##
-            nonlinear_diff = np.append(np.diff(nonlinear_time), 0)
-            original_time = np.concatenate(([0], nonlinear_diff)).cumsum()
-            POINTS = len( nonlinear_time )
-            ##
-            x_axis = original_time[:-1]
-
-            file_handler = openfile.Saver_Opener()
-            pb = pb_pro.Insys_FPGA()
-            bh15 = bh.BH_15()
-            ls335 = ls.Lakeshore_335()
-            mw = mwBridge.Micran_X_band_MW_bridge_v2()
-
-            pb.win_left = win_left
-            pb.win_right = win_right
-
-            FIELD = field
-            AVERAGES = num_ave
-            SCANS = scans
-            PHASES = len(p1_exp[3])
-            DEC_COEF = decimation
-            process = 'None'
-            REP_RATE = f'{rep_rate} Hz'
-            EXP_NAME = exp_name
-            CURVE_NAME = curve_name
-
-            bh15.magnet_field( field )
-            general.wait('2000 ms')
-
-            #### Creating different delays for different pulses
-            name_list = []
-            rel_shift = np.array( [] )
-            pulses = [
-                    p1_exp, p2_exp, p3_exp, p4_exp, 
-                    p5_exp, p6_exp, p7_exp, p8_exp, 
-                    p9_exp
-                    ]
-
-            for p in pulses:
-                length_str = p[2].split(' ')[0]
-                if int(float(length_str)) != 0:
-                    rel_shift = np.append(rel_shift, float(p[4].split(' ')[0]) ) 
-            
-            # do not take into account the same shift
-            unique_arr = np.unique(rel_shift)
-            minim = np.min(unique_arr)
-            rel_shift -= minim
-
-            unique_arr = np.unique(rel_shift)
-            if len(unique_arr) > 1:
-                next_after_min = np.partition(unique_arr, 1)[1]
-            else:
-                next_after_min = 1
-
-            rel_shift = ( (rel_shift ) / next_after_min).astype(int)
-
-            if rel_shift[0] != 0.0:
-                ##
-                x_axis = x_axis * rel_shift[0] + self.round_to_closest( float(p1_exp[1].split(" ")[0]) , 3.2)
-            else:
-                indices = np.where(rel_shift[1:] != 0)[0] + 1
-                if indices.size > 0:
-                    ##
-                    x_axis = x_axis * rel_shift[indices[0]] + self.round_to_closest( float(pulses[indices[0]][1].split(" ")[0]) , 3.2)
-                else:
-                    ## this is for start increments: [3.2 3.2 3.2]
-                    raise ValueError(f"Pulses do not have Start Increments")
-            ####
-
-            if laser_flag != 1:
-
-                for i, p in enumerate(pulses):
-                    length_str = p[2].split(' ')[0]
-                    if int(float(length_str)) != 0:
-                        name_list.append(f'P{i}')
-                        pb.pulser_pulse(
-                            name=f'P{i}',
-                            channel=p[0],
-                            start=p[1],
-                            length=p[2],
-                            phase_list=p[3],
-                            ##
-                            delta_start=f"{self.round_to_closest( nonlinear_diff[0] * rel_shift[i], 3.2 )} ns"
-                        )
-                pb.pulser_repetition_rate( REP_RATE )
-
-            else:
-
-                for i, p in enumerate(pulses):
-                    if i != 1:
-                        start_val = float(p[1].split(' ')[0]) + q_switch_delay
-                        p[1] = f"{self.round_to_closest(start_val, 3.2)} ns"
-
-                    length_val = int(float(p[2].split(' ')[0]))
-                    if i == 1 and length_val == 0:
-                        raise ValueError(f"LASER pulse has zero length")
-
-                    if length_val != 0:
-                        name_list.append(f'P{i}')
-                        kwargs = {
-                            'name': f'P{i}',
-                            'channel': p[0],
-                            'start': p[1],
-                            'length': p[2],
-                            ##
-                            'delta_start': f"{self.round_to_closest( nonlinear_diff[0] * rel_shift[i], 3.2 )} ns"
-                        }
-                        
-                        if i != 1:
-                            kwargs['phase_list'] = p[3]
-                            
-                        pb.pulser_pulse(**kwargs)
-
-                if laser_num == 1:
-                    pb.pulser_repetition_rate( '9.9 Hz' )
-                elif laser_num == 2:
-                    pb.pulser_repetition_rate( REP_RATE )
-                else:
-                    pb.pulser_repetition_rate( REP_RATE )
-
-            pb.digitizer_decimation(DEC_COEF)
-            #points_window = pb.digitizer_window_points()
-
-            pb.pulser_open()
-            pb.digitizer_number_of_averages(AVERAGES)
-            data = np.zeros( ( 2, POINTS ) )
-            x_axis_plot = x_axis / 1e9
-            a = 0
-            ##general.message_test(f'X: {x_axis}')
-            
-            while self.command != 'exit':
-
-                for k in general.scans(SCANS):
-
-                    sp = ls335.tc_setpoint()
-                    ct = ls335.tc_temperature('B')
-
-                    if np.abs(sp - ct) > 0.8:
-                        general.wait('8000 ms')
-                    
-                    if self.command == 'exit':
-                        break
-
-                    for j in range(POINTS):
-                        ##general.message_test(pb.pulse_array_pulser)
-
-                        for i in range(PHASES):
-                            
-                            ##data = np.random.random( ( 2, POINTS ) )
-                            pb.pulser_next_phase()
-
-                            if j == 0:
+                            if (not script_test) or j == 0:
                                 if a is not None:
                                     process = general.plot_1d(EXP_NAME, x_axis_plot, ( data[0], data[1] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Point: ' + str(k) + ' / ' + str(j), pr = process)
 
@@ -4595,7 +3629,6 @@ class Worker():
                                     data[0], data[1] = a, b
 
                         # nonlinear_time_shift is calculated from the initial position of the pulses
-                        ##
                         if j > 0:
                             new_delta_start = nonlinear_diff[j]
 
@@ -4603,7 +3636,9 @@ class Worker():
                             pb.pulser_redefine_delta_start(name = name_list, delta_start = delta_starts )
 
                         pb.pulser_shift()
-                        #conn.send( ('Status', int( 100 * (( k - 1 ) * POINTS + j + 1) / POINTS / SCANS)) )
+
+                        if not script_test:
+                            conn.send( ('Status', int( 100 * (( k - 1 ) * POINTS + j + 1) / POINTS / SCANS)) )
 
                         # check our polling data
                         if self.command[0:2] == 'SC':
@@ -4612,10 +3647,10 @@ class Worker():
                         elif self.command == 'exit':
                             data[0], data[1] = pb.digitizer_at_exit(integral = True)
                             break
-                        
+
                         if conn.poll() == True:
                             self.command = conn.recv()
-                    
+
                     pb.pulser_pulse_reset()
 
                 self.command = 'exit'
@@ -4654,25 +3689,27 @@ class Worker():
                     f"Time (ns), I (A.U.), Q (A.U.)"
                 )
 
-                #conn.send(('Open', ''))
-                
-                #while True:
-                #    if conn.poll():
-                #        msg = conn.recv()
-                #        if msg.startswith('FL'):
-                #            file_data = msg[2:]
-                #            break
-                #    general.wait('200 ms')
+                if script_test:
+                    conn.send( ('test', f'') )
+                else:
+                    conn.send(('Open', ''))
 
+                    while True:
+                        if conn.poll():
+                            msg = conn.recv()
+                            if msg.startswith('FL'):
+                                file_data = msg[2:]
+                                break
+                        general.wait('200 ms')
 
-                #file_handler.save_data(file_data, np.c_[x_axis, data[0], data[1]], header = header, mode = 'w')
+                    file_handler.save_data(file_data, np.c_[x_axis, data[0], data[1]], header = header, mode = 'w')
 
-                conn.send( ('test', f'') )
+                    conn.send( ('', f'Experiment {EXP_NAME} finished') )
 
         except BaseException as e:
             exc_info = f"{type(e)} \n{str(e)} \n{traceback.format_exc()}"
             conn.send( ('Error', exc_info) )
-    
+
 def main():
     """
     A function to run the main window of the programm.
