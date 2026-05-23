@@ -15,6 +15,7 @@ from PyQt6.QtCore import Qt, QTimer
 import atomize.general_modules.general_functions as general
 import atomize.general_modules.csv_opener_saver as openfile
 import atomize.control_center.field_param as field_param
+from atomize.control_center.time_log_spinbox import TimeLogSpinBox
 
 class MainWindow(QMainWindow):
     """
@@ -774,7 +775,7 @@ class MainWindow(QMainWindow):
         self.tab_pulse.tabBar().setTabTextColor(1, QColor(193, 202, 227))
 
         # ---- Labels & Inputs ----
-        labels = [("Acquisitions", "label_17"), ("Integration Left", "label_18"), ("Integration Right", "label_19"), ("Decimation", "label_20"), ("Points", "label_e1"), ("Scans", "label_e2"), ("Experiment Name", "label_e3"), ("Curve Name", "label_e4"), ("Start Field", "label_f1"), ("End Field", "label_f2"), ("Field Step", "label_f3"), ("Sweep Type", "label_c1"), ('lg(X<sub style="font-size: 12pt;">0</sub> / 1 ns)', "label_e5"), ('lg(X<sub style="font-size: 12pt;">END</sub> / 1 ns)', "label_e6"), 
+        labels = [("Acquisitions", "label_17"), ("Integration Left", "label_18"), ("Integration Right", "label_19"), ("Decimation", "label_20"), ("Points", "label_e1"), ("Scans", "label_e2"), ("Experiment Name", "label_e3"), ("Curve Name", "label_e4"), ("Start Field", "label_f1"), ("End Field", "label_f2"), ("Field Step", "label_f3"), ("Sweep Type", "label_c1"), ("Start Log Time", "label_e5"), ("End Log Time", "label_e6"),
             ('X<sub style="font-size: 12pt;">0</sub>', "label_e7"), ("ΔX ", "label_e8")]
 
         for name, attr_name in labels:
@@ -793,8 +794,6 @@ class MainWindow(QMainWindow):
                       (QDoubleSpinBox, "box_st_field", "cur_start_field", self.st_field, 0, 15000, 3000, 1, 1, " G"),
                       (QDoubleSpinBox, "box_end_field", "cur_end_field", self.end_field, 0, 15000, 4000, 1, 1, " G"),
                       (QDoubleSpinBox, "box_step_field", "cur_step", self.step_field, 0.01, 50, 0.5, 0.1, 2, " G"),
-                      (QDoubleSpinBox, "Log_start", "cur_log_start", self.log_start, 0, 10, 1, 0.01, 3, ""),
-                      (QDoubleSpinBox, "Log_end", "cur_log_end", self.log_end, 0, 10, 7, 0.01, 3, ""),
                       (QDoubleSpinBox, "X0", "cur_x0", self.x0, 0, 100e6, 0, 3.2, 1, " ns"),
                       (QDoubleSpinBox, "XDelta", "cur_xdelta", self.xdelta, 0, 100e6, 0, 3.2, 1, " ns")
                         ]
@@ -831,6 +830,21 @@ class MainWindow(QMainWindow):
                     setattr(self, par_name, int( float( spin_box.value() ) / self.time_per_point ))
                 else:
                     setattr(self, par_name, float(spin_box.value()))
+
+        # ---- Log Time spinboxes ----
+        # UI shows plain time + unit (ns/μs/ms/s); self.cur_log_start /
+        # self.cur_log_end stay as log10(time_in_ns) so the worker (exp_log)
+        # and preset files don't change.
+        for attr_name, par_name, func, log_default in [
+            ("Log_start", "cur_log_start", self.log_start, 1.0),
+            ("Log_end",   "cur_log_end",   self.log_end,   7.0),
+        ]:
+            tspin = TimeLogSpinBox()
+            tspin.setValue(log_default)
+            tspin.valueChanged.connect(func)
+            tspin.setFixedSize(130, 26)
+            setattr(self, attr_name, tspin)
+            setattr(self, par_name, float(tspin.value()))
 
         # ---- Text Edits ----
         text_edit = [("EXP", "text_edit_exp_name", "cur_exp_name", self.exp_name),
@@ -3535,6 +3549,11 @@ class Worker():
 
             if laser_flag != 1:
 
+                # rel_shift was built with one entry per non-zero pulse, so
+                # we can't index it by the pulses-list position; track the
+                # actual rel_shift slot with a counter that mirrors the
+                # build order.
+                rs_idx = 0
                 for i, p in enumerate(pulses):
                     length_str = p[2].split(' ')[0]
                     if int(float(length_str)) != 0:
@@ -3545,12 +3564,14 @@ class Worker():
                             start=p[1],
                             length=p[2],
                             phase_list=p[3],
-                            delta_start=f"{self.round_to_closest( nonlinear_diff[0] * rel_shift[i], 3.2 )} ns"
+                            delta_start=f"{self.round_to_closest( nonlinear_diff[0] * rel_shift[rs_idx], 3.2 )} ns"
                         )
+                        rs_idx += 1
                 pb.pulser_repetition_rate( REP_RATE )
 
             else:
 
+                rs_idx = 0
                 for i, p in enumerate(pulses):
                     if i != 1:
                         start_val = float(p[1].split(' ')[0]) + q_switch_delay
@@ -3567,13 +3588,14 @@ class Worker():
                             'channel': p[0],
                             'start': p[1],
                             'length': p[2],
-                            'delta_start': f"{self.round_to_closest( nonlinear_diff[0] * rel_shift[i], 3.2 )} ns"
+                            'delta_start': f"{self.round_to_closest( nonlinear_diff[0] * rel_shift[rs_idx], 3.2 )} ns"
                         }
 
                         if i != 1:
                             kwargs['phase_list'] = p[3]
 
                         pb.pulser_pulse(**kwargs)
+                        rs_idx += 1
 
                 if laser_num == 1:
                     pb.pulser_repetition_rate( '9.9 Hz' )

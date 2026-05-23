@@ -14,6 +14,7 @@ from PyQt6.QtCore import Qt, QTimer
 import atomize.general_modules.general_functions as general
 import atomize.general_modules.csv_opener_saver as openfile
 import atomize.control_center.field_param as field_param
+from atomize.control_center.time_log_spinbox import TimeLogSpinBox
 
 class MainWindow(QMainWindow):
     """
@@ -859,7 +860,7 @@ class MainWindow(QMainWindow):
         self.tab_pulse.tabBar().setTabTextColor(1, QColor(193, 202, 227))
 
         # ---- Labels & Inputs ----
-        labels = [("Acquisitions", "label_17"), ("Integration Left", "label_18"), ("Integration Right", "label_19"), ("Decimation", "label_20"), ("Points", "label_e1"), ("Scans", "label_e2"), ("Experiment Name", "label_e3"), ("Curve Name", "label_e4"), ("Start Field", "label_f1"), ("End Field", "label_f2"), ("Field Step", "label_f3"), ("Sweep Type", "label_c1"), ('lg(X<sub style="font-size: 12pt;">0</sub> / 1 ns)', "label_e5"), ('lg(X<sub style="font-size: 12pt;">END</sub> / 1 ns)', "label_e6"), 
+        labels = [("Acquisitions", "label_17"), ("Integration Left", "label_18"), ("Integration Right", "label_19"), ("Decimation", "label_20"), ("Points", "label_e1"), ("Scans", "label_e2"), ("Experiment Name", "label_e3"), ("Curve Name", "label_e4"), ("Start Field", "label_f1"), ("End Field", "label_f2"), ("Field Step", "label_f3"), ("Sweep Type", "label_c1"), ("Start Log Time", "label_e5"), ("End Log Time", "label_e6"),
             ('X<sub style="font-size: 12pt;">0</sub>', "label_e7"), ("ΔX ", "label_e8"),
             ("Amplitude Step", "label_f4")]
 
@@ -879,8 +880,6 @@ class MainWindow(QMainWindow):
                       (QDoubleSpinBox, "box_st_field", "cur_start_field", self.st_field, 0, 15000, 3000, 1, 1, " G"),
                       (QDoubleSpinBox, "box_end_field", "cur_end_field", self.end_field, 0, 15000, 4000, 1, 1, " G"),
                       (QDoubleSpinBox, "box_step_field", "cur_step", self.step_field, 0.01, 50, 0.5, 0.1, 2, " G"),
-                      (QDoubleSpinBox, "Log_start", "cur_log_start", self.log_start, 0, 10, 1, 0.01, 3, ""),
-                      (QDoubleSpinBox, "Log_end", "cur_log_end", self.log_end, 0, 10, 7, 0.01, 3, ""),
                       (QDoubleSpinBox, "X0", "cur_x0", self.x0, 0, 100e6, 0, 3.2, 1, " ns"),
                       (QDoubleSpinBox, "XDelta", "cur_xdelta", self.xdelta, 0, 100e6, 0, 3.2, 1, " ns"),
                       (QDoubleSpinBox, "box_step_ampl", "cur_ampl_step", self.step_ampl, 0.1, 5, 1, 0.1, 1, " %")
@@ -918,6 +917,21 @@ class MainWindow(QMainWindow):
                     setattr(self, par_name, int( float( spin_box.value() ) / self.time_per_point ))
                 else:
                     setattr(self, par_name, float(spin_box.value()))
+
+        # ---- Log Time spinboxes ----
+        # UI shows plain time + unit (ns/us/ms/s); self.cur_log_start /
+        # self.cur_log_end stay as log10(time_in_ns) so the worker (exp_log)
+        # and preset files don't change.
+        for attr_name, par_name, func, log_default in [
+            ("Log_start", "cur_log_start", self.log_start, 1.0),
+            ("Log_end",   "cur_log_end",   self.log_end,   7.0),
+        ]:
+            tspin = TimeLogSpinBox()
+            tspin.setValue(log_default)
+            tspin.valueChanged.connect(func)
+            tspin.setFixedSize(130, 26)
+            setattr(self, attr_name, tspin)
+            setattr(self, par_name, float(tspin.value()))
 
         # ---- Text Edits ----
         text_edit = [("E_AWG", "text_edit_exp_name", "cur_exp_name", self.exp_name),
@@ -4784,16 +4798,22 @@ class Worker():
 
                 trigger_pulses = [p2_exp, p3_exp, p4_exp, p5_exp, p6_exp, p7_exp, p8_exp, p9_exp]
                 awg_params = [
-                                p2_awg_exp, p3_awg_exp, p4_awg_exp, p5_awg_exp, 
+                                p2_awg_exp, p3_awg_exp, p4_awg_exp, p5_awg_exp,
                                 p6_awg_exp, p7_awg_exp, p8_awg_exp, p9_awg_exp
                              ]
 
+                # rel_shift only got entries for non-zero pulses (see the
+                # build loop above), so we can't index it by the trigger-
+                # pulse position. Track the actual rel_shift slot with a
+                # counter that mirrors the build order.
+                rs_idx = 1 if 'P1' in name_list else 0
+
                 for i, (tp, ap) in enumerate(zip(trigger_pulses, awg_params)):
                     if int(float(tp[1].split(' ')[0])) != 0:
-                        
+
                         is_complex = ap[0] in ['WURST', 'SECH/TANH']
                         freq = (ap[1], ap[2]) if is_complex else ap[1]
-                        
+
                         awg_kwargs = {
                             'name': f'P{2*i + 2}',
                             'channel': 'CH0',
@@ -4805,41 +4825,50 @@ class Worker():
                             'amplitude': ap[6],
                             'phase_list': ap[7]
                         }
-                        
+
                         if is_complex:
                             awg_kwargs.update({'n': n_wurst, 'b': b_sech_cur})
-                            
+
                         pb.awg_pulse(**awg_kwargs)
 
                         if ap[0] != 'BLANK':
                             name_list.append(f'P{2*i + 3}')
                             pb.pulser_pulse(
                                 name=f'P{2*i + 3}',
-                                channel='TRIGGER_AWG', 
-                                start=tp[0], 
-                                length=tp[1], 
-                                delta_start=f"{self.round_to_closest( nonlinear_time[0] * rel_shift[i + 1], 3.2 )} ns"
+                                channel='TRIGGER_AWG',
+                                start=tp[0],
+                                length=tp[1],
+                                delta_start=f"{self.round_to_closest( nonlinear_time[0] * rel_shift[rs_idx], 3.2 )} ns"
                             )
+                        rs_idx += 1
                 pb.pulser_repetition_rate( REP_RATE )
 
             else:
 
                 if script_test and int(float(p2_exp[1].split(' ')[0])) == 0:
                     raise ValueError("LASER pulse has zero length")
-                #p7 is LASER pulse
+                #p7 is LASER pulse — its rel_shift slot sits right after P1's (if P1 was added).
+                if 'L1' in name_list:
+                    laser_rs_idx = 1 if 'P1' in name_list else 0
+                    laser_delta_start = f"{self.round_to_closest( nonlinear_time[0] * rel_shift[laser_rs_idx], 3.2 )} ns"
+                else:
+                    laser_delta_start = '0.0 ns'
                 pb.pulser_pulse(
                     name=f'L1',
                     channel='LASER',
                     start=p2_exp[0],
                     length=p2_exp[1],
-                    delta_start=f"{self.round_to_closest( nonlinear_time[0] * rel_shift[1], 3.2 )} ns"
+                    delta_start=laser_delta_start
                 )
 
                 trigger_pulses = [p3_exp, p4_exp, p5_exp, p6_exp, p7_exp, p8_exp, p9_exp]
                 awg_params = [
-                                p3_awg_exp, p4_awg_exp, p5_awg_exp, 
+                                p3_awg_exp, p4_awg_exp, p5_awg_exp,
                                 p6_awg_exp, p7_awg_exp, p8_awg_exp, p9_awg_exp
                              ]
+
+                # Same rel_shift indexing fix as the laser_flag != 1 branch.
+                rs_idx = (1 if 'P1' in name_list else 0) + (1 if 'L1' in name_list else 0)
 
                 for i, (tp, ap) in enumerate(zip(trigger_pulses, awg_params)):
                     if ap[9] != '0.0 ns':
@@ -4854,7 +4883,7 @@ class Worker():
 
                         is_complex = ap[0] in ['WURST', 'SECH/TANH']
                         freq = (ap[1], ap[2]) if is_complex else ap[1]
-                        
+
                         awg_kwargs = {
                             'name': f'P{2*i + 2}',
                             'channel': 'CH0',
@@ -4866,21 +4895,22 @@ class Worker():
                             'amplitude': ap[6],
                             'phase_list': ap[7]
                         }
-                        
+
                         if is_complex:
                             awg_kwargs.update({'n': n_wurst, 'b': b_sech_cur})
-                            
+
                         pb.awg_pulse(**awg_kwargs)
 
                         if ap[0] != 'BLANK':
                             name_list.append(f'P{2*i + 3}')
                             pb.pulser_pulse(
                                 name=f'P{2*i + 3}',
-                                channel='TRIGGER_AWG', 
-                                start=tp[0], 
-                                length=tp[1], 
-                                delta_start=f"{self.round_to_closest( nonlinear_time[0] * rel_shift[i + 2], 3.2 )} ns"
+                                channel='TRIGGER_AWG',
+                                start=tp[0],
+                                length=tp[1],
+                                delta_start=f"{self.round_to_closest( nonlinear_time[0] * rel_shift[rs_idx], 3.2 )} ns"
                             )
+                        rs_idx += 1
                 if laser_num == 1:
                     pb.pulser_repetition_rate( '9.9 Hz' )
                 else:
