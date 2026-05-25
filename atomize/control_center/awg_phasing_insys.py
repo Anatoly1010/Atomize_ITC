@@ -759,6 +759,8 @@ class MainWindow(QMainWindow):
         self.buttons_layout.addWidget(label_widget, 0, 2)
         self.buttons_layout.addWidget(self.progress_bar, 0, 3)
 
+        self._update_rep_time_display()
+
         # ---- Buttons ----
         buttons = [("Run Pulses", "button_update", self.update),
                    ("Stop", "button_stop", self.dig_stop),
@@ -2555,10 +2557,24 @@ class MainWindow(QMainWindow):
         elif self.laser_flag == 1 and self.combo_laser_num == 2:
             pass
 
+        self._update_rep_time_display()
+
         try:
             self.parent_conn_dig.send( 'RR' + str( self.repetition_rate.split(' ')[0] ) )
         except AttributeError:
             pass
+
+    def _update_rep_time_display(self):
+        rate_hz = float( self.Rep_rate.value() )
+        if rate_hz <= 0:
+            self.Rep_rate.setSuffix(" Hz")
+            return
+        t_s = 1.0 / rate_hz
+        if   t_s >= 1.0:   val, unit = t_s,       "s"
+        elif t_s >= 1e-3:  val, unit = t_s * 1e3, "ms"
+        elif t_s >= 1e-6:  val, unit = t_s * 1e6, "µs"
+        else:              val, unit = t_s * 1e9, "ns"
+        self.Rep_rate.setSuffix(f" Hz | {val:.1f} {unit}")
 
     def field(self):
         """

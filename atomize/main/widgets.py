@@ -1478,6 +1478,20 @@ class CrossSectionDock(CloseableDock):
         self.cursor_label.setZValue(100)
         self.plot_item.addItem(self.cursor_label)
 
+        # Ruler (Shift + left-drag) — state, items, and viewbox drag hook
+        self._ruler_start_scene = None
+        self._ruler_p1 = None
+        self._ruler_p2 = None
+        self._ruler_line = None
+        self._ruler_marks = None
+        self._ruler_label = None
+
+        self.clear_ruler_action = QtGui.QAction('Clear Ruler', self)
+        self.clear_ruler_action.triggered.connect(self._clear_ruler)
+        self.plot_item.vb.menu.addAction(self.clear_ruler_action)
+
+        self._install_ruler_drag()
+
         self.first_render = True
 
     def on_time_click(self, ev):
@@ -1579,6 +1593,7 @@ class CrossSectionDock(CloseableDock):
         if self.set_image != 0:
             if self._x0_prev != self._x0 or self._y0_prev != self._y0 or self._xscale_prev != self._xscale or self._yscale_prev != self._yscale:
                 self.hide_cross_section()
+                self._clear_ruler()
 
         self._x0_prev = self._x0
         self._y0_prev = self._y0
@@ -1950,6 +1965,7 @@ class CrossSectionDock(CloseableDock):
             self.v_cross_dock.close()
 
             self.cursor_label.hide()
+            self._clear_ruler()
 
     def connect_signal(self):
         """This can only be run after the item has been embedded in a scene"""
@@ -2205,3 +2221,188 @@ class CrossSectionDock(CloseableDock):
             #f"X: {xdata[self.x_cross_index]:.4g}\nZ: {zval:.4g}\nPoint: {(self.y_cross_index+1):.0f}"
 
             self.h_cross_section_widget.cursor_label.setText(label_text)
+
+    # ----- Ruler (Shift + left-drag) -----
+    def _install_ruler_drag(self):
+        vb = self.plot_item.vb
+        orig = vb.mouseDragEvent
+        dock = self
+
+        def wrapper(ev, axis=None):
+            modifiers = QtGui.QGuiApplication.keyboardModifiers()
+            is_left = (ev.button() == QtCore.Qt.MouseButton.LeftButton or
+                       bool(ev.buttons() & QtCore.Qt.MouseButton.LeftButton))
+            if is_left and (modifiers & QtCore.Qt.KeyboardModifier.ShiftModifier):
+                ev.accept()
+                dock._on_ruler_drag(ev)
+                return
+            orig(ev, axis=axis)
+
+        vb.mouseDragEvent = wrapper
+
+    def _on_ruler_drag(self, ev):
+        modifiers = QtGui.QGuiApplication.keyboardModifiers()
+        # Shift alone = snap to pixel; Shift+Ctrl = free coordinates
+        snap = not bool(modifiers & QtCore.Qt.KeyboardModifier.ControlModifier)
+
+        if ev.isStart():
+            self._ruler_start_scene = ev.buttonDownScenePos()
+
+        if self._ruler_start_scene is None:
+            return
+
+        p1 = self._ruler_point_at(self._ruler_start_scene, snap)
+        p2 = self._ruler_point_at(ev.scenePos(), snap)
+        self._ruler_p1, self._ruler_p2 = p1, p2
+
+        self._update_ruler(p1, p2)
+
+    def _ruler_point_at(self, scene_pos, snap):
+        """Return {x, y, z, x_text, y_text, z_text} for a ruler endpoint at `scene_pos`.
+
+        When `snap` is True, snaps to the nearest pixel center (xdata[ix]=x0+ix*xs,
+        ydata[iy]=y0+iy*ys) and reads z from `imageItem.image[ix, iy]`. Otherwise
+        keeps the raw view coordinates and looks up z at the underlying pixel if
+        the point is inside the image.
+        """
+        vb = self.plot_item.vb
+        view = vb.mapSceneToView(scene_pos)
+        vx, vy = view.x(), view.y()
+
+        label_x = getattr(self, 'label_x', '')
+        label_y = getattr(self, 'label_y', '')
+        label_z = getattr(self, 'label_z', '')
+
+        image = self.imageItem.image
+        z = None
+        x_text = pg.siFormat(vx, suffix=label_x, precision=5)
+        y_text = pg.siFormat(vy, suffix=label_y, precision=5)
+        z_text = ''
+
+        if (image is not None and image.shape != (1, 1)
+                and hasattr(self, '_x0') and hasattr(self, '_xscale')
+                and self._xscale != 0 and self._yscale != 0):
+            nx, ny = image.shape
+            x0, y0, xs, ys = self._x0, self._y0, self._xscale, self._yscale
+
+            if snap:
+                ix = int(round((vx - x0) / xs))
+                iy = int(round((vy - y0) / ys))
+            else:
+                ix = int((vx - x0) / xs)
+                iy = int((vy - y0) / ys)
+
+            ix_c = max(0, min(ix, nx - 1))
+            iy_c = max(0, min(iy, ny - 1))
+
+            if snap:
+                vx = x0 + ix_c * xs
+                vy = y0 + iy_c * ys
+                z = float(image[ix_c, iy_c])
+                x_text = pg.siFormat(vx, suffix=label_x, precision=5) + f" ({iy_c + 1})"
+                y_text = pg.siFormat(vy, suffix=label_y, precision=5) + f" ({ix_c + 1})"
+                z_text = pg.siFormat(z, suffix=label_z, precision=5)
+            elif 0 <= ix < nx and 0 <= iy < ny:
+                z = float(image[ix, iy])
+                z_text = pg.siFormat(z, suffix=label_z, precision=5)
+
+        return {
+            'x': vx,
+            'y': vy,
+            'z': z,
+            'x_text': x_text,
+            'y_text': y_text,
+            'z_text': z_text,
+        }
+
+    def _ensure_ruler_items(self):
+        vb = self.plot_item.vb
+        if self._ruler_line is None:
+            self._ruler_line = pg.PlotCurveItem(pen=pg.mkPen((255, 255, 0, 220), width=1.5))
+            self._ruler_line.setZValue(95)
+            vb.addItem(self._ruler_line, ignoreBounds=True)
+        if self._ruler_marks is None:
+            self._ruler_marks = pg.ScatterPlotItem(
+                size=8, symbol='o',
+                pen=pg.mkPen((255, 255, 255, 255), width=1),
+                brush=pg.mkBrush(255, 255, 0, 255),
+            )
+            self._ruler_marks.setZValue(96)
+            vb.addItem(self._ruler_marks, ignoreBounds=True)
+        if self._ruler_label is None:
+            self._ruler_label = pg.TextItem(anchor=(0.5, 1.0), color='w', fill=(42, 42, 64, 150))
+            self._ruler_label.border = pg.mkPen((255, 255, 0, 255), width=1.5)
+            self._ruler_label.setZValue(100)
+            vb.addItem(self._ruler_label, ignoreBounds=True)
+
+    def _update_ruler(self, p1, p2):
+        self._ensure_ruler_items()
+
+        x1, y1 = p1['x'], p1['y']
+        x2, y2 = p2['x'], p2['y']
+
+        self._ruler_line.setData([x1, x2], [y1, y2])
+        self._ruler_marks.setData([x1, x2], [y1, y2])
+        self._ruler_line.show()
+        self._ruler_marks.show()
+
+        label_x = getattr(self, 'label_x', '')
+        label_y = getattr(self, 'label_y', '')
+        label_z = getattr(self, 'label_z', '')
+
+        dx_text = pg.siFormat(x2 - x1, suffix=label_x, precision=5)
+        dy_text = pg.siFormat(y2 - y1, suffix=label_y, precision=5)
+
+        lines = [f"ΔX: {dx_text}", f"ΔY: {dy_text}"]
+        if p1['z'] is not None and p2['z'] is not None:
+            dz_text = pg.siFormat(p2['z'] - p1['z'], suffix=label_z, precision=5)
+            lines.append(f"ΔZ: {dz_text}")
+
+        p1_z = f", Z: {p1['z_text']}" if p1['z_text'] else ''
+        p2_z = f", Z: {p2['z_text']}" if p2['z_text'] else ''
+        lines.append(f"P1: ({p1['x_text']}, {p1['y_text']}{p1_z})")
+        lines.append(f"P2: ({p2['x_text']}, {p2['y_text']}{p2_z})")
+        self._ruler_label.setText("\n".join(lines))
+
+        # Anchor at P1, on the side opposite P2 so the segment doesn't run
+        # through the label. Mirror at viewbox edges to keep it inside.
+        vb = self.plot_item.vb
+        view_range = vb.viewRange()
+        x_min, x_max = view_range[0]
+        y_min, y_max = view_range[1]
+
+        dx, dy = x2 - x1, y2 - y1
+        anchor_x = 1 if dx >= 0 else 0
+        anchor_y = 0 if dy >= 0 else 1
+
+        try:
+            pxw, pxh = vb.viewPixelSize()
+            rect = self._ruler_label.boundingRect()
+            w_view = rect.width() * pxw
+            h_view = rect.height() * pxh
+        except Exception:
+            w_view = h_view = 0
+
+        if w_view > 0:
+            if x1 - anchor_x * w_view < x_min:
+                anchor_x = 0
+            elif x1 + (1 - anchor_x) * w_view > x_max:
+                anchor_x = 1
+        if h_view > 0:
+            if y1 - (1 - anchor_y) * h_view < y_min:
+                anchor_y = 1
+            elif y1 + anchor_y * h_view > y_max:
+                anchor_y = 0
+
+        self._ruler_label.setAnchor((anchor_x, anchor_y))
+        self._ruler_label.setPos(x1, y1)
+        self._ruler_label.show()
+
+    def _clear_ruler(self):
+        for attr in ('_ruler_line', '_ruler_marks', '_ruler_label'):
+            item = getattr(self, attr, None)
+            if item is not None:
+                item.hide()
+        self._ruler_start_scene = None
+        self._ruler_p1 = None
+        self._ruler_p2 = None
