@@ -1,7 +1,40 @@
-"""Atomize ITC — Insys_FPGA v3 (production-shaped refactor, drop-in subclass)
+"""Atomize ITC — Insys_FPGA v4 (drop-in subclass for hardware tests).
+
+v4 = v3 + two fixes uncovered by the first hardware-test cycle on
+DAC sine-wave input. v3 alone reproduced two symptoms in real ops:
+  - Live mode: only the first buffer of a snapshot ever parsed; no
+    new data afterward; the live plot froze on the first frame.
+  - Exp mode: only the first buffer's nids accumulated, other points
+    stayed at zero, drain loop's `count_nip[-1] >= 1` exit condition
+    was never satisfied → experiment stuck at the last point.
+
+Both symptoms have a single underlying cause: the c_int driver buffer
+is over-allocated 4x relative to the actual stream. Only the first
+`nStrmBufSizeb_brd / 4` int32 hold packet data; the remaining 3/4 is
+zero padding (description.txt: "A quarter of this buffer is occupied
+by digitized data, the rest is filled with zeros"). v1 encodes this
+via `ind = np.append(ind, [int(nStrmBufSizeb_brd / 4)])` (L3948) as
+its upper split bound. v3 was reshape-ing the WHOLE int32 array and
+then carrying the trailing zeros into `tail_carry` for the next call,
+which made every subsequent buffer's parse start with a non-header
+row and return zero packets.
+
+v4 fixes:
+  1. Slice `data` to `data[:int(nStrmBufSizeb_brd / 4)]` at the top of
+     `gen_2d_array_from_buffer` so only the real data portion is
+     parsed (matches v1's L3948 upper bound). Under the harness this
+     is a no-op because `make_instance` sets
+     `nStrmBufSizeb_brd = buf_size_i32 * 4`.
+  2. Only retain `leftover` as `tail_carry` when its first int32 is
+     `HEADER_SIG`. Under the streaming model (packets pack across the
+     1/4 data boundary into the next buffer's 1/4) this is true and
+     the partial packet carries forward. Otherwise the leftover is
+     under-fill padding inside the data portion and must be dropped.
 
 Replaces three buffer-handling methods on top of stock Insys_FPGA:
   * gen_2d_array_from_buffer   — stride-indexed streaming parser,
+                                 data-portion slice (v4 fix 1),
+                                 HEADER_SIG-on-leftover (v4 fix 2),
                                  in-place direct write into self.data_raw /
                                  self.count_nip, vectorised per-nid grouping.
   * pulser_acquisition_cycle   — slice-only recompute with direct-assign
@@ -11,34 +44,43 @@ Replaces three buffer-handling methods on top of stock Insys_FPGA:
                                  touched answer slice, sets self.data_i_ph
                                  and self.data_q_ph for digitizer_at_exit().
 
-Everything else inherits unchanged from Insys_FPGA. test_flag == 'test'
-delegates to the v1 implementation so test scripts continue to work.
+Everything else inherits unchanged. test_flag == 'test' delegates to
+the v1 implementation so test scripts continue to work.
 
 DEPLOY:
   Place this file at:
-      atomize/device_modules/Insys_FPGA_v3.py
+      atomize/device_modules/Insys_FPGA_v4.py
   Then in any experimental / control-center script, change:
       import atomize.device_modules.Insys_FPGA as pb_pro
   to:
-      import atomize.device_modules.Insys_FPGA_v3 as pb_pro
-  Roll back by reverting the import. v1 stays in Insys_FPGA.py unchanged.
+      import atomize.device_modules.Insys_FPGA_v4 as pb_pro
+  No other change is needed — the class name stays `Insys_FPGA`, so
+  `pb_pro.Insys_FPGA()` instantiation sites work as-is. Roll back by
+  reverting the import; v1 stays in Insys_FPGA.py unchanged.
 
-WHAT THIS FIXES (validated by harness at /home/anatoly/sandbox/test_digitizer.py):
+WHAT v3 ALREADY FIXED (still in v4; validated by 12-scenario harness):
   Scenario D — single-scan, packets straddle aligned buffer boundary.
-              v1 mis-averages; v3 correct.
+              v1 mis-averages; v3/v4 correct.
   Scenario G/H — realistic multi-scan transitional buffer.
-              v1 produces ~5% amplitude error; v3 correct.
+              v1 produces ~5% amplitude error; v3/v4 correct.
   Scenario I — 4-phase cycling + transitional buffer.
-              v1 ~16% error at last point; v3 correct.
+              v1 ~16% error at last point; v3/v4 correct.
   Scenario K — live-mode multi-buffer snapshot with missing nids.
-              v1 produces nan; v3 cleanly 0.
+              v1 produces nan; v3/v4 cleanly 0.
   Scenario L — single-scan, cut on last nid's packet run.
               v1 ~6% residual amplitude error at last point even with
-              the existing n_scans==2/3 fix; v3 correct.
+              the existing n_scans==2/3 fix; v3/v4 correct.
   Live-mode without pulser_pulse_reset (= first iteration of
-              awg_phasing_insys.py's live loop, lines 3494):
-              v1 's count_nip is off by 1 because count_nip += -1 assumes
-              reset_count_nip == 1. v3 has no such assumption.
+              awg_phasing_insys.py's live loop, line 3494):
+              v1's count_nip is off by 1 because count_nip += -1 assumes
+              reset_count_nip == 1. v3/v4 have no such assumption.
+
+WHAT v4 ADDS (NOT in the harness — caught only on hardware):
+  Live mode: subsequent buffers now parse correctly after the first.
+              Plot should update on every snapshot rather than freezing.
+  Exp mode:  all 196 buffers/scan parse instead of just buf 0. The
+              drain loop's `count_nip[-1] >= 1` exit fires when the last
+              nid arrives. Experiment finishes.
 
 PERFORMANCE: ~40% faster than v1 on get_curve hot path at production
 sizes (74 ms vs 124 ms isolated, on p=50, ph=2, reps=20, scans=2,
@@ -105,6 +147,19 @@ class Insys_FPGA(_Insys_FPGA_v1):
         pkt_size = full_adc + 8
         total_points = p * ph
 
+        # v4 fix 1: the c_int driver buffer is over-allocated 4x relative
+        # to the actual stream. Only the first nStrmBufSizeb_brd/4 int32
+        # hold packet data; the rest is zero padding (description.txt).
+        # v1 encodes this via `ind = np.append(ind, [int(nStrmBufSizeb_brd/4)])`
+        # (Insys_FPGA.py L3948) as the upper split bound. Without this
+        # slice v3 reshape-d over the zero region, pulled the zeros into
+        # tail_carry, and the next buffer's parse always returned zero
+        # packets. Under the harness this is a no-op because
+        # make_instance sets nStrmBufSizeb_brd = buf_size_i32 * 4.
+        data_len = int(self.nStrmBufSizeb_brd / 4)
+        if data.size > data_len:
+            data = data[:data_len]
+
         if self.tail_carry.size:
             stream = np.concatenate((self.tail_carry, data))
         else:
@@ -112,7 +167,13 @@ class Insys_FPGA(_Insys_FPGA_v1):
 
         n_complete = len(stream) // pkt_size
         if n_complete == 0:
-            self.tail_carry = stream.copy() if stream is data else stream
+            # Stream shorter than one packet — only worth carrying if it
+            # actually looks like the head of a packet.
+            if stream.size > 0 and stream[0] == HEADER_SIG:
+                self.tail_carry = (stream.copy()
+                                   if stream is data else stream)
+            else:
+                self.tail_carry = np.empty(0, dtype=np.int32)
             return None, None
 
         pkts = stream[:n_complete * pkt_size].reshape(n_complete, pkt_size)
@@ -125,7 +186,18 @@ class Insys_FPGA(_Insys_FPGA_v1):
             n_complete = int(np.argmax(~hdr_match))
             pkts = pkts[:n_complete]
 
-        self.tail_carry = stream[n_complete * pkt_size:].copy()
+        # v4 fix 2: leftover after the last consumed packet is EITHER the
+        # head of the next packet (streaming model — packets pack across
+        # the data-portion boundary into the next buffer's data portion)
+        # OR intra-data-portion under-fill padding. HEADER_SIG => real
+        # partial packet, carry it; anything else => drop. Carrying zero
+        # padding here was the original bug that froze the live plot
+        # after one frame and prevented exp mode from finishing.
+        leftover = stream[n_complete * pkt_size:]
+        if leftover.size > 0 and leftover[0] == HEADER_SIG:
+            self.tail_carry = leftover.copy()
+        else:
+            self.tail_carry = np.empty(0, dtype=np.int32)
 
         if n_complete == 0:
             return None, None
