@@ -1857,13 +1857,13 @@ class Insys_FPGA:
             self.brdDataBuf_brd    = (ctypes.c_int * self.nStrmBufSizeb_brd)()
             self.strmBufNum_brd    = self.getStreamBufNum()
 
-            file_to_read = open(self.path_status_file, 'w')
+            file_to_read = open(self.path_status_file, 'w', encoding='utf-8')
             file_to_read.write('Status:  On' + '\n')
             file_to_read.close()
 
         elif self.test_flag == 'test':
 
-            text = open( self.path_status_file ).read()
+            text = open( self.path_status_file, encoding='utf-8' ).read()
             lines = text.split('\n')
             assert( str( lines[0].split(':  ')[1] ) != 'On' ), "Insys FPGA card is already opened. Please, close it."
 
@@ -1872,8 +1872,8 @@ class Insys_FPGA:
             current_dir = os.path.dirname(os.path.abspath(__file__))
             file_path = os.path.join(current_dir, "..", "..", "libs", file_ini)
             file_path = os.path.normpath(file_path)
-            
-            text = open( file_path ).read()
+
+            text = open( file_path, encoding='utf-8' ).read()
             lines = text.split('\n')
             self.nStrmBufSizeb_brd = int((lines[1][-4:])) * 2**10
 
@@ -1887,8 +1887,8 @@ class Insys_FPGA:
             #self.setEnable_GIM(0)
             closeRet = self.closeBrd()
             #general.message(f'CLOSE BOARD: {closeRet}')
-            
-            file_to_read = open(self.path_status_file, 'w')
+
+            file_to_read = open(self.path_status_file, 'w', encoding='utf-8')
             file_to_read.write('Status:  Off' + '\n')
             file_to_read.close()
             #general.message(self.count_nip[-4:])
@@ -2169,10 +2169,10 @@ class Insys_FPGA:
             path_to_main = os.path.abspath( os.getcwd() )
             path_file = os.path.join(path_to_main, '..', 'atomize/control_center/digitizer_insys.param')
             #path_file = os.path.join(path_to_main, 'digitizer_insys.param')
-            file_to_read = open(path_file, 'r')
+            file_to_read = open(path_file, 'r', encoding='utf-8')
 
             text_from_file = file_to_read.read().split('\n')
-            # ['Points: 224', 'Sample Rate: 250', 'Posstriger: 16', 'Range: 500', 'CH0 Offset: 0', 'CH1 Offset: 0', 
+            # ['Points: 224', 'Sample Rate: 250', 'Posstriger: 16', 'Range: 500', 'CH0 Offset: 0', 'CH1 Offset: 0',
             # 'Window Left: 0', 'Window Right: 0', '']
 
             points = str( text_from_file[0].split(': ')[1] )
@@ -2209,10 +2209,10 @@ class Insys_FPGA:
             path_to_main = os.path.abspath( os.getcwd() )
             path_file = os.path.join(path_to_main, '..', 'atomize/control_center/digitizer_insys.param')
             #path_file = os.path.join(path_to_main, 'digitizer_insys.param')
-            file_to_read = open(path_file, 'r')
+            file_to_read = open(path_file, 'r', encoding='utf-8')
 
             text_from_file = file_to_read.read().split('\n')
-            # ['Points: 224', 'Sample Rate: 250', 'Posstriger: 16', 'Range: 500', 'CH0 Offset: 0', 'CH1 Offset: 0', 
+            # ['Points: 224', 'Sample Rate: 250', 'Posstriger: 16', 'Range: 500', 'CH0 Offset: 0', 'CH1 Offset: 0',
             # 'Window Left: 0', 'Window Right: 0', '']
             points = str( text_from_file[0].split(': ')[1] )
 
@@ -5024,153 +5024,6 @@ class Insys_FPGA:
 
         return np.column_stack((final_channels, final_starts, final_stops))
 
-    #unused
-    def instruction_pulse_short_lna_amp_pulser(self, np_array):
-        """
-        Final convertion to the pulse blaster instruction pulses
-        It splits the bit_array into sequence of bit_arrays for individual pulses
-        after that converts them into instructions
-
-        We can drop pulses with channel 0 for AMP_ON and LNA_PROTECT case
-
-        Generally, this function is close to instruction_pulse_pulser() 
-        """
-        if self.test_flag != 'test':
-            if self.auto_defense_pulser == 'False':
-                pass
-            elif self.auto_defense_pulser == 'True':
-                final_pulse_array = []
-
-                # Create an array that is 1 where a is 0, and pad each end with an extra 0.
-                iszero = np.concatenate(([0], np_array, [0]))
-                absdiff = np.abs(np.diff(iszero))
-
-                # creating a mask to split bit array
-                ranges = np.where(absdiff != 0)[0]
-                # split using a mask
-                pulse_array_pulser = np.split(np_array, ranges)
-                pulse_info = np.concatenate(([0], ranges))
-
-                for index, element in enumerate(pulse_info[:-1]):
-                    # we can drop pulses with channel 0 for AMP_ON and LNA_PROTECT case
-                    if pulse_array_pulser[index][0] != 0:
-                        final_pulse_array.append( [pulse_array_pulser[index][0], pulse_info[index], pulse_info[index + 1]] )
-                    else:
-                        pass
-
-                return final_pulse_array
-
-        elif self.test_flag == 'test':
-            if self.auto_defense_pulser == 'False':
-                pass
-            elif self.auto_defense_pulser == 'True':
-                final_pulse_array = []
-
-                # Create an array that is 1 where a is 0, and pad each end with an extra 0.
-                iszero = np.concatenate(([0], np_array, [0]))
-                absdiff = np.abs(np.diff(iszero))
-
-                ranges = np.where(absdiff != 0)[0]
-                pulse_array_pulser = np.split(np_array, ranges)
-                pulse_info = np.concatenate(([0], ranges))
-
-                for index, element in enumerate(pulse_info[:-1]):
-                    if pulse_array_pulser[index][0] != 0:
-                        final_pulse_array.append( [pulse_array_pulser[index][0], pulse_info[index], pulse_info[index + 1]] )
-                    else:
-                        pass
-
-                return final_pulse_array
-
-    #unused
-    def check_short_pulses_pulser(self, np_array, channel):
-        """
-        A function for checking whether there is two pulses with
-        the distance between them shorter than 40 ns
-
-        If there are such pulses on MW channel an error will be raised
-        LNA_PROTECT and AMP_ON pulsess will be combined in one pulse
-
-        """
-        if self.test_flag != 'test':
-            # checking where the pulses are
-            one_indexes = np.argwhere(np_array == 1).flatten()
-            difference = np.diff(one_indexes)
-            
-            ## 16-09-2021; An attempt to optimize the speed; all pulses should be already checked in the TEST RUN
-            ## Uncomment everything starting with ## if needed
-            if channel == self.channel_dict_pulser['LNA_PROTECT'] or channel == self.channel_dict_pulser['AMP_ON']:
-            ##if channel != self.channel_dict_pulser['LNA_PROTECT'] and channel != self.channel_dict_pulser['AMP_ON']:
-
-            ##    # (min_pulse_length_pulser + 1) is 13 now
-            ##    if any(1 < element < (self.min_pulse_length_pulser + 1) for element in difference) == False:
-            ##        pass
-            ##    else:
-            ##        general.message('There are two pulses with shorter than ' + str(self.min_pulse_length_pulser*2) + ' ns distance between them')
-            ##        sys.exit()
-            ##else:
-                if any(1 < element < (self.min_pulse_length_pulser + self.minimal_distance_amp_lna_pulser) for element in difference) == False:
-                    return np_array
-                else:
-                    final_array = self.joining_pulses_pulser(np_array)
-                    return final_array
-
-        if self.test_flag == 'test':
-            # checking where the pulses are
-            one_indexes = np.argwhere(np_array == 1).flatten()
-            difference = np.diff(one_indexes)
-
-            if channel != self.channel_dict_pulser['LNA_PROTECT'] and channel != self.channel_dict_pulser['AMP_ON']:
-                if any(1 < element < (self.min_pulse_length_pulser + self.minimal_distance_amp_lna_pulser) for element in difference) == False:
-                    pass
-                else:
-                    assert(1 == 2), 'There are two pulses with shorter than ' + str(self.min_pulse_length_pulser) + ' ns distance between them'
-            else:
-                if any(1 < element < (self.min_pulse_length_pulser + self.minimal_distance_amp_lna_pulser) for element in difference) == False:
-                    return np_array
-                else:
-                    final_array = self.joining_pulses_pulser(np_array)
-                    return final_array
-
-    #unused
-    def joining_pulses_pulser(self, np_array):
-        """
-        A function that joing two short pulses in one
-        It is used for LNA_PROTECT and AMP_ON pulses
-        """
-        i = 0
-        j = 0
-        counter = 0
-
-        array_len = len(np_array)
-        # drop several first and last zeros
-        index_first_one = np.argwhere(np_array == 1)[0]
-        index_last_one = np.argwhere(np_array == 1)[-1]
-        short_array = np_array[index_first_one[0]:(index_last_one[0] + 1)]
-
-        while i < len(short_array):
-            if short_array[i] == 0:
-                # looking for several 0 in a row
-                if short_array[i + 1] == 0:
-                    counter += 1
-                elif short_array[i + 1] == 1:
-                    # (minimal_distance + 1) is 13 now
-                    if counter < (self.min_pulse_length_pulser + self.minimal_distance_amp_lna_pulser):
-                        # replace 0 with 1
-                        while j <= counter:
-                            short_array[i + j - counter] = 1
-                            j += 1
-                        counter = 0
-                        j = 0
-                    else:
-                        counter = 0
-
-            i += 1
-
-        final_array = np.concatenate( (np.zeros(index_first_one[0], dtype = np.int64), short_array, np.zeros( array_len - index_last_one[0] - 1, dtype = np.int64)), axis = None)
-
-        return final_array
-
     def change_pulse_settings_pulser(self, parameter, delay):
         """
         A special function for parsing some parameter (i.e. start, length) value from the pulse
@@ -5220,19 +5073,21 @@ class Insys_FPGA:
         A function to create GIM words from old PB_ESR_Pro instructions
         """
         sa = np.array(spinapi)
-        
-        range_time           = sa[1:,-1]
-        range_time_tail      = range_time >> 16
-        range_time           = range_time - (range_time_tail << 16)
 
-        qqq                  = sa[1:,0]
-        qqq[-1]              = qqq[-1] + (1 << 15)
+        duration         = sa[1:, -1]
+        range_time       = duration & 0xFFFF
+        range_time_tail  = duration >> 16
 
-        zer                  = np.zeros( (len(qqq), 8) , dtype = np.uint32 )
-        zer[:,0] , zer[:,1]  = ((range_time << 16) +  qqq ), ( range_time_tail << 0)
-        kk                   = zer.reshape(len(qqq) * 8).copy()
+        qqq       = sa[1:, 0]
+        qqq[-1]  |= (1 << 15)
 
-        self.data_buf_IP_GIM_brd = len(kk) , kk.ctypes.data_as( ctypes.POINTER( ctypes.c_int32 ) )
+        n  = len(qqq)
+        kk = np.zeros(n * 8, dtype=np.uint32)
+        kk[0::8] = (range_time << 16) | qqq
+        kk[1::8] = range_time_tail
+
+        self._gim_buffer = kk
+        self.data_buf_IP_GIM_brd = len(kk), kk.ctypes.data_as(ctypes.POINTER(ctypes.c_int32))
 
     def awg_update_test(self):
         """
@@ -5810,6 +5665,9 @@ class Insys_FPGA:
                     
                     y1 = (norm_c * self.amplitude_0_awg / pulse_amp[index]) * envelope * np.sin(total_phase)
                     y2 = (norm_c * self.amplitude_1_awg / pulse_amp[index]) * envelope * np.sin(total_phase + self.phase_shift_ch1_seq_mode_awg)
+
+                    channel_1[current_pos : current_pos + length] = np.round(y1).astype(np.int16)
+                    channel_2[current_pos : current_pos + length] = np.round(y2).astype(np.int16)
 
                 current_pos += length
 
