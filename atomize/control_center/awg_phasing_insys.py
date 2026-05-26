@@ -348,8 +348,8 @@ class MainWindow(QMainWindow):
         self.path = os.path.join(path_to_main, '..', '..', '..', '..', 'experimental_data')
 
         self.setMinimumHeight(700)
-        self.setMinimumWidth(1360)
-        self.setMaximumWidth(2200)
+        self.setMinimumWidth(1720)
+        self.setMaximumWidth(2660)
 
         central_container = QWidget()
         self.setCentralWidget(central_container)
@@ -368,7 +368,7 @@ class MainWindow(QMainWindow):
                 background: rgb(63, 63, 97);
             }
             QTabBar::tab { 
-                width: 151px; 
+                width: 190px; 
                 height: 25px;
                 font-weight: bold; 
                 color: rgb(193, 202, 227);
@@ -456,7 +456,7 @@ class MainWindow(QMainWindow):
 
         for name, attr_name in labels:
             lbl = QLabel(name)
-            lbl.setFixedSize(130, 26)
+            lbl.setFixedSize(170, 26)
             setattr(self, attr_name, lbl)
             lbl.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
 
@@ -496,7 +496,7 @@ class MainWindow(QMainWindow):
                     spin_box.setValue(pulse_set[3])
                 spin_box.setDecimals(pulse_set[5])
                 spin_box.setSuffix(pulse_set[6])
-                spin_box.setFixedSize(130, 26)
+                spin_box.setFixedSize(170, 26)
                 spin_box.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.PlusMinus)
                 spin_box.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
                 
@@ -561,7 +561,7 @@ class MainWindow(QMainWindow):
                     spin_box.setDecimals(pulse_set[5])
 
                 spin_box.setSuffix(pulse_set[6])
-                spin_box.setFixedSize(130, 26)
+                spin_box.setFixedSize(170, 26)
                 spin_box.setButtonSymbols(QSpinBox.ButtonSymbols.PlusMinus)
                 spin_box.setKeyboardTracking(False)
                 spin_box.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu) 
@@ -602,7 +602,7 @@ class MainWindow(QMainWindow):
                       ]
 
         label_widget = getattr(self, f"label_9")
-        label_widget.setFixedSize(130, 26)
+        label_widget.setFixedSize(170, 26)
         self.gridLayout.addWidget(label_widget, 13, 0)
 
         self.laser_flag = 0
@@ -617,7 +617,7 @@ class MainWindow(QMainWindow):
                 outline: none;
                 }
                 """)
-            combo.setFixedSize(130, 26)
+            combo.setFixedSize(170, 26)
             if i == 1:
                 combo.addItems(combo_boxes[i-1][4])
                 combo.setCurrentText(combo_boxes[i][0])
@@ -637,7 +637,7 @@ class MainWindow(QMainWindow):
 
         
         label_widget = getattr(self, f"label_10")
-        label_widget.setFixedSize(130, 26)
+        label_widget.setFixedSize(170, 26)
         self.gridLayout.addWidget(label_widget, 14, 0)
         self.gridLayout.addWidget(hline(), 15, 0, 1, 10)
 
@@ -651,7 +651,7 @@ class MainWindow(QMainWindow):
                 txt = QTextEdit(text_edit[1])
             else:
                 txt = QTextEdit(text_edit[2])
-            txt.setFixedSize(130, 60)
+            txt.setFixedSize(170, 60)
             txt.setAcceptRichText(False)
             #txt.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
             txt.setStyleSheet("""
@@ -708,7 +708,7 @@ class MainWindow(QMainWindow):
             rr_box.setDecimals(dec)
             rr_box.setSuffix(suf)
             rr_box.valueChanged.connect(func)
-            rr_box.setFixedSize(130, 26)
+            rr_box.setFixedSize(170, 26)
             rr_box.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.PlusMinus)
             rr_box.setKeyboardTracking( False )
             setattr(self, attr_name, rr_box)
@@ -723,9 +723,9 @@ class MainWindow(QMainWindow):
 
         label_widget = getattr(self, f"label_11")
         self.buttons_layout.addWidget(label_widget, 0, 0)
-        label_widget.setFixedSize(130, 26)
+        label_widget.setFixedSize(170, 26)
         label_widget = getattr(self, f"label_12")
-        label_widget.setFixedSize(130, 26)
+        label_widget.setFixedSize(170, 26)
         self.buttons_layout.addWidget(label_widget, 1, 0)
         self.buttons_layout.addWidget(hline(), 2, 0, 1, 12)
 
@@ -733,7 +733,7 @@ class MainWindow(QMainWindow):
         self.progress_bar = QProgressBar()
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(0)
-        self.progress_bar.setFixedSize(130, 15)
+        self.progress_bar.setFixedSize(170, 15)
         self.progress_bar.setTextVisible(True)
         self.progress_bar.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
@@ -773,7 +773,7 @@ class MainWindow(QMainWindow):
         btn_cl = 0
         for name, attr_name, func in buttons:
             btn = QPushButton(name)
-            btn.setFixedSize(130, 40)
+            btn.setFixedSize(170, 40)
             btn.clicked.connect(func)
             btn.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; } QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
             setattr(self, attr_name, btn)
@@ -869,7 +869,7 @@ class MainWindow(QMainWindow):
         for name, attr_name in labels:
             lbl = QLabel(name)
             setattr(self, attr_name, lbl)
-            lbl.setFixedSize(130, 26)
+            lbl.setFixedSize(170, 26)
             lbl.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
 
         # ---- Boxes ----
@@ -901,7 +901,7 @@ class MainWindow(QMainWindow):
                 spin_box.setDecimals(dec)
             spin_box.setSuffix(suf)
             spin_box.valueChanged.connect(func)
-            spin_box.setFixedSize(130, 26)
+            spin_box.setFixedSize(170, 26)
             spin_box.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.PlusMinus)
             spin_box.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
 
@@ -931,7 +931,7 @@ class MainWindow(QMainWindow):
             tspin = TimeLogSpinBox()
             tspin.setValue(log_default)
             tspin.valueChanged.connect(func)
-            tspin.setFixedSize(130, 26)
+            tspin.setFixedSize(170, 26)
             setattr(self, attr_name, tspin)
             setattr(self, par_name, float(tspin.value()))
 
@@ -945,7 +945,7 @@ class MainWindow(QMainWindow):
             setattr(self, attr_name, txt)
             setattr(self, par_name, txt.toPlainText())
             txt.textChanged.connect(func)
-            txt.setFixedSize(130, 26)
+            txt.setFixedSize(170, 26)
             txt.setAcceptRichText(False)
             txt.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
             txt.setStyleSheet("QTextEdit { color : rgb(211, 194, 78) ; selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
@@ -965,7 +965,7 @@ class MainWindow(QMainWindow):
             combo.currentIndexChanged.connect(func)
             combo.addItems(item)
             combo.setCurrentText(cur_text)
-            combo.setFixedSize(130, 26)
+            combo.setFixedSize(170, 26)
             combo.setStyleSheet("""
                 QComboBox 
                 { color : rgb(193, 202, 227); 
@@ -1095,7 +1095,7 @@ class MainWindow(QMainWindow):
         for name, attr_name in labels:
             lbl = QLabel(name)
             setattr(self, attr_name, lbl)
-            lbl.setFixedSize(130, 26)
+            lbl.setFixedSize(170, 26)
             lbl.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
 
         # ---- Boxes ----
@@ -1119,7 +1119,7 @@ class MainWindow(QMainWindow):
                 spin_box.setDecimals(dec)
             spin_box.setSuffix(suf)
             spin_box.valueChanged.connect(func)
-            spin_box.setFixedSize(130, 26)
+            spin_box.setFixedSize(170, 26)
             spin_box.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.PlusMinus)
             spin_box.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
 
@@ -1181,7 +1181,7 @@ class MainWindow(QMainWindow):
                     border: 3px solid rgb(63, 63, 97); 
                 }
             """)
-            check.setFixedSize(130, 26)
+            check.setFixedSize(170, 26)
             if attr_name == 'IQ_corr':
                 check.setChecked(True)
 
@@ -1246,7 +1246,7 @@ class MainWindow(QMainWindow):
         for name, attr_name in labels:
             lbl = QLabel(name)
             setattr(self, attr_name, lbl)
-            lbl.setFixedSize(130, 26)
+            lbl.setFixedSize(170, 26)
             lbl.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
 
         # ---- Combo box----
@@ -1260,7 +1260,7 @@ class MainWindow(QMainWindow):
             combo.currentIndexChanged.connect(func)
             combo.addItems(item)
             combo.setCurrentText(cur_text)
-            combo.setFixedSize(130, 26)
+            combo.setFixedSize(170, 26)
             combo.setStyleSheet("""
                 QComboBox 
                 { color : rgb(193, 202, 227); 
@@ -1310,7 +1310,7 @@ class MainWindow(QMainWindow):
         for name, attr_name in labels:
             lbl = QLabel(name)
             setattr(self, attr_name, lbl)
-            lbl.setFixedSize(143, 26)
+            lbl.setFixedSize(170, 26)
             lbl.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
 
         # ---- Boxes ----
@@ -1335,7 +1335,7 @@ class MainWindow(QMainWindow):
                 spin_box.setDecimals(dec)
             spin_box.setSuffix(suf)
             spin_box.valueChanged.connect(func)
-            spin_box.setFixedSize(130, 26)
+            spin_box.setFixedSize(170, 26)
             spin_box.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.PlusMinus)
             spin_box.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
 
@@ -1360,7 +1360,7 @@ class MainWindow(QMainWindow):
             combo.currentIndexChanged.connect(func)
             combo.addItems(item)
             combo.setCurrentText(cur_text)
-            combo.setFixedSize(130, 26)
+            combo.setFixedSize(170, 26)
             combo.setStyleSheet("""
                 QComboBox 
                 { color : rgb(193, 202, 227); 
