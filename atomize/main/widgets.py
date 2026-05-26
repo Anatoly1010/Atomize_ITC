@@ -1492,6 +1492,11 @@ class CrossSectionDock(CloseableDock):
 
         self._install_ruler_drag()
 
+        # Refresh ruler Z when the time line moves (dragging the yellow line
+        # changes the displayed frame; make_line_discrete handles the click
+        # path, this handles the drag path).
+        self.line.sigPositionChanged.connect(self._refresh_ruler_z)
+
         self.first_render = True
 
     def on_time_click(self, ev):
@@ -1508,15 +1513,16 @@ class CrossSectionDock(CloseableDock):
 
     def make_line_discrete(self):
         current_val = self.line.value()
-        t_data = self.time_array 
-        
+        t_data = self.time_array
+
         idx = (np.abs(t_data - current_val)).argmin()
         snap_val = t_data[idx]
-        
+
         self.line.blockSignals(True)
         self.line.setValue(snap_val)
         self.line.blockSignals(False)
         self.img_view.setCurrentIndex(idx)
+        self._refresh_ruler_z()
 
     def update_label_visibility(self):
         if self.cross_section_enabled:
@@ -2346,23 +2352,7 @@ class CrossSectionDock(CloseableDock):
         self._ruler_line.show()
         self._ruler_marks.show()
 
-        label_x = getattr(self, 'label_x', '')
-        label_y = getattr(self, 'label_y', '')
-        label_z = getattr(self, 'label_z', '')
-
-        dx_text = pg.siFormat(x2 - x1, suffix=label_x, precision=5)
-        dy_text = pg.siFormat(y2 - y1, suffix=label_y, precision=5)
-
-        lines = [f"ΔX: {dx_text}", f"ΔY: {dy_text}"]
-        if p1['z'] is not None and p2['z'] is not None:
-            dz_text = pg.siFormat(p2['z'] - p1['z'], suffix=label_z, precision=5)
-            lines.append(f"ΔZ: {dz_text}")
-
-        p1_z = f", Z: {p1['z_text']}" if p1['z_text'] else ''
-        p2_z = f", Z: {p2['z_text']}" if p2['z_text'] else ''
-        lines.append(f"P1: ({p1['x_text']}, {p1['y_text']}{p1_z})")
-        lines.append(f"P2: ({p2['x_text']}, {p2['y_text']}{p2_z})")
-        self._ruler_label.setText("\n".join(lines))
+        self._ruler_label.setText(self._ruler_label_text(p1, p2))
 
         # Anchor at P1, on the side opposite P2 so the segment doesn't run
         # through the label. Mirror at viewbox edges to keep it inside.
@@ -2406,3 +2396,62 @@ class CrossSectionDock(CloseableDock):
         self._ruler_start_scene = None
         self._ruler_p1 = None
         self._ruler_p2 = None
+
+    def _refresh_ruler_z(self):
+        """Re-read Z at both ruler endpoints from the currently displayed frame.
+
+        Used after the time slider snaps to a new index in a 2D-stack plot:
+        X/Y stay fixed, but the underlying image changes, so the ruler's
+        ΔZ / P1.Z / P2.Z need to be recomputed from imageItem.image.
+        """
+        if self._ruler_p1 is None or self._ruler_p2 is None:
+            return
+        if self._ruler_line is None or not self._ruler_line.isVisible():
+            return
+        image = self.imageItem.image
+        if image is None or image.shape == (1, 1):
+            return
+        if not (hasattr(self, '_x0') and hasattr(self, '_xscale')):
+            return
+        if self._xscale == 0 or self._yscale == 0:
+            return
+
+        nx, ny = image.shape
+        x0, y0, xs, ys = self._x0, self._y0, self._xscale, self._yscale
+        label_z = getattr(self, 'label_z', '')
+
+        for p in (self._ruler_p1, self._ruler_p2):
+            ix = int(round((p['x'] - x0) / xs))
+            iy = int(round((p['y'] - y0) / ys))
+            if 0 <= ix < nx and 0 <= iy < ny:
+                p['z'] = float(image[ix, iy])
+                p['z_text'] = pg.siFormat(p['z'], suffix=label_z, precision=5)
+            else:
+                p['z'] = None
+                p['z_text'] = ''
+
+        # Only refresh the text — keep the anchor/position locked from the
+        # original drag so the label doesn't jump when ΔZ width changes.
+        if self._ruler_label is not None:
+            self._ruler_label.setText(
+                self._ruler_label_text(self._ruler_p1, self._ruler_p2)
+            )
+
+    def _ruler_label_text(self, p1, p2):
+        label_x = getattr(self, 'label_x', '')
+        label_y = getattr(self, 'label_y', '')
+        label_z = getattr(self, 'label_z', '')
+
+        dx_text = pg.siFormat(p2['x'] - p1['x'], suffix=label_x, precision=5)
+        dy_text = pg.siFormat(p2['y'] - p1['y'], suffix=label_y, precision=5)
+
+        lines = [f"ΔX: {dx_text}", f"ΔY: {dy_text}"]
+        if p1['z'] is not None and p2['z'] is not None:
+            dz_text = pg.siFormat(p2['z'] - p1['z'], suffix=label_z, precision=5)
+            lines.append(f"ΔZ: {dz_text}")
+
+        p1_z = f", Z: {p1['z_text']}" if p1['z_text'] else ''
+        p2_z = f", Z: {p2['z_text']}" if p2['z_text'] else ''
+        lines.append(f"P1: ({p1['x_text']}, {p1['y_text']}{p1_z})")
+        lines.append(f"P2: ({p2['x_text']}, {p2['y_text']}{p2_z})")
+        return "\n".join(lines)
