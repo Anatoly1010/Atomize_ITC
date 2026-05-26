@@ -23,6 +23,10 @@ import atomize.general_modules.general_functions as general
 # The header signature 0xAA5500FF is re-interpreted as a signed int32.
 _HEADER_SIG = np.int32(-1437269761)
 
+# Max time to wait for the GIM "switch complete" status before raising.
+_GIM_SWCOMP_TIMEOUT_S = 5.0
+_GIM_SWCOMP_POLL_S = 0.0001
+
 _PHASE_SIGN = {
     '+x': 1,  '+': 1,
     '-x': -1, '-': -1,
@@ -454,6 +458,7 @@ class Insys_FPGA:
             
             self.data_buf_IP_GIM_brd               = []
             self.flag_sum_brd                      = 1 # 1 - average mode; 0 - single mode
+            self._rep_time_cache                   = None
 
             self.data_raw                          = np.zeros(10, dtype = np.int32 )
             self.count_nip                         = np.zeros(10, dtype = np.int32 )
@@ -512,6 +517,7 @@ class Insys_FPGA:
             
             self.data_buf_IP_GIM_brd               = []
             self.flag_sum_brd                      = 1
+            self._rep_time_cache                   = None
 
             self.data_raw                          = np.zeros(10, dtype = np.int32 )
             self.count_nip                         = np.zeros(10, dtype = np.int32 )
@@ -1002,11 +1008,10 @@ class Insys_FPGA:
         if self.test_flag != 'test':
             # deleting old phase switch pulses from self.pulse_array_pulser
             # before adding new ones
-            for i in range(self.phase_pulses_pulser):
-                for index, element in enumerate(self.pulse_array_pulser):
-                    if element['channel'] == '-X' or element['channel'] == '+Y':
-                        del self.pulse_array_pulser[index]
-                        break
+            self.pulse_array_pulser = [
+                p for p in self.pulse_array_pulser
+                if p['channel'] not in ('-X', '+Y')
+            ]
 
             self.phase_pulses_pulser = 0
             # adding phase switch pulses
@@ -1077,19 +1082,6 @@ class Insys_FPGA:
             else:
                 self.current_phase_index_pulser += 1
 
-
-            # update pulses
-            # get repetition rate
-            rep_rate_pulser = self.rep_rate_pulser[0]
-            if rep_rate_pulser[-3:] == ' Hz':
-                rep_time = int(1000000000/float(rep_rate_pulser[:-3]))
-            elif rep_rate_pulser[-3:] == 'kHz':
-                rep_time = int(1000000/float(rep_rate_pulser[:-4]))
-            elif rep_rate_pulser[-3:] == 'MHz':
-                rep_time = int(1000/float(rep_rate_pulser[:-4]))
-
-            rep_time = self.round_to_closest(rep_time, 3.2)
-
             self.pulser_update()
 
         elif self.test_flag == 'test':
@@ -1099,11 +1091,10 @@ class Insys_FPGA:
             if (next(gr, True) and not next(gr, False)) == False:
                 assert(1 == 2), 'Phase sequence does not have equal length'
 
-            for i in range(self.phase_pulses_pulser):
-                for index, element in enumerate(self.pulse_array_pulser):
-                    if element['channel'] == '-X' or element['channel'] == '+Y':
-                        del self.pulse_array_pulser[index]
-                        break
+            self.pulse_array_pulser = [
+                p for p in self.pulse_array_pulser
+                if p['channel'] not in ('-X', '+Y')
+            ]
 
             self.phase_pulses_pulser = 0
             for index, element in enumerate(self.pulse_array_pulser):
@@ -1177,149 +1168,103 @@ class Insys_FPGA:
                 pass
             else:
                 self.current_phase_index_pulser += 1
-            
-            # update pulses
-            # get repetition rate
-            rep_rate_pulser = self.rep_rate_pulser[0]
-            if rep_rate_pulser[-3:] == ' Hz':
-                rep_time = int(1000000000/float(rep_rate_pulser[:-3]))
-            elif rep_rate_pulser[-3:] == 'kHz':
-                rep_time = int(1000000/float(rep_rate_pulser[:-4]))
-            elif rep_rate_pulser[-3:] == 'MHz':
-                rep_time = int(1000/float(rep_rate_pulser[:-4]))
-
-            rep_time = self.round_to_closest(rep_time, 3.2)
 
             self.pulser_update()
 
+    def _rep_time_ns(self):
+        """
+        Parse self.rep_rate_pulser[0] into ns and round to 3.2 ns grid.
+        Cached; invalidated whenever pulser_repetition_rate sets a new rate.
+        """
+        if self._rep_time_cache is not None:
+            return self._rep_time_cache
+        s = self.rep_rate_pulser[0]
+        suffix = s[-3:]
+        if suffix == ' Hz':
+            rep_time = int(1000000000 / float(s[:-3]))
+        elif suffix == 'kHz':
+            rep_time = int(1000000 / float(s[:-4]))
+        elif suffix == 'MHz':
+            rep_time = int(1000 / float(s[:-4]))
+        else:
+            assert(1 == 2), "Incorrect repetition rate dimension (Hz, kHz, MHz)"
+        rep_time = self.round_to_closest(rep_time, 3.2)
+        self._rep_time_cache = rep_time
+        return rep_time
+
     def pulser_update(self):
         """
-        A function that write instructions to PB. 
+        A function that write instructions to PB.
         Repetition rate is taking into account by adding a last pulse with delay.
         Currently, all pulses are cycled using BRANCH.
         """
         if self.test_flag != 'test':
-            # get repetition rate
-            rep_rate_pulser = self.rep_rate_pulser[0]
-            if rep_rate_pulser[-3:] == ' Hz':
-                rep_time = int(1000000000/float(rep_rate_pulser[:-3]))
-            elif rep_rate_pulser[-3:] == 'kHz':
-                rep_time = int(1000000/float(rep_rate_pulser[:-4]))
-            elif rep_rate_pulser[-3:] == 'MHz':
-                rep_time = int(1000/float(rep_rate_pulser[:-4]))
+            if not (self.reset_count_pulser == 0 or self.shift_count_pulser == 1
+                    or self.increment_count_pulser == 1 or self.rep_rate_count_pulser == 1):
+                return
 
-            rep_time = self.round_to_closest(rep_time, 3.2)
+            rep_time = self._rep_time_ns()
 
-            if self.reset_count_pulser == 0 or self.shift_count_pulser == 1 or self.increment_count_pulser == 1 or self.rep_rate_count_pulser == 1:
-                # using a special functions for convertion to instructions
-                # we get two return arrays because of pulser_visualizer. It is not the case for test flag.
-                #temp, visualizer = self.convert_to_bit_pulse( self.pulse_array_pulser )
-                
-                #to_spinapi = self.instruction_pulse( temp, rep_time )
-                to_spinapi = self.split_into_parts_pulser( self.pulse_array_pulser, rep_time )
-                
-                to_spinapi2 = np.array(to_spinapi, dtype = np.int64)
+            to_spinapi = self.split_into_parts_pulser(self.pulse_array_pulser, rep_time)
+            to_spinapi2 = np.array(to_spinapi, dtype=np.int64)
+            if self.awg_pulses_pulser == 1:
+                # mod; offset all but the last instruction by 512 on column 0
+                to_spinapi2[:-1, 0] += 512
+            self.gen_GIM_words(to_spinapi2)  # Создает главный буфер
+
+            if self.nIP_NoKeeper_brd != self.nIP_No_brd:
                 if self.awg_pulses_pulser == 1:
-                    #mod; two lines:
-                    to_spinapi3 = to_spinapi2 + np.array( [512, 0, 0] )
-                    to_spinapi3[-1, 0] = 0
-                    self.gen_GIM_words( to_spinapi3 ) # Создает главный буфер 
-                else:
-                    self.gen_GIM_words( to_spinapi2 ) # Создает главный буфер 
-                #general.message( to_spinapi3 )
-                #self.gen_GIM_words( np.array(to_spinapi, dtype = np.int64) ) # Создает главный буфер 
-                
-                if (self.nIP_NoKeeper_brd != self.nIP_No_brd):
+                    self.write_data_DAC(self.nIP_No_brd)
+                self.write_data_GIM_brd()
+                self.nIP_NoKeeper_brd = self.nIP_No_brd
 
-                    if self.awg_pulses_pulser == 1:
-                        self.write_data_DAC(self.nIP_No_brd)
-                    
-                    self.write_data_GIM_brd()
-
-                    self.nIP_NoKeeper_brd = self.nIP_No_brd
-
-                #general.message(f"N_IP: {self.nIP_No_brd}")
-
-                # Run GIM at the begining of the experiment
-                if self.nIP_No_brd == 0:
-                    if self.start == 0:
-                        self.nIP_No_brd += 1
-                        self.start_brd()
-                        self.start = 1
-                    else:
-                        # SCANS
-                        while True:
-                            if( 1 == self.getGIM_swComp_GIM_status() ):
-                                self.nIP_No_brd += 1
-                                break
-                            else:
-                                pass
-                    #if( 1 == self.getGIM_swComp_GIM_status() ):
-                    #    self.nIP_No_brd = self.nIP_No_brd + 1
-                else:
-                    while True:
-                        if( 1 == self.getGIM_swComp_GIM_status() ):
-                            self.nIP_No_brd += 1
-                            break
-                        else:
-                            pass
-
-                #general.message( f'PU: {self.nIP_No_brd}' )
-                self.reset_count_pulser = 1
-                self.shift_count_pulser = 0
-                self.increment_count_pulser = 0
-                self.rep_rate_count_pulser = 0
-
-                self.iterator_of_updates_pulser += 1
+            # Run GIM at the begining of the experiment
+            if self.nIP_No_brd == 0 and self.start == 0:
+                self.nIP_No_brd += 1
+                self.start_brd()
+                self.start = 1
             else:
-                pass
+                # wait for the switch-complete bit with a timeout
+                deadline = time.monotonic() + _GIM_SWCOMP_TIMEOUT_S
+                while self.getGIM_swComp_GIM_status() != 1:
+                    if time.monotonic() > deadline:
+                        raise TimeoutError(
+                            f"GIM switch did not complete within {_GIM_SWCOMP_TIMEOUT_S}s "
+                            f"(nIP_No_brd={self.nIP_No_brd})"
+                        )
+                    time.sleep(_GIM_SWCOMP_POLL_S)
+                self.nIP_No_brd += 1
+
+            self.reset_count_pulser = 1
+            self.shift_count_pulser = 0
+            self.increment_count_pulser = 0
+            self.rep_rate_count_pulser = 0
+
+            self.iterator_of_updates_pulser += 1
 
         elif self.test_flag == 'test':
-            # get repetition rate
-            rep_rate_pulser = self.rep_rate_pulser[0]
-            if rep_rate_pulser[-3:] == ' Hz':
-                rep_time = int(1000000000/float(rep_rate_pulser[:-3]))
-            elif rep_rate_pulser[-3:] == 'kHz':
-                rep_time = int(1000000/float(rep_rate_pulser[:-4]))
-            elif rep_rate_pulser[-3:] == 'MHz':
-                rep_time = int(1000/float(rep_rate_pulser[:-4]))
-            else:
-                assert(1 == 2), "Incorrect repetition rate dimension (Hz, kHz, MHz)"
+            if not (self.reset_count_pulser == 0 or self.shift_count_pulser == 1
+                    or self.increment_count_pulser == 1 or self.rep_rate_count_pulser == 1):
+                return
 
-            rep_time = self.round_to_closest(rep_time, 3.2)
-            #assert( float(self.rep_rate_pulser[0].split(" ")[0]) < 12000 ), f'Repetition rate cannot exceed {12} kHz'
+            rep_time = self._rep_time_ns()
 
-            if self.reset_count_pulser == 0 or self.shift_count_pulser == 1 or self.increment_count_pulser == 1:
-                # using a special functions for convertion to instructions
-                #to_spinapi = self.instruction_pulse( self.convert_to_bit_pulse( self.pulse_array_pulser ) )
-                to_spinapi = self.split_into_parts_pulser( self.pulse_array_pulser, rep_time )
-                to_spinapi2 = np.array(to_spinapi, dtype = np.int64)
+            to_spinapi = self.split_into_parts_pulser(self.pulse_array_pulser, rep_time)
+            to_spinapi2 = np.array(to_spinapi, dtype=np.int64)
 
-                if self.awg_pulses_pulser == 1:
-                    #mod; two lines:
-                    to_spinapi3 = to_spinapi2 + np.array( [512, 0, 0] )
-                    to_spinapi3[-1, 0] = 0
-                    self.gen_GIM_words( to_spinapi3 ) # Создает главный буфер
-                else:
-                    self.gen_GIM_words( to_spinapi2 ) # Создает главный буфер 
+            if self.awg_pulses_pulser == 1:
+                # mod; offset all but the last instruction by 512 on column 0
+                to_spinapi2[:-1, 0] += 512
+            self.gen_GIM_words(to_spinapi2)  # Создает главный буфер
 
-                #self.gen_GIM_words( np.array(to_spinapi, dtype = np.int64) ) # Создает главный буфер 
+            if self.awg_pulses_pulser == 1:
+                self.awg_update()
+                self.write_data_DAC(0)
 
-                if self.awg_pulses_pulser == 1:
-                    self.awg_update()
-                    self.write_data_DAC(0)
-
-                #general.message(to_spinapi)
-                #self.spinapi = to_spinapi
-                #self.gen_GIM_words( np.array(to_spinapi, dtype = np.int64) ) # Создает главный буфер 
-
-                self.reset_count_pulser = 1
-                self.shift_count_pulser = 0
-                self.increment_count_pulser = 0
-                self.rep_rate_count_pulser = 0
-
-            else:
-                pass
+            self.reset_count_pulser = 1
+            self.shift_count_pulser = 0
+            self.increment_count_pulser = 0
+            self.rep_rate_count_pulser = 0
 
     def pulser_repetition_rate(self, *r_rate):
         """
@@ -1329,16 +1274,9 @@ class Insys_FPGA:
         if self.test_flag != 'test':
             if  len(r_rate) == 1:
                 self.rep_rate_pulser = r_rate
+                self._rep_time_cache = None
 
-                rep_rate_pulser = self.rep_rate_pulser[0]
-                if rep_rate_pulser[-3:] == ' Hz':
-                    rep_time = int(1000000000/float(rep_rate_pulser[:-3]))
-                elif rep_rate_pulser[-3:] == 'kHz':
-                    rep_time = int(1000000/float(rep_rate_pulser[:-4]))
-                elif rep_rate_pulser[-3:] == 'MHz':
-                    rep_time = int(1000/float(rep_rate_pulser[:-4]))
-
-                rep_time = self.round_to_closest(rep_time, 3.2)
+                rep_time = self._rep_time_ns()
 
                 if rep_time > 20408163:
                     if self.adc_window <= 256:
@@ -1366,15 +1304,8 @@ class Insys_FPGA:
         elif self.test_flag == 'test':
             if  len(r_rate) == 1:
                 self.rep_rate_pulser = r_rate
-                rep_rate_pulser = self.rep_rate_pulser[0]
-                if rep_rate_pulser[-3:] == ' Hz':
-                    rep_time = int(1000000000/float(rep_rate_pulser[:-3]))
-                elif rep_rate_pulser[-3:] == 'kHz':
-                    rep_time = int(1000000/float(rep_rate_pulser[:-4]))
-                elif rep_rate_pulser[-3:] == 'MHz':
-                    rep_time = int(1000/float(rep_rate_pulser[:-4]))
-
-                rep_time = self.round_to_closest(rep_time, 3.2)
+                self._rep_time_cache = None
+                rep_time = self._rep_time_ns()
 
                 if rep_time > 20408163:
                     self.change_ini_file("streamBufSizeKb = 1024", "streamBufSizeKb = 128")
