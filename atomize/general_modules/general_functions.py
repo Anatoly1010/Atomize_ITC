@@ -117,14 +117,25 @@ def _downsample_1d(xd, yd, max_points):
     return np.asarray(xd)[..., ::step], np.asarray(yd)[..., ::step], step
 
 def _downsample_2d(data, start_step, max_cells):
-    """Stride a 2D array down to <= max_cells, scaling start_step so the axes
-    stay correct. Returns (data, start_step, factor); factor == 1 is a no-op."""
-    shape = np.shape(data)
-    size = int(np.prod(shape)) if shape else 0
-    if size <= max_cells:
-        return data, start_step, 1
-    factor = int(np.ceil(np.sqrt(size / max_cells)))
-    data_ds = np.asarray(data)[::factor, ::factor]
+    """Stride a 2D image down to <= max_cells, scaling start_step so the axes
+    stay correct. Returns (data, start_step, factor); factor == 1 is a no-op.
+
+    A 3D array is treated as a stack of frames (n_frames, ny, nx) — e.g. the
+    real/imag pair of a complex 2D result that plot_2d shows as toggleable
+    frames; only the two image axes are strided and every frame is kept."""
+    arr = np.asarray(data)
+    if arr.ndim >= 3:
+        size = int(np.prod(arr.shape[-2:]))
+        if size <= max_cells:
+            return data, start_step, 1
+        factor = int(np.ceil(np.sqrt(size / max_cells)))
+        data_ds = arr[..., ::factor, ::factor]
+    else:
+        size = int(np.prod(arr.shape)) if arr.shape else 0
+        if size <= max_cells:
+            return data, start_step, 1
+        factor = int(np.ceil(np.sqrt(size / max_cells)))
+        data_ds = arr[::factor, ::factor]
     if start_step is None:
         new_ss = ((0, factor), (0, factor))
     else:

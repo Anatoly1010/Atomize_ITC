@@ -163,6 +163,7 @@ class MainExtended(MainWindow):
         self.process_phasing = QtCore.QProcess(self)
         self.process_awg_phasing = QtCore.QProcess(self)
         self.process_treatment = QtCore.QProcess(self)
+        self.process_treatment_2d = QtCore.QProcess(self)
         #self.process_t2 = QtCore.QProcess(self)
         #self.process_t1 = QtCore.QProcess(self)
         #self.process_ed = QtCore.QProcess(self)
@@ -171,7 +172,8 @@ class MainExtended(MainWindow):
         self.all_processes = [self.process_tr, self.process_osc, 
             self.process_osc2, self.process_cw, self.process_temp, 
             self.process_field, self.process_mw, self.process_tune_preset, 
-            self.process_phasing, self.process_awg_phasing, self.process_treatment
+            self.process_phasing, self.process_awg_phasing, self.process_treatment,
+            self.process_treatment_2d
         ]
         #, self.process_t2, self.process_t1, self.process_ed, self.process_eseem]
 
@@ -228,12 +230,12 @@ class MainExtended(MainWindow):
 
         button_name_1 = ["CW EPR", "TR EPR", "2012A; IP x.2.21", "2012A_2; IP x.2.22", "Set Temperature", "Set MF"]
         button_name_2 = ["Pulsed MW Bridge", "", "RECT Channel", "AWG Channel"]
-        button_name_3 = ["Resonator Tuning", "Data Treatment"]
+        button_name_3 = ["Resonator Tuning", "Data Treatment", "Data Treatment 2D"]
         #, "T2 Measurement", "T1 Measurement", "ED Spectrum", "3pESEEM"]
 
         actions_1 = [self.start_cw, self.start_tr_control, self.start_osc_control, self.start_osc_control_2, self.start_temp_control, self.start_field_control]
         actions_2 = [self.start_mw_control, None, self.start_rect_phasing, self.start_awg_phasing]
-        actions_3 = [self.start_tune_preset, self.start_treatment_control]
+        actions_3 = [self.start_tune_preset, self.start_treatment_control, self.start_treatment_2d_control]
         #, self.start_t2_preset, self.start_t1_preset, self.start_ed_preset, self.start_eseem_preset]
 
         columns_data = [(button_name_1, actions_1, 1), (button_name_2, actions_2, 2), (button_name_3, actions_3, 3)]
@@ -315,7 +317,8 @@ class MainExtended(MainWindow):
             self.process_python, self.process_tr, self.process_osc, 
             self.process_osc2, self.process_cw, self.process_temp, 
             self.process_field, self.process_mw, self.process_tune_preset,
-            self.process_phasing, self.process_awg_phasing, self.process_treatment
+            self.process_phasing, self.process_awg_phasing, self.process_treatment,
+            self.process_treatment_2d
         ]
             #, self.process_t2, self.process_t1, self.process_ed, self.process_eseem]
 
@@ -342,7 +345,8 @@ class MainExtended(MainWindow):
             self.process_python, self.process_tr, self.process_osc, 
             self.process_osc2, self.process_cw, self.process_temp, 
             self.process_field, self.process_mw, self.process_tune_preset,
-            self.process_phasing, self.process_awg_phasing, self.process_treatment
+            self.process_phasing, self.process_awg_phasing, self.process_treatment,
+            self.process_treatment_2d
         ]
             #, self.process_t2, self.process_t1, self.process_ed, self.process_eseem]
 
@@ -524,7 +528,15 @@ class MainExtended(MainWindow):
         """
         self.process_treatment.setArguments([os.path.join('..','atomize/control_center/data_treatment.py')])
         self.process_treatment.start()
-    
+
+    def start_treatment_2d_control(self):
+        """
+        A function to run the 2D data-treatment window (FFT along an axis /
+        2D FFT / slice / projection).
+        """
+        self.process_treatment_2d.setArguments([os.path.join('..','atomize/control_center/data_treatment_2d.py')])
+        self.process_treatment_2d.start()
+
     def start_osc_control(self):
         """
         A function to run an Keysight control.

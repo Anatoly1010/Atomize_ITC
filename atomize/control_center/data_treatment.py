@@ -57,7 +57,9 @@ BUTTON_STYLE = ("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 
 
 LABEL_STYLE = "QLabel { color : rgb(193, 202, 227); font-weight: bold; }"
 
-# Spinboxes: only colour text + selection so the native +/- arrows keep working.
+# Spinboxes: colour text + selection only (matches awg_phasing_insys.py) so the
+# native +/- glyphs render; the dark-theme background is applied to the
+# QMainWindow (not the central widget) so the native frame draws all four sides.
 DSPIN_STYLE = ("QDoubleSpinBox { color : rgb(193, 202, 227); "
     "selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97); }")
 SPIN_STYLE = ("QSpinBox { color : rgb(193, 202, 227); "
@@ -185,8 +187,10 @@ class MainWindow(QMainWindow):
         self.setWindowIcon(QIcon(icon_path))
         self.setMinimumHeight(660)
         self.resize(940, 700)
+        # background on the QMainWindow (as in awg_phasing_insys.py) rather than
+        # the central widget, so spinboxes keep their full native frame.
+        self.setStyleSheet(f"background-color: {BG};")
         central = QWidget()
-        central.setStyleSheet(f"background-color: {BG};")
         self.setCentralWidget(central)
         root = QHBoxLayout(central)
 
@@ -244,6 +248,15 @@ class MainWindow(QMainWindow):
         self.pair_check.stateChanged.connect(self.on_source_changed)
         panel.addWidget(self.pair_check)
 
+        # X axis name (preview label / plot xname / CSV header for time-domain results)
+        xn_row = QHBoxLayout()
+        xn_row.addWidget(self._label('X axis name'))
+        self.xname_edit = QLineEdit('X')
+        self.xname_edit.setStyleSheet(LINEEDIT_STYLE)
+        self.xname_edit.textChanged.connect(lambda *_: self.redraw())
+        xn_row.addWidget(self.xname_edit)
+        panel.addLayout(xn_row)
+
         self.live_check = QCheckBox('Live update on parameter change')
         self.live_check.setStyleSheet(CHECKBOX_STYLE)
         self.live_check.setChecked(True)
@@ -296,12 +309,17 @@ class MainWindow(QMainWindow):
 
         # +/- buttons on every spinbox (repo-wide convention); give spinboxes,
         # comboboxes and buttons a common minimum row height so they line up
-        row_h = max(self.i_combo.sizeHint().height(),
-                    self.fft_winparam.sizeHint().height(), 28)
-        for wdg in self.findChildren((QSpinBox, QDoubleSpinBox, QComboBox, QPushButton)):
-            wdg.setMinimumHeight(row_h)
+        # Pin spinboxes to a fixed 26 px height (as in awg_phasing_insys.py) so
+        # the native +/- frame renders fully; combos / buttons / line edits get
+        # the same min height for row alignment.
+        row_h = 26
+        for wdg in self.findChildren((QComboBox, QPushButton, QLineEdit)):
+            pass
+            #wdg.setMinimumHeight(row_h)
         for spin in self.findChildren((QSpinBox, QDoubleSpinBox)):
             spin.setButtonSymbols(QSpinBox.ButtonSymbols.PlusMinus)
+            spin.setMinimumHeight(row_h)
+
 
     def _hline(self):
         line = QFrame()
@@ -335,11 +353,15 @@ class MainWindow(QMainWindow):
         self.model_combo = QComboBox()
         self.model_combo.setStyleSheet(COMBO_STYLE)
         self.model_combo.addItems(self.fitter.model_names())
+        self.model_combo.setCurrentText('Exponential')
         grid.addWidget(self.model_combo, 0, 1)
+        self.fit_no_offset = QCheckBox('Fix offset = 0 (drop the b / c baseline term)')
+        self.fit_no_offset.setStyleSheet(CHECKBOX_STYLE)
+        grid.addWidget(self.fit_no_offset, 1, 0, 1, 2)
         btn = QPushButton('Fit')
         btn.setStyleSheet(BUTTON_STYLE)
         btn.clicked.connect(self.do_fit)
-        grid.addWidget(btn, 1, 0, 1, 2)
+        grid.addWidget(btn, 2, 0, 1, 2)
         self.fit_result = QLabel('')
         self.fit_result.setStyleSheet(LABEL_STYLE)
         self.fit_result.setWordWrap(True)
@@ -350,24 +372,25 @@ class MainWindow(QMainWindow):
         fit_scroll.setStyleSheet(SCROLL_STYLE)
         fit_scroll.setWidgetResizable(True)
         fit_scroll.setWidget(self.fit_result)
-        grid.addWidget(fit_scroll, 2, 0, 1, 2)
-        grid.setRowStretch(2, 1)
+        grid.addWidget(fit_scroll, 3, 0, 1, 2)
+        grid.setRowStretch(3, 1)
         return w
 
     WINDOWS = ['None', 'Hann', 'Hamming', 'Blackman', 'Bartlett', 'Flat-top',
                'Kaiser', 'Gaussian', 'Tukey']
     FILTERS = ['None', 'Low-pass', 'High-pass', 'Band-pass']
 
-    # parametric windows: name -> (label, min, max, decimals, default)
+    # parametric windows: name -> (label, min, max, decimals, default, step)
     WINDOW_PARAM = {
-        'Kaiser':   ('Kaiser β', 0.0, 100.0, 2, 8.6),
-        'Gaussian': ('Gaussian σ (×N)', 0.01, 1.0, 3, 0.15),
-        'Tukey':    ('Tukey α', 0.0, 1.0, 3, 0.5),
+        'Kaiser':   ('Kaiser β', 0.0, 100.0, 2, 8.6, 0.5),
+        'Gaussian': ('Gaussian σ (×N)', 0.01, 1.0, 3, 0.15, 0.01),
+        'Tukey':    ('Tukey α', 0.0, 1.0, 3, 0.5, 0.05),
     }
 
     def _build_fft_tab(self):
         w = QWidget()
         grid = QGridLayout(w)
+
         grid.addWidget(self._label('Output'), 0, 0)
         self.fft_mode = QComboBox()
         self.fft_mode.setStyleSheet(COMBO_STYLE)
@@ -399,26 +422,39 @@ class MainWindow(QMainWindow):
         self.fft_zerofill = QComboBox()
         self.fft_zerofill.setStyleSheet(COMBO_STYLE)
         self.fft_zerofill.addItems(['None', '×2', '×4', '×8', 'Next pow₂'])
+        self.fft_zerofill.setCurrentText('×4')
         self.fft_zerofill.currentIndexChanged.connect(self._live_update)
         grid.addWidget(self.fft_zerofill, 3, 1)
 
-        grid.addWidget(self._label('Passband'), 4, 0)
+        grid.addWidget(self._label('Echo center (skip pts)'), 4, 0)
+        skip_row = QHBoxLayout()
+        self.fft_skip = QSpinBox()
+        self.fft_skip.setStyleSheet(SPIN_STYLE)
+        self.fft_skip.setRange(0, 1000000)
+        self.fft_skip.valueChanged.connect(self._live_update)
+        btn_auto = QPushButton('Auto')
+        btn_auto.setStyleSheet(BUTTON_STYLE)
+        btn_auto.clicked.connect(self.auto_echo_center)
+        skip_row.addWidget(self.fft_skip); skip_row.addWidget(btn_auto)
+        grid.addLayout(skip_row, 4, 1)
+
+        grid.addWidget(self._label('Passband'), 5, 0)
         self.fft_filter = QComboBox()
         self.fft_filter.setStyleSheet(COMBO_STYLE)
         self.fft_filter.addItems(self.FILTERS)
         self.fft_filter.currentIndexChanged.connect(self._live_update)
-        grid.addWidget(self.fft_filter, 4, 1)
+        grid.addWidget(self.fft_filter, 5, 1)
 
-        grid.addWidget(self._label('Low cutoff (×f_max)'), 5, 0)
+        grid.addWidget(self._label('Low cutoff (×f_max)'), 6, 0)
         self.fft_cut_lo = QDoubleSpinBox()
         self.fft_cut_lo.setStyleSheet(DSPIN_STYLE)
         self.fft_cut_lo.setRange(0.0, 1.0)
         self.fft_cut_lo.setSingleStep(0.01)
         self.fft_cut_lo.setDecimals(4)
         self.fft_cut_lo.valueChanged.connect(self._live_update)
-        grid.addWidget(self.fft_cut_lo, 5, 1)
+        grid.addWidget(self.fft_cut_lo, 6, 1)
 
-        grid.addWidget(self._label('High cutoff (×f_max)'), 6, 0)
+        grid.addWidget(self._label('High cutoff (×f_max)'), 7, 0)
         self.fft_cut_hi = QDoubleSpinBox()
         self.fft_cut_hi.setStyleSheet(DSPIN_STYLE)
         self.fft_cut_hi.setRange(0.0, 1.0)
@@ -426,17 +462,20 @@ class MainWindow(QMainWindow):
         self.fft_cut_hi.setDecimals(4)
         self.fft_cut_hi.setValue(1.0)
         self.fft_cut_hi.valueChanged.connect(self._live_update)
-        grid.addWidget(self.fft_cut_hi, 6, 1)
+        grid.addWidget(self.fft_cut_hi, 7, 1)
 
         note = self._note('I/Q pair → complex FFT of I+iQ; otherwise FFT of I. '
-                          'Window applied before transform; passband masks the spectrum.')
-        grid.addWidget(note, 7, 0, 1, 2)
+                          'Window applied before transform; passband masks the spectrum. '
+                          'Skip pts drops leading points so the transform starts at the '
+                          'echo centre (removes the dead-time first-order phase).')
+        grid.addWidget(note, 8, 0, 1, 2)
 
         btn = QPushButton('Compute FFT')
         btn.setStyleSheet(BUTTON_STYLE)
         btn.clicked.connect(self.do_fft)
-        grid.addWidget(btn, 8, 0, 1, 2)
-        grid.setRowStretch(9, 1)
+        grid.addWidget(btn, 9, 0, 1, 2)
+        grid.setRowStretch(10, 1)
+
         return w
 
     def _build_filter_tab(self):
@@ -497,8 +536,10 @@ class MainWindow(QMainWindow):
         grid.addWidget(self._label('Zero order (deg)'), 1, 0)
         self.phase_zero = QDoubleSpinBox()
         self.phase_zero.setStyleSheet(DSPIN_STYLE)
-        self.phase_zero.setRange(-360.0, 360.0)
+        self.phase_zero.setRange(0.0, 360.0)
         self.phase_zero.setDecimals(2)
+        self.phase_zero.setSingleStep(0.5)
+        self.phase_zero.setWrapping(True)   # full cycle: 360 wraps back to 0
         self.phase_zero.valueChanged.connect(self._live_update)
         grid.addWidget(self.phase_zero, 1, 1)
 
@@ -507,6 +548,7 @@ class MainWindow(QMainWindow):
         self.phase_first.setStyleSheet(DSPIN_STYLE)
         self.phase_first.setRange(-1e6, 1e6)
         self.phase_first.setDecimals(6)
+        self.phase_first.setSingleStep(0.001)
         self.phase_first.valueChanged.connect(self._live_update)
         grid.addWidget(self.phase_first, 2, 1)
 
@@ -515,6 +557,7 @@ class MainWindow(QMainWindow):
         self.phase_second.setStyleSheet(DSPIN_STYLE)
         self.phase_second.setRange(-1e6, 1e6)
         self.phase_second.setDecimals(6)
+        self.phase_second.setSingleStep(0.0001)
         self.phase_second.valueChanged.connect(self._live_update)
         grid.addWidget(self.phase_second, 3, 1)
 
@@ -527,6 +570,7 @@ class MainWindow(QMainWindow):
         self.phase_zerofill = QComboBox()
         self.phase_zerofill.setStyleSheet(COMBO_STYLE)
         self.phase_zerofill.addItems(['None', '×2', '×4', '×8', 'Next pow₂'])
+        self.phase_zerofill.setCurrentText('×4')
         self.phase_zerofill.currentIndexChanged.connect(self._live_update)
         grid.addWidget(self.phase_zerofill, 5, 1)
 
@@ -552,6 +596,7 @@ class MainWindow(QMainWindow):
         self.smooth_method.setStyleSheet(COMBO_STYLE)
         self.smooth_method.addItems(['Savitzky-Golay', 'Moving average',
             'Baseline subtract', 'Normalize'])
+        self.smooth_method.setCurrentText('Baseline subtract')
         self.smooth_method.currentIndexChanged.connect(self._live_update)
         grid.addWidget(self.smooth_method, 0, 1)
 
@@ -694,6 +739,9 @@ class MainWindow(QMainWindow):
         self.redraw()
         self._live_update()
 
+    def _xname(self):
+        return self.xname_edit.text().strip() or 'X'
+
     # ---------------------------------------------------------- live update
     def _run_current_op(self):
         """Re-run the operation belonging to the currently visible tab.
@@ -723,58 +771,11 @@ class MainWindow(QMainWindow):
 
     def _zerofill_n(self, length, choice):
         """Target FFT length for a zero-fill combo choice ('None', '×2'…, 'Next pow₂')."""
-        if choice.startswith('×'):
-            return int(length)*int(choice[1:])
-        if 'pow' in choice.lower():
-            n = 1
-            while n < length:
-                n *= 2
-            return n
-        return int(length)
+        return sigproc.zerofill_length(length, choice)
 
     def _window(self, n, name, param=8.6):
-        """Apodization window of length n (numpy-only, no scipy needed).
-
-        `param` is the shape parameter for the parametric windows: Kaiser β,
-        Gaussian σ (as a fraction of N), or Tukey α (taper fraction). It is
-        ignored by the fixed-shape windows.
-        """
-        n = int(n)
-        if name == 'None' or n < 2:
-            return np.ones(n)
-        if name == 'Hann':
-            return np.hanning(n)
-        if name == 'Hamming':
-            return np.hamming(n)
-        if name == 'Blackman':
-            return np.blackman(n)
-        if name == 'Bartlett':
-            return np.bartlett(n)
-        if name == 'Kaiser':
-            return np.kaiser(n, float(param))
-        if name == 'Flat-top':
-            k = np.arange(n)
-            a = [0.21557895, 0.41663158, 0.277263158, 0.083578947, 0.006947368]
-            return (a[0] - a[1]*np.cos(2*np.pi*k/(n - 1)) + a[2]*np.cos(4*np.pi*k/(n - 1))
-                    - a[3]*np.cos(6*np.pi*k/(n - 1)) + a[4]*np.cos(8*np.pi*k/(n - 1)))
-        if name == 'Gaussian':
-            std = max(float(param), 1e-6)*n
-            k = np.arange(n) - (n - 1)/2.0
-            return np.exp(-0.5*(k/std)**2)
-        if name == 'Tukey':
-            alpha = float(param)
-            if alpha <= 0:
-                return np.ones(n)
-            if alpha >= 1:
-                return np.hanning(n)
-            x = np.linspace(0, 1, n)
-            w = np.ones(n)
-            lo = x < alpha/2.0
-            hi = x >= 1 - alpha/2.0
-            w[lo] = 0.5*(1 + np.cos(2*np.pi/alpha*(x[lo] - alpha/2.0)))
-            w[hi] = 0.5*(1 + np.cos(2*np.pi/alpha*(x[hi] - 1 + alpha/2.0)))
-            return w
-        return np.ones(n)
+        """Apodization window of length n (delegates to the shared helper)."""
+        return sigproc.apodization_window(n, name, param)
 
     def _update_window_param(self, *args):
         """Relabel + reconfigure the window parameter field for the selected
@@ -784,11 +785,12 @@ class MainWindow(QMainWindow):
         cfg = self.WINDOW_PARAM.get(name)
         self.fft_winparam.blockSignals(True)
         if cfg is not None:
-            label, lo, hi, dec, default = cfg
+            label, lo, hi, dec, default, step = cfg
             self.fft_winparam_label.setText(label)
             self.fft_winparam.setEnabled(True)
             self.fft_winparam.setDecimals(dec)
             self.fft_winparam.setRange(lo, hi)
+            self.fft_winparam.setSingleStep(step)
             self.fft_winparam.setValue(default)
         else:
             self.fft_winparam_label.setText('Window param')
@@ -928,7 +930,7 @@ class MainWindow(QMainWindow):
                 curves.append(('source I', xi, yi, self.SOURCE_PENS[0]))
             if show_q:
                 curves.append(('source Q', xq, yq, self.SOURCE_PENS[1]))
-            xname = 'X'
+            xname = self._xname()
 
         wanted = set()
         for lbl, x, y, color in curves:
@@ -962,16 +964,18 @@ class MainWindow(QMainWindow):
             self.set_status('No I channel selected.')
             return
         model = self.model_combo.currentText()
+        no_offset = self.fit_no_offset.isChecked()
         try:
-            res = self.fitter.fit(model, x, y)
+            res = self.fitter.fit(model, x, y, no_offset=no_offset)
         except Exception as e:
             self.set_status(f'Fit failed: {e}')
             return
-        meta = ['Fit model: ' + model]
+        meta = ['Fit model: ' + model + (' (offset fixed = 0)' if no_offset else '')]
         meta += [f'{n} = {v:.6g} +/- {e:.3g}'
                  for n, v, e in zip(res['param_names'], res['popt'], res['perr'])]
         meta.append(f'R^2 = {res["r_squared"]:.6f}')
-        self._set_result(x, [('fit', res['y_fit'])], meta, show_source=True)
+        self._set_result(x, [('fit', res['y_fit'])], meta, show_source=True,
+                         xname=self._xname())
         rows = ''.join(f'{n} = {v:.4g} &plusmn; {e:.2g}<br>'
                        for n, v, e in zip(res['param_names'], res['popt'], res['perr']))
         html = (f'<div style="line-height: 165%;">'
@@ -990,6 +994,25 @@ class MainWindow(QMainWindow):
         if mode == 'Imaginary':
             return [('Im', np.imag(sp))]
         return [('Re', np.real(sp)), ('Im', np.imag(sp))]   # Real + Imaginary
+
+    def auto_echo_center(self):
+        """Fill 'skip pts' with the echo centre = peak of the magnitude envelope
+        (|I+iQ| for an I/Q pair, else |I|), so the field-offset modulation
+        cancels before the peak search."""
+        x, i = self.i_xy()
+        if x is None or len(i) < 3:
+            self.set_status('Load data first (need at least three points).')
+            return
+        i = np.asarray(i, dtype=float)
+        if self.is_pair():
+            xq, q = self.q_xy()
+            q = np.asarray(q, dtype=float)
+            env = np.sqrt(i**2 + q**2) if q.shape == i.shape else np.abs(i)
+        else:
+            env = np.abs(i)
+        k = sigproc.echo_center(env)
+        self.fft_skip.setValue(int(k))
+        self.set_status(f'Echo centre at point {k} (skip set).')
 
     def do_fft(self):
         x, i = self.i_xy()
@@ -1014,6 +1037,11 @@ class MainWindow(QMainWindow):
         else:
             signal = i
 
+        # drop leading points so the transform starts at the echo centre; this
+        # sets t = 0 there and removes the dead-time first-order phase ramp.
+        skip = max(0, min(int(self.fft_skip.value()), len(signal) - 2))
+        signal = signal[skip:]
+
         # apodization window applied to the time-domain signal before transform
         win = self.fft_window.currentText()
         wparam = self.fft_winparam.value()
@@ -1037,6 +1065,7 @@ class MainWindow(QMainWindow):
         channels = self._spectrum_channels(sp, mode)
         meta = [f'FFT ({"complex I+iQ" if pair else "real"}), output: {mode}',
                 'frequency in 1/(X units)',
+                f'skip {skip} leading pts (echo centre)' if skip else 'no leading skip',
                 f'window: {win}' + (f' (param={wparam:.4g})'
                                     if win in self.WINDOW_PARAM else ''),
                 f'points: {len(signal)} -> {n} (zero fill: {zf})',
@@ -1067,7 +1096,7 @@ class MainWindow(QMainWindow):
         cor3 = float(self.phase_second.value())
 
         domain = 'time'
-        xname = 'X'
+        xname = self._xname()
         if self.phase_fft.isChecked():
             # FFT the complex I/Q first, then phase in the frequency domain
             # (the phase_cor.py workflow); axis becomes frequency.
@@ -1154,7 +1183,7 @@ class MainWindow(QMainWindow):
         if method == 'Baseline subtract':
             meta.append(f'baseline from: {self.base_region.currentText()} '
                         f'(N = {self.base_npts.value()})')
-        self._set_result(x, channels, meta, show_source=True)
+        self._set_result(x, channels, meta, show_source=True, xname=self._xname())
         self.set_status(f'{method} applied'
                         + (' to I & Q.' if self.is_pair() else '.'))
 
@@ -1194,7 +1223,7 @@ class MainWindow(QMainWindow):
                 'Band-pass': f'lo={lo:.4g}, hi={hi:.4g}'}.get(ftype, '')
         meta = [f'Filter: {ftype} (FFT->mask->iFFT)' + (' (I & Q)' if pair else ''),
                 f'cutoff {used} x f_max']
-        self._set_result(x, channels, meta, show_source=True)
+        self._set_result(x, channels, meta, show_source=True, xname=self._xname())
         self.set_status(f'{ftype} filter applied ({used} ×f_max)'
                         + (' to I & Q.' if pair else '.'))
 

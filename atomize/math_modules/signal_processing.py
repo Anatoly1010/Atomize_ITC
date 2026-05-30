@@ -13,6 +13,94 @@ except ImportError:
     SCIPY_AVAILABLE = False
 
 
+def apodization_window(n, name, param=8.6):
+    """Apodization window of length n (numpy-only, no scipy needed).
+
+    `param` is the shape parameter for the parametric windows: Kaiser beta,
+    Gaussian sigma (as a fraction of N), or Tukey alpha (taper fraction). It is
+    ignored by the fixed-shape windows. Shared by the 1D and 2D Data Treatment
+    windows so the two tools apply identical apodization.
+    """
+    n = int(n)
+    if name == 'None' or n < 2:
+        return np.ones(n)
+    if name == 'Hann':
+        return np.hanning(n)
+    if name == 'Hamming':
+        return np.hamming(n)
+    if name == 'Blackman':
+        return np.blackman(n)
+    if name == 'Bartlett':
+        return np.bartlett(n)
+    if name == 'Kaiser':
+        return np.kaiser(n, float(param))
+    if name == 'Flat-top':
+        k = np.arange(n)
+        a = [0.21557895, 0.41663158, 0.277263158, 0.083578947, 0.006947368]
+        return (a[0] - a[1]*np.cos(2*np.pi*k/(n - 1)) + a[2]*np.cos(4*np.pi*k/(n - 1))
+                - a[3]*np.cos(6*np.pi*k/(n - 1)) + a[4]*np.cos(8*np.pi*k/(n - 1)))
+    if name == 'Gaussian':
+        std = max(float(param), 1e-6)*n
+        k = np.arange(n) - (n - 1)/2.0
+        return np.exp(-0.5*(k/std)**2)
+    if name == 'Tukey':
+        alpha = float(param)
+        if alpha <= 0:
+            return np.ones(n)
+        if alpha >= 1:
+            return np.hanning(n)
+        x = np.linspace(0, 1, n)
+        w = np.ones(n)
+        lo = x < alpha/2.0
+        hi = x >= 1 - alpha/2.0
+        w[lo] = 0.5*(1 + np.cos(2*np.pi/alpha*(x[lo] - alpha/2.0)))
+        w[hi] = 0.5*(1 + np.cos(2*np.pi/alpha*(x[hi] - 1 + alpha/2.0)))
+        return w
+    return np.ones(n)
+
+
+def zerofill_length(length, choice):
+    """Target FFT length for a zero-fill combo choice ('None', 'x2'..., 'Next pow2')."""
+    length = int(length)
+    if choice.startswith('×') or choice.startswith('x'):
+        return length*int(choice[1:])
+    if 'pow' in choice.lower():
+        n = 1
+        while n < length:
+            n *= 2
+        return n
+    return length
+
+
+def echo_center(envelope, window=0):
+    """Index of the echo centre in a 1D magnitude envelope.
+
+    The envelope should be offset-invariant (e.g. sqrt(I**2 + Q**2)), so the
+    carrier modulation from a field/frequency offset has already cancelled and
+    only the echo shape remains. Returns the coarse magnitude-peak index
+    refined by a local centre-of-mass, rounded to the nearest integer sample.
+
+    window: half-width (in points) of the centre-of-mass window around the
+    peak; <= 0 picks ~5 % of the length (min 3).
+    """
+    env = np.abs(np.asarray(envelope, dtype=float))
+    n = env.size
+    if n < 3:
+        return 0
+    k = int(np.argmax(env))
+    if window <= 0:
+        window = max(3, int(round(0.05*n)))
+    lo = max(0, k - window)
+    hi = min(n, k + window + 1)
+    seg = env[lo:hi]
+    s = seg.sum()
+    if s <= 0:
+        return k
+    idx = np.arange(lo, hi)
+    com = float((idx*seg).sum()/s)
+    return int(min(max(round(com), 0), n - 1))
+
+
 class Signal_Processing():
     """Lightweight 1D signal-processing helpers (smoothing, baseline, scaling).
 
