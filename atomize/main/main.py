@@ -25,6 +25,60 @@ class MyExtendedNameList(NameList):
         open_action_tr.triggered.connect(lambda: self.file_dialog_2d(is_2d = True))
         self.namelist_view.addAction(open_action_tr)
 
+        send_action = QAction('Send to Data Treatment', self)
+        send_action.triggered.connect(self.send_to_treatment)
+        self.namelist_view.addAction(send_action)
+
+    def send_to_treatment(self):
+        """
+        Dump the selected 1D plot's curves to the libs/treatment_buffer.csv
+        bridge file and launch the Data Treatment window. Interleaved columns
+        are x0, y0, x1, y1, ... padded with NaN; a '# labels:' header line names
+        the curves. This is the cross-process hand-off the standalone window
+        reads, since it cannot see the main window's in-memory curves directly.
+        """
+        index = self.namelist_view.currentIndex()
+        item = self.namelist_model.itemFromIndex(index)
+        if item is None:
+            self.window.text_errors.appendPlainText('Select a 1D plot first.')
+            return
+
+        name = str(item.text())
+        dock = self.plot_dict.get(name)
+        if dock is None or not hasattr(dock, 'curves') or not dock.curves:
+            self.window.text_errors.appendPlainText('No 1D curves to send for "%s".' % name)
+            return
+
+        labels = []
+        columns = []
+        maxlen = 0
+        for label in dock.curves:
+            x, y = dock.get_data(label)
+            x = np.asarray(x, dtype=float)
+            y = np.asarray(y, dtype=float)
+            if x.size == 0:
+                continue
+            labels.append(str(label).replace('|', '/'))
+            columns.append((x, y))
+            maxlen = max(maxlen, x.size, y.size)
+
+        if not columns:
+            self.window.text_errors.appendPlainText('No data in "%s".' % name)
+            return
+
+        buf = np.full((maxlen, 2*len(columns)), np.nan)
+        for i, (x, y) in enumerate(columns):
+            buf[:x.size, 2*i] = x
+            buf[:y.size, 2*i + 1] = y
+
+        buffer_path = os.path.join(self.window.path_to_main, 'treatment_buffer.csv')
+        header = 'Atomize data treatment buffer\nlabels: ' + '|'.join(labels)
+        np.savetxt(buffer_path, buf, delimiter=',', fmt='%.6e', header=header, comments='# ')
+
+        self.window.text_errors.appendPlainText('Sent "%s" to Data Treatment buffer.' % name)
+        if self.window.process_treatment.state() == QtCore.QProcess.ProcessState.NotRunning:
+            self.window.start_treatment_control()
+
     def open_file_tr(self, filename):
         """
         A function to open 2d data
@@ -108,6 +162,7 @@ class MainExtended(MainWindow):
         self.process_tune_preset = QtCore.QProcess(self)
         self.process_phasing = QtCore.QProcess(self)
         self.process_awg_phasing = QtCore.QProcess(self)
+        self.process_treatment = QtCore.QProcess(self)
         #self.process_t2 = QtCore.QProcess(self)
         #self.process_t1 = QtCore.QProcess(self)
         #self.process_ed = QtCore.QProcess(self)
@@ -116,10 +171,10 @@ class MainExtended(MainWindow):
         self.all_processes = [self.process_tr, self.process_osc, 
             self.process_osc2, self.process_cw, self.process_temp, 
             self.process_field, self.process_mw, self.process_tune_preset, 
-            self.process_phasing, self.process_awg_phasing
+            self.process_phasing, self.process_awg_phasing, self.process_treatment
         ]
         #, self.process_t2, self.process_t1, self.process_ed, self.process_eseem]
-        
+
         for process in self.all_processes:
             process.readyReadStandardOutput.connect(self.handle_output_control_center)
 
@@ -173,12 +228,12 @@ class MainExtended(MainWindow):
 
         button_name_1 = ["CW EPR", "TR EPR", "2012A; IP x.2.21", "2012A_2; IP x.2.22", "Set Temperature", "Set MF"]
         button_name_2 = ["Pulsed MW Bridge", "", "RECT Channel", "AWG Channel"]
-        button_name_3 = ["Resonator Tuning"]
+        button_name_3 = ["Resonator Tuning", "Data Treatment"]
         #, "T2 Measurement", "T1 Measurement", "ED Spectrum", "3pESEEM"]
 
         actions_1 = [self.start_cw, self.start_tr_control, self.start_osc_control, self.start_osc_control_2, self.start_temp_control, self.start_field_control]
         actions_2 = [self.start_mw_control, None, self.start_rect_phasing, self.start_awg_phasing]
-        actions_3 = [self.start_tune_preset]
+        actions_3 = [self.start_tune_preset, self.start_treatment_control]
         #, self.start_t2_preset, self.start_t1_preset, self.start_ed_preset, self.start_eseem_preset]
 
         columns_data = [(button_name_1, actions_1, 1), (button_name_2, actions_2, 2), (button_name_3, actions_3, 3)]
@@ -259,8 +314,8 @@ class MainExtended(MainWindow):
         processes = [
             self.process_python, self.process_tr, self.process_osc, 
             self.process_osc2, self.process_cw, self.process_temp, 
-            self.process_field, self.process_mw, self.process_tune_preset, 
-            self.process_phasing, self.process_awg_phasing
+            self.process_field, self.process_mw, self.process_tune_preset,
+            self.process_phasing, self.process_awg_phasing, self.process_treatment
         ]
             #, self.process_t2, self.process_t1, self.process_ed, self.process_eseem]
 
@@ -286,8 +341,8 @@ class MainExtended(MainWindow):
         processes = [
             self.process_python, self.process_tr, self.process_osc, 
             self.process_osc2, self.process_cw, self.process_temp, 
-            self.process_field, self.process_mw, self.process_tune_preset, 
-            self.process_phasing, self.process_awg_phasing
+            self.process_field, self.process_mw, self.process_tune_preset,
+            self.process_phasing, self.process_awg_phasing, self.process_treatment
         ]
             #, self.process_t2, self.process_t1, self.process_ed, self.process_eseem]
 
@@ -462,6 +517,13 @@ class MainExtended(MainWindow):
         """
         self.process_tr.setArguments([os.path.join('..','atomize/control_center/tr_control.py')])
         self.process_tr.start()
+
+    def start_treatment_control(self):
+        """
+        A function to run the data-treatment window (fitting / FFT / smoothing).
+        """
+        self.process_treatment.setArguments([os.path.join('..','atomize/control_center/data_treatment.py')])
+        self.process_treatment.start()
     
     def start_osc_control(self):
         """
