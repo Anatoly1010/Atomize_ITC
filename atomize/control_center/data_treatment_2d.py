@@ -123,6 +123,7 @@ class MainWindow(QMainWindow):
         self.bruker = bruker.Bruker_Opener()
         self.fitter = fitting.math()
         self.fit_map = None        # last per-trace fit result (dict)
+        self._fitting = False      # re-entry guard for the per-trace fit loop
 
         # complex data as two real channels, each a [trace, point] matrix.
         # raw_*  = as loaded; src_* = current input to operations (= raw after a
@@ -430,7 +431,8 @@ class MainWindow(QMainWindow):
         grid.addWidget(self.fit_minr2, 6, 1)
 
         out_row = QHBoxLayout()
-        btn = QPushButton('Run fit')
+        self.fit_run_btn = QPushButton('Run fit')
+        btn = self.fit_run_btn
         btn.setStyleSheet(BUTTON_STYLE)
         btn.clicked.connect(self.do_fit_2d)
         btn_savemap = QPushButton('Save map…')
@@ -878,6 +880,8 @@ class MainWindow(QMainWindow):
         return traces, xaxis, other, col, row
 
     def do_fit_2d(self):
+        if self._fitting:                          # don't stack a second fit
+            return
         if self.src_i is None:
             self.set_status('Open an I/Q dataset first.')
             return
@@ -890,18 +894,33 @@ class MainWindow(QMainWindow):
         params = np.full(n, np.nan)
         r2 = np.full(n, np.nan)
         fails = 0
-        for k in range(n):
-            y = np.asarray(traces[k], float)
-            try:
-                res = self.fitter.fit(model, xaxis, y, no_offset=no_offset)
-                names = list(res['param_names'])
-                if pname in names:
-                    params[k] = res['popt'][names.index(pname)]
-                r2[k] = res['r_squared']
-                if not np.isfinite(r2[k]) or r2[k] < minr2:
-                    params[k] = np.nan
-            except Exception:
-                fails += 1
+        # The fit loop is CPU-bound and would freeze the window ("not responding")
+        # for many traces, so we pump the Qt event loop every few traces and show
+        # progress. The Run-fit button is disabled meanwhile (the _fitting guard
+        # also blocks re-entry from the pumped events); `traces` is a snapshot, so
+        # loading new data mid-fit cannot corrupt the running loop.
+        self._fitting = True
+        self.fit_run_btn.setEnabled(False)
+        chunk = 8
+        try:
+            for k in range(n):
+                y = np.asarray(traces[k], float)
+                try:
+                    res = self.fitter.fit(model, xaxis, y, no_offset=no_offset)
+                    names = list(res['param_names'])
+                    if pname in names:
+                        params[k] = res['popt'][names.index(pname)]
+                    r2[k] = res['r_squared']
+                    if not np.isfinite(r2[k]) or r2[k] < minr2:
+                        params[k] = np.nan
+                except Exception:
+                    fails += 1
+                if k % chunk == 0 or k == n - 1:
+                    self.status.setText(f'Fitting trace {k + 1}/{n}…')
+                    QApplication.processEvents()
+        finally:
+            self._fitting = False
+            self.fit_run_btn.setEnabled(True)
         valid = np.isfinite(params)
         ngood = int(valid.sum())
         self.fit_map = {'x': other, 'param': params, 'r2': r2, 'pname': pname,
