@@ -88,27 +88,31 @@ def _bg_model(t, A, k, d):
     return A*np.exp(-(k*np.abs(t))**(d/3.0))
 
 
-def background_fit(t, V, bg_start, dim=3.0, fit_dim=False):
-    """Fit the intermolecular background on the tail t >= bg_start and return the
-    background-corrected form factor.
+def background_fit(t, V, bg_start, bg_end=None, dim=3.0, fit_dim=False):
+    """Fit the intermolecular background on the window bg_start <= t (<= bg_end)
+    and return the background-corrected form factor.
 
-    `V` is normalized so V(t=0) = 1. The tail is fit to
+    `V` is normalized so V(t=0) = 1. The tail window is fit to
     (1 - lambda) * exp(-(k|t|)^(d/3)); the modulation depth lambda = 1 - A. The
     full-trace background is B(t) = exp(-(k|t|)^(d/3)) and the form factor
 
         F(t) = (V(t)/B(t) - (1 - lambda)) / lambda .
 
-    `dim` is the fractal background dimension (3 = homogeneous 3D); set
-    `fit_dim=True` to float it. Returns a dict with lambda, k, dim, A, B,
-    form_factor, t, bg_start, mask.
+    Only the fit window is bounded by [bg_start, bg_end]; B(t) and F(t) are still
+    evaluated over the whole trace. `bg_end=None` uses everything past bg_start
+    (the default). `dim` is the fractal background dimension (3 = homogeneous 3D);
+    set `fit_dim=True` to float it. Returns a dict with lambda, k, dim, A, B,
+    form_factor, t, bg_start, bg_end, mask.
     """
     _require_scipy()
     t = np.asarray(t, dtype=float)
     V = np.asarray(V, dtype=float)
     V = V/V[int(np.argmin(np.abs(t)))]                 # normalize at t = 0
     mask = t >= bg_start
+    if bg_end is not None:
+        mask = mask & (t <= bg_end)
     if mask.sum() < 4:
-        raise ValueError('Background region has too few points; lower bg_start.')
+        raise ValueError('Background region has too few points; widen [bg_start, bg_end].')
     tt, vv = t[mask], V[mask]
     a0 = float(np.clip(vv[0], 0.05, 1.0))
     if fit_dim:
@@ -129,7 +133,8 @@ def background_fit(t, V, bg_start, dim=3.0, fit_dim=False):
     F = (V/B - (1 - lam))/lam
     return {'lambda': lam, 'k': float(k), 'dim': float(d), 'A': float(A),
             'B': B, 'form_factor': F, 'V_norm': V, 't': t,
-            'bg_start': float(bg_start), 'mask': mask}
+            'bg_start': float(bg_start),
+            'bg_end': (None if bg_end is None else float(bg_end)), 'mask': mask}
 
 
 # --------------------------------------------------------------------------- #
@@ -224,7 +229,7 @@ def _normalize_masses(P):
     return P/s if s > 0 else P
 
 
-def deer_invert(t, V, r=None, bg_start=None, dim=3.0, fit_dim=False,
+def deer_invert(t, V, r=None, bg_start=None, bg_end=None, dim=3.0, fit_dim=False,
                 alpha=None, alphas=None, reg_order=2, nu_dd=NU_DD,
                 scan_lcurve=True):
     """Full DEER pipeline: background-correct V(t), build the kernel, invert to
@@ -242,7 +247,7 @@ def deer_invert(t, V, r=None, bg_start=None, dim=3.0, fit_dim=False,
     r = default_r_axis() if r is None else np.asarray(r, float)
     if bg_start is None:
         bg_start = t[0] + 0.5*(t[-1] - t[0])
-    bg = background_fit(t, V, bg_start, dim=dim, fit_dim=fit_dim)
+    bg = background_fit(t, V, bg_start, bg_end=bg_end, dim=dim, fit_dim=fit_dim)
     F = bg['form_factor']
     K = dipolar_kernel(t, r, nu_dd=nu_dd)
     L = regularization_matrix(len(r), reg_order)

@@ -183,6 +183,7 @@ class MainWindow(QMainWindow):
         # background-start cursor, and a guard against cursor<->spinbox echo.
         self.deer_result = None
         self._bg_cursor = None
+        self._bg_cursor_end = None     # draggable background-end cursor
         self._suppress_cursor = False
         self._lcurve_marker = None     # highlighted point on the L-curve view
 
@@ -701,6 +702,23 @@ class MainWindow(QMainWindow):
         bg_row.addWidget(self.deer_bgstart); bg_row.addWidget(btn_mid)
         grid.addLayout(bg_row, r, 1); r += 1
 
+        grid.addWidget(self._label('Background end'), r, 0)
+        bge_row = QHBoxLayout()
+        self.deer_bgend = QDoubleSpinBox()
+        self.deer_bgend.setStyleSheet(DSPIN_STYLE)
+        self.deer_bgend.setRange(-1e9, 1e9)
+        self.deer_bgend.setDecimals(4)
+        self.deer_bgend.setSingleStep(0.05)
+        self.deer_bgend.setValue(0.0)            # 0 / ≤ start ⇒ no upper limit
+        self.deer_bgend.setToolTip('Upper edge of the background fit window. '
+                                   '0 or ≤ start means fit to the end of the trace.')
+        self.deer_bgend.valueChanged.connect(self._live_update)
+        btn_end = QPushButton('End')
+        btn_end.setStyleSheet(BUTTON_STYLE)
+        btn_end.clicked.connect(self._deer_bgend_max)
+        bge_row.addWidget(self.deer_bgend); bge_row.addWidget(btn_end)
+        grid.addLayout(bge_row, r, 1); r += 1
+
         grid.addWidget(self._label('Background dim.'), r, 0)
         dim_row = QHBoxLayout()
         self.deer_dim = QDoubleSpinBox()
@@ -796,6 +814,14 @@ class MainWindow(QMainWindow):
             return
         x = np.asarray(x, dtype=float)
         self.deer_bgstart.setValue(float(x[0] + 0.5*(x[-1] - x[0])))
+
+    def _deer_bgend_max(self):
+        """Set the background end to the last point of the current X axis."""
+        x, _ = self.i_xy()
+        if x is None or not len(x):
+            self.set_status('Load a V(t) trace first.')
+            return
+        self.deer_bgend.setValue(float(np.asarray(x, dtype=float)[-1]))
 
     # ------------------------------------------------------------- loading
     def _register_datasets(self, mapping):
@@ -1442,6 +1468,9 @@ class MainWindow(QMainWindow):
         tf = self._deer_tfactor()
         t_us = x*tf                      # kernel works in microseconds
         bg_us = float(self.deer_bgstart.value())*tf
+        # background end: 0 or ≤ start ⇒ no upper limit (fit to the trace end)
+        end_disp = float(self.deer_bgend.value())
+        bg_end_us = end_disp*tf if end_disp > float(self.deer_bgstart.value()) else None
         rmin, rmax = self.deer_rmin.value(), self.deer_rmax.value()
         if rmax <= rmin:
             self.set_status('Distance max must exceed min.')
@@ -1450,7 +1479,8 @@ class MainWindow(QMainWindow):
         alpha = None if self.deer_alpha_auto.isChecked() else float(self.deer_alpha.value())
         try:
             res = deer_module.deer_invert(
-                t_us, v, r=r, bg_start=bg_us, dim=float(self.deer_dim.value()),
+                t_us, v, r=r, bg_start=bg_us, bg_end=bg_end_us,
+                dim=float(self.deer_dim.value()),
                 fit_dim=self.deer_fitdim.isChecked(), alpha=alpha)
         except Exception as e:
             self.set_status(f'DEER failed: {e}')
@@ -1496,10 +1526,14 @@ class MainWindow(QMainWindow):
         tf = self._deer_tfactor()
         tunit = self.deer_tunit.currentText()
         t_disp = res['t']/tf
+        bge = res['background'].get('bg_end')
+        bg_win = (f'bg start {self.deer_bgstart.value():.4g} {tunit}'
+                  + (f', bg end {bge/tf:.4g} {tunit}' if bge is not None
+                     else ' (to end)'))
         common = [f'DEER/PDS — λ={res["lambda"]:.4g}, k={res["k"]:.4g}, '
                   f'dim={res["dim"]:.3g}, α={res["alpha"]:.4g}',
                   f'time unit {tunit}, r {res["r"][0]:.3g}–{res["r"][-1]:.3g} nm '
-                  f'({len(res["r"])} pts), bg start {self.deer_bgstart.value():.4g} {tunit}']
+                  f'({len(res["r"])} pts), {bg_win}']
         if view == 'Distance P(r)':
             meta = common + ['column: P(r) density (integral = 1)']
             self._set_result(res['r'], [('P(r)', res['P_density'])], meta,
@@ -1602,11 +1636,13 @@ class MainWindow(QMainWindow):
             self._bg_cursor.sigPositionChangeFinished.connect(self._on_bg_cursor)
         if not visible:
             self._bg_cursor.setVisible(False)
+            self._show_bg_cursor_end(False)
             return
         self._suppress_cursor = True
         self._bg_cursor.setValue(float(self.deer_bgstart.value()))
         self._bg_cursor.setVisible(True)
         self._suppress_cursor = False
+        self._show_bg_cursor_end(True)      # mirror visibility on time-domain views
 
     def _on_bg_cursor(self, *args):
         """User dragged the background cursor: update the spin box and re-run."""
@@ -1617,10 +1653,43 @@ class MainWindow(QMainWindow):
         self.deer_bgstart.blockSignals(False)
         self.do_deer()
 
+    def _show_bg_cursor_end(self, visible):
+        """Show/position (or hide) the draggable background-end cursor. It only
+        appears when an end limit is active (deer_bgend > deer_bgstart); dragging
+        it drives deer_bgend, in display time units."""
+        if self._bg_cursor_end is None:
+            self._bg_cursor_end = pg.InfiniteLine(
+                angle=90, movable=True,
+                pen=pg.mkPen((120, 200, 255), width=2, style=Qt.PenStyle.DashLine),
+                hoverPen=pg.mkPen((180, 225, 255), width=3),
+                label='bg end', labelOpts={'color': (120, 200, 255),
+                                           'position': 0.84})
+            self.plot_widget.addItem(self._bg_cursor_end)
+            self._bg_cursor_end.sigPositionChangeFinished.connect(self._on_bg_cursor_end)
+        active = float(self.deer_bgend.value()) > float(self.deer_bgstart.value())
+        if not (visible and active):
+            self._bg_cursor_end.setVisible(False)
+            return
+        self._suppress_cursor = True
+        self._bg_cursor_end.setValue(float(self.deer_bgend.value()))
+        self._bg_cursor_end.setVisible(True)
+        self._suppress_cursor = False
+
+    def _on_bg_cursor_end(self, *args):
+        """User dragged the background-end cursor: update the spin box and re-run."""
+        if self._suppress_cursor or self._bg_cursor_end is None:
+            return
+        self.deer_bgend.blockSignals(True)
+        self.deer_bgend.setValue(float(self._bg_cursor_end.value()))
+        self.deer_bgend.blockSignals(False)
+        self.do_deer()
+
     def _clear_bg_cursor(self):
-        """Hide both DEER overlays (background cursor + L-curve marker)."""
+        """Hide all DEER overlays (background start/end cursors + L-curve marker)."""
         if self._bg_cursor is not None:
             self._bg_cursor.setVisible(False)
+        if self._bg_cursor_end is not None:
+            self._bg_cursor_end.setVisible(False)
         if self._lcurve_marker is not None:
             self._lcurve_marker.setVisible(False)
 
@@ -1647,7 +1716,9 @@ class MainWindow(QMainWindow):
                f'lambda = {res["lambda"]:.6g}, k = {res["k"]:.6g}, '
                f'dim = {res["dim"]:.6g}, alpha = {res["alpha"]:.6g}',
                f'r {res["r"][0]:.4g}-{res["r"][-1]:.4g} nm ({len(res["r"])} pts), '
-               f'time unit {tunit}, bg start {self.deer_bgstart.value():.6g} {tunit}']
+               f'time unit {tunit}, bg start {self.deer_bgstart.value():.6g} {tunit}'
+               + (f', bg end {res["background"]["bg_end"]/self._deer_tfactor():.6g} {tunit}'
+                  if res['background'].get('bg_end') is not None else ', bg end: trace end')]
         written = []
 
         def _save(suffix, cols, col_header):
