@@ -38,6 +38,7 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QLabel, QPushBu
 
 import atomize.general_modules.general_functions as general
 import atomize.general_modules.csv_opener_saver as openfile
+import atomize.general_modules.bruker_opener as bruker
 import atomize.math_modules.signal_processing as sigproc
 
 BG = 'rgb(42, 42, 64)'
@@ -108,6 +109,7 @@ class MainWindow(QMainWindow):
             self.test_flag = 'None'
 
         self.opener = openfile.Saver_Opener()
+        self.bruker = bruker.Bruker_Opener()
 
         # complex data as two real channels, each a [trace, point] matrix.
         # raw_*  = as loaded; src_* = current input to operations (= raw after a
@@ -144,10 +146,14 @@ class MainWindow(QMainWindow):
         btn_open = QPushButton('Open I/Q (CSV + _1)…')
         btn_open.setStyleSheet(BUTTON_STYLE)
         btn_open.clicked.connect(self.open_iq)
+        btn_bruker = QPushButton('Open Bruker…')
+        btn_bruker.setStyleSheet(BUTTON_STYLE)
+        btn_bruker.clicked.connect(self.open_bruker)
         btn_clear = QPushButton('Clear')
         btn_clear.setStyleSheet(BUTTON_STYLE)
         btn_clear.clicked.connect(self.clear_all)
         src_row.addWidget(btn_open)
+        src_row.addWidget(btn_bruker)
         src_row.addWidget(btn_clear)
         panel.addLayout(src_row)
 
@@ -398,6 +404,64 @@ class MainWindow(QMainWindow):
                             f'(matrix {i.shape[0]}×{i.shape[1]} [traces × points]).')
         except Exception as e:
             self.set_status(f'Could not read I/Q: {e}')
+
+    @staticmethod
+    def _axis_start_step(arr):
+        """(start, step) for a 1D abscissa; step is the average increment."""
+        a = np.asarray(arr, dtype=float)
+        if a.size < 2:
+            return (float(a[0]) if a.size else 0.0), 1.0
+        return float(a[0]), float((a[-1] - a[0])/(a.size - 1))
+
+    def open_bruker(self):
+        """Load a 2D Bruker native dataset (BES3T .DSC/.DTA or ESP/WinEPR
+        .par/.spc). Rows = traces (Y/indirect), cols = points (X/within trace);
+        complex data fills I & Q, real data sets Q = 0. The axis fields are
+        populated from the descriptor."""
+        nf = ['Bruker (*.DSC *.dsc *.DTA *.dta *.par *.spc *.PAR *.SPC)',
+              'BES3T (*.DSC *.dsc *.DTA *.dta)',
+              'ESP/WinEPR (*.par *.spc *.PAR *.SPC)', 'All files (*)']
+        path = self.opener.open_file_dialog(multiprocessing=True, name_filters=nf)
+        if not path or path == 'None':
+            return
+        try:
+            res = self.bruker.open(path)
+        except Exception as e:
+            self.set_status(f'Could not read Bruker file: {e}')
+            return
+        if res['ndim'] != 2:
+            self.set_status(f'{res["format"]} {res["ndim"]}D dataset — the 2D tool '
+                            f'needs a 2D matrix; use the 1D Data Treatment window.')
+            return
+        data = np.asarray(res['data'])               # (ny traces, nx points)
+        i = np.real(data).astype(float)
+        q = np.imag(data).astype(float) if res['complex'] else np.zeros_like(i)
+        # X = within-trace (cols), Y = indirect (rows); transpose swaps them
+        xarr, yarr = res['x'], res['y']
+        xn, xs = res['x_name'] or 'X', res['x_unit'] or ''
+        yn, ys = res['y_name'] or 'Y', res['y_unit'] or ''
+        if self.transpose_check.isChecked():
+            i, q = i.T, q.T
+            xarr, yarr = yarr, xarr
+            xn, xs, yn, ys = yn, ys, xn, xs
+        if min(i.shape) < 2:
+            self.set_status('Bruker matrix too small (need ≥ 2×2).')
+            return
+        x0, dx = self._axis_start_step(xarr)
+        y0, dy = self._axis_start_step(yarr)
+        edits = [(self.xname_edit, xn), (self.xscale_edit, xs),
+                 (self.yname_edit, yn), (self.yscale_edit, ys)]
+        spins = [(self.x0_spin, x0), (self.dx_spin, dx),
+                 (self.y0_spin, y0), (self.dy_spin, dy)]
+        for w, v in edits:                           # set without firing reset loops
+            w.blockSignals(True); w.setText(str(v)); w.blockSignals(False)
+        for s, v in spins:
+            s.blockSignals(True); s.setValue(float(v)); s.blockSignals(False)
+        self.raw_i, self.raw_q = i, q
+        self.reset_to_raw()
+        self.set_status(f'Loaded {os.path.basename(path)} — {res["format"]}, '
+                        f'{i.shape[0]}×{i.shape[1]} [traces × points], '
+                        + ('complex.' if res['complex'] else 'real (Q = 0).'))
 
     def _raw_axes(self):
         return (self._axis(self.x0_spin.value(), self.dx_spin.value(),
