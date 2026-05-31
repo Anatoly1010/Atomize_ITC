@@ -182,6 +182,7 @@ class MainWindow(QMainWindow):
         self.deer_result = None
         self._bg_cursor = None
         self._suppress_cursor = False
+        self._lcurve_marker = None     # highlighted point on the L-curve view
 
         self.design()
         self.load_from_buffer(silent=True)
@@ -208,6 +209,8 @@ class MainWindow(QMainWindow):
         self.plot_widget.setBackground((42, 42, 64))
         self.plot_widget.showGrid(x=True, y=True, alpha=0.2)
         self.legend = self.plot_widget.addLegend()
+        # click-to-pick alpha on the DEER L-curve view
+        self.plot_widget.scene().sigMouseClicked.connect(self._on_plot_click)
         root.addWidget(self.plot_widget, stretch=3)
 
         # ---- Vertical separator between graph and controls ----
@@ -748,14 +751,20 @@ class MainWindow(QMainWindow):
         grid.addWidget(self._label('Show'), r, 0)
         self.deer_show = QComboBox()
         self.deer_show.setStyleSheet(COMBO_STYLE)
-        self.deer_show.addItems(['Distance P(r)', 'Form factor + fit', 'Background fit'])
+        self.deer_show.addItems(['Distance P(r)', 'Form factor + fit',
+                                 'Background fit', 'L-curve'])
         self.deer_show.currentIndexChanged.connect(self._deer_rerender)
         grid.addWidget(self.deer_show, r, 1); r += 1
 
+        run_row = QHBoxLayout()
         btn = QPushButton('Run DEER')
         btn.setStyleSheet(BUTTON_STYLE)
         btn.clicked.connect(self.do_deer)
-        grid.addWidget(btn, r, 0, 1, 2); r += 1
+        btn_exp = QPushButton('Export all…')
+        btn_exp.setStyleSheet(BUTTON_STYLE)
+        btn_exp.clicked.connect(self.save_deer_all)
+        run_row.addWidget(btn); run_row.addWidget(btn_exp)
+        grid.addLayout(run_row, r, 0, 1, 2); r += 1
 
         self.deer_info = QLabel('')
         self.deer_info.setStyleSheet(LABEL_STYLE)
@@ -1096,6 +1105,8 @@ class MainWindow(QMainWindow):
             except Exception:
                 pass
         self.plot_widget.setLabel('bottom', xname)
+        # only the DEER L-curve view uses a left-axis label; clear it otherwise
+        self.plot_widget.setLabel('left', '')
 
     def set_status(self, text):
         self.status.setText(text)
@@ -1453,13 +1464,15 @@ class MainWindow(QMainWindow):
             self._set_result(res['r'], [('P(r)', res['P_density'])], meta,
                              show_source=False, xname='Distance (nm)')
             self._show_bg_cursor(False)
+            self._show_lcurve_marker(False)
         elif view == 'Form factor + fit':
             meta = common + ['columns: form factor F(t), K·P fit']
             self._set_result(t_disp, [('F(t)', res['form_factor']),
                                       ('K·P fit', res['F_fit'])], meta,
                              show_source=False, xname=f'Time ({tunit})')
             self._show_bg_cursor(True)
-        else:  # Background fit
+            self._show_lcurve_marker(False)
+        elif view == 'Background fit':
             bg = res['background']
             level = (1 - res['lambda'])*bg['B']
             meta = common + ['columns: V(t) normalized, fitted background (1-λ)·B(t)']
@@ -1467,6 +1480,72 @@ class MainWindow(QMainWindow):
                                       ('(1-λ)·B', level)], meta,
                              show_source=False, xname=f'Time ({tunit})')
             self._show_bg_cursor(True)
+            self._show_lcurve_marker(False)
+        else:  # L-curve
+            self._show_bg_cursor(False)
+            lc = res.get('l_curve')
+            if lc is None:
+                self.set_status('No L-curve available for this result.')
+                return
+            x, y = self._lcurve_xy(lc)
+            meta = common + ['L-curve: log₁₀ residual ‖KP−F‖ vs log₁₀ ‖LP‖ over α',
+                             'click a point to pick α (switches to manual)']
+            self._set_result(x, [('L-curve', y)], meta, show_source=False,
+                             xname='log₁₀ residual  ‖KP−F‖')
+            self.plot_widget.setLabel('left', 'log₁₀ roughness  ‖LP‖')
+            idx = self._lcurve_index(lc, res['alpha'])
+            self._show_lcurve_marker(True, x[idx], y[idx])
+
+    @staticmethod
+    def _lcurve_xy(lc):
+        x = np.log10(np.asarray(lc['rho'], float) + 1e-300)
+        y = np.log10(np.asarray(lc['eta'], float) + 1e-300)
+        return x, y
+
+    @staticmethod
+    def _lcurve_index(lc, alpha):
+        """Index of the L-curve grid point nearest the chosen alpha (log space)."""
+        a = np.asarray(lc['alphas'], float)
+        return int(np.argmin(np.abs(np.log(a) - np.log(max(alpha, 1e-300)))))
+
+    def _show_lcurve_marker(self, visible, x=None, y=None):
+        if self._lcurve_marker is None:
+            self._lcurve_marker = pg.ScatterPlotItem(
+                size=14, symbol='o', pen=pg.mkPen((20, 20, 30), width=1.5),
+                brush=pg.mkBrush(211, 194, 78))
+            self._lcurve_marker.setZValue(20)
+            self.plot_widget.addItem(self._lcurve_marker)
+        if not visible:
+            self._lcurve_marker.setVisible(False)
+            return
+        self._lcurve_marker.setData([x], [y])
+        self._lcurve_marker.setVisible(True)
+
+    def _on_plot_click(self, event):
+        """On the DEER L-curve view, pick the α of the nearest L-curve point."""
+        if (self.tabs.currentIndex() != 5 or self.deer_result is None
+                or self.deer_show.currentText() != 'L-curve'):
+            return
+        lc = self.deer_result.get('l_curve')
+        if lc is None:
+            return
+        vb = self.plot_widget.plotItem.vb
+        pt = vb.mapSceneToView(event.scenePos())
+        x, y = self._lcurve_xy(lc)
+        # nearest point in the (normalized) log-log plane
+        rx = (x.max() - x.min()) or 1.0
+        ry = (y.max() - y.min()) or 1.0
+        d = ((x - pt.x())/rx)**2 + ((y - pt.y())/ry)**2
+        idx = int(np.argmin(d))
+        alpha = float(lc['alphas'][idx])
+        self.deer_alpha_auto.blockSignals(True)
+        self.deer_alpha_auto.setChecked(False)
+        self.deer_alpha_auto.blockSignals(False)
+        self.deer_alpha.setEnabled(True)
+        self.deer_alpha.blockSignals(True)
+        self.deer_alpha.setValue(alpha)
+        self.deer_alpha.blockSignals(False)
+        self.do_deer()
 
     def _show_bg_cursor(self, visible):
         """Show/position (or hide) the draggable background-start cursor on the
@@ -1498,13 +1577,55 @@ class MainWindow(QMainWindow):
         self.do_deer()
 
     def _clear_bg_cursor(self):
+        """Hide both DEER overlays (background cursor + L-curve marker)."""
         if self._bg_cursor is not None:
             self._bg_cursor.setVisible(False)
+        if self._lcurve_marker is not None:
+            self._lcurve_marker.setVisible(False)
 
     def _on_tab_changed(self, *args):
-        """Hide the background cursor whenever the DEER tab is not active."""
+        """Hide the DEER overlays whenever the DEER tab is not active."""
         if self.tabs.currentIndex() != 5:
             self._clear_bg_cursor()
+
+    def save_deer_all(self):
+        """Write every DEER stage to a set of sibling CSVs derived from one
+        chosen path: <base>_distance / _formfactor / _background / _lcurve.csv."""
+        res = self.deer_result
+        if res is None:
+            self.set_status('Run DEER first — nothing to export.')
+            return
+        file_path = self.opener.create_file_dialog(multiprocessing=True)
+        if not file_path or file_path == 'None':
+            return
+        base = file_path[:-4] if file_path.lower().endswith('.csv') else file_path
+        tunit = self.deer_tunit.currentText()
+        t_disp = res['t']/self._deer_tfactor()
+        bg = res['background']
+        hdr = ['DEER/PDS analysis (Tikhonov + NNLS)',
+               f'lambda = {res["lambda"]:.6g}, k = {res["k"]:.6g}, '
+               f'dim = {res["dim"]:.6g}, alpha = {res["alpha"]:.6g}',
+               f'r {res["r"][0]:.4g}-{res["r"][-1]:.4g} nm ({len(res["r"])} pts), '
+               f'time unit {tunit}, bg start {self.deer_bgstart.value():.6g} {tunit}']
+        written = []
+
+        def _save(suffix, cols, col_header):
+            fn = f'{base}_{suffix}.csv'
+            self.opener.save_data(fn, np.column_stack(cols),
+                                  header='\n'.join(hdr + [col_header]), mode='w')
+            written.append(os.path.basename(fn))
+
+        _save('distance', [res['r'], res['P_density'], res['P_norm']],
+              'r (nm), P(r) density, P (masses)')
+        _save('formfactor', [t_disp, res['form_factor'], res['F_fit'], res['residuals']],
+              f'time ({tunit}), F(t), K*P fit, residuals')
+        _save('background', [t_disp, bg['V_norm'], bg['B'], (1 - res['lambda'])*bg['B']],
+              f'time ({tunit}), V(t) norm, B(t), (1-lambda)*B(t)')
+        lc = res.get('l_curve')
+        if lc is not None:
+            _save('lcurve', [lc['alphas'], lc['rho'], lc['eta'], lc['curvature']],
+                  'alpha, residual norm, solution norm, curvature')
+        self.set_status('Exported DEER stages: ' + ', '.join(written))
 
     # -------------------------------------------------------------- output
     def plot_result(self):

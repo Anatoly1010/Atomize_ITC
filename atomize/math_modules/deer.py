@@ -225,14 +225,16 @@ def _normalize_masses(P):
 
 
 def deer_invert(t, V, r=None, bg_start=None, dim=3.0, fit_dim=False,
-                alpha=None, alphas=None, reg_order=2, nu_dd=NU_DD):
+                alpha=None, alphas=None, reg_order=2, nu_dd=NU_DD,
+                scan_lcurve=True):
     """Full DEER pipeline: background-correct V(t), build the kernel, invert to
     P(r) by Tikhonov + NNLS (alpha at the L-curve corner if not supplied).
 
-    `t` in us, `r` in nm. Returns a dict: t, r, form_factor F(t), F_fit = K P,
-    residuals, P (raw masses), P_norm (masses, sum = 1), P_density (P_norm / dr,
-    integrates to 1), kernel, alpha, l_curve (when scanned), background result,
-    and lambda / k / dim.
+    `t` in us, `r` in nm. With `scan_lcurve` (default) the L-curve is always
+    computed for display, even when an explicit `alpha` is given. Returns a dict:
+    t, r, form_factor F(t), F_fit = K P, residuals, P (raw masses), P_norm
+    (masses, sum = 1), P_density (P_norm / dr, integrates to 1), kernel, alpha,
+    l_curve (when scanned), background result, and lambda / k / dim.
     """
     _require_scipy()
     t = np.asarray(t, float)
@@ -244,11 +246,10 @@ def deer_invert(t, V, r=None, bg_start=None, dim=3.0, fit_dim=False,
     F = bg['form_factor']
     K = dipolar_kernel(t, r, nu_dd=nu_dd)
     L = regularization_matrix(len(r), reg_order)
-    lc = None
+    if alphas is None:
+        alphas = np.logspace(-4, 1, 25)
+    lc = l_curve(K, F, alphas, L) if (scan_lcurve or alpha is None) else None
     if alpha is None:
-        if alphas is None:
-            alphas = np.logspace(-4, 1, 25)
-        lc = l_curve(K, F, alphas, L)
         alpha = lc['alpha_opt']
         P = lc['P']
     else:
