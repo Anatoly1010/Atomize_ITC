@@ -259,7 +259,7 @@ class MainWindow(QMainWindow):
 
         self.live_check = QCheckBox('Live update on parameter change')
         self.live_check.setStyleSheet(CHECKBOX_STYLE)
-        self.live_check.setChecked(True)
+        #self.live_check.setChecked(True)
         panel.addWidget(self.live_check)
 
         panel.addWidget(self._hline())
@@ -530,7 +530,9 @@ class MainWindow(QMainWindow):
         w = QWidget()
         grid = QGridLayout(w)
 
-        note = self._note('Uses the I and Q channels selected above.')
+        note = self._note('Uses the I and Q channels selected above. First/second '
+                          'order are a frequency offset: 50 → 50 MHz when x is in ns '
+                          '(coeff = 2π·value/1000 per x-unit).')
         grid.addWidget(note, 0, 0, 1, 2)
 
         grid.addWidget(self._label('Zero order (deg)'), 1, 0)
@@ -543,21 +545,21 @@ class MainWindow(QMainWindow):
         self.phase_zero.valueChanged.connect(self._live_update)
         grid.addWidget(self.phase_zero, 1, 1)
 
-        grid.addWidget(self._label('First order (rad/x)'), 2, 0)
+        grid.addWidget(self._label('First order (MHz @ ns)'), 2, 0)
         self.phase_first = QDoubleSpinBox()
         self.phase_first.setStyleSheet(DSPIN_STYLE)
         self.phase_first.setRange(-1e6, 1e6)
-        self.phase_first.setDecimals(6)
-        self.phase_first.setSingleStep(0.001)
+        self.phase_first.setDecimals(3)
+        self.phase_first.setSingleStep(0.5)
         self.phase_first.valueChanged.connect(self._live_update)
         grid.addWidget(self.phase_first, 2, 1)
 
-        grid.addWidget(self._label('Second order (rad/x²)'), 3, 0)
+        grid.addWidget(self._label('Second order (MHz @ ns)'), 3, 0)
         self.phase_second = QDoubleSpinBox()
         self.phase_second.setStyleSheet(DSPIN_STYLE)
         self.phase_second.setRange(-1e6, 1e6)
-        self.phase_second.setDecimals(6)
-        self.phase_second.setSingleStep(0.0001)
+        self.phase_second.setDecimals(4)
+        self.phase_second.setSingleStep(0.01)
         self.phase_second.valueChanged.connect(self._live_update)
         grid.addWidget(self.phase_second, 3, 1)
 
@@ -1092,8 +1094,11 @@ class MainWindow(QMainWindow):
 
         # phase polynomial exp( i*(cor1 + cor2*axis + cor3*axis^2) )
         cor1 = float(self.phase_zero.value())*np.pi/180.0   # degrees -> radians
-        cor2 = float(self.phase_first.value())
-        cor3 = float(self.phase_second.value())
+        # first/second order entered as a frequency offset: value/1000 cycles per
+        # x-unit (50 -> 50 MHz when x is in ns); coeff = 2*pi*value/1000.
+        v1 = float(self.phase_first.value()); v2 = float(self.phase_second.value())
+        cor2 = 2*np.pi*v1/1000.0
+        cor3 = 2*np.pi*v2/1000.0
 
         domain = 'time'
         xname = self._xname()
@@ -1133,7 +1138,7 @@ class MainWindow(QMainWindow):
         meta = [f'Phase correction, output: {mode}; domain: {domain}',
                 f'I = {il}, Q = {ql}',
                 f'zero order = {self.phase_zero.value():.4g} deg, '
-                f'first = {cor2:.6g} rad/x, second = {cor3:.6g} rad/x^2']
+                f'first = {v1:.4g}, second = {v2:.4g} (MHz @ x=ns; coeff = 2π·value/1000 per x)']
         self._set_result(axis, channels, meta,
                          show_source=not self.phase_fft.isChecked(), xname=xname)
         self.set_status(f'Phase correction applied ({mode}).')

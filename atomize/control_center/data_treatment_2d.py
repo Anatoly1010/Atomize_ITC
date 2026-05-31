@@ -163,16 +163,16 @@ class MainWindow(QMainWindow):
         self.xscale_edit = QLineEdit('ns');  self.xscale_edit.setStyleSheet(LINEEDIT_STYLE)
         ax.addWidget(self.xname_edit, 0, 1); ax.addWidget(self.xscale_edit, 0, 2)
         ax.addWidget(self._label('X start / step'), 1, 0)
-        self.x0_spin = self._dspin(-1e12, 1e12, 6, 0.0)
-        self.dx_spin = self._dspin(-1e12, 1e12, 9, 1.0)
+        self.x0_spin = self._dspin(-1e12, 1e12, 2, 0.0)
+        self.dx_spin = self._dspin(-1e12, 1e12, 2, 0.4)
         ax.addWidget(self.x0_spin, 1, 1); ax.addWidget(self.dx_spin, 1, 2)
         ax.addWidget(self._label('Y (indirect)'), 2, 0)
         self.yname_edit = QLineEdit('Delay'); self.yname_edit.setStyleSheet(LINEEDIT_STYLE)
         self.yscale_edit = QLineEdit('ns');   self.yscale_edit.setStyleSheet(LINEEDIT_STYLE)
         ax.addWidget(self.yname_edit, 2, 1); ax.addWidget(self.yscale_edit, 2, 2)
         ax.addWidget(self._label('Y start / step'), 3, 0)
-        self.y0_spin = self._dspin(-1e12, 1e12, 6, 0.0)
-        self.dy_spin = self._dspin(-1e12, 1e12, 9, 1.0)
+        self.y0_spin = self._dspin(-1e12, 1e12, 2, 0.0)
+        self.dy_spin = self._dspin(-1e12, 1e12, 2, 3.2)
         ax.addWidget(self.y0_spin, 3, 1); ax.addWidget(self.dy_spin, 3, 2)
         panel.addLayout(ax)
         # title / unit edits only relabel the current plot in place (keep the
@@ -184,7 +184,7 @@ class MainWindow(QMainWindow):
 
         self.live_check = QCheckBox('Live update on parameter change')
         self.live_check.setStyleSheet(CHECKBOX_STYLE)
-        self.live_check.setChecked(True)
+        #self.live_check.setChecked(True)
         panel.addWidget(self.live_check)
 
         panel.addWidget(self._hline())
@@ -283,19 +283,21 @@ class MainWindow(QMainWindow):
     def _build_phase_tab(self):
         w = QWidget(); grid = QGridLayout(w)
         grid.addWidget(self._note('Multiply I+iQ by exp(i·(φ₀ + φ₁·x + φ₂·x²)) '
-                                  'along the X axis. Run before or after FFT.'),
+                                  'along the X axis. First/second order are entered '
+                                  'as a frequency offset: 50 → 50 MHz when x is in ns '
+                                  '(coeff = 2π·value/1000 per x-unit). Run before FFT.'),
                        0, 0, 1, 2)
         grid.addWidget(self._label('Zero order (deg)'), 1, 0)
         self.phase_zero = self._dspin(0.0, 360.0, 2, 0.0, step=0.5)
         self.phase_zero.setWrapping(True)   # full cycle: 360 wraps back to 0
         self.phase_zero.valueChanged.connect(self._live_update)
         grid.addWidget(self.phase_zero, 1, 1)
-        grid.addWidget(self._label('First order (rad/x)'), 2, 0)
-        self.phase_first = self._dspin(-1e6, 1e6, 6, 0.0, step=0.001)
+        grid.addWidget(self._label('First order (MHz @ ns)'), 2, 0)
+        self.phase_first = self._dspin(-1e6, 1e6, 3, 0.0, step=0.5)
         self.phase_first.valueChanged.connect(self._live_update)
         grid.addWidget(self.phase_first, 2, 1)
-        grid.addWidget(self._label('Second order (rad/x²)'), 3, 0)
-        self.phase_second = self._dspin(-1e6, 1e6, 6, 0.0, step=0.0001)
+        grid.addWidget(self._label('Second order (MHz @ ns)'), 3, 0)
+        self.phase_second = self._dspin(-1e6, 1e6, 4, 0.0, step=0.01)
         self.phase_second.valueChanged.connect(self._live_update)
         grid.addWidget(self.phase_second, 3, 1)
         btn = QPushButton('Apply phase correction')
@@ -308,7 +310,7 @@ class MainWindow(QMainWindow):
     def _build_fft_tab(self):
         w = QWidget(); grid = QGridLayout(w)
         grid.addWidget(self._label('Transform axis'), 0, 0)
-        self.fft_axis = self._combo(['X (within trace)', 'Y (indirect)'])
+        self.fft_axis = self._combo(['X (within trace)', 'Y (indirect)', 'Both (2D)'])
         self.fft_axis.currentIndexChanged.connect(self._live_update)
         grid.addWidget(self.fft_axis, 0, 1)
 
@@ -341,10 +343,11 @@ class MainWindow(QMainWindow):
         self.fft_zerofill.currentIndexChanged.connect(self._live_update)
         grid.addWidget(self.fft_zerofill, 4, 1)
 
-        grid.addWidget(self._note('Complex FFT of I+iQ along the chosen axis; that '
-                                  'axis becomes frequency. ns → MHz. Skip pts drops '
-                                  'leading points so the transform starts at the echo '
-                                  'centre (removes the dead-time first-order phase).'),
+        grid.addWidget(self._note('Complex FFT of I+iQ along the chosen axis (or both '
+                                  'for a 2D transform); that axis becomes frequency. '
+                                  'ns → MHz. Skip pts drops leading X points so the '
+                                  'transform starts at the echo centre (removes the '
+                                  'dead-time first-order phase).'),
                        5, 0, 1, 2)
         btn = QPushButton('Compute FFT')
         btn.setStyleSheet(BUTTON_STYLE)
@@ -525,13 +528,16 @@ class MainWindow(QMainWindow):
         ncols = self.src_i.shape[1]
         axisx = self.src_col['start'] + self.src_col['step']*np.arange(ncols)
         c1 = float(self.phase_zero.value())*np.pi/180.0
-        c2 = float(self.phase_first.value())
-        c3 = float(self.phase_second.value())
+        # first/second order entered as a frequency offset: value/1000 cycles per
+        # x-unit, i.e. 50 -> 50 MHz when x is in ns (coeff = 2*pi*value/1000).
+        v1 = float(self.phase_first.value()); v2 = float(self.phase_second.value())
+        c2 = 2*np.pi*v1/1000.0
+        c3 = 2*np.pi*v2/1000.0
         ph = np.exp(1j*(c1 + c2*axisx + c3*axisx*axisx))
         Z = (self.src_i + 1j*self.src_q)*ph[None, :]
         meta = ['Phase correction along X',
                 f'zero = {self.phase_zero.value():.4g} deg, '
-                f'first = {c2:.6g} rad/x, second = {c3:.6g} rad/x^2']
+                f'first = {v1:.4g}, second = {v2:.4g} (MHz @ x=ns; coeff = 2π·value/1000 per x)']
         self._set_result(Z.real, Z.imag, self.src_col, self.src_row,
                          ('Re', 'Im'), meta)
         self.set_status('Phase correction applied.')
@@ -562,7 +568,9 @@ class MainWindow(QMainWindow):
         if self.src_i is None:
             self.set_status('Open an I/Q dataset first.')
             return
-        along_x = (self.fft_axis.currentIndex() == 0)
+        # X for the X-only and 2D modes; Y only for the Y-only mode. The echo
+        # centre is a property of the direct (X) time axis.
+        along_x = (self.fft_axis.currentIndex() != 1)
         axis = 1 if along_x else 0
         mag = np.sqrt(self.src_i**2 + self.src_q**2)
         profile = mag.mean(axis=1 - axis)   # collapse the non-transform axis
@@ -575,7 +583,40 @@ class MainWindow(QMainWindow):
         if self.src_i is None:
             self.set_status('Open an I/Q dataset first.')
             return
-        along_x = (self.fft_axis.currentIndex() == 0)
+        mode = self.fft_axis.currentIndex()   # 0 = X, 1 = Y, 2 = both (2D)
+        win_name = self.fft_window.currentText()
+        wparam = (self.fft_winparam.value()
+                  if win_name in WINDOW_PARAM else 8.6)
+        zf = self.fft_zerofill.currentText()
+
+        if mode == 2:
+            # full 2D FFT: both X (columns) and Y (rows) become frequency. The
+            # echo-centre skip drops leading columns (the direct/echo X axis).
+            skip = max(0, min(int(self.fft_skip.value()), self.src_i.shape[1] - 2))
+            src_i = self.src_i[:, skip:]; src_q = self.src_q[:, skip:]
+            nrows, ncols = src_i.shape
+            win_x = sigproc.apodization_window(ncols, win_name, wparam)
+            win_y = sigproc.apodization_window(nrows, win_name, wparam)
+            Z = (src_i + 1j*src_q)*win_y[:, None]*win_x[None, :]
+            nx = sigproc.zerofill_length(ncols, zf)
+            ny = sigproc.zerofill_length(nrows, zf)
+            sp = np.fft.fftshift(np.fft.fft2(Z, s=(ny, nx)), axes=(0, 1))
+            frx, funx = self._freq_axis(nx, self.src_col['step'], self.src_col['scale'])
+            fry, funy = self._freq_axis(ny, self.src_row['step'], self.src_row['scale'])
+            dfx = float(frx[1] - frx[0]) if nx > 1 else 1.0
+            dfy = float(fry[1] - fry[0]) if ny > 1 else 1.0
+            res_col = self._axis(float(frx[0]), dfx, 'Frequency Offset', funx, auto=True)
+            res_row = self._axis(float(fry[0]), dfy, 'Frequency Offset', funy, auto=True)
+            meta = ['2D FFT (X and Y)',
+                    f'skip {skip} leading pts on X (echo centre)' if skip else 'no leading skip',
+                    f'window: {win_name}, X {ncols}→{nx}, Y {nrows}→{ny} '
+                    f'(zero fill {zf})',
+                    f'frequency in {funx} (X), {funy} (Y)']
+            self._set_result(sp.real, sp.imag, res_col, res_row, ('Re', 'Im'), meta)
+            self.set_status(f'2D FFT; skip {skip}; X {ncols}→{nx}, Y {nrows}→{ny}.')
+            return
+
+        along_x = (mode == 0)
         axis = 1 if along_x else 0
         src_ax = self.src_col if along_x else self.src_row
         # drop leading points so the transform starts at the echo centre; this
@@ -584,13 +625,10 @@ class MainWindow(QMainWindow):
         sl = [slice(None), slice(None)]; sl[axis] = slice(skip, None)
         src_i = self.src_i[tuple(sl)]; src_q = self.src_q[tuple(sl)]
         n0 = src_i.shape[axis]
-        win = sigproc.apodization_window(
-            n0, self.fft_window.currentText(),
-            self.fft_winparam.value()
-            if self.fft_window.currentText() in WINDOW_PARAM else 8.6)
+        win = sigproc.apodization_window(n0, win_name, wparam)
         shape = [1, 1]; shape[axis] = n0
         Z = (src_i + 1j*src_q)*win.reshape(shape)
-        n = sigproc.zerofill_length(n0, self.fft_zerofill.currentText())
+        n = sigproc.zerofill_length(n0, zf)
         sp = np.fft.fftshift(np.fft.fft(Z, n=n, axis=axis), axes=axis)
         fr, funit = self._freq_axis(n, src_ax['step'], src_ax['scale'])
         df = float(fr[1] - fr[0]) if n > 1 else 1.0
