@@ -214,6 +214,7 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self._build_phase_tab(), 'Phase')
         self.tabs.addTab(self._build_fft_tab(), 'FFT')
         self.tabs.addTab(self._build_fit_tab(), 'Fit')
+        self.tabs.addTab(self._build_slice_tab(), 'Slice')
         self.tabs.currentChanged.connect(self._live_update)
         panel.addWidget(self.tabs, stretch=1)
 
@@ -398,13 +399,11 @@ class MainWindow(QMainWindow):
                                   'relaxation model. The chosen parameter is plotted '
                                   'vs the other axis as a 1D map (e.g. T<sub>m</sub> vs '
                                   'field). For k / k1 / k2 the value is the time '
-                                  'constant in the decay-axis units. Use "Send slice → '
-                                  '1D" to hand one trace to the 1D Fit tool.'),
+                                  'constant in the decay-axis units.'),
                        0, 0, 1, 2)
 
         grid.addWidget(self._label('Decay axis'), 1, 0)
         self.fit_axis = self._combo(['X (within trace)', 'Y (indirect)'])
-        self.fit_axis.currentIndexChanged.connect(self._on_fit_axis_changed)
         grid.addWidget(self.fit_axis, 1, 1)
 
         grid.addWidget(self._label('Channel'), 2, 0)
@@ -430,42 +429,54 @@ class MainWindow(QMainWindow):
         self.fit_minr2 = self._dspin(0.0, 1.0, 3, 0.0, step=0.05)
         grid.addWidget(self.fit_minr2, 6, 1)
 
+        out_row = QHBoxLayout()
         btn = QPushButton('Run fit')
         btn.setStyleSheet(BUTTON_STYLE)
         btn.clicked.connect(self.do_fit_2d)
-        grid.addWidget(btn, 7, 0, 1, 2)
+        btn_savemap = QPushButton('Save map…')
+        btn_savemap.setStyleSheet(BUTTON_STYLE)
+        btn_savemap.clicked.connect(self.save_fit_map)
+        out_row.addWidget(btn); out_row.addWidget(btn_savemap)
+        grid.addLayout(out_row, 7, 0, 1, 2)
 
         self.fit_info = QLabel('')
         self.fit_info.setStyleSheet(LABEL_STYLE); self.fit_info.setWordWrap(True)
         self.fit_info.setTextFormat(Qt.TextFormat.RichText)
         grid.addWidget(self.fit_info, 8, 0, 1, 2)
+        grid.setRowStretch(9, 1)
 
-        grid.addWidget(self._hline(), 9, 0, 1, 2)
-        grid.addWidget(self._note('Slice transfer — pick one trace (by index along the '
-                                  'other axis) and send it to the standalone 1D Data '
-                                  'Treatment window; click "Load from plot" there.'),
-                       10, 0, 1, 2)
-        grid.addWidget(self._label('Trace #'), 11, 0)
-        slice_row = QHBoxLayout()
-        self.fit_slice = QSpinBox(); self.fit_slice.setStyleSheet(SPIN_STYLE)
-        self.fit_slice.setRange(0, 1000000)
-        self.fit_slice.valueChanged.connect(self._update_slice_label)
-        self.fit_slice_label = self._label('')
-        slice_row.addWidget(self.fit_slice); slice_row.addWidget(self.fit_slice_label, 1)
-        grid.addLayout(slice_row, 11, 1)
+        self._update_fit_params()
+        return w
 
-        out_row = QHBoxLayout()
+    def _build_slice_tab(self):
+        w = QWidget(); grid = QGridLayout(w)
+        grid.addWidget(self._note('Send one trace to the standalone 1D Data Treatment '
+                                  'window for fitting / phasing there. Pick the slice '
+                                  'direction and the trace index (along the other axis); '
+                                  'the trace is written to the transfer buffer and shown '
+                                  'in the main GUI. Then click "Load from plot" in the 1D '
+                                  'window (I = slice Re, Q = slice Im).'),
+                       0, 0, 1, 2)
+
+        grid.addWidget(self._label('Slice along'), 1, 0)
+        self.slice_axis = self._combo(['X (within trace)', 'Y (indirect)'])
+        self.slice_axis.currentIndexChanged.connect(self._update_slice_label)
+        grid.addWidget(self.slice_axis, 1, 1)
+
+        grid.addWidget(self._label('Trace #'), 2, 0)
+        srow = QHBoxLayout()
+        self.slice_spin = QSpinBox(); self.slice_spin.setStyleSheet(SPIN_STYLE)
+        self.slice_spin.setRange(0, 1000000)
+        self.slice_spin.valueChanged.connect(self._update_slice_label)
+        self.slice_label = self._label('')
+        srow.addWidget(self.slice_spin); srow.addWidget(self.slice_label, 1)
+        grid.addLayout(srow, 2, 1)
+
         btn_send = QPushButton('Send slice → 1D')
         btn_send.setStyleSheet(BUTTON_STYLE)
         btn_send.clicked.connect(self.send_slice_to_1d)
-        btn_savemap = QPushButton('Save map…')
-        btn_savemap.setStyleSheet(BUTTON_STYLE)
-        btn_savemap.clicked.connect(self.save_fit_map)
-        out_row.addWidget(btn_send); out_row.addWidget(btn_savemap)
-        grid.addLayout(out_row, 12, 0, 1, 2)
-        grid.setRowStretch(13, 1)
-
-        self._update_fit_params()
+        grid.addWidget(btn_send, 3, 0, 1, 2)
+        grid.setRowStretch(4, 1)
         return w
 
     def _update_fit_params(self, *args):
@@ -482,9 +493,6 @@ class MainWindow(QMainWindow):
                        names[0] if names else '')
         self.fit_param.setCurrentText(cur if cur in names else default)
         self.fit_param.blockSignals(False)
-
-    def _on_fit_axis_changed(self, *args):
-        self._update_slice_label()
 
     # ------------------------------------------------------------- loading
     def open_iq(self):
@@ -623,7 +631,11 @@ class MainWindow(QMainWindow):
         if self.src_i is None:
             self.set_status('Open an I/Q dataset first.')
             return
-        {0: self.do_phase, 1: self.do_fft, 2: self.do_fit_2d}[self.tabs.currentIndex()]()
+        op = {0: self.do_phase, 1: self.do_fft, 2: self.do_fit_2d}.get(self.tabs.currentIndex())
+        if op is not None:
+            op()
+        else:
+            self.set_status('Slice tab: use "Send slice → 1D".')
 
     # ------------------------------------------------------------- result
     def has_result(self):
@@ -920,22 +932,22 @@ class MainWindow(QMainWindow):
         self.set_status(f'Per-trace fit done: {ngood}/{n} traces; {pname} map plotted.')
 
     def _update_slice_label(self, *args):
-        if not hasattr(self, 'fit_slice'):
+        if not hasattr(self, 'slice_spin'):
             return
         if self.src_i is None:
-            self.fit_slice_label.setText('')
+            self.slice_label.setText('')
             return
         i, q, col, row = self._current_iq()
-        if self.fit_axis.currentIndex() == 0:
+        if self.slice_axis.currentIndex() == 0:
             ntr, axis = i.shape[0], row
         else:
             ntr, axis = i.shape[1], col
-        self.fit_slice.blockSignals(True)
-        self.fit_slice.setMaximum(max(0, ntr - 1))
-        self.fit_slice.blockSignals(False)
-        idx = int(self.fit_slice.value())
+        self.slice_spin.blockSignals(True)
+        self.slice_spin.setMaximum(max(0, ntr - 1))
+        self.slice_spin.blockSignals(False)
+        idx = int(self.slice_spin.value())
         coord = axis['start'] + axis['step']*idx
-        self.fit_slice_label.setText(f"{axis['name']} = {coord:.4g} {axis['scale']} (of {ntr})")
+        self.slice_label.setText(f"{axis['name']} = {coord:.4g} {axis['scale']} (of {ntr})")
 
     def _write_buffer(self, curves):
         """Write a one-shot 1D-tool mailbox (libs/treatment_buffer.csv): interleaved
@@ -956,18 +968,18 @@ class MainWindow(QMainWindow):
             self.set_status('Open an I/Q dataset first.')
             return
         i, q, col, row = self._current_iq()
-        idx = int(self.fit_slice.value())
-        if self.fit_axis.currentIndex() == 0:            # X = decay; slice = one row
+        idx = int(self.slice_spin.value())
+        if self.slice_axis.currentIndex() == 0:          # X = slice; one row
             ntr = i.shape[0]
             if idx >= ntr:
-                idx = ntr - 1; self.fit_slice.setValue(idx)
+                idx = ntr - 1; self.slice_spin.setValue(idx)
             x = col['start'] + col['step']*np.arange(i.shape[1])
             re, im = i[idx], q[idx]
             dax, oax = col, row
-        else:                                            # Y = decay; slice = one column
+        else:                                            # Y = slice; one column
             ntr = i.shape[1]
             if idx >= ntr:
-                idx = ntr - 1; self.fit_slice.setValue(idx)
+                idx = ntr - 1; self.slice_spin.setValue(idx)
             x = row['start'] + row['step']*np.arange(i.shape[0])
             re, im = i[:, idx], q[:, idx]
             dax, oax = row, col
