@@ -37,6 +37,7 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QLabel, QPushBu
 
 import atomize.general_modules.general_functions as general
 import atomize.general_modules.csv_opener_saver as openfile
+import atomize.general_modules.bruker_opener as bruker
 import atomize.math_modules.least_square_fitting_modules as fitting
 import atomize.math_modules.signal_processing as sigproc
 import atomize.math_modules.fft as fft_module
@@ -152,6 +153,7 @@ class MainWindow(QMainWindow):
             self.test_flag = 'None'
 
         self.opener = openfile.Saver_Opener()
+        self.bruker = bruker.Bruker_Opener()
         self.fitter = fitting.math()
         self.sp = sigproc.Signal_Processing()
         self.fft = fft_module.Fast_Fourier()
@@ -230,6 +232,9 @@ class MainWindow(QMainWindow):
         btn_open = QPushButton('Open CSV…')
         btn_open.setStyleSheet(BUTTON_STYLE)
         btn_open.clicked.connect(self.open_csv)
+        btn_bruker = QPushButton('Open Bruker…')
+        btn_bruker.setStyleSheet(BUTTON_STYLE)
+        btn_bruker.clicked.connect(self.open_bruker)
         btn_buf = QPushButton('Load from plot')
         btn_buf.setStyleSheet(BUTTON_STYLE)
         btn_buf.clicked.connect(lambda: self.load_from_buffer(silent=False))
@@ -237,6 +242,7 @@ class MainWindow(QMainWindow):
         btn_clear.setStyleSheet(BUTTON_STYLE)
         btn_clear.clicked.connect(self.clear_all)
         src_row.addWidget(btn_open)
+        src_row.addWidget(btn_bruker)
         src_row.addWidget(btn_buf)
         src_row.addWidget(btn_clear)
         panel.addLayout(src_row)
@@ -830,6 +836,41 @@ class MainWindow(QMainWindow):
                             f'({data.shape[0] - 1} curve(s)).')
         except Exception as e:
             self.set_status(f'Could not read CSV: {e}')
+
+    def open_bruker(self):
+        """Load a Bruker native dataset (BES3T .DSC/.DTA or ESP/WinEPR .par/.spc).
+        Complex traces register as a real+imag I/Q pair; a time axis in ns/µs/ms
+        also presets the DEER time-unit selector."""
+        nf = ['Bruker (*.DSC *.dsc *.DTA *.dta *.par *.spc *.PAR *.SPC)',
+              'BES3T (*.DSC *.dsc *.DTA *.dta)',
+              'ESP/WinEPR (*.par *.spc *.PAR *.SPC)', 'All files (*)']
+        file_path = self.opener.open_file_dialog(multiprocessing=True, name_filters=nf)
+        if not file_path or file_path == 'None':
+            return
+        try:
+            res = self.bruker.open(file_path)
+        except Exception as e:
+            self.set_status(f'Could not read Bruker file: {e}')
+            return
+        if res['ndim'] != 1:
+            self.set_status(f'{res["format"]} {res["ndim"]}D dataset '
+                            f'({res["data"].shape}) — the 1D tool needs a 1D trace; '
+                            f'use the 2D Data Treatment window.')
+            return
+        x = np.asarray(res['x'], dtype=float)
+        mapping = {lbl: (x, np.asarray(y, dtype=float)) for lbl, y in res['channels']}
+        self._register_datasets(mapping)          # selects first two as I / Q
+        if res['complex']:
+            self.pair_check.setChecked(True)
+        unit = f' ({res["x_unit"]})' if res['x_unit'] else ''
+        self.xname_edit.setText(f'{res["x_name"]}{unit}')
+        u = (res['x_unit'] or '').strip().lower()
+        tmap = {'ns': 'ns', 'us': 'µs', 'µs': 'µs', 'μs': 'µs', 'ms': 'ms'}
+        if u in tmap:                              # preset the DEER time unit
+            self.deer_tunit.setCurrentText(tmap[u])
+        self.set_status(f'Loaded {os.path.basename(file_path)} — {res["format"]}, '
+                        f'{len(x)} pts, '
+                        + ('complex (I/Q pair).' if res['complex'] else 'real.'))
 
     def load_from_buffer(self, silent=False):
         if not os.path.isfile(BUFFER_PATH):
