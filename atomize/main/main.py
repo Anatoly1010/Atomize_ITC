@@ -31,24 +31,35 @@ class MyExtendedNameList(NameList):
 
     def send_to_treatment(self):
         """
-        Dump the selected 1D plot's curves to the libs/treatment_buffer.csv
-        bridge file and launch the Data Treatment window. Interleaved columns
-        are x0, y0, x1, y1, ... padded with NaN; a '# labels:' header line names
-        the curves. This is the cross-process hand-off the standalone window
-        reads, since it cannot see the main window's in-memory curves directly.
+        Hand the selected plot off to the standalone Data Treatment window.
+        1D plots (docks with named curves) go to the 1D tool via
+        libs/treatment_buffer.csv; 2D image plots go to the 2D tool via
+        libs/treatment_buffer_2d.npz. Either way this is the cross-process
+        bridge the standalone windows read (they cannot see the main window's
+        in-memory plots directly); they pick it up with "Load from plot".
         """
         index = self.namelist_view.currentIndex()
         item = self.namelist_model.itemFromIndex(index)
         if item is None:
-            self.window.text_errors.appendPlainText('Select a 1D plot first.')
+            self.window.text_errors.appendPlainText('Select a plot first.')
             return
 
         name = str(item.text())
         dock = self.plot_dict.get(name)
-        if dock is None or not hasattr(dock, 'curves') or not dock.curves:
-            self.window.text_errors.appendPlainText('No 1D curves to send for "%s".' % name)
+        if dock is None:
+            self.window.text_errors.appendPlainText('Plot "%s" not found.' % name)
             return
+        if hasattr(dock, 'curves') and dock.curves:
+            self._send_1d_to_treatment(name, dock)
+        elif hasattr(dock, 'img_view'):
+            self._send_2d_to_treatment(name, dock)
+        else:
+            self.window.text_errors.appendPlainText(
+                'Nothing to send for "%s" (no 1D curves or 2D image).' % name)
 
+    def _send_1d_to_treatment(self, name, dock):
+        """Interleaved x0, y0, x1, y1, ... columns padded with NaN; a
+        '# labels:' header line names the curves."""
         labels = []
         columns = []
         maxlen = 0
@@ -78,6 +89,49 @@ class MyExtendedNameList(NameList):
         self.window.text_errors.appendPlainText('Sent "%s" to Data Treatment buffer.' % name)
         if self.window.process_treatment.state() == QtCore.QProcess.ProcessState.NotRunning:
             self.window.start_treatment_control()
+
+    def _send_2d_to_treatment(self, name, dock):
+        """Dump the selected 2D image (and its axis geometry) to
+        libs/treatment_buffer_2d.npz for the 2D Data Treatment window. The
+        image stack is (frames, nX, nY); frame 0 = real/I, frame 1 = imag/Q.
+        We transpose each frame back to the tool's [trace, point] layout."""
+        full = getattr(dock.img_view, 'image', None)
+        if full is None:
+            self.window.text_errors.appendPlainText('No 2D image data in "%s".' % name)
+            return
+        full = np.asarray(full, dtype=float)
+        if full.ndim == 3:
+            i = np.ascontiguousarray(full[0].T)          # (nX, nY) -> [trace, point]
+            q = (np.ascontiguousarray(full[1].T) if full.shape[0] > 1
+                 else np.zeros_like(i))
+        elif full.ndim == 2:
+            i = np.ascontiguousarray(full.T)
+            q = np.zeros_like(i)
+        else:
+            self.window.text_errors.appendPlainText(
+                'Unexpected 2D image shape %s for "%s".' % (full.shape, name))
+            return
+
+        x0 = float(getattr(dock, '_x0', 0.0)); dx = float(getattr(dock, '_xscale', 1.0))
+        y0 = float(getattr(dock, '_y0', 0.0)); dy = float(getattr(dock, '_yscale', 1.0))
+        try:
+            xnm, xsc = dock.h_cross_section_widget.axis    # [xname, xscale]
+        except Exception:
+            xnm, xsc = 'X', ''
+        try:
+            ynm, ysc = dock.v_cross_section_widget.axis    # [yname, yscale]
+        except Exception:
+            ynm, ysc = 'Y', ''
+
+        buffer_path = os.path.join(self.window.path_to_main, 'treatment_buffer_2d.npz')
+        np.savez(buffer_path, i=i, q=q,
+                 geom=np.array([x0, dx, y0, dy], dtype=float),
+                 labels=np.array([str(xnm), str(xsc), str(ynm), str(ysc)]))
+
+        self.window.text_errors.appendPlainText(
+            'Sent 2D "%s" to Data Treatment (2D) buffer.' % name)
+        if self.window.process_treatment_2d.state() == QtCore.QProcess.ProcessState.NotRunning:
+            self.window.start_treatment_2d_control()
 
     def open_file_tr(self, filename):
         """

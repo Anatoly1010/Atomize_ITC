@@ -106,6 +106,9 @@ RELAX_MODELS = ['Exponential', 'Bi-exponential', 'Stretched exponential',
 # one-shot mailbox the 1D Data Treatment window reads on "Load from plot";
 # same path the main window writes on right-click → "Send to Data Treatment".
 BUFFER_PATH = str(Path(__file__).resolve().parent.parent.parent / 'libs' / 'treatment_buffer.csv')
+# the 2D counterpart: an .npz the main window writes for 2D image plots
+# (i, q matrices + axis geometry/labels), consumed by this window's "Load from plot".
+BUFFER_2D_PATH = str(Path(__file__).resolve().parent.parent.parent / 'libs' / 'treatment_buffer_2d.npz')
 
 # parametric windows: name -> (label, min, max, decimals, default, step)
 WINDOW_PARAM = {
@@ -170,11 +173,15 @@ class MainWindow(QMainWindow):
         btn_bruker = QPushButton('Open Bruker…')
         btn_bruker.setStyleSheet(BUTTON_STYLE)
         btn_bruker.clicked.connect(self.open_bruker)
+        btn_buf = QPushButton('Load from plot')
+        btn_buf.setStyleSheet(BUTTON_STYLE)
+        btn_buf.clicked.connect(lambda: self.load_from_plot(silent=False))
         btn_clear = QPushButton('Clear')
         btn_clear.setStyleSheet(BUTTON_STYLE)
         btn_clear.clicked.connect(self.clear_all)
         src_row.addWidget(btn_open)
         src_row.addWidget(btn_bruker)
+        src_row.addWidget(btn_buf)
         src_row.addWidget(btn_clear)
         panel.addLayout(src_row)
 
@@ -591,6 +598,54 @@ class MainWindow(QMainWindow):
         self.set_status(f'Loaded {os.path.basename(path)} — {res["format"]}, '
                         f'{i.shape[0]}×{i.shape[1]} [traces × points], '
                         + ('complex.' if res['complex'] else 'real (Q = 0).'))
+
+    def load_from_plot(self, silent=False):
+        """Load a 2D image sent from the main GUI (right-click a 2D plot →
+        "Send to Data Treatment"), which writes libs/treatment_buffer_2d.npz:
+        i/q [trace, point] matrices + axis geometry/labels. The buffer is a
+        one-shot mailbox — consumed on read."""
+        if not os.path.isfile(BUFFER_2D_PATH):
+            if not silent:
+                self.set_status('No 2D plot buffer found. Right-click a 2D plot in '
+                                'the main window → "Send to Data Treatment" first.')
+            return
+        try:
+            with np.load(BUFFER_2D_PATH, allow_pickle=False) as d:
+                i = np.atleast_2d(np.asarray(d['i'], dtype=float))
+                q = np.atleast_2d(np.asarray(d['q'], dtype=float))
+                geom = np.asarray(d['geom'], dtype=float).ravel().tolist()
+                labels = [str(s) for s in np.asarray(d['labels']).ravel().tolist()]
+            self._consume_2d_buffer()
+            if i.shape != q.shape or min(i.shape) < 2:
+                if not silent:
+                    self.set_status('2D buffer is not a valid matrix (need ≥ 2×2).')
+                return
+            x0, dx, y0, dy = (geom + [0.0, 1.0, 0.0, 1.0])[:4]
+            xn, xs, yn, ys = (labels + ['X', '', 'Y', ''])[:4]
+            edits = [(self.xname_edit, xn), (self.xscale_edit, xs),
+                     (self.yname_edit, yn), (self.yscale_edit, ys)]
+            spins = [(self.x0_spin, x0), (self.dx_spin, dx),
+                     (self.y0_spin, y0), (self.dy_spin, dy)]
+            for w, v in edits:                       # set without firing reset loops
+                w.blockSignals(True); w.setText(str(v)); w.blockSignals(False)
+            for s, v in spins:
+                s.blockSignals(True); s.setValue(float(v)); s.blockSignals(False)
+            self.raw_i, self.raw_q = i, q
+            self.reset_to_raw()
+            self.set_status(f'Loaded 2D plot from buffer '
+                            f'({i.shape[0]}×{i.shape[1]} [traces × points]).')
+        except Exception as e:
+            self._consume_2d_buffer()                # drop a malformed buffer
+            if not silent:
+                self.set_status(f'Could not read 2D plot buffer: {e}')
+
+    def _consume_2d_buffer(self):
+        """Delete the 2D plot buffer once read (one-shot mailbox semantics)."""
+        try:
+            if os.path.isfile(BUFFER_2D_PATH):
+                os.remove(BUFFER_2D_PATH)
+        except OSError:
+            pass
 
     def _raw_axes(self):
         return (self._axis(self.x0_spin.value(), self.dx_spin.value(),
