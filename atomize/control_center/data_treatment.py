@@ -193,7 +193,8 @@ class MainWindow(QMainWindow):
                                  'gui', 'icon_temp.png')
         self.setWindowIcon(QIcon(icon_path))
         self.setMinimumHeight(660)
-        self.resize(940, 700)
+        self.setMinimumWidth(880)
+        self.resize(1000, 700)
         # background on the QMainWindow (as in awg_phasing_insys.py) rather than
         # the central widget, so spinboxes keep their full native frame.
         self.setStyleSheet(f"background-color: {BG};")
@@ -283,6 +284,9 @@ class MainWindow(QMainWindow):
         self.tabs.currentChanged.connect(self._on_tab_changed)
         self.tabs.currentChanged.connect(self._live_update)
         self.tabs.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
+        # Floor the tab strip at its full width so all tabs stay visible without
+        # the scroll arrows (the 6 tabs need ~465 px); the graph takes the rest.
+        self.tabs.setMinimumWidth(475)
         panel.addWidget(self.tabs, stretch=1)
 
         panel.addWidget(self._hline())
