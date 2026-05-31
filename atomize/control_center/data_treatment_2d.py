@@ -29,6 +29,7 @@ imaginary parts ride along as the two toggleable frames of a (2, nX, nY) array.
 import os
 import sys
 import numpy as np
+from pathlib import Path
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QIcon
@@ -40,6 +41,7 @@ import atomize.general_modules.general_functions as general
 import atomize.general_modules.csv_opener_saver as openfile
 import atomize.general_modules.bruker_opener as bruker
 import atomize.math_modules.signal_processing as sigproc
+import atomize.math_modules.least_square_fitting_modules as fitting
 
 BG = 'rgb(42, 42, 64)'
 FG = 'rgb(193, 202, 227)'
@@ -90,6 +92,15 @@ WINDOWS = ['None', 'Hann', 'Hamming', 'Blackman', 'Bartlett', 'Flat-top',
            'Kaiser', 'Gaussian', 'Tukey']
 ZEROFILL = ['None', '×2', '×4', '×8', 'Next pow₂']
 
+# relaxation models exposed in the per-trace Fit tab (a curated subset of the
+# shared fitter; for T1/T2 decays k / k1 / k2 are the time constants).
+RELAX_MODELS = ['Exponential', 'Bi-exponential', 'Stretched exponential',
+                'Damped sine']
+
+# one-shot mailbox the 1D Data Treatment window reads on "Load from plot";
+# same path the main window writes on right-click → "Send to Data Treatment".
+BUFFER_PATH = str(Path(__file__).resolve().parent.parent.parent / 'libs' / 'treatment_buffer.csv')
+
 # parametric windows: name -> (label, min, max, decimals, default, step)
 WINDOW_PARAM = {
     'Kaiser':   ('Kaiser β', 0.0, 100.0, 2, 8.6, 0.5),
@@ -110,6 +121,8 @@ class MainWindow(QMainWindow):
 
         self.opener = openfile.Saver_Opener()
         self.bruker = bruker.Bruker_Opener()
+        self.fitter = fitting.math()
+        self.fit_map = None        # last per-trace fit result (dict)
 
         # complex data as two real channels, each a [trace, point] matrix.
         # raw_*  = as loaded; src_* = current input to operations (= raw after a
@@ -200,6 +213,7 @@ class MainWindow(QMainWindow):
         self.tabs.setStyleSheet(TAB_STYLE)
         self.tabs.addTab(self._build_phase_tab(), 'Phase')
         self.tabs.addTab(self._build_fft_tab(), 'FFT')
+        self.tabs.addTab(self._build_fit_tab(), 'Fit')
         self.tabs.currentChanged.connect(self._live_update)
         panel.addWidget(self.tabs, stretch=1)
 
@@ -378,6 +392,100 @@ class MainWindow(QMainWindow):
             self.fft_winparam.setEnabled(False)
         self.fft_winparam.blockSignals(False)
 
+    def _build_fit_tab(self):
+        w = QWidget(); grid = QGridLayout(w)
+        grid.addWidget(self._note('Fit every trace along the decay axis with a '
+                                  'relaxation model. The chosen parameter is plotted '
+                                  'vs the other axis as a 1D map (e.g. T<sub>m</sub> vs '
+                                  'field). For k / k1 / k2 the value is the time '
+                                  'constant in the decay-axis units. Use "Send slice → '
+                                  '1D" to hand one trace to the 1D Fit tool.'),
+                       0, 0, 1, 2)
+
+        grid.addWidget(self._label('Decay axis'), 1, 0)
+        self.fit_axis = self._combo(['X (within trace)', 'Y (indirect)'])
+        self.fit_axis.currentIndexChanged.connect(self._on_fit_axis_changed)
+        grid.addWidget(self.fit_axis, 1, 1)
+
+        grid.addWidget(self._label('Channel'), 2, 0)
+        self.fit_channel = self._combo(['Real (I)', 'Magnitude', 'Imag (Q)'])
+        grid.addWidget(self.fit_channel, 2, 1)
+
+        grid.addWidget(self._label('Model'), 3, 0)
+        self.fit_model = self._combo(RELAX_MODELS)
+        self.fit_model.setCurrentText('Stretched exponential')
+        self.fit_model.currentIndexChanged.connect(self._update_fit_params)
+        grid.addWidget(self.fit_model, 3, 1)
+
+        self.fit_no_offset = QCheckBox('Fix offset = 0 (drop the b baseline term)')
+        self.fit_no_offset.setStyleSheet(CHECKBOX_STYLE)
+        self.fit_no_offset.stateChanged.connect(self._update_fit_params)
+        grid.addWidget(self.fit_no_offset, 4, 0, 1, 2)
+
+        grid.addWidget(self._label('Map parameter'), 5, 0)
+        self.fit_param = self._combo([])
+        grid.addWidget(self.fit_param, 5, 1)
+
+        grid.addWidget(self._label('Min R² (drop worse)'), 6, 0)
+        self.fit_minr2 = self._dspin(0.0, 1.0, 3, 0.0, step=0.05)
+        grid.addWidget(self.fit_minr2, 6, 1)
+
+        btn = QPushButton('Run fit')
+        btn.setStyleSheet(BUTTON_STYLE)
+        btn.clicked.connect(self.do_fit_2d)
+        grid.addWidget(btn, 7, 0, 1, 2)
+
+        self.fit_info = QLabel('')
+        self.fit_info.setStyleSheet(LABEL_STYLE); self.fit_info.setWordWrap(True)
+        self.fit_info.setTextFormat(Qt.TextFormat.RichText)
+        grid.addWidget(self.fit_info, 8, 0, 1, 2)
+
+        grid.addWidget(self._hline(), 9, 0, 1, 2)
+        grid.addWidget(self._note('Slice transfer — pick one trace (by index along the '
+                                  'other axis) and send it to the standalone 1D Data '
+                                  'Treatment window; click "Load from plot" there.'),
+                       10, 0, 1, 2)
+        grid.addWidget(self._label('Trace #'), 11, 0)
+        slice_row = QHBoxLayout()
+        self.fit_slice = QSpinBox(); self.fit_slice.setStyleSheet(SPIN_STYLE)
+        self.fit_slice.setRange(0, 1000000)
+        self.fit_slice.valueChanged.connect(self._update_slice_label)
+        self.fit_slice_label = self._label('')
+        slice_row.addWidget(self.fit_slice); slice_row.addWidget(self.fit_slice_label, 1)
+        grid.addLayout(slice_row, 11, 1)
+
+        out_row = QHBoxLayout()
+        btn_send = QPushButton('Send slice → 1D')
+        btn_send.setStyleSheet(BUTTON_STYLE)
+        btn_send.clicked.connect(self.send_slice_to_1d)
+        btn_savemap = QPushButton('Save map…')
+        btn_savemap.setStyleSheet(BUTTON_STYLE)
+        btn_savemap.clicked.connect(self.save_fit_map)
+        out_row.addWidget(btn_send); out_row.addWidget(btn_savemap)
+        grid.addLayout(out_row, 12, 0, 1, 2)
+        grid.setRowStretch(13, 1)
+
+        self._update_fit_params()
+        return w
+
+    def _update_fit_params(self, *args):
+        """Repopulate the map-parameter combo from the current model, honouring
+        the fix-offset checkbox (which drops the b/c baseline term)."""
+        model = self.fit_model.currentText()
+        names = list(self.fitter.param_names(model))
+        if self.fit_no_offset.isChecked():
+            names = [n for n in names if n not in ('b', 'c')]
+        cur = self.fit_param.currentText()
+        self.fit_param.blockSignals(True)
+        self.fit_param.clear(); self.fit_param.addItems(names)
+        default = next((n for n in names if n.startswith('k') or n == 'Tm'),
+                       names[0] if names else '')
+        self.fit_param.setCurrentText(cur if cur in names else default)
+        self.fit_param.blockSignals(False)
+
+    def _on_fit_axis_changed(self, *args):
+        self._update_slice_label()
+
     # ------------------------------------------------------------- loading
     def open_iq(self):
         path = self.opener.open_file_dialog(multiprocessing=True)
@@ -505,13 +613,17 @@ class MainWindow(QMainWindow):
     def _live_update(self, *args):
         if self._suppress_live or not self.live_check.isChecked() or self.src_i is None:
             return
-        {0: self.do_phase, 1: self.do_fft}[self.tabs.currentIndex()]()
+        # Fit (index 2) is excluded — per-trace fitting is too heavy to run on
+        # every parameter tweak; it is explicit ("Run fit") only.
+        op = {0: self.do_phase, 1: self.do_fft}.get(self.tabs.currentIndex())
+        if op is not None:
+            op()
 
     def _apply_current_op(self):
         if self.src_i is None:
             self.set_status('Open an I/Q dataset first.')
             return
-        {0: self.do_phase, 1: self.do_fft}[self.tabs.currentIndex()]()
+        {0: self.do_phase, 1: self.do_fft, 2: self.do_fit_2d}[self.tabs.currentIndex()]()
 
     # ------------------------------------------------------------- result
     def has_result(self):
@@ -531,6 +643,7 @@ class MainWindow(QMainWindow):
         self.src_col, self.src_row = self._raw_axes()
         self.res_i = self.res_q = None
         self._push(self.src_i, self.src_q, self.src_col, self.src_row, ('I', 'Q'))
+        self._update_slice_label()
         self.set_status('Showing raw I/Q.')
 
     def promote_result(self):
@@ -711,6 +824,187 @@ class MainWindow(QMainWindow):
                         f'{n0}→{n} pts.')
 
     # -------------------------------------------------------------- output
+    # ---------------------------------------------------------- per-trace fit
+    def _current_iq(self):
+        """The dataset operations act on: the result if one exists, else the
+        current source (raw or a promoted result)."""
+        if self.has_result():
+            return self.res_i, self.res_q, self.res_col, self.res_row
+        return self.src_i, self.src_q, self.src_col, self.src_row
+
+    @staticmethod
+    def _channel(i, q, name):
+        if name == 'Magnitude':
+            return np.hypot(i, q)
+        if name.startswith('Imag'):
+            return q
+        return i                                # Real (I) — default
+
+    @staticmethod
+    def _param_unit(pname, decay_scale):
+        if pname.startswith('k') or pname == 'Tm':
+            return decay_scale                  # a time constant in decay units
+        if pname == 'beta':
+            return ''
+        return 'V'                              # amplitudes / offset
+
+    def _fit_geometry(self):
+        """Resolve (channel matrix as rows-of-decays, decay-axis values,
+        other-axis values, other-axis dict, decay-axis dict) for the current
+        data and the chosen decay axis."""
+        i, q, col, row = self._current_iq()
+        chan = self._channel(i, q, self.fit_channel.currentText())
+        if self.fit_axis.currentIndex() == 0:            # X = decay (rows are decays)
+            xaxis = col['start'] + col['step']*np.arange(chan.shape[1])
+            traces = chan
+            other = row['start'] + row['step']*np.arange(chan.shape[0])
+            return traces, xaxis, other, row, col
+        # Y = decay (columns are decays)
+        xaxis = row['start'] + row['step']*np.arange(chan.shape[0])
+        traces = chan.T
+        other = col['start'] + col['step']*np.arange(chan.shape[1])
+        return traces, xaxis, other, col, row
+
+    def do_fit_2d(self):
+        if self.src_i is None:
+            self.set_status('Open an I/Q dataset first.')
+            return
+        model = self.fit_model.currentText()
+        pname = self.fit_param.currentText()
+        no_offset = self.fit_no_offset.isChecked()
+        minr2 = float(self.fit_minr2.value())
+        traces, xaxis, other, other_ax, decay_ax = self._fit_geometry()
+        n = traces.shape[0]
+        params = np.full(n, np.nan)
+        r2 = np.full(n, np.nan)
+        fails = 0
+        for k in range(n):
+            y = np.asarray(traces[k], float)
+            try:
+                res = self.fitter.fit(model, xaxis, y, no_offset=no_offset)
+                names = list(res['param_names'])
+                if pname in names:
+                    params[k] = res['popt'][names.index(pname)]
+                r2[k] = res['r_squared']
+                if not np.isfinite(r2[k]) or r2[k] < minr2:
+                    params[k] = np.nan
+            except Exception:
+                fails += 1
+        valid = np.isfinite(params)
+        ngood = int(valid.sum())
+        self.fit_map = {'x': other, 'param': params, 'r2': r2, 'pname': pname,
+                        'model': model, 'channel': self.fit_channel.currentText(),
+                        'no_offset': no_offset, 'other_name': other_ax['name'],
+                        'other_scale': other_ax['scale'], 'decay_scale': decay_ax['scale']}
+        if ngood == 0:
+            self.fit_info.setText('<b>All fits failed.</b> Try another model, the '
+                                  'Magnitude channel, or relax Min R².')
+            self.set_status('Fit produced no valid traces.')
+            return
+        punit = self._param_unit(pname, decay_ax['scale'])
+        name = (self.name_edit.text().strip() or 'FT Data 2D') + f' — {pname} map'
+        try:
+            general.plot_1d(name, other[valid], params[valid], label=pname,
+                            xname=other_ax['name'], xscale=other_ax['scale'],
+                            yname=pname, yscale=punit, scatter='True')
+        except Exception as e:
+            self.set_status(f'Fit done but could not plot map: {e}')
+        pv = params[valid]
+        rv = r2[valid]
+        self.fit_info.setText(
+            f"<b>{model}</b> · {self.fit_channel.currentText()} · {ngood}/{n} traces fit"
+            + (f", {fails} failed" if fails else '')
+            + f"<br>{pname}: {np.nanmin(pv):.4g} … {np.nanmax(pv):.4g} {punit}"
+            + f"<br>median {np.nanmedian(pv):.4g} {punit}, "
+            + f"R² {np.nanmin(rv):.3f}–{np.nanmax(rv):.3f}")
+        self.set_status(f'Per-trace fit done: {ngood}/{n} traces; {pname} map plotted.')
+
+    def _update_slice_label(self, *args):
+        if not hasattr(self, 'fit_slice'):
+            return
+        if self.src_i is None:
+            self.fit_slice_label.setText('')
+            return
+        i, q, col, row = self._current_iq()
+        if self.fit_axis.currentIndex() == 0:
+            ntr, axis = i.shape[0], row
+        else:
+            ntr, axis = i.shape[1], col
+        self.fit_slice.blockSignals(True)
+        self.fit_slice.setMaximum(max(0, ntr - 1))
+        self.fit_slice.blockSignals(False)
+        idx = int(self.fit_slice.value())
+        coord = axis['start'] + axis['step']*idx
+        self.fit_slice_label.setText(f"{axis['name']} = {coord:.4g} {axis['scale']} (of {ntr})")
+
+    def _write_buffer(self, curves):
+        """Write a one-shot 1D-tool mailbox (libs/treatment_buffer.csv): interleaved
+        x0,y0,x1,y1,… columns padded with NaN, '# labels:' header naming the curves."""
+        maxlen = max(np.asarray(x).size for _, x, _ in curves)
+        buf = np.full((maxlen, 2*len(curves)), np.nan)
+        labels = []
+        for j, (lab, x, y) in enumerate(curves):
+            x = np.asarray(x, float); y = np.asarray(y, float)
+            buf[:x.size, 2*j] = x
+            buf[:y.size, 2*j + 1] = y
+            labels.append(str(lab).replace('|', '/'))
+        header = 'Atomize data treatment buffer\nlabels: ' + '|'.join(labels)
+        np.savetxt(BUFFER_PATH, buf, delimiter=',', fmt='%.6e', header=header, comments='# ')
+
+    def send_slice_to_1d(self):
+        if self.src_i is None:
+            self.set_status('Open an I/Q dataset first.')
+            return
+        i, q, col, row = self._current_iq()
+        idx = int(self.fit_slice.value())
+        if self.fit_axis.currentIndex() == 0:            # X = decay; slice = one row
+            ntr = i.shape[0]
+            if idx >= ntr:
+                idx = ntr - 1; self.fit_slice.setValue(idx)
+            x = col['start'] + col['step']*np.arange(i.shape[1])
+            re, im = i[idx], q[idx]
+            dax, oax = col, row
+        else:                                            # Y = decay; slice = one column
+            ntr = i.shape[1]
+            if idx >= ntr:
+                idx = ntr - 1; self.fit_slice.setValue(idx)
+            x = row['start'] + row['step']*np.arange(i.shape[0])
+            re, im = i[:, idx], q[:, idx]
+            dax, oax = row, col
+        coord = oax['start'] + oax['step']*idx
+        try:
+            self._write_buffer([('slice Re', x, re), ('slice Im', x, im)])
+        except Exception as e:
+            self.set_status(f'Could not write transfer buffer: {e}')
+            return
+        try:                                             # also show it in the main GUI
+            general.plot_1d(f'2D slice #{idx}', x, re, label='Re',
+                            xname=dax['name'], xscale=dax['scale'],
+                            yname='Intensity', yscale='V')
+        except Exception:
+            pass
+        self.set_status(f'Slice #{idx} ({oax["name"]} = {coord:.4g} {oax["scale"]}) '
+                        f'sent to buffer. In the 1D Data Treatment window click '
+                        f'"Load from plot" (I = slice Re, Q = slice Im).')
+
+    def save_fit_map(self):
+        if not self.fit_map:
+            self.set_status('Run a fit first — no map to save.')
+            return
+        file_path = self.opener.create_file_dialog(multiprocessing=True)
+        if not file_path or file_path == 'None':
+            return
+        m = self.fit_map
+        arr = np.column_stack([m['x'], m['param'], m['r2']])
+        punit = self._param_unit(m['pname'], m['decay_scale'])
+        header = '\n'.join([
+            '2D per-trace fit map',
+            f'model = {m["model"]}, channel = {m["channel"]}, fix_offset = {m["no_offset"]}',
+            f'columns: {m["other_name"]} ({m["other_scale"]}), '
+            f'{m["pname"]} ({punit}), R^2'])
+        self.opener.save_data(file_path, arr, header=header, mode='w')
+        self.set_status(f'Saved fit map to {os.path.basename(file_path)}.')
+
     def save_result(self):
         if not (self.has_result() or self.src_i is not None):
             self.set_status('Nothing to save — load data first.')
