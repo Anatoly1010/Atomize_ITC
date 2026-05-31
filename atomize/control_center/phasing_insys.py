@@ -230,17 +230,17 @@ class MainWindow(QMainWindow):
             action.triggered.connect(lambda checked, name=full_path: self.set_preset_exp(name))
             eseem_exp_menu.addAction(action)
 
-        deer_exp_menu = self.exp_menu.addMenu('DEER')
+        pds_exp_menu = self.exp_menu.addMenu('PDS')
 
-        deer_sequences = {
-            '4pDEER; 8S': '4pdeer_8s.phase',
+        pds_sequences = {
+            'SIFTER; 16S': 'sifter_16s.phase',
         }
 
-        for label, file_name in deer_sequences.items():
+        for label, file_name in pds_sequences.items():
             full_path = os.path.join(cwd, 'experiments', file_name)
             action = QAction(label, self)
             action.triggered.connect(lambda checked, name=full_path: self.set_preset_exp(name))
-            deer_exp_menu.addAction(action)
+            pds_exp_menu.addAction(action)
 
     def set_preset_exp(self, filename):
         self.open_file(filename)
@@ -796,8 +796,8 @@ class MainWindow(QMainWindow):
                       (QDoubleSpinBox, "box_st_field", "cur_start_field", self.st_field, 0, 15000, 3000, 1, 1, " G"),
                       (QDoubleSpinBox, "box_end_field", "cur_end_field", self.end_field, 0, 15000, 4000, 1, 1, " G"),
                       (QDoubleSpinBox, "box_step_field", "cur_step", self.step_field, 0.01, 50, 0.5, 0.1, 2, " G"),
-                      (QDoubleSpinBox, "X0", "cur_x0", self.x0, 0, 100e6, 0, 3.2, 1, " ns"),
-                      (QDoubleSpinBox, "XDelta", "cur_xdelta", self.xdelta, 0, 100e6, 0, 3.2, 1, " ns")
+                      (QDoubleSpinBox, "X0", "cur_x0", self.x0, -100e6, 100e6, 0, 3.2, 1, " ns"),
+                      (QDoubleSpinBox, "XDelta", "cur_xdelta", self.xdelta, -100e6, 100e6, 0, 3.2, 1, " ns")
                         ]
 
         for widget_class, attr_name, par_name, func, v_min, v_max, cur_val, v_step, dec, suf in double_boxes:
