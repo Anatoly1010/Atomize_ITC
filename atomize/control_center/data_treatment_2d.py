@@ -51,6 +51,12 @@ BUTTON_STYLE = ("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 
     "border-style: outset; color: rgb(193, 202, 227); font-weight: bold; padding: 4px; } "
     "QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
 
+# solid-yellow "busy" variant for the Run-fit button while a fit is in progress
+# (explicit colour so it stays yellow even while the button is disabled).
+BUTTON_BUSY_STYLE = ("QPushButton {border-radius: 4px; background-color: rgb(211, 194, 78); "
+    "border-style: inset; color: rgb(42, 42, 64); font-weight: bold; padding: 4px; } "
+    "QPushButton:disabled {background-color: rgb(211, 194, 78); color: rgb(42, 42, 64); }")
+
 LABEL_STYLE = "QLabel { color : rgb(193, 202, 227); font-weight: bold; }"
 
 DSPIN_STYLE = ("QDoubleSpinBox { color : rgb(193, 202, 227); "
@@ -907,6 +913,8 @@ class MainWindow(QMainWindow):
         self._fitting = True
         self._cancel_fit = False
         self.fit_run_btn.setEnabled(False)
+        self.fit_run_btn.setStyleSheet(BUTTON_BUSY_STYLE)
+        self.fit_run_btn.setText('Fitting…')
         self.fit_cancel_btn.setEnabled(True)
         chunk = 8
         done = 0
@@ -935,6 +943,8 @@ class MainWindow(QMainWindow):
             self._fitting = False
             self._cancel_fit = False
             self.fit_run_btn.setEnabled(True)
+            self.fit_run_btn.setStyleSheet(BUTTON_STYLE)
+            self.fit_run_btn.setText('Run fit')
             self.fit_cancel_btn.setEnabled(False)
         valid = np.isfinite(params)
         ngood = int(valid.sum())
@@ -956,7 +966,7 @@ class MainWindow(QMainWindow):
         try:
             general.plot_1d(name, other[valid], params[valid], label=pname,
                             xname=other_ax['name'], xscale=other_ax['scale'],
-                            yname=pname, yscale=punit, scatter='True')
+                            yname=pname, yscale=punit)
         except Exception as e:
             self.set_status(f'Fit done but could not plot map: {e}')
         pv = params[valid]
