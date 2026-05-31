@@ -40,6 +40,7 @@ import atomize.general_modules.csv_opener_saver as openfile
 import atomize.math_modules.least_square_fitting_modules as fitting
 import atomize.math_modules.signal_processing as sigproc
 import atomize.math_modules.fft as fft_module
+import atomize.math_modules.deer as deer_module
 
 # Path to the buffer file that the main-window plot sidebar writes selected
 # curves into (same libs/ runtime-IPC convention as the .param files).
@@ -176,6 +177,12 @@ class MainWindow(QMainWindow):
         # immediately re-apply the operation to it
         self._suppress_live = False
 
+        # DEER/PDS analysis state: last full result dict, the draggable
+        # background-start cursor, and a guard against cursor<->spinbox echo.
+        self.deer_result = None
+        self._bg_cursor = None
+        self._suppress_cursor = False
+
         self.design()
         self.load_from_buffer(silent=True)
 
@@ -272,6 +279,8 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self._build_phase_tab(), 'Phase')
         self.tabs.addTab(self._build_smooth_tab(), 'Smooth / Baseline')
         self.tabs.addTab(self._build_filter_tab(), 'Filter')
+        self.tabs.addTab(self._build_deer_tab(), 'DEER / PDS')
+        self.tabs.currentChanged.connect(self._on_tab_changed)
         self.tabs.currentChanged.connect(self._live_update)
         self.tabs.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
         panel.addWidget(self.tabs, stretch=1)
@@ -645,6 +654,130 @@ class MainWindow(QMainWindow):
         grid.setRowStretch(7, 1)
         return w
 
+    # time-unit -> factor that converts the X axis into microseconds (kernel unit)
+    DEER_TUNITS = {'µs': 1.0, 'ns': 1e-3, 'ms': 1e3}
+
+    def _build_deer_tab(self):
+        w = QWidget()
+        grid = QGridLayout(w)
+        r = 0
+        grid.addWidget(self._note('Background-correct V(t) and invert the dipolar '
+                                  'kernel to a distance distribution P(r) by Tikhonov '
+                                  '+ NNLS. Uses the I/primary channel as the real '
+                                  'V(t) (phase to real first). Needs scipy.'),
+                       r, 0, 1, 2); r += 1
+
+        grid.addWidget(self._label('Time unit'), r, 0)
+        self.deer_tunit = QComboBox()
+        self.deer_tunit.setStyleSheet(COMBO_STYLE)
+        self.deer_tunit.addItems(list(self.DEER_TUNITS.keys()))
+        self.deer_tunit.currentIndexChanged.connect(self._live_update)
+        grid.addWidget(self.deer_tunit, r, 1); r += 1
+
+        grid.addWidget(self._label('Background start'), r, 0)
+        bg_row = QHBoxLayout()
+        self.deer_bgstart = QDoubleSpinBox()
+        self.deer_bgstart.setStyleSheet(DSPIN_STYLE)
+        self.deer_bgstart.setRange(-1e9, 1e9)
+        self.deer_bgstart.setDecimals(4)
+        self.deer_bgstart.setSingleStep(0.05)
+        self.deer_bgstart.valueChanged.connect(self._live_update)
+        btn_mid = QPushButton('Mid')
+        btn_mid.setStyleSheet(BUTTON_STYLE)
+        btn_mid.clicked.connect(self._deer_bgstart_mid)
+        bg_row.addWidget(self.deer_bgstart); bg_row.addWidget(btn_mid)
+        grid.addLayout(bg_row, r, 1); r += 1
+
+        grid.addWidget(self._label('Background dim.'), r, 0)
+        dim_row = QHBoxLayout()
+        self.deer_dim = QDoubleSpinBox()
+        self.deer_dim.setStyleSheet(DSPIN_STYLE)
+        self.deer_dim.setRange(1.0, 6.0)
+        self.deer_dim.setDecimals(2)
+        self.deer_dim.setSingleStep(0.1)
+        self.deer_dim.setValue(3.0)
+        self.deer_dim.valueChanged.connect(self._live_update)
+        self.deer_fitdim = QCheckBox('fit')
+        self.deer_fitdim.setStyleSheet(CHECKBOX_STYLE)
+        self.deer_fitdim.stateChanged.connect(self._live_update)
+        dim_row.addWidget(self.deer_dim); dim_row.addWidget(self.deer_fitdim)
+        grid.addLayout(dim_row, r, 1); r += 1
+
+        grid.addWidget(self._label('Distance min/max (nm)'), r, 0)
+        rr_row = QHBoxLayout()
+        self.deer_rmin = QDoubleSpinBox()
+        self.deer_rmin.setStyleSheet(DSPIN_STYLE)
+        self.deer_rmin.setRange(0.5, 50.0); self.deer_rmin.setDecimals(2)
+        self.deer_rmin.setSingleStep(0.1); self.deer_rmin.setValue(1.5)
+        self.deer_rmin.valueChanged.connect(self._live_update)
+        self.deer_rmax = QDoubleSpinBox()
+        self.deer_rmax.setStyleSheet(DSPIN_STYLE)
+        self.deer_rmax.setRange(0.5, 50.0); self.deer_rmax.setDecimals(2)
+        self.deer_rmax.setSingleStep(0.1); self.deer_rmax.setValue(8.0)
+        self.deer_rmax.valueChanged.connect(self._live_update)
+        rr_row.addWidget(self.deer_rmin); rr_row.addWidget(self.deer_rmax)
+        grid.addLayout(rr_row, r, 1); r += 1
+
+        grid.addWidget(self._label('Distance points'), r, 0)
+        self.deer_rn = QSpinBox()
+        self.deer_rn.setStyleSheet(SPIN_STYLE)
+        self.deer_rn.setRange(20, 2000); self.deer_rn.setValue(200)
+        self.deer_rn.valueChanged.connect(self._live_update)
+        grid.addWidget(self.deer_rn, r, 1); r += 1
+
+        grid.addWidget(self._label('Regularization α'), r, 0)
+        al_row = QHBoxLayout()
+        self.deer_alpha_auto = QCheckBox('Auto (L-curve)')
+        self.deer_alpha_auto.setStyleSheet(CHECKBOX_STYLE)
+        self.deer_alpha_auto.setChecked(True)
+        self.deer_alpha_auto.stateChanged.connect(self._deer_alpha_toggle)
+        self.deer_alpha_auto.stateChanged.connect(self._live_update)
+        self.deer_alpha = QDoubleSpinBox()
+        self.deer_alpha.setStyleSheet(DSPIN_STYLE)
+        self.deer_alpha.setRange(1e-4, 1e4); self.deer_alpha.setDecimals(4)
+        self.deer_alpha.setSingleStep(0.1); self.deer_alpha.setValue(1.0)
+        self.deer_alpha.setEnabled(False)
+        self.deer_alpha.valueChanged.connect(self._live_update)
+        al_row.addWidget(self.deer_alpha_auto); al_row.addWidget(self.deer_alpha)
+        grid.addLayout(al_row, r, 1); r += 1
+
+        grid.addWidget(self._label('Show'), r, 0)
+        self.deer_show = QComboBox()
+        self.deer_show.setStyleSheet(COMBO_STYLE)
+        self.deer_show.addItems(['Distance P(r)', 'Form factor + fit', 'Background fit'])
+        self.deer_show.currentIndexChanged.connect(self._deer_rerender)
+        grid.addWidget(self.deer_show, r, 1); r += 1
+
+        btn = QPushButton('Run DEER')
+        btn.setStyleSheet(BUTTON_STYLE)
+        btn.clicked.connect(self.do_deer)
+        grid.addWidget(btn, r, 0, 1, 2); r += 1
+
+        self.deer_info = QLabel('')
+        self.deer_info.setStyleSheet(LABEL_STYLE)
+        self.deer_info.setWordWrap(True)
+        self.deer_info.setTextFormat(Qt.TextFormat.RichText)
+        self.deer_info.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+        info_scroll = QScrollArea()
+        info_scroll.setStyleSheet(SCROLL_STYLE)
+        info_scroll.setWidgetResizable(True)
+        info_scroll.setWidget(self.deer_info)
+        grid.addWidget(info_scroll, r, 0, 1, 2)
+        grid.setRowStretch(r, 1)
+        return w
+
+    def _deer_alpha_toggle(self, *args):
+        self.deer_alpha.setEnabled(not self.deer_alpha_auto.isChecked())
+
+    def _deer_bgstart_mid(self):
+        """Set the background start to the middle of the current X axis."""
+        x, _ = self.i_xy()
+        if x is None or not len(x):
+            self.set_status('Load a V(t) trace first.')
+            return
+        x = np.asarray(x, dtype=float)
+        self.deer_bgstart.setValue(float(x[0] + 0.5*(x[-1] - x[0])))
+
     # ------------------------------------------------------------- loading
     def _register_datasets(self, mapping):
         self.datasets = dict(mapping)
@@ -738,6 +871,8 @@ class MainWindow(QMainWindow):
     def on_source_changed(self, *args):
         """Source selection / pair-mode change: drop the result and recompute."""
         self._reset_result()
+        self.deer_result = None
+        self._clear_bg_cursor()
         self.redraw()
         self._live_update()
 
@@ -751,7 +886,8 @@ class MainWindow(QMainWindow):
         The Fit tab (index 0) is intentionally excluded — fitting is an explicit
         button action, not something to recompute on every keystroke.
         """
-        ops = {1: self.do_fft, 2: self.do_phase, 3: self.do_smooth, 4: self.do_filter}
+        ops = {1: self.do_fft, 2: self.do_phase, 3: self.do_smooth, 4: self.do_filter,
+               5: self.do_deer}
         fn = ops.get(self.tabs.currentIndex())
         if fn is not None:
             fn()
@@ -760,7 +896,7 @@ class MainWindow(QMainWindow):
         """Run the current tab's operation NOW (Fit included), so the result
         reflects the current tab and parameters regardless of live-update."""
         ops = {0: self.do_fit, 1: self.do_fft, 2: self.do_phase, 3: self.do_smooth,
-               4: self.do_filter}
+               4: self.do_filter, 5: self.do_deer}
         ops[self.tabs.currentIndex()]()
 
     def _live_update(self, *args):
@@ -892,6 +1028,8 @@ class MainWindow(QMainWindow):
         """Reset the window: forget all loaded data, result and selectors."""
         self.datasets = {}
         self._reset_result()
+        self.deer_result = None
+        self._clear_bg_cursor()
         self.step_counter = 0
         for combo in (self.i_combo, self.q_combo):
             combo.blockSignals(True)
@@ -1231,6 +1369,138 @@ class MainWindow(QMainWindow):
         self._set_result(x, channels, meta, show_source=True, xname=self._xname())
         self.set_status(f'{ftype} filter applied ({used} ×f_max)'
                         + (' to I & Q.' if pair else '.'))
+
+    # ------------------------------------------------------------- DEER / PDS
+    def _deer_tfactor(self):
+        """Factor converting the X axis (chosen time unit) into microseconds."""
+        return self.DEER_TUNITS.get(self.deer_tunit.currentText(), 1.0)
+
+    def do_deer(self):
+        """Background-correct V(t) and invert to P(r) (Tikhonov + NNLS)."""
+        x, v = self.i_xy()
+        if x is None or len(x) < 8:
+            self.set_status('Load a V(t) trace first (I/primary channel).')
+            return
+        x = np.asarray(x, dtype=float)
+        v = np.asarray(v, dtype=float)
+        tf = self._deer_tfactor()
+        t_us = x*tf                      # kernel works in microseconds
+        bg_us = float(self.deer_bgstart.value())*tf
+        rmin, rmax = self.deer_rmin.value(), self.deer_rmax.value()
+        if rmax <= rmin:
+            self.set_status('Distance max must exceed min.')
+            return
+        r = np.linspace(rmin, rmax, int(self.deer_rn.value()))
+        alpha = None if self.deer_alpha_auto.isChecked() else float(self.deer_alpha.value())
+        try:
+            res = deer_module.deer_invert(
+                t_us, v, r=r, bg_start=bg_us, dim=float(self.deer_dim.value()),
+                fit_dim=self.deer_fitdim.isChecked(), alpha=alpha)
+        except Exception as e:
+            self.set_status(f'DEER failed: {e}')
+            return
+        self.deer_result = res
+        if self.deer_alpha_auto.isChecked():
+            self.deer_alpha.blockSignals(True)
+            self.deer_alpha.setValue(float(res['alpha']))
+            self.deer_alpha.blockSignals(False)
+
+        F, Ff = res['form_factor'], res['F_fit']
+        ss_tot = float(np.sum((F - F.mean())**2)) or 1.0
+        r2 = 1 - float(np.sum((F - Ff)**2))/ss_tot
+        P = res['P_density']
+        r_peak = float(res['r'][int(np.argmax(P))])
+        r_mean = float(np.sum(res['r']*res['P_norm']))
+        self.deer_info.setText(
+            '<div style="line-height: 165%;">'
+            f'<b style="color: rgb(211, 194, 78);">P(r)</b><br>'
+            f'mod. depth λ = {res["lambda"]:.3f}<br>'
+            f'bg decay k = {res["k"]:.4g}, dim = {res["dim"]:.2f}<br>'
+            f'α = {res["alpha"]:.4g}<br>'
+            f'peak r = {r_peak:.3f} nm<br>'
+            f'mean r = {r_mean:.3f} nm<br>'
+            f'form-factor R² = {r2:.4f}</div>')
+        self._deer_render()
+        self.set_status(f'DEER: λ={res["lambda"]:.3f}, α={res["alpha"]:.3g}, '
+                        f'peak r={r_peak:.2f} nm, R²={r2:.3f}.')
+
+    def _deer_rerender(self, *args):
+        """Re-show the stored DEER result under the current 'Show' selection."""
+        if self.deer_result is not None:
+            self._deer_render()
+
+    def _deer_render(self):
+        """Push the chosen DEER view (distance / form factor / background) to the
+        single-axis preview, and place the draggable background cursor on the
+        time-domain views."""
+        res = self.deer_result
+        if res is None:
+            return
+        view = self.deer_show.currentText()
+        tf = self._deer_tfactor()
+        tunit = self.deer_tunit.currentText()
+        t_disp = res['t']/tf
+        common = [f'DEER/PDS — λ={res["lambda"]:.4g}, k={res["k"]:.4g}, '
+                  f'dim={res["dim"]:.3g}, α={res["alpha"]:.4g}',
+                  f'time unit {tunit}, r {res["r"][0]:.3g}–{res["r"][-1]:.3g} nm '
+                  f'({len(res["r"])} pts), bg start {self.deer_bgstart.value():.4g} {tunit}']
+        if view == 'Distance P(r)':
+            meta = common + ['column: P(r) density (integral = 1)']
+            self._set_result(res['r'], [('P(r)', res['P_density'])], meta,
+                             show_source=False, xname='Distance (nm)')
+            self._show_bg_cursor(False)
+        elif view == 'Form factor + fit':
+            meta = common + ['columns: form factor F(t), K·P fit']
+            self._set_result(t_disp, [('F(t)', res['form_factor']),
+                                      ('K·P fit', res['F_fit'])], meta,
+                             show_source=False, xname=f'Time ({tunit})')
+            self._show_bg_cursor(True)
+        else:  # Background fit
+            bg = res['background']
+            level = (1 - res['lambda'])*bg['B']
+            meta = common + ['columns: V(t) normalized, fitted background (1-λ)·B(t)']
+            self._set_result(t_disp, [('V(t)', bg['V_norm']),
+                                      ('(1-λ)·B', level)], meta,
+                             show_source=False, xname=f'Time ({tunit})')
+            self._show_bg_cursor(True)
+
+    def _show_bg_cursor(self, visible):
+        """Show/position (or hide) the draggable background-start cursor on the
+        preview. The cursor lives in display time units and drives deer_bgstart."""
+        if self._bg_cursor is None:
+            self._bg_cursor = pg.InfiniteLine(
+                angle=90, movable=True,
+                pen=pg.mkPen((211, 194, 78), width=2, style=Qt.PenStyle.DashLine),
+                hoverPen=pg.mkPen((255, 230, 120), width=3),
+                label='bg start', labelOpts={'color': (211, 194, 78),
+                                             'position': 0.92})
+            self.plot_widget.addItem(self._bg_cursor)
+            self._bg_cursor.sigPositionChangeFinished.connect(self._on_bg_cursor)
+        if not visible:
+            self._bg_cursor.setVisible(False)
+            return
+        self._suppress_cursor = True
+        self._bg_cursor.setValue(float(self.deer_bgstart.value()))
+        self._bg_cursor.setVisible(True)
+        self._suppress_cursor = False
+
+    def _on_bg_cursor(self, *args):
+        """User dragged the background cursor: update the spin box and re-run."""
+        if self._suppress_cursor or self._bg_cursor is None:
+            return
+        self.deer_bgstart.blockSignals(True)
+        self.deer_bgstart.setValue(float(self._bg_cursor.value()))
+        self.deer_bgstart.blockSignals(False)
+        self.do_deer()
+
+    def _clear_bg_cursor(self):
+        if self._bg_cursor is not None:
+            self._bg_cursor.setVisible(False)
+
+    def _on_tab_changed(self, *args):
+        """Hide the background cursor whenever the DEER tab is not active."""
+        if self.tabs.currentIndex() != 5:
+            self._clear_bg_cursor()
 
     # -------------------------------------------------------------- output
     def plot_result(self):
