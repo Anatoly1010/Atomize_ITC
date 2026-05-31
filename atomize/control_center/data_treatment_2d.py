@@ -622,6 +622,10 @@ class MainWindow(QMainWindow):
                 return
             x0, dx, y0, dy = (geom + [0.0, 1.0, 0.0, 1.0])[:4]
             xn, xs, yn, ys = (labels + ['X', '', 'Y', ''])[:4]
+            if self.transpose_check.isChecked():     # swap trace / point axes
+                i, q = i.T, q.T
+                x0, dx, y0, dy = y0, dy, x0, dx
+                xn, xs, yn, ys = yn, ys, xn, xs
             edits = [(self.xname_edit, xn), (self.xscale_edit, xs),
                      (self.yname_edit, yn), (self.yscale_edit, ys)]
             spins = [(self.x0_spin, x0), (self.dx_spin, dx),
