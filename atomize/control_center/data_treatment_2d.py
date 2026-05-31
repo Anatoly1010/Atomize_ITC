@@ -124,6 +124,7 @@ class MainWindow(QMainWindow):
         self.fitter = fitting.math()
         self.fit_map = None        # last per-trace fit result (dict)
         self._fitting = False      # re-entry guard for the per-trace fit loop
+        self._cancel_fit = False   # set by the Cancel button to stop the loop
 
         # complex data as two real channels, each a [trace, point] matrix.
         # raw_*  = as loaded; src_* = current input to operations (= raw after a
@@ -432,13 +433,17 @@ class MainWindow(QMainWindow):
 
         out_row = QHBoxLayout()
         self.fit_run_btn = QPushButton('Run fit')
-        btn = self.fit_run_btn
-        btn.setStyleSheet(BUTTON_STYLE)
-        btn.clicked.connect(self.do_fit_2d)
+        self.fit_run_btn.setStyleSheet(BUTTON_STYLE)
+        self.fit_run_btn.clicked.connect(self.do_fit_2d)
+        self.fit_cancel_btn = QPushButton('Cancel')
+        self.fit_cancel_btn.setStyleSheet(BUTTON_STYLE)
+        self.fit_cancel_btn.clicked.connect(self.cancel_fit)
+        self.fit_cancel_btn.setEnabled(False)
         btn_savemap = QPushButton('Save map…')
         btn_savemap.setStyleSheet(BUTTON_STYLE)
         btn_savemap.clicked.connect(self.save_fit_map)
-        out_row.addWidget(btn); out_row.addWidget(btn_savemap)
+        out_row.addWidget(self.fit_run_btn); out_row.addWidget(self.fit_cancel_btn)
+        out_row.addWidget(btn_savemap)
         grid.addLayout(out_row, 7, 0, 1, 2)
 
         self.fit_info = QLabel('')
@@ -900,8 +905,12 @@ class MainWindow(QMainWindow):
         # also blocks re-entry from the pumped events); `traces` is a snapshot, so
         # loading new data mid-fit cannot corrupt the running loop.
         self._fitting = True
+        self._cancel_fit = False
         self.fit_run_btn.setEnabled(False)
+        self.fit_cancel_btn.setEnabled(True)
         chunk = 8
+        done = 0
+        cancelled = False
         try:
             for k in range(n):
                 y = np.asarray(traces[k], float)
@@ -915,22 +924,32 @@ class MainWindow(QMainWindow):
                         params[k] = np.nan
                 except Exception:
                     fails += 1
+                done = k + 1
                 if k % chunk == 0 or k == n - 1:
-                    self.status.setText(f'Fitting trace {k + 1}/{n}…')
+                    self.status.setText(f'Fitting trace {done}/{n}…')
                     QApplication.processEvents()
+                    if self._cancel_fit:           # set by the Cancel button
+                        cancelled = True
+                        break
         finally:
             self._fitting = False
+            self._cancel_fit = False
             self.fit_run_btn.setEnabled(True)
+            self.fit_cancel_btn.setEnabled(False)
         valid = np.isfinite(params)
         ngood = int(valid.sum())
         self.fit_map = {'x': other, 'param': params, 'r2': r2, 'pname': pname,
                         'model': model, 'channel': self.fit_channel.currentText(),
                         'no_offset': no_offset, 'other_name': other_ax['name'],
                         'other_scale': other_ax['scale'], 'decay_scale': decay_ax['scale']}
+        tag = ' (cancelled)' if cancelled else ''
         if ngood == 0:
-            self.fit_info.setText('<b>All fits failed.</b> Try another model, the '
-                                  'Magnitude channel, or relax Min R².')
-            self.set_status('Fit produced no valid traces.')
+            self.fit_info.setText(f'<b>No valid fits{tag}.</b> '
+                                  + ('Cancelled before any trace converged. '
+                                     if cancelled else
+                                     'Try another model, the Magnitude channel, '
+                                     'or relax Min R².'))
+            self.set_status(f'Fit produced no valid traces{tag}.')
             return
         punit = self._param_unit(pname, decay_ax['scale'])
         name = (self.name_edit.text().strip() or 'FT Data 2D') + f' — {pname} map'
@@ -942,13 +961,23 @@ class MainWindow(QMainWindow):
             self.set_status(f'Fit done but could not plot map: {e}')
         pv = params[valid]
         rv = r2[valid]
+        scope = f"{done}/{n} traces" if cancelled else f"{n} traces"
         self.fit_info.setText(
-            f"<b>{model}</b> · {self.fit_channel.currentText()} · {ngood}/{n} traces fit"
+            f"<b>{model}</b>{tag} · {self.fit_channel.currentText()} · "
+            f"{ngood} valid of {scope}"
             + (f", {fails} failed" if fails else '')
             + f"<br>{pname}: {np.nanmin(pv):.4g} … {np.nanmax(pv):.4g} {punit}"
             + f"<br>median {np.nanmedian(pv):.4g} {punit}, "
             + f"R² {np.nanmin(rv):.3f}–{np.nanmax(rv):.3f}")
-        self.set_status(f'Per-trace fit done: {ngood}/{n} traces; {pname} map plotted.')
+        self.set_status(f'Per-trace fit{tag}: {ngood} valid of {scope}; '
+                        f'{pname} map plotted.')
+
+    def cancel_fit(self):
+        """Ask the running per-trace fit loop to stop at the next chunk boundary;
+        traces already fit are kept and mapped."""
+        if self._fitting:
+            self._cancel_fit = True
+            self.status.setText('Cancelling fit…')
 
     def _update_slice_label(self, *args):
         if not hasattr(self, 'slice_spin'):
