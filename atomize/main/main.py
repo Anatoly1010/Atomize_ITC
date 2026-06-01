@@ -12,6 +12,7 @@ from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import QWidget, QGridLayout, QLabel, QPushButton, QComboBox, QCheckBox, QVBoxLayout, QApplication
 from PyQt6.QtGui import QColor
 from atomize.main.main_window import MainWindow, NameList
+from atomize.general_modules.gui_style import apply_app_style
 os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "1"
 
 ###
@@ -638,6 +639,10 @@ def main():
         pass
     
     app = QtWidgets.QApplication(sys.argv)
+    # Pin the Fusion style + shared dark palette (same as the control-center
+    # tools) so native widgets and pyqtgraph's right-click context menus pick up
+    # the Atomize dark theme. app_id is omitted to keep the AUMID set above.
+    apply_app_style(app)
     main = MainExtended(ptm = '../../libs')
     main.show()
     sys.exit( app.exec() )
