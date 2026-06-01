@@ -688,6 +688,23 @@ class MainWindow(QMainWindow):
         self.deer_tunit.currentIndexChanged.connect(self._live_update)
         grid.addWidget(self.deer_tunit, r, 1); r += 1
 
+        grid.addWidget(self._label('Zero time (t0)'), r, 0)
+        t0_row = QHBoxLayout()
+        self.deer_t0 = QDoubleSpinBox()
+        self.deer_t0.setStyleSheet(DSPIN_STYLE)
+        self.deer_t0.setRange(-1e9, 1e9)
+        self.deer_t0.setDecimals(4)
+        self.deer_t0.setSingleStep(0.05)
+        self.deer_t0.setValue(0.0)
+        self.deer_t0.setToolTip('Dipolar zero-time. The time axis is shifted so '
+                                'this value becomes t = 0 before inversion.')
+        self.deer_t0.valueChanged.connect(self._live_update)
+        btn_t0 = QPushButton('Max')
+        btn_t0.setStyleSheet(BUTTON_STYLE)
+        btn_t0.clicked.connect(self._deer_t0_max)
+        t0_row.addWidget(self.deer_t0); t0_row.addWidget(btn_t0)
+        grid.addLayout(t0_row, r, 1); r += 1
+
         grid.addWidget(self._label('Background start'), r, 0)
         bg_row = QHBoxLayout()
         self.deer_bgstart = QDoubleSpinBox()
@@ -814,6 +831,16 @@ class MainWindow(QMainWindow):
             return
         x = np.asarray(x, dtype=float)
         self.deer_bgstart.setValue(float(x[0] + 0.5*(x[-1] - x[0])))
+
+    def _deer_t0_max(self):
+        """Set t0 to the position of the |V(t)| maximum (echo centre)."""
+        x, v = self.i_xy()
+        if x is None or not len(x):
+            self.set_status('Load a V(t) trace first.')
+            return
+        x = np.asarray(x, dtype=float)
+        v = np.asarray(v, dtype=float)
+        self.deer_t0.setValue(float(x[int(np.argmax(np.abs(v)))]))
 
     def _deer_bgend_max(self):
         """Set the background end to the last point of the current X axis."""
@@ -1466,11 +1493,12 @@ class MainWindow(QMainWindow):
         x = np.asarray(x, dtype=float)
         v = np.asarray(v, dtype=float)
         tf = self._deer_tfactor()
-        t_us = x*tf                      # kernel works in microseconds
-        bg_us = float(self.deer_bgstart.value())*tf
+        t0 = float(self.deer_t0.value())   # zero-time, shifts the kernel axis
+        t_us = (x - t0)*tf               # kernel works in microseconds
+        bg_us = (float(self.deer_bgstart.value()) - t0)*tf
         # background end: 0 or ≤ start ⇒ no upper limit (fit to the trace end)
         end_disp = float(self.deer_bgend.value())
-        bg_end_us = end_disp*tf if end_disp > float(self.deer_bgstart.value()) else None
+        bg_end_us = (end_disp - t0)*tf if end_disp > float(self.deer_bgstart.value()) else None
         rmin, rmax = self.deer_rmin.value(), self.deer_rmax.value()
         if rmax <= rmin:
             self.set_status('Distance max must exceed min.')
@@ -1486,6 +1514,11 @@ class MainWindow(QMainWindow):
             self.set_status(f'DEER failed: {e}')
             return
         self.deer_result = res
+        # display/cursors stay in the original acquisition time; only the
+        # kernel used the t0-shifted axis internally.
+        res['t'] = x*tf
+        if bg_end_us is not None:
+            res['background']['bg_end'] = end_disp*tf
         if self.deer_alpha_auto.isChecked():
             self.deer_alpha.blockSignals(True)
             self.deer_alpha.setValue(float(res['alpha']))

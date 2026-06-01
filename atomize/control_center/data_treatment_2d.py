@@ -492,11 +492,28 @@ class MainWindow(QMainWindow):
         srow.addWidget(self.slice_spin); srow.addWidget(self.slice_label, 1)
         grid.addLayout(srow, 2, 1)
 
+        arow = QHBoxLayout()
+        self.slice_avg = QCheckBox('Average up to #')
+        self.slice_avg.setStyleSheet(CHECKBOX_STYLE)
+        self.slice_avg.setToolTip('Average all traces between "Trace #" and this '
+                                  'index (inclusive) before sending — improves SNR.')
+        self.slice_avg.stateChanged.connect(self._update_slice_label)
+        self.slice_spin2 = QSpinBox(); self.slice_spin2.setStyleSheet(SPIN_STYLE)
+        self.slice_spin2.setRange(0, 1000000)
+        self.slice_spin2.valueChanged.connect(self._update_slice_label)
+        arow.addWidget(self.slice_avg); arow.addWidget(self.slice_spin2, 1)
+        grid.addLayout(arow, 3, 1)
+
+        brow = QHBoxLayout()
         btn_send = QPushButton('Send slice → 1D')
         btn_send.setStyleSheet(BUTTON_STYLE)
         btn_send.clicked.connect(self.send_slice_to_1d)
-        grid.addWidget(btn_send, 3, 0, 1, 2)
-        grid.setRowStretch(4, 1)
+        btn_save = QPushButton('Save slice…')
+        btn_save.setStyleSheet(BUTTON_STYLE)
+        btn_save.clicked.connect(self.save_slice)
+        brow.addWidget(btn_send); brow.addWidget(btn_save)
+        grid.addLayout(brow, 4, 0, 1, 2)
+        grid.setRowStretch(5, 1)
         return w
 
     def _update_fit_params(self, *args):
@@ -1064,7 +1081,17 @@ class MainWindow(QMainWindow):
         self.slice_spin.blockSignals(False)
         idx = int(self.slice_spin.value())
         coord = axis['start'] + axis['step']*idx
-        self.slice_label.setText(f"{axis['name']} = {coord:.4g} {axis['scale']} (of {ntr})")
+        if getattr(self, 'slice_avg', None) is not None and self.slice_avg.isChecked():
+            self.slice_spin2.blockSignals(True)
+            self.slice_spin2.setMaximum(max(0, ntr - 1))
+            self.slice_spin2.blockSignals(False)
+            idx2 = int(self.slice_spin2.value())
+            lo, hi = sorted((idx, idx2))
+            c2 = axis['start'] + axis['step']*idx2
+            self.slice_label.setText(f"{axis['name']} = {coord:.4g}…{c2:.4g} "
+                                     f"{axis['scale']} (avg {hi - lo + 1} of {ntr})")
+        else:
+            self.slice_label.setText(f"{axis['name']} = {coord:.4g} {axis['scale']} (of {ntr})")
 
     def _write_buffer(self, curves):
         """Write a one-shot 1D-tool mailbox (libs/treatment_buffer.csv): interleaved
@@ -1080,39 +1107,84 @@ class MainWindow(QMainWindow):
         header = 'Atomize data treatment buffer\nlabels: ' + '|'.join(labels)
         np.savetxt(BUFFER_PATH, buf, delimiter=',', fmt='%.6e', header=header, comments='# ')
 
-    def send_slice_to_1d(self):
+    def _compute_slice(self):
+        """Build the current slice (Re/Im vs the decay axis), averaging the
+        selected index range when 'Average up to #' is on. Returns a dict, or
+        None (with a status set) when no dataset is loaded."""
         if self.src_i is None:
             self.set_status('Open an I/Q dataset first.')
-            return
+            return None
         i, q, col, row = self._current_iq()
-        idx = int(self.slice_spin.value())
-        if self.slice_axis.currentIndex() == 0:          # X = slice; one row
+        averaging = self.slice_avg.isChecked()
+        along_x = self.slice_axis.currentIndex() == 0
+        if along_x:                                      # X = slice; row(s)
             ntr = i.shape[0]
-            if idx >= ntr:
-                idx = ntr - 1; self.slice_spin.setValue(idx)
             x = col['start'] + col['step']*np.arange(i.shape[1])
-            re, im = i[idx], q[idx]
             dax, oax = col, row
-        else:                                            # Y = slice; one column
+        else:                                            # Y = slice; column(s)
             ntr = i.shape[1]
-            if idx >= ntr:
-                idx = ntr - 1; self.slice_spin.setValue(idx)
             x = row['start'] + row['step']*np.arange(i.shape[0])
-            re, im = i[:, idx], q[:, idx]
             dax, oax = row, col
-        coord = oax['start'] + oax['step']*idx
+        idx = min(int(self.slice_spin.value()), ntr - 1)
+        self.slice_spin.setValue(idx)
+        idx2 = min(int(self.slice_spin2.value()), ntr - 1)
+        lo, hi = sorted((idx, idx2))
+        mean = averaging and hi > lo
+        if mean:
+            if along_x:
+                re = i[lo:hi + 1].mean(axis=0); im = q[lo:hi + 1].mean(axis=0)
+            else:
+                re = i[:, lo:hi + 1].mean(axis=1); im = q[:, lo:hi + 1].mean(axis=1)
+            tag = f'{lo}-{hi}'
+            coord = oax['start'] + oax['step']*0.5*(lo + hi)
+        else:
+            re = i[lo] if along_x else i[:, lo]
+            im = q[lo] if along_x else q[:, lo]
+            tag = str(lo)
+            coord = oax['start'] + oax['step']*lo
+        return {'x': x, 're': re, 'im': im, 'dax': dax, 'oax': oax,
+                'tag': tag, 'coord': coord, 'mean': mean, 'lo': lo, 'hi': hi}
+
+    def save_slice(self):
+        """Save the current (optionally averaged) slice to a CSV: decay axis, Re, Im."""
+        sl = self._compute_slice()
+        if sl is None:
+            return
+        file_path = self.opener.create_file_dialog(multiprocessing=True)
+        if not file_path or file_path == 'None':
+            return
+        dax, oax = sl['dax'], sl['oax']
+        arr = np.column_stack([np.asarray(sl['x'], float),
+                               np.asarray(sl['re'], float),
+                               np.asarray(sl['im'], float)])
+        kind = (f'mean of traces {sl["lo"]}–{sl["hi"]}' if sl['mean']
+                else f'trace {sl["lo"]}')
+        header = '\n'.join([
+            f'2D slice ({kind}); {oax["name"]} = {sl["coord"]:.6g} {oax["scale"]}',
+            f'columns: {dax["name"]} ({dax["scale"]}), Re/I, Im/Q'])
+        self.opener.save_data(file_path, arr, header=header, mode='w')
+        self.set_status(f'Saved slice {sl["tag"]} to {os.path.basename(file_path)}.')
+
+    def send_slice_to_1d(self):
+        sl = self._compute_slice()
+        if sl is None:
+            return
+        x, re, im = sl['x'], sl['re'], sl['im']
+        dax, oax, tag, coord, mean = (sl['dax'], sl['oax'], sl['tag'],
+                                      sl['coord'], sl['mean'])
         try:
             self._write_buffer([('slice Re', x, re), ('slice Im', x, im)])
         except Exception as e:
             self.set_status(f'Could not write transfer buffer: {e}')
             return
         try:                                             # also show it in the main GUI
-            general.plot_1d(f'2D slice #{idx}', x, re, label='Re',
+            general.plot_1d(f'2D slice {tag}', x, re, label='Re',
                             xname=dax['name'], xscale=dax['scale'],
                             yname='Intensity', yscale='V')
         except Exception:
             pass
-        self.set_status(f'Slice #{idx} ({oax["name"]} = {coord:.4g} {oax["scale"]}) '
+        what = (f'Mean slice {tag}' if mean else f'Slice #{tag}')
+        self.set_status(f'{what} ({oax["name"]} = {coord:.4g} {oax["scale"]}) '
                         f'sent to buffer. In the 1D Data Treatment window click '
                         f'"Load from plot" (I = slice Re, Q = slice Im).')
 
