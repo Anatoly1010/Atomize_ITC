@@ -114,8 +114,8 @@ class MainWindow(QMainWindow):
                                  'gui', 'icon_temp.png')
         self.setWindowIcon(QIcon(icon_path))
         self.setMinimumHeight(760)
-        self.setMinimumWidth(880)
-        self.resize(1000, 800)
+        self.setMinimumWidth(1040)
+        self.resize(1160, 800)
         # background on the QMainWindow (as in awg_phasing_insys.py) rather than
         # the central widget, so spinboxes keep their full native frame.
         self.setStyleSheet(f"background-color: {BG};")

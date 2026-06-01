@@ -791,7 +791,22 @@ class MainWindow(QMainWindow):
     def clear_all(self):
         self.raw_i = self.raw_q = self.src_i = self.src_q = None
         self.res_i = self.res_q = None
+        self._clear_preview()
         self.set_status('Cleared. Open an I/Q 2D dataset.')
+
+    def _clear_preview(self):
+        """Wipe the embedded heatmap + X/Y cross-section traces and reset the
+        dock's render state so the next load re-autoranges from scratch."""
+        cd = self.cross_dock
+        try:
+            cd.img_view.clear()
+            cd.h_cross_section_widget_data.setData([], [])
+            cd.v_cross_section_widget_data.setData([], [])
+            cd.first_render = True
+            cd.set_image = 0
+            cd.setTitle('')
+        except Exception:
+            pass
 
     # --------------------------------------------------------------- push
     def _push_current(self, *args):
