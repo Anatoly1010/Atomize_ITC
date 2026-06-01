@@ -15,6 +15,9 @@ import atomize.general_modules.general_functions as general
 import atomize.general_modules.csv_opener_saver as openfile
 import atomize.control_center.field_param as field_param
 from atomize.control_center.time_log_spinbox import TimeLogSpinBox
+# Shared dark-theme styling; apply_app_style() pins this process to the Fusion
+# style so QComboBox / QSpinBox / QLineEdit render identically on Linux/Windows.
+from atomize.general_modules.gui_style import apply_app_style
 
 class MainWindow(QMainWindow):
     """
@@ -5696,6 +5699,7 @@ def main():
     A function to run the main window of the programm.
     """
     app = QApplication(sys.argv)
+    apply_app_style(app, app_id='Atomize.ITC.AWGPhasing')
     main = MainWindow()
     main.show()
     sys.exit(app.exec())

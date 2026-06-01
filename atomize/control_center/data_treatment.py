@@ -29,6 +29,7 @@ import numpy as np
 from pathlib import Path
 
 import pyqtgraph as pg
+from pyqtgraph.dockarea import DockArea
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QLabel, QPushButton,
@@ -42,104 +43,20 @@ import atomize.math_modules.least_square_fitting_modules as fitting
 import atomize.math_modules.signal_processing as sigproc
 import atomize.math_modules.fft as fft_module
 import atomize.math_modules.deer as deer_module
+# Reuse the main-window plot stack so the embedded preview behaves identically
+# to the main UI (crosshair, Shift-drag ruler, FFT/log right-click toggles).
+from atomize.main.widgets import CrosshairPlotWidget, CloseableDock
+
+# Shared dark-theme palette / widget styles (single source of truth across all
+# control-center tools). apply_app_style() pins this process to the Fusion style
+# so QComboBox / QSpinBox / QLineEdit render identically on Linux and Windows.
+from atomize.general_modules.gui_style import (apply_app_style,
+    BG, FG, ACCENT, BUTTON_STYLE, LABEL_STYLE, DSPIN_STYLE, SPIN_STYLE,
+    COMBO_STYLE, LINEEDIT_STYLE, CHECKBOX_STYLE, SCROLL_STYLE, TAB_STYLE)
 
 # Path to the buffer file that the main-window plot sidebar writes selected
 # curves into (same libs/ runtime-IPC convention as the .param files).
 BUFFER_PATH = str(Path(__file__).resolve().parent.parent.parent / 'libs' / 'treatment_buffer.csv')
-
-# Shared dark-theme palette and widget styles, mirrored from the other
-# control-center widgets (see awg_phasing_insys.py) so this window blends in.
-BG = 'rgb(42, 42, 64)'
-FG = 'rgb(193, 202, 227)'
-ACCENT = 'rgb(211, 194, 78)'
-
-BUTTON_STYLE = ("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); "
-    "border-style: outset; color: rgb(193, 202, 227); font-weight: bold; padding: 4px; } "
-    "QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
-
-LABEL_STYLE = "QLabel { color : rgb(193, 202, 227); font-weight: bold; }"
-
-# Spinboxes: colour text + selection only (matches awg_phasing_insys.py) so the
-# native +/- glyphs render; the dark-theme background is applied to the
-# QMainWindow (not the central widget) so the native frame draws all four sides.
-DSPIN_STYLE = ("QDoubleSpinBox { color : rgb(193, 202, 227); "
-    "selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97); }")
-SPIN_STYLE = ("QSpinBox { color : rgb(193, 202, 227); "
-    "selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97); }")
-
-COMBO_STYLE = ("QComboBox { color : rgb(193, 202, 227); "
-    "selection-color: rgb(211, 194, 78); selection-background-color: rgb(63, 63, 97); "
-    "outline: none; }")
-
-LINEEDIT_STYLE = ("QLineEdit { color: rgb(211, 194, 78); "
-    "selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97); }")
-
-CHECKBOX_STYLE = """
-    QCheckBox {
-        color: rgb(193, 202, 227);
-        background-color: transparent;
-        font-weight: bold;
-        spacing: 8px;
-    }
-    QCheckBox::indicator {
-        width: 14px;
-        height: 14px;
-        background-color: rgb(63, 63, 97);
-        border: 1px solid rgb(83, 83, 117);
-        border-radius: 3px;
-    }
-    QCheckBox::indicator:hover {
-        border: 1px solid rgb(211, 194, 78);
-    }
-    QCheckBox::indicator:pressed {
-        background-color: rgb(83, 83, 117);
-    }
-    QCheckBox::indicator:checked {
-        background-color: rgb(211, 194, 78);
-        border: 3px solid rgb(63, 63, 97);
-    }
-"""
-
-SCROLL_STYLE = """
-    QScrollArea { border: none; background: transparent; }
-    QScrollBar:vertical {
-        border: none; background: rgb(43, 43, 77); width: 10px; margin: 0px;
-    }
-    QScrollBar::handle:vertical {
-        background: rgb(193, 202, 227); min-height: 20px; border-radius: 5px;
-    }
-    QScrollBar::handle:vertical:hover { background: rgb(211, 194, 78); }
-    QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }
-    QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: none; }
-"""
-
-TAB_STYLE = """
-    QTabWidget::pane {
-        border: 1px solid rgb(43, 43, 77);
-        top: -1px;
-        background: rgb(63, 63, 97);
-    }
-    QTabBar::tab {
-        height: 22px;
-        font-weight: bold;
-        color: rgb(193, 202, 227);
-        background: rgb(63, 63, 97);
-        border: 1px solid rgb(43, 43, 77);
-        border-bottom: none;
-        border-top-left-radius: 4px;
-        border-top-right-radius: 4px;
-        padding: 2px 10px;
-        margin-right: 2px;
-    }
-    QTabBar::tab:selected {
-        color: rgb(211, 194, 78);
-        background: rgb(83, 83, 117);
-        border-bottom: 2px solid rgb(211, 194, 78);
-    }
-    QTabBar::tab:hover {
-        background: rgb(73, 73, 107);
-    }
-"""
 
 
 class MainWindow(QMainWindow):
@@ -195,9 +112,9 @@ class MainWindow(QMainWindow):
         icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                  'gui', 'icon_temp.png')
         self.setWindowIcon(QIcon(icon_path))
-        self.setMinimumHeight(660)
+        self.setMinimumHeight(760)
         self.setMinimumWidth(880)
-        self.resize(1000, 700)
+        self.resize(1000, 800)
         # background on the QMainWindow (as in awg_phasing_insys.py) rather than
         # the central widget, so spinboxes keep their full native frame.
         self.setStyleSheet(f"background-color: {BG};")
@@ -206,14 +123,25 @@ class MainWindow(QMainWindow):
         root = QHBoxLayout(central)
 
         # ---- Left: embedded live preview (in-process, smooth) ----
+        # Same plot stack as the main UI (atomize/main/widgets.py): a
+        # CrosshairPlotWidget inside a CloseableDock/DockArea, so the preview
+        # shares the crosshair, Shift-drag ruler and FFT/log right-click
+        # toggles. The dock can float, but its close button is hidden — the
+        # preview is the window's only plot and must not be dismissable.
         pg.setConfigOptions(antialias=True)
-        self.plot_widget = pg.PlotWidget()
-        self.plot_widget.setBackground((42, 42, 64))
+        self.plot_area = DockArea()
+        self.plot_widget = CrosshairPlotWidget()
+        # no setBackground: inherit pyqtgraph's global background (63,63,97, set
+        # in atomize/main/widgets.py) so 1D matches the 2D CrossSectionDock.
         self.plot_widget.showGrid(x=True, y=True, alpha=0.2)
         self.legend = self.plot_widget.addLegend()
-        # click-to-pick alpha on the DEER L-curve view
+        self.plot_dock = CloseableDock(name='Preview', widget=self.plot_widget)
+        self.plot_dock.close_button.hide()
+        self.plot_area.addDock(self.plot_dock)
+        # click-to-pick alpha on the DEER L-curve view (single-click; the
+        # crosshair toggle uses double-click, so the two don't conflict)
         self.plot_widget.scene().sigMouseClicked.connect(self._on_plot_click)
-        root.addWidget(self.plot_widget, stretch=3)
+        root.addWidget(self.plot_area, stretch=3)
 
         # ---- Vertical separator between graph and controls ----
         sep = QFrame()
@@ -335,13 +263,13 @@ class MainWindow(QMainWindow):
         # the native +/- frame renders fully; combos / buttons / line edits get
         # the same min height for row alignment.
         row_h = 26
-        for wdg in self.findChildren((QComboBox, QPushButton, QLineEdit)):
-            pass
-            #wdg.setMinimumHeight(row_h)
+        for wdg in self.findChildren((QComboBox, QPushButton)):
+            wdg.setMinimumHeight(row_h)
         for spin in self.findChildren((QSpinBox, QDoubleSpinBox)):
             spin.setButtonSymbols(QSpinBox.ButtonSymbols.PlusMinus)
             spin.setMinimumHeight(row_h)
-
+        for le in self.findChildren((QLineEdit)):
+            le.setMinimumHeight(21)
 
     def _hline(self):
         line = QFrame()
@@ -1722,6 +1650,7 @@ class MainWindow(QMainWindow):
 
 def main():
     app = QApplication(sys.argv)
+    apply_app_style(app, app_id='Atomize.ITC.DataTreatment1D')
     window = MainWindow()
     window.show()
     sys.exit(app.exec())

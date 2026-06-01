@@ -348,6 +348,8 @@ def main():
     A function to run the main window of the programm.
     """
     app = QApplication(sys.argv)
+    from atomize.general_modules.gui_style import apply_app_style
+    apply_app_style(app, app_id='Atomize.ITC.FieldControl')
     main = MainWindow()
     main.show()
     sys.exit(app.exec())
