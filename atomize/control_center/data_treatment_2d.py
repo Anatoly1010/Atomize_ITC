@@ -20,9 +20,10 @@ parameter). It mirrors the phase_cor.py workflow:
         the indirect (Y) axis, with optional apodization + zero fill; the
         transformed axis becomes frequency.
 
-There is NO embedded plot: results are pushed to the main GUI via
-general.plot_2d, which provides the heatmap + X/Y cross-section docks. Real and
-imaginary parts ride along as the two toggleable frames of a (2, nX, nY) array.
+The window embeds the same CrossSectionDock the main GUI uses (heatmap + X/Y
+cross-section sub-docks), fed in-process — no LivePlot IPC. Real and imaginary
+parts ride along as the two toggleable frames of a (2, nX, nY) array (the frame
+slider switches between them).
 "Result → input" chains one operation into the next (e.g. phase → FFT).
 """
 
@@ -42,6 +43,10 @@ import atomize.general_modules.csv_opener_saver as openfile
 import atomize.general_modules.bruker_opener as bruker
 import atomize.math_modules.signal_processing as sigproc
 import atomize.math_modules.least_square_fitting_modules as fitting
+# Reuse the main-window 2D plot stack (heatmap + X/Y cross-sections) so the
+# embedded preview matches the main UI; fed in-process, no LivePlot IPC.
+from pyqtgraph.dockarea import DockArea
+from atomize.main.widgets import CrossSectionDock
 
 BG = 'rgb(42, 42, 64)'
 FG = 'rgb(193, 202, 227)'
@@ -156,13 +161,33 @@ class MainWindow(QMainWindow):
                                  'gui', 'icon_temp.png')
         self.setWindowIcon(QIcon(icon_path))
         self.setMinimumHeight(560)
-        self.resize(420, 660)
+        self.setMinimumWidth(900)
+        self.resize(1040, 720)
         # background on the QMainWindow (as in awg_phasing_insys.py) rather than
         # the central widget, so spinboxes keep their full native frame.
         self.setStyleSheet(f"background-color: {BG};")
         central = QWidget()
         self.setCentralWidget(central)
-        panel = QVBoxLayout(central)
+        root = QHBoxLayout(central)
+
+        # ---- Left: embedded preview (in-process) — same CrossSectionDock
+        # (heatmap + X/Y cross-sections) as the main GUI, for consistency. ----
+        self.plot_area = DockArea()
+        self.cross_dock = CrossSectionDock(name='Preview')
+        self.cross_dock.close_button.hide()
+        self.plot_area.addDock(self.cross_dock)
+        root.addWidget(self.plot_area, stretch=3)
+
+        # ---- Vertical separator between graph and controls ----
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.VLine)
+        sep.setFrameShadow(QFrame.Shadow.Plain)
+        sep.setStyleSheet('color: rgb(83, 83, 117);')
+        root.addWidget(sep)
+
+        # ---- Right: controls ----
+        panel = QVBoxLayout()
+        root.addLayout(panel, stretch=2)
 
         # ---- Source ----
         panel.addWidget(self._heading('Source (I/Q 2D)'))
@@ -267,12 +292,13 @@ class MainWindow(QMainWindow):
         # the native +/- frame renders fully; combos / buttons / line edits get
         # the same min height for row alignment.
         row_h = 26
-        for wdg in self.findChildren((QComboBox, QPushButton, QLineEdit)):
-            pass
-            #wdg.setMinimumHeight(row_h)
+        for wdg in self.findChildren((QComboBox, QPushButton)):
+            wdg.setMinimumHeight(row_h)
         for spin in self.findChildren((QSpinBox, QDoubleSpinBox)):
             spin.setButtonSymbols(QSpinBox.ButtonSymbols.PlusMinus)
-            spin.setFixedHeight(row_h)
+            spin.setMinimumHeight(row_h)
+        for le in self.findChildren((QLineEdit)):
+            le.setMinimumHeight(21)
 
     # ---- small helpers ----
     def _hline(self):
@@ -777,22 +803,24 @@ class MainWindow(QMainWindow):
                        ('I', 'Q'))
 
     def _push(self, i, q, col, row, frames):
-        """Push a complex 2D dataset to the main GUI as a (2, nX, nY) frame array
-        (frame 0 = real/I, frame 1 = imag/Q) so its cross-section dock shows it."""
+        """Render a complex 2D dataset in the embedded CrossSectionDock as a
+        (2, nX, nY) frame stack (frame 0 = real/I, frame 1 = imag/Q); the frame
+        slider toggles between them."""
         name = self.name_edit.text().strip() or 'FT Data 2D'
         # internal layout is [trace(row), point(col)]; transpose so columns
-        # become the X axis (matches general.plot_2d start_step ((x..),(y..))).
+        # become the X axis (CrossSectionDock pos/scale are ((x..),(y..))).
         arr = np.array([np.transpose(np.asarray(i, float)),
                         np.transpose(np.asarray(q, float))])
         try:
-            general.plot_2d(name, arr,
-                            start_step=((col['start'], col['step']),
-                                        (row['start'], row['step'])),
-                            xname=col['name'], xscale=col['scale'],
-                            yname=row['name'], yscale=row['scale'],
-                            zname='Intensity', zscale='V')
+            self.cross_dock.setTitle(name)
+            self.cross_dock.setAxisLabels(xname=col['name'], xscale=col['scale'],
+                                          yname=row['name'], yscale=row['scale'],
+                                          zname='Intensity', zscale='V')
+            self.cross_dock.setImage(arr, pos=(col['start'], row['start']),
+                                     scale=(col['step'], row['step']),
+                                     autoLevels=False)
         except Exception as e:
-            self.set_status(f'Could not plot to GUI: {e}')
+            self.set_status(f'Could not render preview: {e}')
 
     def set_status(self, text):
         self.status.setText(text)
@@ -1232,6 +1260,8 @@ class MainWindow(QMainWindow):
 
 def main():
     app = QApplication(sys.argv)
+    from atomize.general_modules.gui_style import apply_app_style
+    apply_app_style(app, app_id='Atomize.ITC.DataTreatment2D')
     window = MainWindow()
     window.show()
     sys.exit(app.exec())
