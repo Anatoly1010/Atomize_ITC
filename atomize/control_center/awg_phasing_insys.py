@@ -486,7 +486,7 @@ class MainWindow(QMainWindow):
                 if (i == 1) and (j == 1):
                     spin_box.setValue(576)
                 elif (i == 1) and (j == 2):
-                    spin_box.setRange(0, 6.4e3)
+                    spin_box.setRange(0, 12.8e3)
                     spin_box.setValue(816)
                 elif (i == 1) and (j == 3):
                     spin_box.setRange(0, 0)
@@ -2504,6 +2504,8 @@ class MainWindow(QMainWindow):
             self.decimation = current
 
         self.time_per_point = 0.4 * self.decimation
+        self.win_left()
+        self.win_right()
 
     def n_wurst(self):
         """
