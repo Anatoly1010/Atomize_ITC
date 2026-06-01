@@ -58,6 +58,13 @@ from atomize.general_modules.gui_style import (apply_app_style,
 # curves into (same libs/ runtime-IPC convention as the .param files).
 BUFFER_PATH = str(Path(__file__).resolve().parent.parent.parent / 'libs' / 'treatment_buffer.csv')
 
+# Solid-accent "busy" variant for the Run-DEER button while an inversion is in
+# progress (explicit colours so it stays yellow even while disabled).
+BUTTON_BUSY_STYLE = (
+    f"QPushButton {{border-radius: 4px; background-color: {ACCENT}; "
+    f"border-style: inset; color: {BG}; font-weight: bold; padding: 4px; }} "
+    f"QPushButton:disabled {{background-color: {ACCENT}; color: {BG}; }}")
+
 
 class MainWindow(QMainWindow):
 
@@ -92,6 +99,9 @@ class MainWindow(QMainWindow):
         # persistent preview curves: label -> pyqtgraph PlotDataItem, reused via
         # setData so live updates never tear down / rebuild plot items
         self._curve_items = {}
+        # identity of what is currently plotted (curve labels + x-axis name); a
+        # change means a new result / view / unit, which re-fits the axes once.
+        self._plot_key = None
         # set while promoting a result so selecting the new input does not
         # immediately re-apply the operation to it
         self._suppress_live = False
@@ -113,7 +123,7 @@ class MainWindow(QMainWindow):
         icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                  'gui', 'icon_temp.png')
         self.setWindowIcon(QIcon(icon_path))
-        self.setMinimumHeight(760)
+        self.setMinimumHeight(720)
         self.setMinimumWidth(1040)
         self.resize(1160, 800)
         # background on the QMainWindow (as in awg_phasing_insys.py) rather than
@@ -192,6 +202,7 @@ class MainWindow(QMainWindow):
         self.pair_check = QCheckBox('I/Q pair (run FFT / smoothing on both channels)')
         self.pair_check.setStyleSheet(CHECKBOX_STYLE)
         self.pair_check.stateChanged.connect(self.on_source_changed)
+        self.pair_check.setChecked(True)
         panel.addWidget(self.pair_check)
 
         # X axis name (preview label / plot xname / CSV header for time-domain results)
@@ -624,8 +635,6 @@ class MainWindow(QMainWindow):
         self.deer_t0.setDecimals(4)
         self.deer_t0.setSingleStep(0.05)
         self.deer_t0.setValue(0.0)
-        self.deer_t0.setToolTip('Dipolar zero-time. The time axis is shifted so '
-                                'this value becomes t = 0 before inversion.')
         self.deer_t0.valueChanged.connect(self._live_update)
         btn_t0 = QPushButton('Max')
         btn_t0.setStyleSheet(BUTTON_STYLE)
@@ -655,8 +664,6 @@ class MainWindow(QMainWindow):
         self.deer_bgend.setDecimals(4)
         self.deer_bgend.setSingleStep(0.05)
         self.deer_bgend.setValue(0.0)            # 0 / ≤ start ⇒ no upper limit
-        self.deer_bgend.setToolTip('Upper edge of the background fit window. '
-                                   '0 or ≤ start means fit to the end of the trace.')
         self.deer_bgend.valueChanged.connect(self._live_update)
         btn_end = QPushButton('End')
         btn_end.setStyleSheet(BUTTON_STYLE)
@@ -678,6 +685,18 @@ class MainWindow(QMainWindow):
         self.deer_fitdim.stateChanged.connect(self._live_update)
         dim_row.addWidget(self.deer_dim); dim_row.addWidget(self.deer_fitdim)
         grid.addLayout(dim_row, r, 1); r += 1
+
+        grid.addWidget(self._label('Background fit'), r, 0)
+        self.deer_engine = QComboBox()
+        self.deer_engine.setStyleSheet(COMBO_STYLE)
+        self.deer_engine.addItems(['Sequential', 'Joint (global)'])
+        self.deer_engine.setToolTip(
+            'Sequential: fit the background on the tail window, divide it out, '
+            'then invert (fast).\nJoint (global): fit background + modulation '
+            'depth together with P(r) in one pass (DeerLab-style) — more robust '
+            'when the background window is short or hard to place.')
+        self.deer_engine.currentIndexChanged.connect(self._live_update)
+        grid.addWidget(self.deer_engine, r, 1); r += 1
 
         grid.addWidget(self._label('Distance min/max (nm)'), r, 0)
         rr_row = QHBoxLayout()
@@ -703,8 +722,13 @@ class MainWindow(QMainWindow):
 
         grid.addWidget(self._label('Regularization α'), r, 0)
         al_row = QHBoxLayout()
-        self.deer_alpha_auto = QCheckBox('Auto (L-curve)')
+        self.deer_alpha_auto = QCheckBox('Auto (GCV)')
         self.deer_alpha_auto.setStyleSheet(CHECKBOX_STYLE)
+        self.deer_alpha_auto.setToolTip(
+            'Choose the regularization weight automatically by generalized '
+            'cross-validation (robust against the spiky P(r) the L-curve corner '
+            'gives on DEER data). Uncheck to set α manually, or pick it on the '
+            'L-curve view.')
         self.deer_alpha_auto.setChecked(True)
         self.deer_alpha_auto.stateChanged.connect(self._deer_alpha_toggle)
         self.deer_alpha_auto.stateChanged.connect(self._live_update)
@@ -729,6 +753,7 @@ class MainWindow(QMainWindow):
         btn = QPushButton('Run DEER')
         btn.setStyleSheet(BUTTON_STYLE)
         btn.clicked.connect(self.do_deer)
+        self.deer_run_btn = btn               # kept for the busy-highlight toggle
         btn_exp = QPushButton('Export all…')
         btn_exp.setStyleSheet(BUTTON_STYLE)
         btn_exp.clicked.connect(self.save_deer_all)
@@ -796,6 +821,40 @@ class MainWindow(QMainWindow):
             combo.blockSignals(False)
         self.on_source_changed()
 
+    @staticmethod
+    def _csv_header_labels(file_path):
+        """Column labels from a CSV's '#'-comment header, e.g.
+        '# Time (ns), Signal (V)' -> ['Time (ns)', 'Signal (V)']. Uses the last
+        comment line before the data (the column-name row, by convention) and
+        splits on commas; decorative '#'-only lines are ignored. Returns [] when
+        the file has no usable comment header."""
+        labels = []
+        try:
+            with open(file_path, 'r', errors='ignore') as fh:
+                for line in fh:
+                    s = line.strip()
+                    if not s:
+                        continue
+                    if s.startswith('#'):
+                        parts = [c.strip() for c in s.lstrip('#').split(',')]
+                        if any(parts):
+                            labels = parts
+                    else:
+                        break                     # reached the first data row
+        except Exception:
+            return []                             # header is best-effort: never
+        return labels if any(labels) else []      # block a load over a bad header
+
+    def _preset_deer_unit(self, label):
+        """If an X label carries a time unit like 'Time (ns)', preset the DEER
+        time-unit selector to match (mirrors the Bruker loader)."""
+        u = ''
+        if label and label.endswith(')') and '(' in label:
+            u = label[label.rfind('(') + 1:-1].strip().lower()
+        tmap = {'ns': 'ns', 'us': 'µs', 'µs': 'µs', 'μs': 'µs', 'ms': 'ms'}
+        if u in tmap:
+            self.deer_tunit.setCurrentText(tmap[u])
+
     def open_csv(self):
         file_path = self.opener.open_file_dialog(multiprocessing=True)
         if not file_path or file_path == 'None':
@@ -807,11 +866,19 @@ class MainWindow(QMainWindow):
                 self.set_status('CSV needs at least two columns (X and Y).')
                 return
             x = data[0]
+            labels = self._csv_header_labels(file_path)
             mapping = {}
             for i in range(1, data.shape[0]):
                 y = data[i]
                 mask = ~(np.isnan(x) | np.isnan(y))
-                mapping[f'Y{i}'] = (x[mask], y[mask])
+                name = labels[i] if (i < len(labels) and labels[i]) else f'Y{i}'
+                while name in mapping:            # keep the dataset keys unique
+                    name += "'"
+                mapping[name] = (x[mask], y[mask])
+            # axis name + unit from the X-column header (col 0), like the Bruker path
+            if labels and labels[0]:
+                self.xname_edit.setText(labels[0])
+                self._preset_deer_unit(labels[0])
             self._register_datasets(mapping)
             self.set_status(f'Loaded {os.path.basename(file_path)} '
                             f'({data.shape[0] - 1} curve(s)).')
@@ -908,6 +975,7 @@ class MainWindow(QMainWindow):
         self._reset_result()
         self.deer_result = None
         self._clear_bg_cursor()
+        self._plot_key = None        # new/changed source data => re-fit the axes
         self.redraw()
         self._live_update()
 
@@ -1129,6 +1197,17 @@ class MainWindow(QMainWindow):
         self.plot_widget.setLabel('bottom', xname)
         # only the DEER L-curve view uses a left-axis label; clear it otherwise
         self.plot_widget.setLabel('left', '')
+
+        # Auto-scale the view when the plotted *content* changes (new result,
+        # DEER 'Show' view, time unit, load/clear) — but not on same-view live
+        # tweaks, so a manual zoom survives while dragging parameters.
+        key = (frozenset(wanted), xname)
+        if key != self._plot_key:
+            self._plot_key = key
+            try:
+                self.plot_widget.autoRange()
+            except Exception:
+                pass
 
     def set_status(self, text):
         self.status.setText(text)
@@ -1433,14 +1512,22 @@ class MainWindow(QMainWindow):
             return
         r = np.linspace(rmin, rmax, int(self.deer_rn.value()))
         alpha = None if self.deer_alpha_auto.isChecked() else float(self.deer_alpha.value())
+        engine = 'joint' if self.deer_engine.currentIndex() == 1 else 'sequential'
+        # highlight the button yellow while the (blocking) inversion runs
+        self.deer_run_btn.setEnabled(False)
+        self.deer_run_btn.setStyleSheet(BUTTON_BUSY_STYLE)
+        QApplication.processEvents()
         try:
             res = deer_module.deer_invert(
                 t_us, v, r=r, bg_start=bg_us, bg_end=bg_end_us,
                 dim=float(self.deer_dim.value()),
-                fit_dim=self.deer_fitdim.isChecked(), alpha=alpha)
+                fit_dim=self.deer_fitdim.isChecked(), alpha=alpha, engine=engine)
         except Exception as e:
             self.set_status(f'DEER failed: {e}')
             return
+        finally:
+            self.deer_run_btn.setStyleSheet(BUTTON_STYLE)
+            self.deer_run_btn.setEnabled(True)
         self.deer_result = res
         # display/cursors stay in the original acquisition time; only the
         # kernel used the t0-shifted axis internally.

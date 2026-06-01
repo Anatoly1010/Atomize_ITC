@@ -177,6 +177,8 @@ class MainWindow(QMainWindow):
         self.cross_dock.close_button.hide()
         self.plot_area.addDock(self.cross_dock)
         root.addWidget(self.plot_area, stretch=3)
+        self._disable_si_prefix()
+        # ---- end preview ----
 
         # ---- Vertical separator between graph and controls ----
         sep = QFrame()
@@ -769,6 +771,10 @@ class MainWindow(QMainWindow):
         self.src_i, self.src_q = self.raw_i.copy(), self.raw_q.copy()
         self.src_col, self.src_row = self._raw_axes()
         self.res_i = self.res_q = None
+        # newly loaded data / deliberate reset => re-fit the view even when the
+        # geometry is unchanged (the dock only auto-ranges on first render or a
+        # geometry change, so force it here, mirroring the 1D tool).
+        self.cross_dock.first_render = True
         self._push(self.src_i, self.src_q, self.src_col, self.src_row, ('I', 'Q'))
         self._update_slice_label()
         self.set_status('Showing raw I/Q.')
@@ -807,6 +813,26 @@ class MainWindow(QMainWindow):
             cd.setTitle('')
         except Exception:
             pass
+
+    def _disable_si_prefix(self):
+        """Turn off pyqtgraph's automatic SI-prefixing on this tool's preview
+        axes, so a user-chosen unit such as 'ns' is shown verbatim instead of
+        being double-prefixed into nonsense like 'kns' / 'mµs'.
+
+        Scoped to *this* tool's CrossSectionDock instance (own QProcess): the
+        shared widget keeps auto-prefixing for the main GUI, which depends on it.
+        setLabel() never re-enables the flag, so disabling once here sticks
+        across every later setAxisLabels() call."""
+        cd = self.cross_dock
+        plots = (cd.plot_item,
+                 cd.h_cross_section_widget.plotItem,
+                 cd.v_cross_section_widget.plotItem)
+        for p in plots:
+            for side in ('bottom', 'left'):
+                try:
+                    p.getAxis(side).enableAutoSIPrefix(False)
+                except Exception:
+                    pass
 
     # --------------------------------------------------------------- push
     def _push_current(self, *args):
