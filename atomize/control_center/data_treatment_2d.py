@@ -1358,10 +1358,13 @@ class MainWindow(QMainWindow):
             tag = f'{lo}-{hi}'
             coord = oax['start'] + oax['step']*0.5*(lo + hi)
         else:
-            re = i[lo] if along_x else i[:, lo]
-            im = q[lo] if along_x else q[:, lo]
-            tag = str(lo)
-            coord = oax['start'] + oax['step']*lo
+            # Not averaging: use the selected Trace # directly. lo = min(idx, idx2)
+            # would snap to the (default-0) "average up to #" spin and always send
+            # trace 0 instead of the indicated one.
+            re = i[idx] if along_x else i[:, idx]
+            im = q[idx] if along_x else q[:, idx]
+            tag = str(idx)
+            coord = oax['start'] + oax['step']*idx
         return {'x': x, 're': re, 'im': im, 'dax': dax, 'oax': oax,
                 'tag': tag, 'coord': coord, 'mean': mean, 'lo': lo, 'hi': hi}
 
