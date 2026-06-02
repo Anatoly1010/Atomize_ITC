@@ -833,6 +833,9 @@ class MainWindow(QMainWindow):
                 else:
                     setattr(self, par_name, float(spin_box.value()))
 
+        self.X0.setToolTip('X<sub style="font-size: 12pt;">0</sub> value for the custom X-axis.')
+        self.XDelta.setToolTip('ΔX value for the custom X-axis. Applied if not equal to 0.')
+
         # ---- Log Time spinboxes ----
         # UI shows plain time + unit (ns/μs/ms/s); self.cur_log_start /
         # self.cur_log_end stay as log10(time_in_ns) so the worker (exp_log)
@@ -847,6 +850,9 @@ class MainWindow(QMainWindow):
             tspin.setFixedSize(170, 26)
             setattr(self, attr_name, tspin)
             setattr(self, par_name, float(tspin.value()))
+
+        self.Log_start.setToolTip('Pulses with a log-step can be specified using the Start Increment parameter in the Pulses tab. Only relative increments of the pulses are important.')
+        self.Log_end.setToolTip('Pulses with a log-step can be specified using the Start Increment parameter in the Pulses tab. Only relative increments of the pulses are important.')
 
         # ---- Text Edits ----
         text_edit = [("EXP", "text_edit_exp_name", "cur_exp_name", self.exp_name),
@@ -888,6 +894,7 @@ class MainWindow(QMainWindow):
                 }
                 """)
 
+        self.combo_sweep.setToolTip('Linear Time: standard linear delay/length increment experiment.\nField: field-sweep experiment.\nLog Time: log10 delay/length increment experiment.')
 
         # ---- Separators ----
         def hline():
@@ -1043,6 +1050,8 @@ class MainWindow(QMainWindow):
             else:
                 setattr(self, par_name, int(spin_box.value()))
 
+        self.P_to_drop.setToolTip('Time zero for the FFT calculation')
+        
         #if self.second_order != 0.0:
         #    self.second_order = self.sec_order_coef / ( float( self.Second_order.value() ) * 1000 )
 
@@ -1087,6 +1096,11 @@ class MainWindow(QMainWindow):
                 }
             """)
             check.setFixedSize(170, 26)
+
+
+        self.fft_box.setToolTip('Show amplitude FFT of raw I/Q data.')
+        
+        self.Quad_cor.setToolTip('Apply phase correction in the frequency domain: exp(i·(φ₀ + φ₁·f + φ₂·f²))')
 
         # ---- Separators ----
         def hline():

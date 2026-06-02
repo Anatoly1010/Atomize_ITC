@@ -923,6 +923,10 @@ class MainWindow(QMainWindow):
                     setattr(self, par_name, int( float( spin_box.value() ) / self.time_per_point ))
                 else:
                     setattr(self, par_name, float(spin_box.value()))
+        
+        self.X0.setToolTip('X<sub style="font-size: 12pt;">0</sub> value for the custom X-axis.')
+        self.XDelta.setToolTip('ΔX value for the custom X-axis. Applied if not equal to 0.')
+        self.box_step_ampl.setToolTip('A pulse with a variable amplitude can be specified using the Start Increment parameter in the Pulses tab.')
 
         # ---- Log Time spinboxes ----
         # UI shows plain time + unit (ns/us/ms/s); self.cur_log_start /
@@ -938,6 +942,9 @@ class MainWindow(QMainWindow):
             tspin.setFixedSize(170, 26)
             setattr(self, attr_name, tspin)
             setattr(self, par_name, float(tspin.value()))
+
+        self.Log_start.setToolTip('Pulses with a log-step can be specified using the Start Increment parameter in the Pulses tab. Only relative increments of the pulses are important.')
+        self.Log_end.setToolTip('Pulses with a log-step can be specified using the Start Increment parameter in the Pulses tab. Only relative increments of the pulses are important.')
 
         # ---- Text Edits ----
         text_edit = [("E_AWG", "text_edit_exp_name", "cur_exp_name", self.exp_name),
@@ -978,6 +985,8 @@ class MainWindow(QMainWindow):
                 outline: none;
                 }
                 """)
+
+        self.combo_sweep.setToolTip('Linear Time: standard linear delay/length increment experiment.\nField: field-sweep experiment.\nLog Time: log10 delay/length increment experiment.\nAmplitude: pulse-amplitude increment experiment.')
 
         # ---- Separators ----
         def hline():
@@ -1141,6 +1150,9 @@ class MainWindow(QMainWindow):
             else:
                 setattr(self, par_name, int(spin_box.value()))
 
+
+        self.P_to_drop.setToolTip('Time zero for the FFT calculation')
+
         #if self.second_order != 0.0:
         #    self.second_order = self.sec_order_coef / ( float( self.Second_order.value() ) * 1000 )
 
@@ -1188,6 +1200,14 @@ class MainWindow(QMainWindow):
             check.setFixedSize(170, 26)
             if attr_name == 'IQ_corr':
                 check.setChecked(True)
+
+        self.fft_box.setToolTip('Show amplitude FFT of raw I/Q data.')
+        
+        self.Quad_cor.setToolTip('Apply phase correction in the frequency domain: exp(i·(φ₀ + φ₁·f + φ₂·f²))')
+
+        self.IQ_corr.setToolTip('When checked, apply time-domain zero-order phase correction: exp(i·φ₀),\nwhere φ₀ is set by the Frequency of the DETECTION pulse.In this case, only the integrated signal is plotted.\nWhen unchecked, the full 2D arrays are plotted.')
+        
+        self.Save2D.setToolTip('When checked, save both 1D and 2D arrays in the Shift Offset mode.')
 
         # ---- Separators ----
         def hline():
@@ -4070,7 +4090,7 @@ class Worker():
                     f"{'Averages:':<{w}} {AVERAGES}\n"
                     f"{'Points:':<{w}} {POINTS}\n"
                     f"{'Window:':<{w}} {p1_exp[2]}\n"
-                    f"{'Horizontal Resolution:':<{w}} {0.4 * DEC_COEF:.1g} ns\n"
+                    f"{'Horizontal Resolution:':<{w}} {0.4 * DEC_COEF:.1f} ns\n"
                     f"{'Vertical Resolution:':<{w}} {STEP} ns\n"
                     f"{'Temperature:':<{w}} {ls335.tc_temperature('A')} K\n"
                     f"{'Temperature Cernox:':<{w}} {ls335.tc_temperature('B')} K\n"
@@ -4540,7 +4560,7 @@ class Worker():
                     f"{'Averages:':<{w}} {AVERAGES}\n"
                     f"{'Points:':<{w}} {POINTS}\n"
                     f"{'Window:':<{w}} {p1_exp[2]}\n"
-                    f"{'Horizontal Resolution:':<{w}} {0.4 * DEC_COEF:.1g} ns\n"
+                    f"{'Horizontal Resolution:':<{w}} {0.4 * DEC_COEF:.1f} ns\n"
                     f"{'Vertical Resolution:':<{w}} {FIELD_STEP} G\n"
                     f"{'Temperature:':<{w}} {ls335.tc_temperature('A')} K\n"
                     f"{'Temperature Cernox:':<{w}} {ls335.tc_temperature('B')} K\n"
@@ -5092,7 +5112,7 @@ class Worker():
                     f"{'Averages:':<{w}} {AVERAGES}\n"
                     f"{'Points:':<{w}} {POINTS}\n"
                     f"{'Window:':<{w}} {p1_exp[2]}\n"
-                    f"{'Horizontal Resolution:':<{w}} {0.4 * DEC_COEF:.1g} ns\n"
+                    f"{'Horizontal Resolution:':<{w}} {0.4 * DEC_COEF:.1f} ns\n"
                     f"{'Vertical Resolution (ns):':<{w}} {v_res_formatted}\n"
                     f"{'Lg(X0/ns):':<{w}} {T_start}\n"
                     f"{'Lg(ΔX/ns):':<{w}} {T_end}\n"
@@ -5613,7 +5633,7 @@ class Worker():
                     f"{'Averages:':<{w}} {AVERAGES}\n"
                     f"{'Points:':<{w}} {POINTS}\n"
                     f"{'Window:':<{w}} {p1_exp[2]}\n"
-                    f"{'Horizontal Resolution:':<{w}} {0.4 * DEC_COEF:.1g} ns\n"
+                    f"{'Horizontal Resolution:':<{w}} {0.4 * DEC_COEF:.1f} ns\n"
                     f"{'Start Amplitude:':<{w}} {f_delay} %\n"
                     f"{'Vertical Resolution:':<{w}} {STEP} %\n"
                     f"{'Temperature:':<{w}} {ls335.tc_temperature('A')} K\n"
