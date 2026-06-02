@@ -178,6 +178,11 @@ class MainWindow(QMainWindow):
         self.cross_dock = CrossSectionDock(name='Preview')
         self.cross_dock.close_button.hide()
         self.plot_area.addDock(self.cross_dock)
+        # Follow the heatmap crosshair with the Slice-tab "Trace #": the dock's
+        # own handler updates its cross indices first (connected in __init__), so
+        # this slot, connected after, reads the fresh values. (Slice widgets are
+        # built later in design(); the slot only fires on user mouse moves.)
+        self.cross_dock.imageItem.scene().sigMouseMoved.connect(self._sync_slice_from_cursor)
         root.addWidget(self.plot_area, stretch=3)
         self._disable_si_prefix()
         # ---- end preview ----
@@ -538,6 +543,7 @@ class MainWindow(QMainWindow):
         grid.addWidget(self._label('Slice along'), 1, 0)
         self.slice_axis = self._combo(['X (within trace)', 'Y (indirect)'])
         self.slice_axis.currentIndexChanged.connect(self._update_slice_label)
+        self.slice_axis.currentIndexChanged.connect(self._sync_slice_from_cursor)
         grid.addWidget(self.slice_axis, 1, 1)
 
         grid.addWidget(self._label('Trace #'), 2, 0)
@@ -1261,6 +1267,23 @@ class MainWindow(QMainWindow):
         if self._fitting:
             self._cancel_fit = True
             self.status.setText('Cancelling fit…')
+
+    def _sync_slice_from_cursor(self, *args):
+        """Follow the heatmap crosshair with the Slice-tab "Trace #". The image
+        is (nX points, nY traces); a slice along X picks a trace (the Y/indirect
+        index), a slice along Y picks a point (the X index). The crosshair sets
+        both at once, so "Slice along" stays user-controlled and only the index
+        for the chosen direction is synced. No-ops unless the cross-section is
+        active (otherwise the indices don't track the cursor)."""
+        cd = self.cross_dock
+        if not getattr(cd, 'cross_section_enabled', False) or not hasattr(self, 'slice_spin'):
+            return
+        if self.slice_axis.currentIndex() == 0:        # along X → trace = Y index
+            idx = int(getattr(cd, 'y_cross_index', 0))
+        else:                                          # along Y → trace = X index
+            idx = int(getattr(cd, 'x_cross_index', 0))
+        if idx != self.slice_spin.value():
+            self.slice_spin.setValue(idx)              # fires _update_slice_label
 
     def _update_slice_label(self, *args):
         if not hasattr(self, 'slice_spin'):

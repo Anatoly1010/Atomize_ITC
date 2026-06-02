@@ -893,6 +893,15 @@ class MainWindow(QMainWindow):
             if data.shape[0] < 2:
                 self.set_status('CSV needs at least two columns (X and Y).')
                 return
+            # Guard against accidentally loading a 2D matrix here: open_1d gives
+            # one row per CSV column, so a [trace × point] dataset arrives as
+            # hundreds/thousands of "curves". The 1D tool is for a handful of
+            # columns (X + a few channels); send wide files to the 2D tool.
+            if data.shape[0] > 6:
+                self.set_status(f'This looks like a 2D dataset ({data.shape[0]} '
+                                f'columns). The 1D tool takes at most 6 columns — '
+                                f'open it in the 2D Data Treatment window instead.')
+                return
             x = data[0]
             labels = self._csv_header_labels(file_path)
             mapping = {}
