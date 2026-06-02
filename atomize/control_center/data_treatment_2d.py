@@ -28,6 +28,7 @@ slider switches between them).
 """
 
 import os
+import re
 import sys
 import numpy as np
 from pathlib import Path
@@ -43,6 +44,7 @@ import atomize.general_modules.csv_opener_saver as openfile
 import atomize.general_modules.bruker_opener as bruker
 import atomize.math_modules.signal_processing as sigproc
 import atomize.math_modules.least_square_fitting_modules as fitting
+import atomize.math_modules.fft as fft_module
 # Reuse the main-window 2D plot stack (heatmap + X/Y cross-sections) so the
 # embedded preview matches the main UI; fed in-process, no LivePlot IPC.
 from pyqtgraph.dockarea import DockArea
@@ -257,7 +259,10 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self._build_fft_tab(), 'FFT')
         self.tabs.addTab(self._build_fit_tab(), 'Fit')
         self.tabs.addTab(self._build_slice_tab(), 'Slice')
-        self.tabs.currentChanged.connect(self._live_update)
+        # Tab changes deliberately do NOT trigger _live_update: re-running the
+        # new tab's op on switch is redundant and, after a "Result → input"
+        # chain, would re-transform an already-transformed input (e.g. FFT of an
+        # FFT). The preview recomputes only on a parameter change or Apply.
         panel.addWidget(self.tabs, stretch=1)
 
         panel.addWidget(self._hline())
@@ -355,13 +360,27 @@ class MainWindow(QMainWindow):
         self.phase_zero = self._dspin(0.0, 360.0, 2, 0.0, step=0.5)
         self.phase_zero.setWrapping(True)   # full cycle: 360 wraps back to 0
         self.phase_zero.valueChanged.connect(self._live_update)
-        grid.addWidget(self.phase_zero, 1, 1)
+        ph0_row = QHBoxLayout()
+        ph0_row.addWidget(self.phase_zero)
+        btn_autoph = QPushButton('Auto')
+        btn_autoph.setStyleSheet(BUTTON_STYLE)
+        btn_autoph.setToolTip(
+            'Zero-order auto-phase: rotate so the magnitude-weighted real part '
+            'of the X-spectrum is maximal (φ₀ = −angle Σ|S|·S over the '
+            'significant bins).<br><br>'
+            'A global φ₀ commutes with the FFT, so this time-domain value is '
+            'what makes the spectrum absorptive. Pair it with the FFT-tab '
+            'skip-pts / echo centre (removes the first-order ramp); first/'
+            'second order stay manual.')
+        btn_autoph.clicked.connect(self.auto_phase_zero)
+        ph0_row.addWidget(btn_autoph)
+        grid.addLayout(ph0_row, 1, 1)
         grid.addWidget(self._label('First order (MHz @ ns)'), 2, 0)
-        self.phase_first = self._dspin(-1e6, 1e6, 3, 0.0, step=0.5)
+        self.phase_first = self._dspin(-1e6, 1e6, 3, 0.0, step=0.05)
         self.phase_first.valueChanged.connect(self._live_update)
         grid.addWidget(self.phase_first, 2, 1)
         grid.addWidget(self._label('Second order (MHz @ ns)'), 3, 0)
-        self.phase_second = self._dspin(-1e6, 1e6, 4, 0.0, step=0.01)
+        self.phase_second = self._dspin(-1e6, 1e6, 4, 0.0, step=0.001)
         self.phase_second.valueChanged.connect(self._live_update)
         grid.addWidget(self.phase_second, 3, 1)
         btn = QPushButton('Apply phase correction')
@@ -394,9 +413,19 @@ class MainWindow(QMainWindow):
         skip_row = QHBoxLayout()
         self.fft_skip = QSpinBox(); self.fft_skip.setStyleSheet(SPIN_STYLE)
         self.fft_skip.setRange(0, 1000000)
+        self.fft_skip.setToolTip(
+            'Number of leading <b>points</b> (samples, not time) to drop along '
+            'the transform axis so it starts at the echo centre.')
         self.fft_skip.valueChanged.connect(self._live_update)
         btn_auto = QPushButton('Auto')
         btn_auto.setStyleSheet(BUTTON_STYLE)
+        btn_auto.setToolTip(
+            'Estimate the echo centre and fill "skip pts" with its <b>point '
+            'index</b> (a sample number, not a time).<br><br>'
+            'Taken from the |I+iQ| envelope averaged over the non-transform '
+            'axis (so the field-offset modulation cancels): the peak sample, '
+            'refined by a centre-of-mass over the symmetric core around it (so '
+            'a slow one-sided FID decay tail does not drag it off the peak).')
         btn_auto.clicked.connect(self.auto_echo_center)
         skip_row.addWidget(self.fft_skip); skip_row.addWidget(btn_auto)
         grid.addLayout(skip_row, 3, 1)
@@ -574,15 +603,23 @@ class MainWindow(QMainWindow):
             else:
                 q = np.zeros_like(i)
                 qmsg = 'no _1 file (Q = 0)'
+            dx, xu, dy, yu = self._parse_axis_header(path)
             if self.transpose_check.isChecked():
                 i, q = i.T, q.T
+                dx, xu, dy, yu = dy, yu, dx, xu   # axes swap with the matrix
             if i.shape != q.shape or min(i.shape) < 2:
                 self.set_status('I and Q must be matching 2D matrices (≥ 2×2).')
                 return
             self.raw_i, self.raw_q = i, q
+            # auto-fill X/Y step + unit from the acquisition header when present;
+            # files without it keep the current axis fields (see _parse_axis_header).
+            parsed = self._apply_header_axes(dx, xu, dy, yu)
             self.reset_to_raw()
-            self.set_status(f'Loaded I={os.path.basename(path)}, Q={qmsg} '
-                            f'(matrix {i.shape[0]}×{i.shape[1]} [traces × points]).')
+            msg = (f'Loaded I={os.path.basename(path)}, Q={qmsg} '
+                   f'(matrix {i.shape[0]}×{i.shape[1]} [traces × points]).')
+            if parsed:
+                msg += f' Axes from header: {parsed}.'
+            self.set_status(msg)
         except Exception as e:
             self.set_status(f'Could not read I/Q: {e}')
 
@@ -593,6 +630,58 @@ class MainWindow(QMainWindow):
         if a.size < 2:
             return (float(a[0]) if a.size else 0.0), 1.0
         return float(a[0]), float((a[-1] - a[0])/(a.size - 1))
+
+    @staticmethod
+    def _parse_axis_header(path):
+        """Best-effort scan of a CSV comment header for the acquisition steps.
+
+        Atomize-saved CSVs carry lines like::
+
+            # Horizontal Resolution:    2 ns
+            # Vertical Resolution:      1004.8 ns
+
+        Horizontal → X (within-trace / columns), Vertical → Y (traces / rows).
+        Returns ``(dx, x_unit, dy, y_unit)`` with any field ``None`` when it is
+        absent, so a file without such a header — or one that cannot be read —
+        simply leaves every axis widget untouched.
+        """
+        dx = dy = xu = yu = None
+        try:
+            with open(path, 'r', errors='ignore') as fh:
+                for ln in fh:
+                    s = ln.strip()
+                    if not s.startswith('#'):
+                        break                 # header is the leading comment block only
+                    m = re.search(r'(horizontal|vertical)\s+resolution\s*:\s*'
+                                  r'([-+0-9.eE]+)\s*([a-zA-Zµ]*)', s, re.IGNORECASE)
+                    if not m:
+                        continue
+                    val, unit = float(m.group(2)), (m.group(3) or None)
+                    if m.group(1).lower() == 'horizontal':
+                        dx, xu = val, unit
+                    else:
+                        dy, yu = val, unit
+        except Exception:
+            pass
+        return dx, xu, dy, yu
+
+    def _apply_header_axes(self, dx, xu, dy, yu):
+        """Push any parsed (step, unit) into the axis widgets without firing the
+        live-update loops. The start spin is zeroed for any axis whose step we
+        set (a resolution-based axis runs from 0). Returns a short summary of
+        what was filled, or '' when the header carried nothing usable."""
+        done = []
+        pairs = [('X', dx, xu, self.dx_spin, self.x0_spin, self.xscale_edit),
+                 ('Y', dy, yu, self.dy_spin, self.y0_spin, self.yscale_edit)]
+        for name, step, unit, dspin, zspin, uedit in pairs:
+            if step is None:
+                continue
+            dspin.blockSignals(True); dspin.setValue(float(step)); dspin.blockSignals(False)
+            zspin.blockSignals(True); zspin.setValue(0.0); zspin.blockSignals(False)
+            if unit:
+                uedit.blockSignals(True); uedit.setText(unit); uedit.blockSignals(False)
+            done.append(f'{name} Δ={step} {unit or ""}'.strip())
+        return ', '.join(done)
 
     def open_bruker(self):
         """Load a 2D Bruker native dataset (BES3T .DSC/.DTA or ESP/WinEPR
@@ -868,6 +957,45 @@ class MainWindow(QMainWindow):
         general.message(text)
 
     # ---------------------------------------------------------- operations
+    @staticmethod
+    def _is_freq_axis(ax):
+        """True if an axis dict already describes a frequency axis — i.e. the
+        input has been FFT'd (e.g. via 'Result → input'). Lets auto-φ₀ tell a
+        spectrum from a time-domain FID so it doesn't transform twice."""
+        if not ax:
+            return False
+        name = str(ax.get('name', '')).lower()
+        unit = str(ax.get('scale', '')).strip().lower()
+        return ('freq' in name) or (unit in ('hz', 'khz', 'mhz', 'ghz', 'thz'))
+
+    def auto_phase_zero(self):
+        """Fill the zero-order phase with the value that maximises the magnitude-
+        weighted real part of the X-spectrum (Fast_Fourier.auto_phase_zero). A
+        global φ₀ commutes with the FFT, so the value found on the spectrum is
+        exactly what this time-domain correction needs. First/second order stay
+        manual — the FFT-tab skip-pts removes the first-order ramp."""
+        if self.src_i is None:
+            self.set_status('Open an I/Q dataset first.')
+            return
+        if self._is_freq_axis(self.src_col):
+            # Input is already a spectrum (FFT'd, then 'Result → input'): use it
+            # straight, with NO second FFT and NO skip — transforming again is
+            # what produced a meaningless φ₀. Skip is a time-domain concept here.
+            S = self.src_i + 1j*self.src_q
+            domain = 'X spectrum (input already frequency-domain)'
+        else:
+            # Time-domain FID: build the X spectrum the FFT uses (same echo-centre
+            # skip, so the φ₁ ramp is gone and only zero order remains). The
+            # apodization window is real-positive and would not change φ₀.
+            skip = max(0, min(int(self.fft_skip.value()), self.src_i.shape[1] - 2))
+            Z = self.src_i[:, skip:] + 1j*self.src_q[:, skip:]
+            n = sigproc.zerofill_length(Z.shape[1], self.fft_zerofill.currentText())
+            S = np.fft.fft(Z, n=n, axis=1)
+            domain = 'X spectrum (FFT of FID)'
+        phi = fft_module.Fast_Fourier.auto_phase_zero(S.ravel())
+        self.phase_zero.setValue(phi)        # fires the live preview update
+        self.set_status(f'Auto φ₀ = {phi:.2f}° — {domain}.')
+
     def do_phase(self):
         if self.src_i is None:
             self.set_status('Open an I/Q dataset first.')

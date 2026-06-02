@@ -231,7 +231,10 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self._build_filter_tab(), 'Filter')
         self.tabs.addTab(self._build_deer_tab(), 'DEER / PDS')
         self.tabs.currentChanged.connect(self._on_tab_changed)
-        self.tabs.currentChanged.connect(self._live_update)
+        # Note: tab changes deliberately do NOT trigger _live_update. Re-running
+        # the new tab's op on switch is redundant and, after a "Result → input"
+        # chain, would re-transform an already-transformed input (e.g. FFT of an
+        # FFT). The preview recomputes only on a parameter change or Apply.
         self.tabs.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
         # Floor the tab strip at its full width so all tabs stay visible without
         # the scroll arrows (the 6 tabs need ~465 px); the graph takes the rest.
@@ -393,9 +396,21 @@ class MainWindow(QMainWindow):
         self.fft_skip = QSpinBox()
         self.fft_skip.setStyleSheet(SPIN_STYLE)
         self.fft_skip.setRange(0, 1000000)
+        self.fft_skip.setToolTip(
+            'Number of leading <b>points</b> (samples, not time) to drop so the '
+            'transform starts at the echo centre.')
         self.fft_skip.valueChanged.connect(self._live_update)
         btn_auto = QPushButton('Auto')
         btn_auto.setStyleSheet(BUTTON_STYLE)
+        btn_auto.setToolTip(
+            'Estimate the echo centre and fill "skip pts" with its <b>point '
+            'index</b> (a sample number, not a time).<br><br>'
+            'Found from the magnitude envelope |I+iQ| (I/Q pair) or |I|: the '
+            'peak sample, refined by a centre-of-mass over the symmetric core '
+            'around it (so a slow one-sided FID decay tail does not drag it off '
+            'the peak).<br><br>'
+            'Always sanity-check against the plot; type the point in by hand if '
+            'a noisy record needs it.')
         btn_auto.clicked.connect(self.auto_echo_center)
         skip_row.addWidget(self.fft_skip); skip_row.addWidget(btn_auto)
         grid.addLayout(skip_row, 4, 1)
@@ -505,14 +520,27 @@ class MainWindow(QMainWindow):
         self.phase_zero.setSingleStep(0.5)
         self.phase_zero.setWrapping(True)   # full cycle: 360 wraps back to 0
         self.phase_zero.valueChanged.connect(self._live_update)
-        grid.addWidget(self.phase_zero, 1, 1)
+        ph0_row = QHBoxLayout()
+        ph0_row.addWidget(self.phase_zero)
+        btn_autoph = QPushButton('Auto')
+        btn_autoph.setStyleSheet(BUTTON_STYLE)
+        btn_autoph.setToolTip(
+            'Zero-order auto-phase: rotate so the magnitude-weighted real part '
+            'is maximal (φ₀ = −angle Σ|S|·S over the significant bins).<br><br>'
+            'With "FFT first" on this works on the spectrum; otherwise on the '
+            'time-domain I+iQ. Pair it with the FFT-tab skip-pts / echo '
+            'centre, which removes the first-order phase ramp — leaving only '
+            'this zero-order term. First/second order stay manual.')
+        btn_autoph.clicked.connect(self.auto_phase_zero)
+        ph0_row.addWidget(btn_autoph)
+        grid.addLayout(ph0_row, 1, 1)
 
         grid.addWidget(self._label('First order (MHz @ ns)'), 2, 0)
         self.phase_first = QDoubleSpinBox()
         self.phase_first.setStyleSheet(DSPIN_STYLE)
         self.phase_first.setRange(-1e6, 1e6)
         self.phase_first.setDecimals(3)
-        self.phase_first.setSingleStep(0.5)
+        self.phase_first.setSingleStep(0.05)
         self.phase_first.valueChanged.connect(self._live_update)
         grid.addWidget(self.phase_first, 2, 1)
 
@@ -521,7 +549,7 @@ class MainWindow(QMainWindow):
         self.phase_second.setStyleSheet(DSPIN_STYLE)
         self.phase_second.setRange(-1e6, 1e6)
         self.phase_second.setDecimals(4)
-        self.phase_second.setSingleStep(0.01)
+        self.phase_second.setSingleStep(0.001)
         self.phase_second.valueChanged.connect(self._live_update)
         grid.addWidget(self.phase_second, 3, 1)
 
@@ -1330,6 +1358,39 @@ class MainWindow(QMainWindow):
         self._set_result(freq, channels, meta, show_source=False, xname='Frequency')
         self.set_status(f'FFT ({mode}); window {win}; passband {ftype}; '
                         f'{len(signal)}→{n} pts.')
+
+    def auto_phase_zero(self):
+        """Fill the zero-order phase field with the value that maximises the
+        magnitude-weighted real part (see Fast_Fourier.auto_phase_zero). Works on
+        the FFT spectrum when 'FFT first' is on, else on the time-domain I+iQ;
+        first/second order stay manual (skip-pts removes the φ₁ ramp)."""
+        il = self.i_combo.currentText()
+        ql = self.q_combo.currentText()
+        if il not in self.datasets or ql not in self.datasets:
+            self.set_status('Select both I and Q channels above.')
+            return
+        x, idata = self.datasets[il]
+        _, qdata = self.datasets[ql]
+        idata = np.asarray(idata, dtype=float)
+        qdata = np.asarray(qdata, dtype=float)
+        if idata.shape != qdata.shape or idata.size < 2:
+            self.set_status('I and Q channels must have the same length (≥ 2).')
+            return
+        sig = idata + 1j*qdata
+        if self.phase_fft.isChecked():
+            dt = float(np.mean(np.diff(np.asarray(x, dtype=float))))
+            if dt == 0:
+                self.set_status('X axis has zero spacing; cannot FFT.')
+                return
+            n = self._zerofill_n(len(idata), self.phase_zerofill.currentText())
+            spec = np.fft.fft(sig, n)
+            domain = 'frequency'
+        else:
+            spec = sig
+            domain = 'time'
+        phi = self.fft.auto_phase_zero(spec)
+        self.phase_zero.setValue(phi)        # fires the live preview update
+        self.set_status(f'Auto φ₀ = {phi:.2f}° ({domain} domain).')
 
     def do_phase(self):
         il = self.i_combo.currentText()
