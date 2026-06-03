@@ -1,0 +1,4 @@
+# Resolved by `Pkg.instantiate()` — machine/version specific, regenerated.
+Manifest.toml
+# Optional PackageCompiler sysimage build output.
+*.so

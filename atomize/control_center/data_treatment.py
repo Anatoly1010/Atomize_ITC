@@ -25,13 +25,15 @@ imaginary) feed straight back in via "Result -> input".
 
 import os
 import sys
+import shutil
+import tempfile
 import numpy as np
 from pathlib import Path
 
 import pyqtgraph as pg
 from pyqtgraph.dockarea import DockArea
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QIcon
+from PyQt6.QtCore import Qt, QProcess, QUrl
+from PyQt6.QtGui import QIcon, QDesktopServices
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QLabel, QPushButton,
     QComboBox, QGridLayout, QVBoxLayout, QHBoxLayout, QTabWidget, QDoubleSpinBox,
     QSpinBox, QLineEdit, QCheckBox, QFrame, QSizePolicy, QScrollArea)
@@ -318,6 +320,25 @@ class MainWindow(QMainWindow):
         out_row.addWidget(btn_chain)
         out_row.addWidget(btn_clear_res)
         panel.addLayout(out_row)
+
+        # Hand the current curves off to Julia/Makie for a publication figure
+        # (vector PDF). Shells out to script_examples/makie/render.jl via QProcess.
+        # The mode selector picks what to draw: raw source, the result, or both
+        # overlaid (raw + fit on the same axes).
+        makie_row = QHBoxLayout()
+        self.makie_mode = QComboBox()
+        self.makie_mode.addItems(['Raw + result', 'Result only', 'Raw only'])
+        self.makie_mode.setStyleSheet(COMBO_STYLE)
+        self.makie_mode.setToolTip('What to draw: raw source data, the computed '
+                                   'result, or both overlaid (e.g. fit over data).')
+        self.makie_btn = QPushButton('Makie figure…')
+        self.makie_btn.setStyleSheet(BUTTON_STYLE)
+        self.makie_btn.setToolTip('Render the selected curves to a publication-quality '
+                                  'PDF with Julia/Makie (first run precompiles).')
+        self.makie_btn.clicked.connect(self.make_makie_figure)
+        makie_row.addWidget(self.makie_mode)
+        makie_row.addWidget(self.makie_btn)
+        panel.addLayout(makie_row)
 
         self.status = QLabel('Load a dataset to begin.')
         self.status.setStyleSheet(LABEL_STYLE)
@@ -1843,7 +1864,10 @@ class MainWindow(QMainWindow):
                 hoverPen=pg.mkPen((255, 230, 120), width=3),
                 label='bg start', labelOpts={'color': (211, 194, 78),
                                              'position': 0.92})
-            self.plot_widget.addItem(self._bg_cursor)
+            # ignoreBounds: keep the cursor out of autoRange, else a view switch
+            # autoranges while it's still visible at its (time) position and the
+            # P(r)/distance view stretches to include it instead of refitting.
+            self.plot_widget.addItem(self._bg_cursor, ignoreBounds=True)
             self._bg_cursor.sigPositionChangeFinished.connect(self._on_bg_cursor)
         if not visible:
             self._bg_cursor.setVisible(False)
@@ -1875,7 +1899,7 @@ class MainWindow(QMainWindow):
                 hoverPen=pg.mkPen((180, 225, 255), width=3),
                 label='bg end', labelOpts={'color': (120, 200, 255),
                                            'position': 0.84})
-            self.plot_widget.addItem(self._bg_cursor_end)
+            self.plot_widget.addItem(self._bg_cursor_end, ignoreBounds=True)
             self._bg_cursor_end.sigPositionChangeFinished.connect(self._on_bg_cursor_end)
         active = float(self.deer_bgend.value()) > float(self.deer_bgstart.value())
         if not (visible and active):
@@ -2000,6 +2024,122 @@ class MainWindow(QMainWindow):
         self.set_status(f'Saved to {os.path.basename(file_path)} '
                         f'({len(self.result_meta)} metadata line(s), '
                         f'{len(self.result_channels)} channel(s)).')
+
+    def _export_curves(self, mode):
+        """Curves to hand to Makie for a given mode, mirroring the preview.
+
+        Returns (xname, [(label, x, y), …]). 'raw' = source channel(s), 'result'
+        = the computed result channels, 'both' = raw + result overlaid (e.g. fit
+        over its data, which share an X axis)."""
+        curves = []
+        xi, yi = self.i_xy()
+        xq, yq = self.q_xy()
+        show_q = (self.is_pair() and xq is not None and len(xq)
+                  and self.q_combo.currentText() != self.i_combo.currentText())
+        if mode in ('raw', 'both') and xi is not None and len(xi):
+            curves.append((self.i_combo.currentText() or 'I', xi, yi))
+            if show_q:
+                curves.append((self.q_combo.currentText() or 'Q', xq, yq))
+        if mode in ('result', 'both') and self.has_result():
+            for lbl, y in self.result_channels:
+                curves.append((lbl, self.result_x, y))
+        # X-axis name: the result domain if a result curve is included, else raw
+        xname = (self.result_xname if (mode != 'raw' and self.has_result())
+                 else self._xname())
+        return xname, curves
+
+    def _write_makie_csvs(self, xname, curves):
+        """Write curves to temp CSV(s) for render.jl. Curves that share one X go
+        into a single multi-column file (clean overlay with a column legend);
+        curves with differing X (e.g. time source + frequency result) are written
+        one-per-file so render.jl overlays them as separate inputs."""
+        tmpdir = tempfile.gettempdir()
+        xs = [np.asarray(x, dtype=float) for _, x, _ in curves]
+        shared = all(len(x) == len(xs[0]) for x in xs) and \
+                 all(np.allclose(x, xs[0], equal_nan=True) for x in xs)
+        if shared:
+            cols = [xs[0]] + [np.asarray(y, dtype=float) for _, _, y in curves]
+            header = (xname or 'X') + ', ' + ', '.join(lbl for lbl, _, _ in curves)
+            path = os.path.join(tmpdir, 'atomize_makie_export.csv')
+            self.opener.save_data(path, np.column_stack(cols), header=header, mode='w')
+            return [path]
+        paths = []
+        for k, (lbl, x, y) in enumerate(curves):
+            data = np.column_stack([np.asarray(x, dtype=float), np.asarray(y, dtype=float)])
+            header = (xname or 'X') + ', ' + lbl
+            safe = ''.join(c if c.isalnum() else '_' for c in lbl)[:30] or f'curve{k}'
+            path = os.path.join(tmpdir, f'atomize_makie_{k}_{safe}.csv')
+            self.opener.save_data(path, data, header=header, mode='w')
+            paths.append(path)
+        return paths
+
+    def _makie_save_dialog(self):
+        """Save dialog for the Makie OUTPUT figure — a PDF/SVG/PNG picker, not the
+        CSV picker the Save button uses (this only chooses where the figure goes;
+        your data is never saved here)."""
+        path = self.opener.FileDialog(
+            directory=self.last_dir, mode='Save', fmt='pdf',
+            name_filters=['PDF figure (*.pdf)', 'SVG figure (*.svg)', 'PNG image (*.png)'])
+        if path and path != 'None':
+            self._remember_dir(path)
+        return path
+
+    def make_makie_figure(self):
+        """Render the selected curves to a publication PDF via Julia/Makie.
+
+        The mode selector decides what to draw (raw / result / both). Curves are
+        written to temp CSV(s) and rendered by script_examples/makie/render.jl in
+        a QProcess, so the UI stays responsive while Julia precompiles; the PDF
+        opens when done. Needs `julia` on PATH; makie/ is its own Julia project,
+        so the first render resolves + precompiles its deps (one-off, slow)."""
+        if getattr(self, '_makie_proc', None) is not None and \
+                self._makie_proc.state() != QProcess.ProcessState.NotRunning:
+            self.set_status('A Makie render is already running…')
+            return
+        mode = ['both', 'result', 'raw'][self.makie_mode.currentIndex()]
+        xname, curves = self._export_curves(mode)
+        if not curves:
+            self.set_status('Nothing to draw for that selection — load data '
+                            'or run an operation first.')
+            return
+        julia = shutil.which('julia') or os.path.expanduser('~/.juliaup/bin/julia')
+        if not os.path.exists(julia):
+            self.set_status('Julia not found — install Julia to render Makie figures.')
+            return
+        out_path = self._makie_save_dialog()
+        if not out_path or out_path == 'None':
+            return
+        out_path = str(out_path)
+        if not out_path.lower().endswith(('.pdf', '.svg', '.png')):
+            out_path += '.pdf'
+        inputs = self._write_makie_csvs(xname, curves)
+        script = Path(__file__).resolve().parents[1] / 'script_examples' / 'makie' / 'render.jl'
+        self._makie_out = out_path
+        self._makie_proc = QProcess(self)
+        self._makie_proc.finished.connect(self._makie_done)
+        self.makie_btn.setEnabled(False)
+        self.makie_btn.setStyleSheet(BUTTON_BUSY_STYLE)
+        self.set_status(f'Rendering Makie figure ({len(curves)} curve(s))…  (first run '
+                        'precompiles CairoMakie — a few minutes; later runs ~15 s).')
+        QApplication.processEvents()
+        self._makie_proc.start(julia, [str(script), out_path, *inputs])
+
+    def _makie_done(self, code, status):
+        self.makie_btn.setEnabled(True)
+        self.makie_btn.setStyleSheet(BUTTON_STYLE)
+        out = getattr(self, '_makie_out', '')
+        if code == 0 and out and os.path.exists(out):
+            self.set_status(f'Makie figure saved to {os.path.basename(out)}.')
+            try:
+                QDesktopServices.openUrl(QUrl.fromLocalFile(out))
+            except Exception:
+                pass
+        else:
+            try:
+                err = bytes(self._makie_proc.readAllStandardError()).decode(errors='ignore')
+            except Exception:
+                err = ''
+            self.set_status(f'Makie render failed (exit {code}). {err.strip()[-300:]}')
 
 
 def main():
