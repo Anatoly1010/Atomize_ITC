@@ -58,6 +58,30 @@ from atomize.general_modules.gui_style import (apply_app_style,
 # curves into (same libs/ runtime-IPC convention as the .param files).
 BUFFER_PATH = str(Path(__file__).resolve().parent.parent.parent / 'libs' / 'treatment_buffer.csv')
 
+# remembers the folder of the last file opened/saved here so the next dialog
+# starts there — shared with the 2D tool (one working data folder), survives a
+# window relaunch (each tool is its own short-lived QProcess). libs/ runtime IPC.
+LASTDIR_PATH = str(Path(__file__).resolve().parent.parent.parent / 'libs' / 'treatment_lastdir.txt')
+
+
+def _load_last_dir():
+    try:
+        with open(LASTDIR_PATH, 'r', errors='ignore') as fh:
+            d = fh.read().strip()
+        return d if d and os.path.isdir(d) else ''
+    except Exception:
+        return ''
+
+
+def _save_last_dir(path):
+    try:
+        d = path if os.path.isdir(path) else os.path.dirname(path)
+        if d:
+            with open(LASTDIR_PATH, 'w') as fh:
+                fh.write(d)
+    except Exception:
+        pass
+
 # Solid-accent "busy" variant for the Run-DEER button while an inversion is in
 # progress (explicit colours so it stays yellow even while disabled).
 BUTTON_BUSY_STYLE = (
@@ -102,6 +126,11 @@ class MainWindow(QMainWindow):
         # identity of what is currently plotted (curve labels + x-axis name); a
         # change means a new result / view / unit, which re-fits the axes once.
         self._plot_key = None
+        # one-shot override: force the next redraw to auto-range even if the curve
+        # set / x-name is unchanged. Set by DEER (where a parameter tweak can move
+        # the data extent — e.g. distance range — or its magnitude a lot, so the
+        # stale view would clip the curve), cleared after it fires.
+        self._force_autorange = False
         # set while promoting a result so selecting the new input does not
         # immediately re-apply the operation to it
         self._suppress_live = False
@@ -113,6 +142,7 @@ class MainWindow(QMainWindow):
         self._bg_cursor_end = None     # draggable background-end cursor
         self._suppress_cursor = False
         self._lcurve_marker = None     # highlighted point on the L-curve view
+        self.last_dir = _load_last_dir()   # start file dialogs in the last folder
 
         self.design()
         self.load_from_buffer(silent=True)
@@ -883,8 +913,27 @@ class MainWindow(QMainWindow):
         if u in tmap:
             self.deer_tunit.setCurrentText(tmap[u])
 
+    def _remember_dir(self, path):
+        """Record the folder of `path` as the next dialog's starting directory."""
+        self.last_dir = os.path.dirname(path) or self.last_dir
+        _save_last_dir(self.last_dir)
+
+    def _open_dialog(self, **kw):
+        path = self.opener.open_file_dialog(multiprocessing=True,
+                                            directory=self.last_dir, **kw)
+        if path and path != 'None':
+            self._remember_dir(path)
+        return path
+
+    def _save_dialog(self, **kw):
+        path = self.opener.create_file_dialog(multiprocessing=True,
+                                              directory=self.last_dir, **kw)
+        if path and path != 'None':
+            self._remember_dir(path)
+        return path
+
     def open_csv(self):
-        file_path = self.opener.open_file_dialog(multiprocessing=True)
+        file_path = self._open_dialog()
         if not file_path or file_path == 'None':
             return
         try:
@@ -929,7 +978,7 @@ class MainWindow(QMainWindow):
         nf = ['Bruker (*.DSC *.dsc *.DTA *.dta *.par *.spc *.PAR *.SPC)',
               'BES3T (*.DSC *.dsc *.DTA *.dta)',
               'ESP/WinEPR (*.par *.spc *.PAR *.SPC)', 'All files (*)']
-        file_path = self.opener.open_file_dialog(multiprocessing=True, name_filters=nf)
+        file_path = self._open_dialog(name_filters=nf)
         if not file_path or file_path == 'None':
             return
         try:
@@ -1239,8 +1288,9 @@ class MainWindow(QMainWindow):
         # DEER 'Show' view, time unit, load/clear) — but not on same-view live
         # tweaks, so a manual zoom survives while dragging parameters.
         key = (frozenset(wanted), xname)
-        if key != self._plot_key:
+        if key != self._plot_key or self._force_autorange:
             self._plot_key = key
+            self._force_autorange = False
             try:
                 self.plot_widget.autoRange()
             except Exception:
@@ -1640,6 +1690,10 @@ class MainWindow(QMainWindow):
         res = self.deer_result
         if res is None:
             return
+        # DEER recompute/view-switch: always refit. A parameter change (α, distance
+        # range, background window, time unit) can move the data extent or rescale
+        # it well beyond the current view, so a key-only check would clip the curve.
+        self._force_autorange = True
         view = self.deer_show.currentText()
         tf = self._deer_tfactor()
         tunit = self.deer_tunit.currentText()
@@ -1823,7 +1877,7 @@ class MainWindow(QMainWindow):
         if res is None:
             self.set_status('Run DEER first — nothing to export.')
             return
-        file_path = self.opener.create_file_dialog(multiprocessing=True)
+        file_path = self._save_dialog()
         if not file_path or file_path == 'None':
             return
         base = file_path[:-4] if file_path.lower().endswith('.csv') else file_path
@@ -1894,7 +1948,7 @@ class MainWindow(QMainWindow):
         if not self.has_result():
             self.set_status('Nothing to save — run an operation first.')
             return
-        file_path = self.opener.create_file_dialog(multiprocessing=True)
+        file_path = self._save_dialog()
         if not file_path or file_path == 'None':
             return
         cols = [self.result_x] + [np.asarray(y, dtype=float) for _, y in self.result_channels]

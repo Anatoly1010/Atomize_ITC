@@ -71,8 +71,16 @@ DSPIN_STYLE = ("QDoubleSpinBox { color : rgb(193, 202, 227); "
 SPIN_STYLE = ("QSpinBox { color : rgb(193, 202, 227); "
     "selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97); }")
 
-COMBO_STYLE = ("QComboBox { color : rgb(193, 202, 227); "
-    "selection-color: rgb(211, 194, 78); selection-background-color: rgb(63, 63, 97); "
+# Matches atomize.general_modules.gui_style COMBO_STYLE so this tool's combos
+# look identical to the 1D tool: no flat background on the closed box (Fusion
+# paints it from the palette), accent selection, and an explicit popup-view rule
+# (Qt drops the palette on a styled combo's dropdown otherwise — the "strange"
+# colour behind the selected item).
+COMBO_STYLE = ("QComboBox { color: rgb(193, 202, 227); "
+    "selection-color: rgb(63, 63, 97); selection-background-color: rgb(211, 194, 78); "
+    "outline: none; } "
+    "QComboBox QAbstractItemView { background-color: rgb(63, 63, 97); color: rgb(193, 202, 227); "
+    "selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97); "
     "outline: none; }")
 
 LINEEDIT_STYLE = ("QLineEdit { color: rgb(211, 194, 78); "
@@ -117,6 +125,30 @@ BUFFER_PATH = str(Path(__file__).resolve().parent.parent.parent / 'libs' / 'trea
 # (i, q matrices + axis geometry/labels), consumed by this window's "Load from plot".
 BUFFER_2D_PATH = str(Path(__file__).resolve().parent.parent.parent / 'libs' / 'treatment_buffer_2d.npz')
 
+# remembers the folder of the last file opened/saved here so the next dialog
+# starts there — shared with the 1D tool (one working data folder), survives a
+# window relaunch (each tool is its own short-lived QProcess). libs/ runtime IPC.
+LASTDIR_PATH = str(Path(__file__).resolve().parent.parent.parent / 'libs' / 'treatment_lastdir.txt')
+
+
+def _load_last_dir():
+    try:
+        with open(LASTDIR_PATH, 'r', errors='ignore') as fh:
+            d = fh.read().strip()
+        return d if d and os.path.isdir(d) else ''
+    except Exception:
+        return ''
+
+
+def _save_last_dir(path):
+    try:
+        d = path if os.path.isdir(path) else os.path.dirname(path)
+        if d:
+            with open(LASTDIR_PATH, 'w') as fh:
+                fh.write(d)
+    except Exception:
+        pass
+
 # parametric windows: name -> (label, min, max, decimals, default, step)
 WINDOW_PARAM = {
     'Kaiser':   ('Kaiser β', 0.0, 100.0, 2, 8.6, 0.5),
@@ -153,6 +185,7 @@ class MainWindow(QMainWindow):
         self.res_frames = ('I', 'Q')
         self.res_meta = []
         self._suppress_live = False
+        self.last_dir = _load_last_dir()   # start file dialogs in the last folder
 
         self.design()
 
@@ -534,10 +567,11 @@ class MainWindow(QMainWindow):
         w = QWidget(); grid = QGridLayout(w)
         grid.addWidget(self._note('Send one trace to the standalone 1D Data Treatment '
                                   'window for fitting / phasing there. Pick the slice '
-                                  'direction and the trace index (along the other axis); '
-                                  'the trace is written to the transfer buffer and shown '
-                                  'in the main GUI. Then click "Load from plot" in the 1D '
-                                  'window (I = slice Re, Q = slice Im).'),
+                                  'direction and the trace number (1-based, matching the '
+                                  'heatmap cursor label). The trace is written to the '
+                                  'transfer buffer only (not the main GUI). Then click '
+                                  '"Load from plot" in the 1D window (I = slice Re, '
+                                  'Q = slice Im).'),
                        0, 0, 1, 2)
 
         grid.addWidget(self._label('Slice along'), 1, 0)
@@ -548,8 +582,10 @@ class MainWindow(QMainWindow):
 
         grid.addWidget(self._label('Trace #'), 2, 0)
         srow = QHBoxLayout()
+        # 1-based to match the heatmap cursor label (which counts traces/points
+        # from 1); converted to a 0-based array index where the data is sliced.
         self.slice_spin = QSpinBox(); self.slice_spin.setStyleSheet(SPIN_STYLE)
-        self.slice_spin.setRange(0, 1000000)
+        self.slice_spin.setRange(1, 1000000)
         self.slice_spin.valueChanged.connect(self._update_slice_label)
         self.slice_label = self._label('')
         srow.addWidget(self.slice_spin); srow.addWidget(self.slice_label, 1)
@@ -562,7 +598,7 @@ class MainWindow(QMainWindow):
                                   'index (inclusive) before sending — improves SNR.')
         self.slice_avg.stateChanged.connect(self._update_slice_label)
         self.slice_spin2 = QSpinBox(); self.slice_spin2.setStyleSheet(SPIN_STYLE)
-        self.slice_spin2.setRange(0, 1000000)
+        self.slice_spin2.setRange(1, 1000000)
         self.slice_spin2.valueChanged.connect(self._update_slice_label)
         arow.addWidget(self.slice_avg); arow.addWidget(self.slice_spin2, 1)
         grid.addLayout(arow, 3, 1)
@@ -594,9 +630,29 @@ class MainWindow(QMainWindow):
         self.fit_param.setCurrentText(cur if cur in names else default)
         self.fit_param.blockSignals(False)
 
+    # ------------------------------------------------------- file dialogs
+    def _remember_dir(self, path):
+        """Record the folder of `path` as the next dialog's starting directory."""
+        self.last_dir = os.path.dirname(path) or self.last_dir
+        _save_last_dir(self.last_dir)
+
+    def _open_dialog(self, **kw):
+        path = self.opener.open_file_dialog(multiprocessing=True,
+                                            directory=self.last_dir, **kw)
+        if path and path != 'None':
+            self._remember_dir(path)
+        return path
+
+    def _save_dialog(self, **kw):
+        path = self.opener.create_file_dialog(multiprocessing=True,
+                                              directory=self.last_dir, **kw)
+        if path and path != 'None':
+            self._remember_dir(path)
+        return path
+
     # ------------------------------------------------------------- loading
     def open_iq(self):
-        path = self.opener.open_file_dialog(multiprocessing=True)
+        path = self._open_dialog()
         if not path or path == 'None':
             return
         try:
@@ -697,7 +753,7 @@ class MainWindow(QMainWindow):
         nf = ['Bruker (*.DSC *.dsc *.DTA *.dta *.par *.spc *.PAR *.SPC)',
               'BES3T (*.DSC *.dsc *.DTA *.dta)',
               'ESP/WinEPR (*.par *.spc *.PAR *.SPC)', 'All files (*)']
-        path = self.opener.open_file_dialog(multiprocessing=True, name_filters=nf)
+        path = self._open_dialog(name_filters=nf)
         if not path or path == 'None':
             return
         try:
@@ -762,6 +818,14 @@ class MainWindow(QMainWindow):
                 return
             x0, dx, y0, dy = (geom + [0.0, 1.0, 0.0, 1.0])[:4]
             xn, xs, yn, ys = (labels + ['X', '', 'Y', ''])[:4]
+            # A 0 (or non-finite) step collapses the image scale → a blank plot.
+            # The main-window plot doesn't always carry a real step, so fall back
+            # to 1; the user can type the true step into the Axes fields after.
+            zeroed = []
+            if not np.isfinite(dx) or dx == 0:
+                dx = 1.0; zeroed.append('X')
+            if not np.isfinite(dy) or dy == 0:
+                dy = 1.0; zeroed.append('Y')
             if self.transpose_check.isChecked():     # swap trace / point axes
                 i, q = i.T, q.T
                 x0, dx, y0, dy = y0, dy, x0, dx
@@ -776,8 +840,12 @@ class MainWindow(QMainWindow):
                 s.blockSignals(True); s.setValue(float(v)); s.blockSignals(False)
             self.raw_i, self.raw_q = i, q
             self.reset_to_raw()
-            self.set_status(f'Loaded 2D plot from buffer '
-                            f'({i.shape[0]}×{i.shape[1]} [traces × points]).')
+            msg = (f'Loaded 2D plot from buffer '
+                   f'({i.shape[0]}×{i.shape[1]} [traces × points]).')
+            if zeroed:
+                msg += (f' No {"/".join(zeroed)} step in the plot — set to 1; '
+                        f'adjust in the Axes fields.')
+            self.set_status(msg)
         except Exception as e:
             self._consume_2d_buffer()                # drop a malformed buffer
             if not silent:
@@ -900,6 +968,13 @@ class MainWindow(QMainWindow):
         dock's render state so the next load re-autoranges from scratch."""
         cd = self.cross_dock
         try:
+            # close the floating X-trace / Y-trace cross-section docks if open
+            # (Clear should leave no stale section plots behind).
+            if getattr(cd, 'cross_section_enabled', False):
+                cd.hide_cross_section()
+        except Exception:
+            pass
+        try:
             cd.img_view.clear()
             cd.h_cross_section_widget_data.setData([], [])
             cd.v_cross_section_widget_data.setData([], [])
@@ -947,14 +1022,17 @@ class MainWindow(QMainWindow):
         # become the X axis (CrossSectionDock pos/scale are ((x..),(y..))).
         arr = np.array([np.transpose(np.asarray(i, float)),
                         np.transpose(np.asarray(q, float))])
+        # a 0 step collapses the image scale and renders nothing; never let that
+        # reach setImage (axis geometry may carry a 0 from a source without steps).
+        sx = col['step'] if col['step'] else 1.0
+        sy = row['step'] if row['step'] else 1.0
         try:
             self.cross_dock.setTitle(name)
             self.cross_dock.setAxisLabels(xname=col['name'], xscale=col['scale'],
                                           yname=row['name'], yscale=row['scale'],
                                           zname='Intensity', zscale='V')
             self.cross_dock.setImage(arr, pos=(col['start'], row['start']),
-                                     scale=(col['step'], row['step']),
-                                     autoLevels=False)
+                                     scale=(sx, sy), autoLevels=False)
         except Exception as e:
             self.set_status(f'Could not render preview: {e}')
 
@@ -1282,8 +1360,9 @@ class MainWindow(QMainWindow):
             idx = int(getattr(cd, 'y_cross_index', 0))
         else:                                          # along Y → trace = X index
             idx = int(getattr(cd, 'x_cross_index', 0))
-        if idx != self.slice_spin.value():
-            self.slice_spin.setValue(idx)              # fires _update_slice_label
+        val = idx + 1                                  # cross index is 0-based; spin is 1-based
+        if val != self.slice_spin.value():
+            self.slice_spin.setValue(val)              # fires _update_slice_label
 
     def _update_slice_label(self, *args):
         if not hasattr(self, 'slice_spin'):
@@ -1297,15 +1376,15 @@ class MainWindow(QMainWindow):
         else:
             ntr, axis = i.shape[1], col
         self.slice_spin.blockSignals(True)
-        self.slice_spin.setMaximum(max(0, ntr - 1))
+        self.slice_spin.setRange(1, max(1, ntr))       # 1-based: traces 1…ntr
         self.slice_spin.blockSignals(False)
-        idx = int(self.slice_spin.value())
+        idx = int(self.slice_spin.value()) - 1         # 0-based for the coordinate
         coord = axis['start'] + axis['step']*idx
         if getattr(self, 'slice_avg', None) is not None and self.slice_avg.isChecked():
             self.slice_spin2.blockSignals(True)
-            self.slice_spin2.setMaximum(max(0, ntr - 1))
+            self.slice_spin2.setRange(1, max(1, ntr))
             self.slice_spin2.blockSignals(False)
-            idx2 = int(self.slice_spin2.value())
+            idx2 = int(self.slice_spin2.value()) - 1
             lo, hi = sorted((idx, idx2))
             c2 = axis['start'] + axis['step']*idx2
             self.slice_label.setText(f"{axis['name']} = {coord:.4g}…{c2:.4g} "
@@ -1345,9 +1424,11 @@ class MainWindow(QMainWindow):
             ntr = i.shape[1]
             x = row['start'] + row['step']*np.arange(i.shape[0])
             dax, oax = row, col
-        idx = min(int(self.slice_spin.value()), ntr - 1)
-        self.slice_spin.setValue(idx)
-        idx2 = min(int(self.slice_spin2.value()), ntr - 1)
+        # Trace # is 1-based in the UI (matches the cursor label); -1 here for the
+        # 0-based array index. lo/hi/tag are reported 1-based to the user.
+        idx = min(max(int(self.slice_spin.value()) - 1, 0), ntr - 1)
+        self.slice_spin.setValue(idx + 1)
+        idx2 = min(max(int(self.slice_spin2.value()) - 1, 0), ntr - 1)
         lo, hi = sorted((idx, idx2))
         mean = averaging and hi > lo
         if mean:
@@ -1355,7 +1436,7 @@ class MainWindow(QMainWindow):
                 re = i[lo:hi + 1].mean(axis=0); im = q[lo:hi + 1].mean(axis=0)
             else:
                 re = i[:, lo:hi + 1].mean(axis=1); im = q[:, lo:hi + 1].mean(axis=1)
-            tag = f'{lo}-{hi}'
+            tag = f'{lo + 1}-{hi + 1}'
             coord = oax['start'] + oax['step']*0.5*(lo + hi)
         else:
             # Not averaging: use the selected Trace # directly. lo = min(idx, idx2)
@@ -1363,7 +1444,8 @@ class MainWindow(QMainWindow):
             # trace 0 instead of the indicated one.
             re = i[idx] if along_x else i[:, idx]
             im = q[idx] if along_x else q[:, idx]
-            tag = str(idx)
+            lo = hi = idx                  # report the actual trace, not the spin2 default
+            tag = str(idx + 1)
             coord = oax['start'] + oax['step']*idx
         return {'x': x, 're': re, 'im': im, 'dax': dax, 'oax': oax,
                 'tag': tag, 'coord': coord, 'mean': mean, 'lo': lo, 'hi': hi}
@@ -1373,15 +1455,15 @@ class MainWindow(QMainWindow):
         sl = self._compute_slice()
         if sl is None:
             return
-        file_path = self.opener.create_file_dialog(multiprocessing=True)
+        file_path = self._save_dialog()
         if not file_path or file_path == 'None':
             return
         dax, oax = sl['dax'], sl['oax']
         arr = np.column_stack([np.asarray(sl['x'], float),
                                np.asarray(sl['re'], float),
                                np.asarray(sl['im'], float)])
-        kind = (f'mean of traces {sl["lo"]}–{sl["hi"]}' if sl['mean']
-                else f'trace {sl["lo"]}')
+        kind = (f'mean of traces {sl["lo"] + 1}–{sl["hi"] + 1}' if sl['mean']
+                else f'trace {sl["lo"] + 1}')
         header = '\n'.join([
             f'2D slice ({kind}); {oax["name"]} = {sl["coord"]:.6g} {oax["scale"]}',
             f'columns: {dax["name"]} ({dax["scale"]}), Re/I, Im/Q'])
@@ -1400,12 +1482,8 @@ class MainWindow(QMainWindow):
         except Exception as e:
             self.set_status(f'Could not write transfer buffer: {e}')
             return
-        try:                                             # also show it in the main GUI
-            general.plot_1d(f'2D slice {tag}', x, re, label='Re',
-                            xname=dax['name'], xscale=dax['scale'],
-                            yname='Intensity', yscale='V')
-        except Exception:
-            pass
+        # Deliberately not plotted in the main GUI: the slice goes only to the 1D
+        # tool's transfer buffer, so it doesn't clutter the main window's docks.
         what = (f'Mean slice {tag}' if mean else f'Slice #{tag}')
         self.set_status(f'{what} ({oax["name"]} = {coord:.4g} {oax["scale"]}) '
                         f'sent to buffer. In the 1D Data Treatment window click '
@@ -1415,7 +1493,7 @@ class MainWindow(QMainWindow):
         if not self.fit_map:
             self.set_status('Run a fit first — no map to save.')
             return
-        file_path = self.opener.create_file_dialog(multiprocessing=True)
+        file_path = self._save_dialog()
         if not file_path or file_path == 'None':
             return
         m = self.fit_map
@@ -1433,7 +1511,7 @@ class MainWindow(QMainWindow):
         if not (self.has_result() or self.src_i is not None):
             self.set_status('Nothing to save — load data first.')
             return
-        file_path = self.opener.create_file_dialog(multiprocessing=True)
+        file_path = self._save_dialog()
         if not file_path or file_path == 'None':
             return
         if self.has_result():
