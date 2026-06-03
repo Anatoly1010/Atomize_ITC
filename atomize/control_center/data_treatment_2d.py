@@ -113,6 +113,17 @@ WINDOWS = ['None', 'Hann', 'Hamming', 'Blackman', 'Bartlett', 'Flat-top',
            'Kaiser', 'Gaussian', 'Tukey']
 ZEROFILL = ['None', '×2', '×4', '×8', 'Next pow₂']
 
+# Bare SI units worth auto-prefixing on the plot axes: a plain 's' axis with a
+# 2e-9 step should read '2 ns', not '2e-9 s'. Already-prefixed units ('ns',
+# 'MHz', 'mV') and dimensionless labels are shown verbatim, since auto-prefixing
+# them would double up ('kns', 'GMHz').
+SI_BASE_UNITS = {'s', 'hz', 'v', 'a', 'g', 't', 'k', 'm', 'ev'}
+
+
+def _si_autoprefix(unit):
+    """True if `unit` is a bare SI base worth pyqtgraph auto-prefixing."""
+    return str(unit).strip().lower() in SI_BASE_UNITS
+
 # relaxation models exposed in the per-trace Fit tab (a curated subset of the
 # shared fitter; for T1/T2 decays k / k1 / k2 are the time constants).
 RELAX_MODELS = ['Exponential', 'Bi-exponential', 'Stretched exponential',
@@ -985,14 +996,12 @@ class MainWindow(QMainWindow):
             pass
 
     def _disable_si_prefix(self):
-        """Turn off pyqtgraph's automatic SI-prefixing on this tool's preview
-        axes, so a user-chosen unit such as 'ns' is shown verbatim instead of
-        being double-prefixed into nonsense like 'kns' / 'mµs'.
+        """Initial state: turn off pyqtgraph's automatic SI-prefixing on this
+        tool's preview axes (before any data is loaded). Per push, _apply_si_prefix
+        re-enables it only for bare SI-base axes.
 
         Scoped to *this* tool's CrossSectionDock instance (own QProcess): the
-        shared widget keeps auto-prefixing for the main GUI, which depends on it.
-        setLabel() never re-enables the flag, so disabling once here sticks
-        across every later setAxisLabels() call."""
+        shared widget keeps auto-prefixing for the main GUI, which depends on it."""
         cd = self.cross_dock
         plots = (cd.plot_item,
                  cd.h_cross_section_widget.plotItem,
@@ -1003,6 +1012,27 @@ class MainWindow(QMainWindow):
                     p.getAxis(side).enableAutoSIPrefix(False)
                 except Exception:
                     pass
+
+    def _apply_si_prefix(self, xunit, yunit, zunit):
+        """Auto-SI-prefix only the axes whose unit is a bare SI base, so a 's'
+        axis with a 2e-9 step reads '2 ns'; leave already-prefixed units ('ns',
+        'MHz') verbatim to avoid double-prefixing ('kns'). X is the heatmap bottom
+        + the X-trace bottom; Y is the heatmap left + the Y-trace bottom; Z
+        (intensity) is both cross-section left axes."""
+        cd = self.cross_dock
+        x_on, y_on, z_on = (_si_autoprefix(xunit), _si_autoprefix(yunit),
+                            _si_autoprefix(zunit))
+        axes = [(cd.plot_item, 'bottom', x_on),
+                (cd.plot_item, 'left', y_on),
+                (cd.h_cross_section_widget.plotItem, 'bottom', x_on),
+                (cd.h_cross_section_widget.plotItem, 'left', z_on),
+                (cd.v_cross_section_widget.plotItem, 'bottom', y_on),
+                (cd.v_cross_section_widget.plotItem, 'left', z_on)]
+        for p, side, on in axes:
+            try:
+                p.getAxis(side).enableAutoSIPrefix(on)
+            except Exception:
+                pass
 
     # --------------------------------------------------------------- push
     def _push_current(self, *args):
@@ -1031,6 +1061,7 @@ class MainWindow(QMainWindow):
             self.cross_dock.setAxisLabels(xname=col['name'], xscale=col['scale'],
                                           yname=row['name'], yscale=row['scale'],
                                           zname='Intensity', zscale='V')
+            self._apply_si_prefix(col['scale'], row['scale'], 'V')
             self.cross_dock.setImage(arr, pos=(col['start'], row['start']),
                                      scale=(sx, sy), autoLevels=False)
         except Exception as e:
@@ -1392,9 +1423,11 @@ class MainWindow(QMainWindow):
         else:
             self.slice_label.setText(f"{axis['name']} = {coord:.4g} {axis['scale']} (of {ntr})")
 
-    def _write_buffer(self, curves):
+    def _write_buffer(self, curves, xname=''):
         """Write a one-shot 1D-tool mailbox (libs/treatment_buffer.csv): interleaved
-        x0,y0,x1,y1,… columns padded with NaN, '# labels:' header naming the curves."""
+        x0,y0,x1,y1,… columns padded with NaN, '# labels:' header naming the curves.
+        An optional '# xname:' line carries the X axis name+unit so the 1D tool can
+        label and SI-prefix the axis (e.g. a 's' slice axis then reads in ns)."""
         maxlen = max(np.asarray(x).size for _, x, _ in curves)
         buf = np.full((maxlen, 2*len(curves)), np.nan)
         labels = []
@@ -1403,7 +1436,10 @@ class MainWindow(QMainWindow):
             buf[:x.size, 2*j] = x
             buf[:y.size, 2*j + 1] = y
             labels.append(str(lab).replace('|', '/'))
-        header = 'Atomize data treatment buffer\nlabels: ' + '|'.join(labels)
+        header_lines = ['Atomize data treatment buffer', 'labels: ' + '|'.join(labels)]
+        if xname:
+            header_lines.append('xname: ' + str(xname).replace('\n', ' '))
+        header = '\n'.join(header_lines)
         np.savetxt(BUFFER_PATH, buf, delimiter=',', fmt='%.6e', header=header, comments='# ')
 
     def _compute_slice(self):
@@ -1477,8 +1513,11 @@ class MainWindow(QMainWindow):
         x, re, im = sl['x'], sl['re'], sl['im']
         dax, oax, tag, coord, mean = (sl['dax'], sl['oax'], sl['tag'],
                                       sl['coord'], sl['mean'])
+        # carry the decay axis name+unit so the 1D tool labels and SI-prefixes it
+        # (a slice taken in 's' then displays in ns rather than raw 2e-9).
+        xname = f"{dax['name']} ({dax['scale']})" if dax['scale'] else dax['name']
         try:
-            self._write_buffer([('slice Re', x, re), ('slice Im', x, im)])
+            self._write_buffer([('slice Re', x, re), ('slice Im', x, im)], xname=xname)
         except Exception as e:
             self.set_status(f'Could not write transfer buffer: {e}')
             return

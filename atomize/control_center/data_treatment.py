@@ -82,6 +82,28 @@ def _save_last_dir(path):
     except Exception:
         pass
 
+
+# Bare SI units worth auto-prefixing on the X axis: a plain 's' axis (e.g. a 2D
+# slice transferred in seconds) should read '2 ns', not '2e-9 s'. Already-prefixed
+# units ('ns', 'MHz') and dimensionless labels stay verbatim (no 'kns').
+SI_BASE_UNITS = {'s', 'hz', 'v', 'a', 'g', 't', 'k', 'm', 'ev'}
+
+
+def _si_autoprefix(unit):
+    """True if `unit` is a bare SI base worth pyqtgraph auto-prefixing."""
+    return str(unit).strip().lower() in SI_BASE_UNITS
+
+
+def _split_unit(label):
+    """Split a 'Name (unit)' axis label into ('Name', 'unit'); ('label', '') if
+    there's no trailing parenthesised unit."""
+    s = str(label).strip()
+    if s.endswith(')') and '(' in s:
+        i = s.rfind('(')
+        return s[:i].strip(), s[i + 1:-1].strip()
+    return s, ''
+
+
 # Solid-accent "busy" variant for the Run-DEER button while an inversion is in
 # progress (explicit colours so it stays yellow even while disabled).
 BUTTON_BUSY_STYLE = (
@@ -1014,6 +1036,7 @@ class MainWindow(QMainWindow):
             return
         try:
             labels = []
+            buf_xname = ''
             header_count = 0
             with open(BUFFER_PATH, 'r') as fh:
                 for line in fh:
@@ -1022,6 +1045,8 @@ class MainWindow(QMainWindow):
                     header_count += 1
                     if 'labels:' in line:
                         labels = line.split('labels:', 1)[1].strip().split('|')
+                    elif 'xname:' in line:
+                        buf_xname = line.split('xname:', 1)[1].strip()
             data = np.genfromtxt(BUFFER_PATH, delimiter=',', skip_header=header_count)
             data = np.atleast_2d(data)
             # The buffer is a one-shot mailbox: consume it now so that closing
@@ -1041,6 +1066,11 @@ class MainWindow(QMainWindow):
                 if not silent:
                     self.set_status('Plot buffer is empty.')
                 return
+            # name+unit of the X axis (e.g. a 2D slice's decay axis); lets the
+            # preview SI-prefix a 's' axis to ns. Set before registering so the
+            # first redraw already uses it.
+            if buf_xname:
+                self.xname_edit.setText(buf_xname)
             self._register_datasets(mapping)
             self.set_status(f'Loaded {len(mapping)} curve(s) from the current plot.')
         except Exception as e:
@@ -1280,7 +1310,16 @@ class MainWindow(QMainWindow):
                 self.legend.removeItem(lbl)
             except Exception:
                 pass
-        self.plot_widget.setLabel('bottom', xname)
+        # Split a "Name (unit)" label so pyqtgraph gets the unit separately, then
+        # auto-SI-prefix only bare SI bases — a slice transferred in 's' reads in
+        # ns instead of raw 2e-9, while an already-prefixed 'ns'/'MHz' stays as is.
+        xlabel, xunit = _split_unit(xname)
+        self.plot_widget.setLabel('bottom', xlabel, units=xunit)
+        try:
+            self.plot_widget.getPlotItem().getAxis('bottom').enableAutoSIPrefix(
+                _si_autoprefix(xunit))
+        except Exception:
+            pass
         # only the DEER L-curve view uses a left-axis label; clear it otherwise
         self.plot_widget.setLabel('left', '')
 

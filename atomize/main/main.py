@@ -83,8 +83,21 @@ class MyExtendedNameList(NameList):
             buf[:x.size, 2*i] = x
             buf[:y.size, 2*i + 1] = y
 
+        # carry the X axis name+unit so the 1D tool can label and SI-prefix it
+        # (a time axis in 's' then reads in ns rather than raw 2e-9).
+        xname = ''
+        try:
+            ax = dock.plot_widget.getPlotItem().getAxis('bottom')
+            nm = (ax.labelText or '').strip()
+            un = (ax.labelUnits or '').strip()
+            xname = f'{nm} ({un})' if un else nm
+        except Exception:
+            xname = ''
+
         buffer_path = os.path.join(self.window.path_to_main, 'treatment_buffer.csv')
         header = 'Atomize data treatment buffer\nlabels: ' + '|'.join(labels)
+        if xname:
+            header += '\nxname: ' + xname.replace('\n', ' ')
         np.savetxt(buffer_path, buf, delimiter=',', fmt='%.6e', header=header, comments='# ')
 
         self.window.text_errors.appendPlainText('Sent "%s" to Data Treatment buffer.' % name)
