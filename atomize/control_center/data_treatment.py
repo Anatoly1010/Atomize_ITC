@@ -162,6 +162,8 @@ class MainWindow(QMainWindow):
         # DEER/PDS analysis state: last full result dict, the draggable
         # background-start cursor, and a guard against cursor<->spinbox echo.
         self.deer_result = None
+        self.deer_band = None          # validation ensemble (median P(r) + band)
+        self._band_lo = self._band_hi = self._band_fill = None
         self._bg_cursor = None
         self._bg_cursor_end = None     # draggable background-end cursor
         self._suppress_cursor = False
@@ -842,6 +844,22 @@ class MainWindow(QMainWindow):
         al_row.addWidget(self.deer_alpha_auto); al_row.addWidget(self.deer_alpha)
         grid.addLayout(al_row, r, 1); r += 1
 
+        grid.addWidget(self._label('α strength ×'), r, 0)
+        self.deer_alpha_factor = QDoubleSpinBox()
+        self.deer_alpha_factor.setStyleSheet(DSPIN_STYLE)
+        self.deer_alpha_factor.setRange(0.1, 50.0)
+        self.deer_alpha_factor.setDecimals(2)
+        self.deer_alpha_factor.setSingleStep(0.5)
+        self.deer_alpha_factor.setValue(1.0)
+        self.deer_alpha_factor.setToolTip(
+            'Multiply the auto-selected (GCV) α by this factor. GCV under-'
+            'regularizes the near-vertical DEER L-curve, leaving spiky P(r); '
+            '2–4× reproduces the heavier hand-picked L-corner the DeerAnalysis '
+            'ring-test labs used for smooth distributions (JACS 2021). Ignored '
+            'when α is set manually.')
+        self.deer_alpha_factor.valueChanged.connect(self._live_update)
+        grid.addWidget(self.deer_alpha_factor, r, 1); r += 1
+
         grid.addWidget(self._label('Show'), r, 0)
         self.deer_show = QComboBox()
         self.deer_show.setStyleSheet(COMBO_STYLE)
@@ -849,6 +867,16 @@ class MainWindow(QMainWindow):
                                  'Background fit', 'L-curve'])
         self.deer_show.currentIndexChanged.connect(self._deer_rerender)
         grid.addWidget(self.deer_show, r, 1); r += 1
+
+        self.deer_validate_chk = QCheckBox('Validate (background sweep → P(r) band)')
+        self.deer_validate_chk.setStyleSheet(CHECKBOX_STYLE)
+        self.deer_validate_chk.setToolTip(
+            'Re-run the inversion over a sweep of background-start times at fixed '
+            'α and show the median P(r) with a 5–95% uncertainty band. This is '
+            'the DeerAnalysis validation step that turns a single spiky GCV '
+            'solution into the smooth, banded distribution of JACS 2021 Fig. 4.')
+        self.deer_validate_chk.stateChanged.connect(self._live_update)
+        grid.addWidget(self.deer_validate_chk, r, 0, 1, 2); r += 1
 
         run_row = QHBoxLayout()
         btn = QPushButton('Run DEER')
@@ -1269,6 +1297,8 @@ class MainWindow(QMainWindow):
         self.datasets = {}
         self._reset_result()
         self.deer_result = None
+        self.deer_band = None
+        self._show_deer_band(False)
         self._clear_bg_cursor()
         self.step_counter = 0
         for combo in (self.i_combo, self.q_combo):
@@ -1692,16 +1722,31 @@ class MainWindow(QMainWindow):
             return
         r = np.linspace(rmin, rmax, int(self.deer_rn.value()))
         alpha = None if self.deer_alpha_auto.isChecked() else float(self.deer_alpha.value())
+        afac = float(self.deer_alpha_factor.value())
         engine = 'joint' if self.deer_engine.currentIndex() == 1 else 'sequential'
+        validate = self.deer_validate_chk.isChecked()
         # highlight the button yellow while the (blocking) inversion runs
         self.deer_run_btn.setEnabled(False)
         self.deer_run_btn.setStyleSheet(BUTTON_BUSY_STYLE)
+        if validate:
+            self.set_status('DEER validation: sweeping background start…')
         QApplication.processEvents()
         try:
-            res = deer_module.deer_invert(
-                t_us, v, r=r, bg_start=bg_us, bg_end=bg_end_us,
-                dim=float(self.deer_dim.value()),
-                fit_dim=self.deer_fitdim.isChecked(), alpha=alpha, engine=engine)
+            if validate:
+                val = deer_module.deer_validate(
+                    t_us, v, r=r, bg_start=bg_us, bg_end=bg_end_us,
+                    dim=float(self.deer_dim.value()),
+                    fit_dim=self.deer_fitdim.isChecked(), alpha=alpha,
+                    alpha_factor=afac, engine=engine)
+                res = val['base']
+                self.deer_band = val
+            else:
+                res = deer_module.deer_invert(
+                    t_us, v, r=r, bg_start=bg_us, bg_end=bg_end_us,
+                    dim=float(self.deer_dim.value()),
+                    fit_dim=self.deer_fitdim.isChecked(), alpha=alpha,
+                    alpha_factor=afac, engine=engine)
+                self.deer_band = None
         except Exception as e:
             self.set_status(f'DEER failed: {e}')
             return
@@ -1722,21 +1767,32 @@ class MainWindow(QMainWindow):
         F, Ff = res['form_factor'], res['F_fit']
         ss_tot = float(np.sum((F - F.mean())**2)) or 1.0
         r2 = 1 - float(np.sum((F - Ff)**2))/ss_tot
-        P = res['P_density']
-        r_peak = float(res['r'][int(np.argmax(P))])
-        r_mean = float(np.sum(res['r']*res['P_norm']))
+        if self.deer_band is not None:
+            b = self.deer_band
+            r_peak, r_mean = b['peak'], b['r_mean']
+            bgs = b['bg_starts']/tf
+            lo, hi = b['percentiles']
+            extra = (f'<br><b style="color: rgb(150, 200, 255);">validation</b><br>'
+                     f'{b["n_trials"]} trials, bg start {bgs[0]:.3g}–{bgs[-1]:.3g} '
+                     f'{self.deer_tunit.currentText()}<br>band = {lo:g}–{hi:g}%')
+            consensus = ' (median)'
+        else:
+            r_peak = float(res['r'][int(np.argmax(res['P_density']))])
+            r_mean = float(np.sum(res['r']*res['P_norm']))
+            extra, consensus = '', ''
         self.deer_info.setText(
             '<div style="line-height: 165%;">'
-            f'<b style="color: rgb(211, 194, 78);">P(r)</b><br>'
+            f'<b style="color: rgb(211, 194, 78);">P(r)</b>{consensus}<br>'
             f'mod. depth λ = {res["lambda"]:.3f}<br>'
             f'bg decay k = {res["k"]:.4g}, dim = {res["dim"]:.2f}<br>'
             f'α = {res["alpha"]:.4g}<br>'
             f'peak r = {r_peak:.3f} nm<br>'
             f'mean r = {r_mean:.3f} nm<br>'
-            f'form-factor R² = {r2:.4f}</div>')
+            f'form-factor R² = {r2:.4f}{extra}</div>')
         self._deer_render()
+        tag = f' ({self.deer_band["n_trials"]}-trial band)' if self.deer_band else ''
         self.set_status(f'DEER: λ={res["lambda"]:.3f}, α={res["alpha"]:.3g}, '
-                        f'peak r={r_peak:.2f} nm, R²={r2:.3f}.')
+                        f'peak r={r_peak:.2f} nm, R²={r2:.3f}{tag}.')
 
     def _deer_rerender(self, *args):
         """Re-show the stored DEER result under the current 'Show' selection."""
@@ -1767,12 +1823,23 @@ class MainWindow(QMainWindow):
                   f'time unit {tunit}, r {res["r"][0]:.3g}–{res["r"][-1]:.3g} nm '
                   f'({len(res["r"])} pts), {bg_win}']
         if view == 'Distance P(r)':
-            meta = common + ['column: P(r) density (integral = 1)']
-            self._set_result(res['r'], [('P(r)', res['P_density'])], meta,
-                             show_source=False, xname='Distance (nm)')
+            if self.deer_band is not None:
+                b = self.deer_band
+                lo, hi = b['percentiles']
+                self._show_deer_band(True, b['r'], b['P_lower'], b['P_upper'])
+                meta = common + [f'columns: median P(r) density (integral = 1), '
+                                 f'{lo:g}% band, {hi:g}% band ({b["n_trials"]} trials)']
+                self._set_result(b['r'], [('P(r) median', b['P_density'])], meta,
+                                 show_source=False, xname='Distance (nm)')
+            else:
+                self._show_deer_band(False)
+                meta = common + ['column: P(r) density (integral = 1)']
+                self._set_result(res['r'], [('P(r)', res['P_density'])], meta,
+                                 show_source=False, xname='Distance (nm)')
             self._show_bg_cursor(False)
             self._show_lcurve_marker(False)
         elif view == 'Form factor + fit':
+            self._show_deer_band(False)
             meta = common + ['columns: form factor F(t), K·P fit']
             self._set_result(t_disp, [('F(t)', res['form_factor']),
                                       ('K·P fit', res['F_fit'])], meta,
@@ -1780,6 +1847,7 @@ class MainWindow(QMainWindow):
             self._show_bg_cursor(True)
             self._show_lcurve_marker(False)
         elif view == 'Background fit':
+            self._show_deer_band(False)
             bg = res['background']
             level = (1 - res['lambda'])*bg['B']
             meta = common + ['columns: V(t) normalized, fitted background (1-λ)·B(t)']
@@ -1789,6 +1857,7 @@ class MainWindow(QMainWindow):
             self._show_bg_cursor(True)
             self._show_lcurve_marker(False)
         else:  # L-curve
+            self._show_deer_band(False)
             self._show_bg_cursor(False)
             lc = res.get('l_curve')
             if lc is None:
@@ -1827,6 +1896,26 @@ class MainWindow(QMainWindow):
             return
         self._lcurve_marker.setData([x], [y])
         self._lcurve_marker.setVisible(True)
+
+    def _show_deer_band(self, visible, x=None, lo=None, hi=None):
+        """Show/hide the validation P(r) uncertainty band (shaded area between the
+        lower and upper percentile curves) on the distance view."""
+        if self._band_fill is None:
+            self._band_lo = pg.PlotDataItem(pen=None)
+            self._band_hi = pg.PlotDataItem(pen=None)
+            self._band_fill = pg.FillBetweenItem(
+                self._band_lo, self._band_hi, brush=pg.mkBrush(211, 194, 78, 60))
+            self._band_fill.setZValue(-10)        # behind the median curve
+            for it in (self._band_lo, self._band_hi, self._band_fill):
+                self.plot_widget.addItem(it)
+        if not visible:
+            for it in (self._band_lo, self._band_hi, self._band_fill):
+                it.setVisible(False)
+            return
+        self._band_lo.setData(np.asarray(x, float), np.asarray(lo, float))
+        self._band_hi.setData(np.asarray(x, float), np.asarray(hi, float))
+        for it in (self._band_lo, self._band_hi, self._band_fill):
+            it.setVisible(True)
 
     def _on_plot_click(self, event):
         """On the DEER L-curve view, pick the α of the nearest L-curve point."""
@@ -1962,8 +2051,16 @@ class MainWindow(QMainWindow):
                                   header='\n'.join(hdr + [col_header]), mode='w')
             written.append(os.path.basename(fn))
 
-        _save('distance', [res['r'], res['P_density'], res['P_norm']],
-              'r (nm), P(r) density, P (masses)')
+        if self.deer_band is not None:
+            b = self.deer_band
+            lo, hi = b['percentiles']
+            _save('distance', [b['r'], b['P_density'], b['P_lower'], b['P_upper'],
+                               b['P_mean']],
+                  f'r (nm), P(r) median density, {lo:g}% band, {hi:g}% band, '
+                  f'mean ({b["n_trials"]} trials)')
+        else:
+            _save('distance', [res['r'], res['P_density'], res['P_norm']],
+                  'r (nm), P(r) density, P (masses)')
         _save('formfactor', [t_disp, res['form_factor'], res['F_fit'], res['residuals']],
               f'time ({tunit}), F(t), K*P fit, residuals')
         _save('background', [t_disp, bg['V_norm'], bg['B'], (1 - res['lambda'])*bg['B']],
