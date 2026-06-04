@@ -248,12 +248,11 @@ class MainExtended(MainWindow):
         for process in self.all_processes:
             process.readyReadStandardOutput.connect(self.handle_output_control_center)
 
-        if self.system == 'Windows':
-            for process in self.all_processes:
-                process.setProgram('python.exe')
-        elif self.system == 'Linux':
-            for process in self.all_processes:
-                process.setProgram('python3')
+        # Use the current interpreter (sys.executable) so subprocesses inherit
+        # the pipx/venv/conda site-packages — bare 'python3' would resolve to
+        # system Python via PATH and miss PyQt6 et al. installed in the venv.
+        for process in self.all_processes:
+            process.setProgram(sys.executable)
 
         self.set_control_center()
 
