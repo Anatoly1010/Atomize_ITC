@@ -230,6 +230,7 @@ class MainExtended(MainWindow):
         self.process_tune_preset = QtCore.QProcess(self)
         self.process_phasing = QtCore.QProcess(self)
         self.process_awg_phasing = QtCore.QProcess(self)
+        self.process_sequence_calc = QtCore.QProcess(self)
         self.process_treatment = QtCore.QProcess(self)
         self.process_treatment_2d = QtCore.QProcess(self)
         #self.process_t2 = QtCore.QProcess(self)
@@ -237,11 +238,11 @@ class MainExtended(MainWindow):
         #self.process_ed = QtCore.QProcess(self)
         #self.process_eseem = QtCore.QProcess(self)
 
-        self.all_processes = [self.process_tr, self.process_osc, 
-            self.process_osc2, self.process_cw, self.process_temp, 
-            self.process_field, self.process_mw, self.process_tune_preset, 
-            self.process_phasing, self.process_awg_phasing, self.process_treatment,
-            self.process_treatment_2d
+        self.all_processes = [self.process_tr, self.process_osc,
+            self.process_osc2, self.process_cw, self.process_temp,
+            self.process_field, self.process_mw, self.process_tune_preset,
+            self.process_phasing, self.process_awg_phasing, self.process_sequence_calc,
+            self.process_treatment, self.process_treatment_2d
         ]
         #, self.process_t2, self.process_t1, self.process_ed, self.process_eseem]
 
@@ -270,6 +271,12 @@ class MainExtended(MainWindow):
         if raw_data.startswith("print "):
             msg = raw_data[6:].strip()
             self.text_errors.appendPlainText(msg)
+        # Sequence Calculator one-click open: launch the target phasing tool
+        # pre-loaded with the preset it just wrote.
+        elif raw_data.startswith("open_awg "):
+            self.start_awg_phasing(raw_data[9:].strip())
+        elif raw_data.startswith("open_rect "):
+            self.start_rect_phasing(raw_data[10:].strip())
         # Insys stdOut
         elif raw_data.startswith("before "):
             self.skip_lines = 1
@@ -297,12 +304,12 @@ class MainExtended(MainWindow):
 
         button_name_1 = ["CW EPR", "TR EPR", "2012A; IP x.2.21", "2012A_2; IP x.2.22", "Set Temperature", "Set MF"]
         button_name_2 = ["Pulsed MW Bridge", "", "RECT Channel", "AWG Channel"]
-        button_name_3 = ["Resonator Tuning", "Data Treatment", "Data Treatment 2D"]
+        button_name_3 = ["Resonator Tuning", "", "Data Treatment", "Data Treatment 2D", "Sequence Calculator"]
         #, "T2 Measurement", "T1 Measurement", "ED Spectrum", "3pESEEM"]
 
         actions_1 = [self.start_cw, self.start_tr_control, self.start_osc_control, self.start_osc_control_2, self.start_temp_control, self.start_field_control]
         actions_2 = [self.start_mw_control, None, self.start_rect_phasing, self.start_awg_phasing]
-        actions_3 = [self.start_tune_preset, self.start_treatment_control, self.start_treatment_2d_control]
+        actions_3 = [self.start_tune_preset, None, self.start_treatment_control, self.start_treatment_2d_control, self.start_sequence_calculator]
         #, self.start_t2_preset, self.start_t1_preset, self.start_ed_preset, self.start_eseem_preset]
 
         columns_data = [(button_name_1, actions_1, 1), (button_name_2, actions_2, 2), (button_name_3, actions_3, 3)]
@@ -384,8 +391,8 @@ class MainExtended(MainWindow):
             self.process_python, self.process_tr, self.process_osc, 
             self.process_osc2, self.process_cw, self.process_temp, 
             self.process_field, self.process_mw, self.process_tune_preset,
-            self.process_phasing, self.process_awg_phasing, self.process_treatment,
-            self.process_treatment_2d
+            self.process_phasing, self.process_awg_phasing, self.process_sequence_calc,
+            self.process_treatment, self.process_treatment_2d
         ]
             #, self.process_t2, self.process_t1, self.process_ed, self.process_eseem]
 
@@ -412,8 +419,8 @@ class MainExtended(MainWindow):
             self.process_python, self.process_tr, self.process_osc, 
             self.process_osc2, self.process_cw, self.process_temp, 
             self.process_field, self.process_mw, self.process_tune_preset,
-            self.process_phasing, self.process_awg_phasing, self.process_treatment,
-            self.process_treatment_2d
+            self.process_phasing, self.process_awg_phasing, self.process_sequence_calc,
+            self.process_treatment, self.process_treatment_2d
         ]
             #, self.process_t2, self.process_t1, self.process_ed, self.process_eseem]
 
@@ -554,19 +561,34 @@ class MainExtended(MainWindow):
         self.process_t2.start()
     ###unused
 
-    def start_rect_phasing(self):
+    def start_rect_phasing(self, preset=None):
         """
         A function to run an phasing for rect channel.
+        :param preset: optional *.phase path to auto-open (from Seq Calculator).
         """
-        self.process_phasing.setArguments([os.path.join('..','atomize/control_center/phasing_insys.py')])
+        args = [os.path.join('..','atomize/control_center/phasing_insys.py')]
+        if preset and isinstance(preset, str):
+            args.append(preset)
+        self.process_phasing.setArguments(args)
         self.process_phasing.start()
 
-    def start_awg_phasing(self):
+    def start_awg_phasing(self, preset=None):
         """
-        A function to run an phasing for rect channel.
+        A function to run an phasing for awg channel.
+        :param preset: optional *.phase_awg path to auto-open (from Seq Calculator).
         """
-        self.process_awg_phasing.setArguments([os.path.join('..','atomize/control_center/awg_phasing_insys.py')])
+        args = [os.path.join('..','atomize/control_center/awg_phasing_insys.py')]
+        if preset and isinstance(preset, str):
+            args.append(preset)
+        self.process_awg_phasing.setArguments(args)
         self.process_awg_phasing.start()
+
+    def start_sequence_calculator(self):
+        """
+        A function to run the EPR sequence timing & phase-cycling calculator.
+        """
+        self.process_sequence_calc.setArguments([os.path.join('..','atomize/control_center/sequence_calculator.py')])
+        self.process_sequence_calc.start()
 
     def start_tune_preset(self):
         """

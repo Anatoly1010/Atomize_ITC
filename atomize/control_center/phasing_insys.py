@@ -6,6 +6,7 @@ import re
 import sys
 import math
 import time
+import tempfile
 import traceback
 import numpy as np
 from multiprocessing import Process, Pipe
@@ -16,6 +17,12 @@ import atomize.general_modules.general_functions as general
 import atomize.general_modules.csv_opener_saver as openfile
 import atomize.control_center.field_param as field_param
 from atomize.control_center.time_log_spinbox import TimeLogSpinBox
+
+# Reload-signal file written by the Sequence Calculator (sequence_calculator.py).
+# While this window is open we poll it and reload the named preset when the
+# nonce changes for our channel, so "Open in RECT" updates the window in place.
+SEQCALC_SIGNAL = os.path.join(tempfile.gettempdir(), 'atomize_seqcalc.param')
+SEQCALC_CHANNEL = 'rect'
 
 class MainWindow(QMainWindow):
     """
@@ -60,6 +67,39 @@ class MainWindow(QMainWindow):
         self.monitor_timer = QTimer()
         self.monitor_timer.timeout.connect(self.check_process_status)
         self.file_handler = openfile.Saver_Opener()
+
+        # Watch for "Open in RECT" requests from the Sequence Calculator and
+        # reload the preset into this already-open window. Seed the seen-nonce
+        # from the current signal file so a stale request (or the one we were
+        # just launched with via argv) does not fire a spurious reload.
+        self._seqcalc_nonce = self._read_seqcalc_nonce()
+        self.seqcalc_timer = QTimer()
+        self.seqcalc_timer.timeout.connect(self.check_seqcalc_reload)
+        self.seqcalc_timer.start(400)
+
+    def _read_seqcalc_nonce(self):
+        try:
+            with open(SEQCALC_SIGNAL) as f:
+                parts = f.read().split('\n')
+            return parts[2].strip() if len(parts) >= 3 else ''
+        except OSError:
+            return ''
+
+    def check_seqcalc_reload(self):
+        """Poll the Sequence Calculator signal file; reload on a new request."""
+        try:
+            with open(SEQCALC_SIGNAL) as f:
+                parts = f.read().split('\n')
+        except OSError:
+            return
+        if len(parts) < 3:
+            return
+        channel, path, nonce = parts[0].strip(), parts[1].strip(), parts[2].strip()
+        if not nonce or nonce == self._seqcalc_nonce:
+            return
+        self._seqcalc_nonce = nonce
+        if channel == SEQCALC_CHANNEL and os.path.isfile(path):
+            self.open_file(path)
 
     def closeEvent(self, event):
         event.ignore()
@@ -3771,6 +3811,10 @@ def main():
     apply_app_style(app, app_id='Atomize.ITC.Phasing')
     main = MainWindow()
     main.show()
+    # Optional preset path (e.g. from the Sequence Calculator's one-click open).
+    # argv[1] == 'test' is reserved for the script-side test mode, so skip it.
+    if len(sys.argv) > 1 and sys.argv[1] not in ('', 'test') and os.path.isfile(sys.argv[1]):
+        main.open_file(sys.argv[1])
     sys.exit(app.exec())
 
 if __name__ == '__main__':

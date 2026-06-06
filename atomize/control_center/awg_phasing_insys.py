@@ -5,11 +5,12 @@ import re
 import sys
 import math
 import time
+import tempfile
 import traceback
 import numpy as np
 from multiprocessing import Process, Pipe
 from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QLabel, QDoubleSpinBox, QSpinBox, QComboBox, QPushButton, QTextEdit, QGridLayout, QFrame, QCheckBox, QFileDialog, QVBoxLayout, QTabWidget, QScrollArea, QHBoxLayout, QPlainTextEdit, QProgressBar,  QTreeView, QHeaderView, QSizeGrip, QLineEdit, QFileIconProvider
-from PyQt6.QtGui import QIcon, QColor, QAction
+from PyQt6.QtGui import QIcon, QColor, QAction, QTextCursor
 from PyQt6.QtCore import Qt, QTimer
 import atomize.general_modules.general_functions as general
 import atomize.general_modules.csv_opener_saver as openfile
@@ -18,6 +19,12 @@ from atomize.control_center.time_log_spinbox import TimeLogSpinBox
 # Shared dark-theme styling; apply_app_style() pins this process to the Fusion
 # style so QComboBox / QSpinBox / QLineEdit render identically on Linux/Windows.
 from atomize.general_modules.gui_style import apply_app_style
+
+# Reload-signal file written by the Sequence Calculator (sequence_calculator.py).
+# While this window is open we poll it and reload the named preset when the
+# nonce changes for our channel, so "Open in AWG" updates the window in place.
+SEQCALC_SIGNAL = os.path.join(tempfile.gettempdir(), 'atomize_seqcalc.param')
+SEQCALC_CHANNEL = 'awg'
 
 class MainWindow(QMainWindow):
     """
@@ -66,6 +73,39 @@ class MainWindow(QMainWindow):
         self.monitor_timer = QTimer()
         self.monitor_timer.timeout.connect(self.check_process_status)
         self.file_handler = openfile.Saver_Opener()
+
+        # Watch for "Open in AWG" requests from the Sequence Calculator and
+        # reload the preset into this already-open window. Seed the seen-nonce
+        # from the current signal file so a stale request (or the one we were
+        # just launched with via argv) does not fire a spurious reload.
+        self._seqcalc_nonce = self._read_seqcalc_nonce()
+        self.seqcalc_timer = QTimer()
+        self.seqcalc_timer.timeout.connect(self.check_seqcalc_reload)
+        self.seqcalc_timer.start(400)
+
+    def _read_seqcalc_nonce(self):
+        try:
+            with open(SEQCALC_SIGNAL) as f:
+                parts = f.read().split('\n')
+            return parts[2].strip() if len(parts) >= 3 else ''
+        except OSError:
+            return ''
+
+    def check_seqcalc_reload(self):
+        """Poll the Sequence Calculator signal file; reload on a new request."""
+        try:
+            with open(SEQCALC_SIGNAL) as f:
+                parts = f.read().split('\n')
+        except OSError:
+            return
+        if len(parts) < 3:
+            return
+        channel, path, nonce = parts[0].strip(), parts[1].strip(), parts[2].strip()
+        if not nonce or nonce == self._seqcalc_nonce:
+            return
+        self._seqcalc_nonce = nonce
+        if channel == SEQCALC_CHANNEL and os.path.isfile(path):
+            self.open_file(path)
 
     def closeEvent(self, event):
         event.ignore()
@@ -316,7 +356,7 @@ class MainWindow(QMainWindow):
 
     def reset_pulse_func(self, pulse_number):
         if pulse_number == 1:
-            values = [576, 816, 0, 0, 0, 0, 100, 0, "+x,-x", "DETECTION"]
+            values = [576, 816, 0, 0, 50, 0, 100, 0, "+x,-x", "DETECTION"]
         elif pulse_number == 2:
             values = [0, 22.4, 0, 0, 50, 350, 100, 0, "+x,-x", "SINE"]
         elif pulse_number == 3:
@@ -3042,7 +3082,9 @@ class MainWindow(QMainWindow):
             self.errors.appendPlainText(data)
             self.button_blue()
         elif msg_type == 'Average':
-            self.Acq_number.setValue(int(data))                          
+            self.Acq_number.setValue(int(data))
+        elif msg_type == 'Count':
+            self.update_count_nip(data)
         else:
             self.timer.stop()
             if ( data.startswith('Exp') ) and (msg_type == 'test'):
@@ -3057,6 +3099,23 @@ class MainWindow(QMainWindow):
                     pass
                 else:
                     self.is_experiment = False
+
+    def update_count_nip(self, text):
+        """
+        Show the live count_nip array in the errors log, refreshing only that
+        line. If the last line is already a count_nip readout it is replaced in
+        place; otherwise a new one is appended. Any other messages already in the
+        log are left untouched.
+        """
+        marker = 'count_nip: '
+        line = marker + text
+        cursor = self.errors.textCursor()
+        cursor.movePosition(QTextCursor.MoveOperation.End)
+        cursor.select(QTextCursor.SelectionType.LineUnderCursor)
+        if cursor.selectedText().startswith(marker):
+            cursor.insertText(line)
+        else:
+            self.errors.appendPlainText(line)
 
     def check_messages(self):
         if not hasattr(self, 'last_error'):
@@ -3717,6 +3776,14 @@ class Worker():
 
                 if not script_test:
                     self.command = 'start'
+                    # Live count_nip readout: send the per-nid packet-count array
+                    # so the GUI can show acquisition progress dynamically. Sent
+                    # as its own message type so the parent updates only this line
+                    # and leaves the rest of the log intact.
+                    try:
+                        conn.send( ('Count', np.array2string(pb.count_nip, max_line_width = np.inf, threshold = np.inf)) )
+                    except Exception:
+                        pass
                 if PHASES != 1:
                     pb.awg_pulse_reset()
                     pb.pulser_pulse_reset()
@@ -4325,10 +4392,17 @@ class Worker():
         pulser_pulse_reset() returns to the absolute base after every scan, the
         cycle offset is re-applied at the start of each scan.
 
-        Cycle traces are averaged together in software (the cycles sit at
-        different tau, so they cannot be averaged on the digitizer as repeats);
-        this suppresses nuclear ESEEM modulation. With save_each set, every
-        cycle's raw trace is additionally written to its own file.
+        The digitizer averages on-board across every call for the whole run and
+        never resets between cycles, so digitizer_get_curve always returns the
+        cumulative average over all shots acquired so far. Because each cycle
+        re-traces the same point/phase sequence with the pulses shifted by an
+        extra tau, that running on-board average IS the tau-averaged result that
+        suppresses nuclear ESEEM modulation — no software re-averaging is done.
+        `data` therefore holds the current cumulative average throughout and is
+        what we plot live and save at the end. With save_each set, each cycle's
+        own trace is recovered by differencing the cumulative snapshots taken at
+        the cycle boundaries (M_c = mean over cycles 0..c, so the individual
+        cycle_c = (c+1)*M_c - c*M_{c-1}) and written to its own file.
 
         NOTE: the tau shift is applied on the pulser side only
         (pulser_redefine_delta_start + named pulser_shift). The AWG pulses follow
@@ -4642,9 +4716,16 @@ class Worker():
             # Whether any pulse actually carries a non-zero Start Increment 2.
             has_eseem = any( float( v.split(' ')[0] ) != 0 for v in eseem_all_inc2 )
 
-            # Running sum over cycles; the averaged result is data_avg / completed.
-            data_avg = np.zeros( ( 2, points_window, POINTS ) )
-            cycle_data_list = []
+            # `data` holds the digitizer's cumulative average and is filled in
+            # place by every digitizer_get_curve call; it is the live-plotted and
+            # final tau-averaged result (NO software re-averaging — re-summing the
+            # already-cumulative arrays was the original bug). For the optional
+            # per-cycle export we snapshot the cumulative average after each
+            # completed cycle and difference the snapshots to recover individual
+            # cycles. Allocated once so the live plot shows the running average
+            # continuously rather than blanking to zeros at each cycle start.
+            data = np.zeros( ( 2, points_window, POINTS ) )
+            cycle_snapshots = []
             completed_cycles = 0
             k = 1
             j = 0
@@ -4658,12 +4739,14 @@ class Worker():
                         yield kk
                         kk += 1
 
-            for cycle in range(CYCLES):
+            # In test mode every cycle exercises the same code path, so a single
+            # cycle is enough for the preflight check (avoids redundant work).
+            cycle_count = 1 if script_test else CYCLES
+
+            for cycle in range(cycle_count):
 
                 if self.command == 'exit':
                     break
-
-                data = np.zeros( ( 2, points_window, POINTS ) )
 
                 for k in _scan_iter():
 
@@ -4750,9 +4833,13 @@ class Worker():
                             denom = max( CYCLES * POINTS * SCANS, 1 )
                             conn.send( ('Status', int( 100 * ( cycle * POINTS * SCANS + ( k - 1 ) * POINTS + j + 1 ) / denom )) )
 
-                        # check our polling data
+                        # check our polling data. Changing the scan count
+                        # mid-run is disabled for ESEEM averaging: it would give
+                        # cycles unequal shot counts, breaking both the on-board
+                        # cumulative average and the per-cycle snapshot
+                        # differencing. An 'SC' request is acknowledged but
+                        # ignored (SCANS held fixed).
                         if self.command[0:2] == 'SC':
-                            SCANS = int( self.command[2:] )
                             self.command = 'start'
                         elif self.command == 'exit':
                             data[0], data[1] = pb.digitizer_at_exit()
@@ -4764,23 +4851,27 @@ class Worker():
                     pb.pulser_pulse_reset()
                     pb.awg_pulse_reset()
 
-                # Accumulate this cycle into the running average. Different cycles
-                # sit at different tau, so averaging happens here, in software.
-                data_avg = data_avg + data
-                completed_cycles += 1
-                if save_each:
-                    cycle_data_list.append( np.copy(data) )
+                # Interrupted mid-cycle: `data` still holds a valid cumulative
+                # average (including the partial cycle), but it is not a complete
+                # cycle boundary, so don't record it as a snapshot.
+                if self.command == 'exit':
+                    break
 
-                # Refresh the displayed running average between cycles.
+                # `data` is the digitizer's cumulative average through this cycle
+                # (the last scan triggered an on-board drain, so the snapshot is
+                # complete). Store it for the per-cycle differencing export.
+                cycle_snapshots.append( np.copy(data) )
+                completed_cycles += 1
+
+                # Refresh the live plot with the cumulative tau-averaged trace.
                 if a is not None and not script_test:
-                    running = data_avg / completed_cycles
                     if iq_cor == 0:
                         if step != 1:
-                            general.plot_2d(EXP_NAME, running, start_step = ((0, dec_calc), (f_delay/1e9, step_ns)), xname = 'Time', xscale = 's', yname = 'Delay', yscale = 's', zname = 'Intensity', zscale = 'mV', text = f"ESEEM average over {completed_cycles} cycle(s)")
+                            general.plot_2d(EXP_NAME, data, start_step = ((0, dec_calc), (f_delay/1e9, step_ns)), xname = 'Time', xscale = 's', yname = 'Delay', yscale = 's', zname = 'Intensity', zscale = 'mV', text = f"ESEEM average over {completed_cycles} cycle(s)")
                         else:
-                            general.plot_2d(EXP_NAME, running, start_step = ((0, dec_calc), (0, 1)), xname = 'Time', xscale = 's', yname = 'Point', yscale = '', zname = 'Intensity', zscale = 'mV', text = f"ESEEM average over {completed_cycles} cycle(s)")
+                            general.plot_2d(EXP_NAME, data, start_step = ((0, dec_calc), (0, 1)), xname = 'Time', xscale = 's', yname = 'Point', yscale = '', zname = 'Intensity', zscale = 'mV', text = f"ESEEM average over {completed_cycles} cycle(s)")
                     elif iq_cor == 1:
-                        rdx, rdy = pb.digitizer_iq(running[0], running[1], iq_freq, zp, first_order, sec_order, integral = True)
+                        rdx, rdy = pb.digitizer_iq(data[0], data[1], iq_freq, zp, first_order, sec_order, integral = True)
                         if step != 1:
                             general.plot_1d(EXP_NAME, x_axis_plot, ( rdx, rdy ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = f"ESEEM average over {completed_cycles} cycle(s)")
                         else:
@@ -4788,11 +4879,9 @@ class Worker():
 
             self.command = 'exit'
 
-            # The saved/plotted result is the cycle-averaged trace.
-            if completed_cycles > 0:
-                data = data_avg / completed_cycles
-            else:
-                data = data_avg
+            # `data` already holds the cumulative (tau-averaged) result returned
+            # by the digitizer over every cycle/scan/shot — it is the final
+            # answer as-is (this is the bug fix: no software division/re-average).
 
             if self.command == 'exit':
                 tb = round( pb.digitizer_window(), 1)
@@ -4937,9 +5026,21 @@ class Worker():
                                 mode = 'w'
                         )
 
-                    # Optionally save every cycle's raw trace alongside the average.
+                    # Optionally save every cycle's own trace alongside the
+                    # average. The digitizer only ever hands back the cumulative
+                    # mean, so each individual cycle is recovered by differencing
+                    # consecutive cumulative snapshots: with M_c = mean over
+                    # cycles 0..c (cycle_snapshots[c]), the isolated trace is
+                    # cycle_c = (c+1)*M_c - c*M_{c-1} (cycle 0 = M_0). Exact while
+                    # every cycle carries the same shot count, which holds for all
+                    # fully completed cycles.
                     if save_each:
-                        for idx, cdat in enumerate(cycle_data_list):
+                        for idx in range(len(cycle_snapshots)):
+                            Mc = cycle_snapshots[idx]
+                            if idx == 0:
+                                cdat = Mc
+                            else:
+                                cdat = (idx + 1) * Mc - idx * cycle_snapshots[idx - 1]
                             cpath = file_data.replace(".csv", f"_cycle{idx}.csv")
                             if iq_cor == 0:
                                 file_handler.save_data(cpath, cdat, header = header, mode = 'w')
@@ -6505,6 +6606,10 @@ def main():
     apply_app_style(app, app_id='Atomize.ITC.AWGPhasing')
     main = MainWindow()
     main.show()
+    # Optional preset path (e.g. from the Sequence Calculator's one-click open).
+    # argv[1] == 'test' is reserved for the script-side test mode, so skip it.
+    if len(sys.argv) > 1 and sys.argv[1] not in ('', 'test') and os.path.isfile(sys.argv[1]):
+        main.open_file(sys.argv[1])
     sys.exit(app.exec())
 
 if __name__ == '__main__':
