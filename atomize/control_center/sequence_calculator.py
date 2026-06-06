@@ -24,6 +24,26 @@ snap exactly as they would there. The short phase notation is expanded into an
 explicit per-step table, and the result is written as a ready-to-load
 ``.phase_awg`` / ``.phase`` preset.
 
+It also analyses the **coherence transfer pathways**: every pathway (electron
+coherence order -1/0/+1 per delay, detection -1) is enumerated and tested
+against the actual phase cycle, so you see which pathways are *kept* and which
+are *phased out*, where each surviving echo lands, and whether any artefact echo
+overlaps the detection window. The surviving pathways are drawn as a coherence-
+order-vs-time diagram (desired bright, artefacts faint). FIDs are tracked too: an
+FID is the pathway that becomes observable at a pulse and is not refocused, so it
+shows up as a pathway whose echo sits on that pulse (e.g. the Hahn pi-pulse FID,
+which a 2-step cycle removes). Method follows Stoll & Kasumaj, Appl. Magn. Reson.
+35, 15 (2008) and the DEER artefact analysis of Spindler/Prisner et al., Phys.
+Chem. Chem. Phys. 18, 17223 (2016).
+
+Caveat: this is a selection-rule / bookkeeping tool. It lists which pathways the
+phase cycle lets through, NOT their amplitudes. Phase-cycle selection depends
+only on the coherence-order change dp, so it is exact for real pulses; but
+whether a surviving pathway is actually excited, and how strongly, depends on
+pulse flip angle / bandwidth / resonator / offset and is NOT modelled here.
+Relaxation and nuclear coherences (ESEEM/HYSCORE modulation amplitudes) are out
+of scope; electron coherence orders are restricted to -1/0/+1 (S = 1/2).
+
 Pulse length / amplitude / frequency / increments are usually the same across a
 sequence, so they are kept out of the way: templates carry faithful values for
 them internally and the preset writer uses those; custom pulses fall back to
@@ -45,7 +65,7 @@ import tempfile
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QLabel, QDoubleSpinBox,
     QSpinBox, QComboBox, QPushButton, QHBoxLayout, QVBoxLayout, QGridLayout,
     QPlainTextEdit, QTextEdit, QScrollArea, QFrame, QSizePolicy)
-from PyQt6.QtGui import QFont
+from PyQt6.QtGui import QFont, QPainter, QColor, QPen
 from PyQt6.QtCore import Qt
 
 import atomize.general_modules.general_functions as general
@@ -148,6 +168,97 @@ def expand_phase_cycling(p_input, *pulse_args):
     return {"pulses": [to_str(p) for p in pulses_final], "receiver": to_str(receiver_indices)}
 
 
+# Electron-spin coherence orders during a delay (S = 1/2: no multiple quantum).
+COH_ORDERS = (-1, 0, 1)
+COH_SYM = {-1: '-', 0: '0', 1: '+'}
+
+
+def analyze_pathways(recv, pulse_phase_strs, positions, det_pos):
+    """Enumerate every coherence transfer pathway and decide which the phase
+    cycle keeps (Stoll & Kasumaj, Appl. Magn. Reson. 35, 15 (2008); Prisner et
+    al. PCCP 18, 17223 (2016) for the DEER artefact analysis).
+
+    A pathway is the list of electron coherence orders p during each delay,
+    starting from equilibrium (p = 0) and ending at the detected order -1, so an
+    n-pulse sequence has 3**(n-1) pathways. We reuse the project's own
+    ``expand_phase_cycling`` to get each pulse's phase and the receiver phase at
+    every cycle step, then keep a pathway iff its acquired phase
+    ``-sum(dp_i * phi_i)`` tracks the receiver across *all* steps (otherwise the
+    steps co-add to zero and it is suppressed). The desired pathway always
+    survives by construction; anything else that survives is an artefact the
+    cycle fails to remove.
+
+    For each surviving pathway we also place its echo: an isochromat refocuses
+    when ``sum_k p_k * dt_k`` over the whole sequence vanishes, i.e. at
+    ``t_last_pulse + sum_k p_k * tau_k`` (tau_k = on-grid delay k). Artefact
+    echoes landing on the detection position overlap the real signal.
+
+    An FID is just the pathway that becomes observable at one pulse and is not
+    refocused afterwards: ``p = 0`` until pulse j, then -1 to the end. Its echo
+    time equals pulse j's position (it peaks at the pulse and decays), so any
+    surviving pathway whose echo sits on a pulse is flagged ``FID from Pj``. We
+    also report, for every pulse, whether its FID is kept or phased out (e.g. the
+    Hahn 2-step cycle removes the pi-pulse FID).
+
+    Returns a dict: ``{total, steps, det_pos, survivors:[{p, dp, echo, desired,
+    fid, role}], suppressed, fids:[{pulse, echo, survives}]}`` where ``p`` is
+    p[1..n] (the per-delay orders, detection last).
+    """
+    import itertools
+    phase_list = ['+x', '+y', '-x', '-y']
+    pidx = {s: i for i, s in enumerate(phase_list)}
+    n = len(pulse_phase_strs)
+    res = expand_phase_cycling(recv, *pulse_phase_strs)
+    steps = len(res["receiver"])
+    pulse_ix = [[pidx[res["pulses"][i][s]] for s in range(steps)] for i in range(n)]
+    rec_ix = [pidx[res["receiver"][s]] for s in range(steps)]
+
+    def survives(p):
+        dp = [p[i + 1] - p[i] for i in range(n)]
+        offs = {(-sum(dp[i] * pulse_ix[i][s] for i in range(n)) - rec_ix[s]) % 4
+                for s in range(steps)}
+        return len(offs) == 1
+
+    def echo_of(p):
+        return positions[-1] + sum(p[k] * (positions[k] - positions[k - 1])
+                                   for k in range(1, n))
+
+    def fid_pulse(echo):                     # echo sitting on a pulse -> that FID
+        for k in range(n):
+            if abs(echo - positions[k]) <= 1.6:
+                return k + 1
+        return None
+
+    survivors = []
+    suppressed = 0
+    for mids in itertools.product(COH_ORDERS, repeat=max(0, n - 1)):
+        p = [0] + list(mids) + [-1]          # p[0]=equilibrium ... p[n]=detection
+        if not survives(p):
+            suppressed += 1
+            continue
+        echo = echo_of(p)
+        desired = abs(echo - det_pos) <= 1.6
+        fid = fid_pulse(echo)
+        if desired:
+            role = "DETECTED (echo on window)"
+        elif fid is not None:
+            role = f"FID from P{fid}"
+        else:
+            role = f"artefact echo ({echo - det_pos:+.1f} off window)"
+        survivors.append({"p": p[1:], "dp": [p[i + 1] - p[i] for i in range(n)],
+                          "echo": echo, "desired": desired, "fid": fid, "role": role})
+    survivors.sort(key=lambda s: (not s["desired"], s["echo"]))
+
+    # FID bookkeeping for every pulse, kept or removed by the cycle
+    fids = []
+    for j in range(1, n + 1):
+        p = [0] + [0] * (j - 1) + [-1] * (n - j) + [-1]
+        fids.append({"pulse": j, "echo": positions[j - 1], "survives": survives(p)})
+
+    return {"total": 3 ** max(0, n - 1), "steps": steps, "det_pos": det_pos,
+            "survivors": survivors, "suppressed": suppressed, "fids": fids}
+
+
 # --------------------------------------------------------------------------- #
 # Constants and sequence templates
 # --------------------------------------------------------------------------- #
@@ -228,6 +339,109 @@ PH_W = 84           # phase box width
 PH_H = 58           # phase box height (multiline)
 
 
+def _qc(css):
+    """gui_style colours are CSS strings ('rgb(r, g, b)') for stylesheets;
+    QPainter needs a real QColor, so parse them here ('#rgb'/names pass through)."""
+    nums = re.findall(r'\d+', css)
+    if css.strip().lower().startswith('rgb') and len(nums) >= 3:
+        return QColor(int(nums[0]), int(nums[1]), int(nums[2]))
+    return QColor(css)
+
+
+class CoherenceDiagram(QWidget):
+    """Coherence-order vs time plot of the surviving coherence transfer pathways.
+
+    y axis = electron coherence order (+1 / 0 / -1); x axis = the real sequence
+    timeline (pulses as dashed verticals at their absolute positions, detection
+    as a filled dot at p = -1). Each surviving pathway is drawn as a step line;
+    the desired one(s) — whose echo lands on the detection position — are bright
+    (ACCENT), unsuppressed artefacts are translucent. Suppressed pathways are not
+    drawn (there can be many); the text report below counts them.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.setFixedHeight(160)
+        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        self._paths, self._pos, self._det, self._n = [], [], 0.0, 0
+
+    def set_data(self, survivors, positions, det_pos, n):
+        self._paths = survivors
+        self._pos = list(positions)
+        self._det = float(det_pos)
+        self._n = int(n)
+        self.update()
+
+    def paintEvent(self, _evt):
+        qp = QPainter(self)
+        qp.setRenderHint(QPainter.RenderHint.Antialiasing)
+        W, H = self.width(), self.height()
+        c_bg, c_fg, c_accent, c_border = _qc(BG), _qc(FG), _qc(ACCENT), _qc(BORDER)
+        qp.fillRect(0, 0, W, H, c_bg)
+        L, R, T, B = 38, 16, 22, 26          # margins (left has room for y labels)
+        if self._n < 1 or not self._pos:
+            return
+        xmax = max(self._det, self._pos[-1], 1.0)
+        pw, ph = W - L - R, H - T - B
+
+        def X(t):
+            return L + (t / xmax) * pw
+
+        def Y(p):
+            return T + ((1 - p) / 2.0) * ph   # +1 -> top, 0 -> middle, -1 -> bottom
+
+        # coherence-level gridlines + labels
+        qp.setFont(QFont("Monospace", 8))
+        for p in (1, 0, -1):
+            y = int(Y(p))
+            qp.setPen(QPen(c_border, 1, Qt.PenStyle.DotLine))
+            qp.drawLine(L, y, W - R, y)
+            qp.setPen(QPen(c_fg))
+            qp.drawText(4, y + 4, f"{p:+d}" if p else " 0")
+
+        # pulse verticals + labels, and the detection marker
+        for i in range(self._n):
+            x = int(X(self._pos[i]))
+            qp.setPen(QPen(c_fg, 1, Qt.PenStyle.DashLine))
+            qp.drawLine(x, T, x, T + ph)
+            qp.setPen(QPen(c_fg))
+            qp.drawText(x - 8, T - 6, f"P{i + 1}")
+        xd = int(X(self._det))
+        qp.setPen(QPen(c_accent, 1, Qt.PenStyle.DashLine))
+        qp.drawLine(xd, T, xd, T + ph)
+        qp.setPen(QPen(c_accent))
+        qp.drawText(xd - 10, T - 6, "DET")
+
+        # pathways: artefacts first (translucent), desired on top (bright).
+        # A small per-pathway vertical jitter keeps overlapping levels legible.
+        artefact = QColor(c_fg); artefact.setAlpha(135)
+        ordered = sorted(self._paths, key=lambda s: s["desired"])
+        arts = [s for s in ordered if not s["desired"]]
+        for path in ordered:
+            p = path["p"]                     # p[1..n], detection (-1) last
+            # nudge each artefact a few px off its level so co-running pathways
+            # at the same coherence order don't collapse onto one line
+            j = 0.0 if path["desired"] else (arts.index(path) - (len(arts) - 1) / 2.0) * 3.0
+            yj = lambda v: Y(v) + j
+            pts = [(X(self._pos[0]), yj(0))]  # equilibrium at the first pulse
+            for k in range(1, self._n):       # delay k between pulse k and k+1
+                pts.append((X(self._pos[k - 1]), yj(p[k - 1])))
+                pts.append((X(self._pos[k]), yj(p[k - 1])))
+            pts.append((X(self._pos[self._n - 1]), yj(-1)))  # jump at last pulse
+            pts.append((X(self._det), yj(-1)))               # to detection
+            if path["desired"]:
+                qp.setPen(QPen(c_accent, 2.4))
+            else:
+                qp.setPen(QPen(artefact, 1.4))
+            for a, b in zip(pts[:-1], pts[1:]):
+                qp.drawLine(int(a[0]), int(a[1]), int(b[0]), int(b[1]))
+
+        qp.setBrush(c_accent)
+        qp.setPen(QPen(c_accent))
+        qp.drawEllipse(xd - 4, int(Y(-1)) - 4, 8, 8)
+        qp.end()
+
+
 class MainWindow(QMainWindow):
     """The calculator window."""
 
@@ -264,6 +478,29 @@ class MainWindow(QMainWindow):
         sp.setFixedSize(TAU_W, ROW_H)
         sp.valueChanged.connect(self.recompute)
         return sp
+
+    def make_tau_stack(self, i):
+        """A τ cell mirroring the detection style: a link chooser stacked over
+        the free-value spinbox. τ{i+1} may link to any earlier τ (= τ1…= τi) or
+        be 'free'. τ1 (i == 0) is always free, so its chooser is disabled."""
+        combo = QComboBox()
+        combo.setStyleSheet(COMBO_STYLE)
+        combo.setFixedSize(TAU_W, ROW_H)
+        for j in range(i):
+            combo.addItem(f"= τ{j + 1}")
+        combo.addItem("free")
+        combo.setCurrentText("free")
+        if i == 0:
+            combo.setEnabled(False)
+        combo.currentIndexChanged.connect(self._on_tau_combo)
+        sp = self.make_tau(0.0)
+        stack = QWidget()
+        v = QVBoxLayout(stack)
+        v.setContentsMargins(0, 0, 0, 0)
+        v.setSpacing(2)
+        v.addWidget(combo)
+        v.addWidget(sp)
+        return combo, sp, stack
 
     def make_phase(self, text="+x", w=PH_W, h=PH_H):
         te = QTextEdit(text)
@@ -330,7 +567,14 @@ class MainWindow(QMainWindow):
         # ones. There is no pulse-name label anywhere: a phase box IS a pulse,
         # a tau spinbox IS the gap to the next one.
         self.phase = [self.make_phase("+x") for _ in range(MAX_PULSES)]
-        self.tau = [self.make_tau(0.0) for _ in range(MAX_PULSES - 1)]
+        # Each gap τ{i+1} is a stack: a link chooser over a free spinbox. A
+        # linked τ mirrors (and locks to) the τ it points at; τ1 is always free.
+        self.tau, self.tau_combo, self.tau_stack = [], [], []
+        for i in range(MAX_PULSES - 1):
+            combo, sp, stack = self.make_tau_stack(i)
+            self.tau_combo.append(combo)
+            self.tau.append(sp)
+            self.tau_stack.append(stack)
 
         self.det_combo = QComboBox()
         self.det_combo.setStyleSheet(COMBO_STYLE)
@@ -349,7 +593,7 @@ class MainWindow(QMainWindow):
                                  "notation (e.g. +x,-x).")
         self._seq_labels = []          # transient header/separator widgets
 
-        seq_box = QWidget()
+        seq_box = self.seq_box = QWidget()
         # Fixed-height pulse strip. Rows: free-above (0), header (1), boxes (2),
         # free-below (3). The free rows are sized so the BOX row sits at the
         # vertical centre of the strip — the full-height divider then lines up
@@ -371,6 +615,16 @@ class MainWindow(QMainWindow):
         outer.addWidget(seq_box)
         outer.addSpacing(10)
 
+        # --- coherence transfer pathway diagram ---
+        coh_lbl = QLabel("Coherence transfer pathways — bright = detected, faint = "
+                         "surviving artefact")
+        coh_lbl.setStyleSheet(f"color: {ACCENT}; font-weight: bold; font-size: 15px;")
+        outer.addWidget(coh_lbl)
+        self.coh_diagram = CoherenceDiagram()
+        # Left-aligned so its width can be pinned to the pulse-strip content width.
+        outer.addWidget(self.coh_diagram, alignment=Qt.AlignmentFlag.AlignLeft)
+        outer.addSpacing(10)
+
         # --- results panel ---
         self.results = QPlainTextEdit()
         self.results.setReadOnly(True)
@@ -380,7 +634,7 @@ class MainWindow(QMainWindow):
         self.results.setStyleSheet(
             f"QPlainTextEdit {{ color: {FG}; "
             f"selection-background-color: {ACCENT}; selection-color: {BG}; }}" + SCROLLS)
-        self.results.setMinimumHeight(260)
+        self.results.setMinimumHeight(160)
         outer.addWidget(self.results)
 
         # --- action buttons (pinned below the scroll area, always visible) ---
@@ -400,14 +654,15 @@ class MainWindow(QMainWindow):
             btns.addWidget(b)
         btns.addStretch(1)
 
-        # The content above scrolls both ways (vertically when the window is
-        # short, horizontally when a long sequence runs past the right edge);
-        # the action buttons sit outside the scroll area so they never vanish.
+        # The content area scrolls horizontally when a long sequence runs past
+        # the right edge; vertically it does NOT scroll — the results panel below
+        # is the single vertical scroller, so we never show two stacked vertical
+        # bars. The action buttons sit outside the scroll area so they never vanish.
         main_scroll = QScrollArea()
         main_scroll.setWidget(central)
         main_scroll.setWidgetResizable(True)
         main_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        main_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        main_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         # Pure selector-based sheet (no leading bare property — that stops Qt
         # applying the QScrollBar rules); the QScrollArea rule keeps it transparent.
         main_scroll.setStyleSheet(SCROLLS)
@@ -420,7 +675,8 @@ class MainWindow(QMainWindow):
         cvbox.addWidget(main_scroll)        # takes all the stretch
         cvbox.addWidget(btns_widget)        # pinned at the bottom
         self.setCentralWidget(container)
-        self.resize(1000, 640)
+        self.setMinimumHeight(680)
+        self.resize(1000, 700)
         self.rebuild_det_combo()
         self.rebuild_sequence()
 
@@ -458,7 +714,7 @@ class MainWindow(QMainWindow):
         """
         n = self.count.value()
         # detach persistent widgets and delete the previous transient labels
-        for w in self.phase + self.tau + [self.det_stack, self.det_recv]:
+        for w in self.phase + self.tau_stack + [self.det_stack, self.det_recv]:
             self.seq_grid.removeWidget(w)
             w.setParent(None)
             w.setVisible(False)
@@ -475,7 +731,7 @@ class MainWindow(QMainWindow):
         for i in range(n - 1):
             col += 1
             self.seq_grid.addWidget(self._seq_hdr(f"τ{i + 1}"), HDR, col)
-            self.seq_grid.addWidget(self.tau[i], BOX, col, Qt.AlignmentFlag.AlignVCenter)
+            self.seq_grid.addWidget(self.tau_stack[i], BOX, col, Qt.AlignmentFlag.AlignVCenter)
             col += 1
             self.seq_grid.addWidget(self._seq_hdr(f"P{i + 2}"), HDR, col)
             self.seq_grid.addWidget(self.phase[i + 1], BOX, col)
@@ -494,9 +750,16 @@ class MainWindow(QMainWindow):
         self.seq_grid.addWidget(self.det_stack, BOX, dc, Qt.AlignmentFlag.AlignVCenter)
         self.seq_grid.addWidget(self.det_recv, BOX, dc + 1)
 
-        for w in self.phase[:n] + self.tau[:max(0, n - 1)] + [self.det_stack, self.det_recv]:
+        for w in self.phase[:n] + self.tau_stack[:max(0, n - 1)] + [self.det_stack, self.det_recv]:
             w.setVisible(True)
+        self._sync_diagram_width()
         self.recompute()
+
+    def _sync_diagram_width(self):
+        """Pin the coherence diagram to the same content width as the pulse
+        strip, so the two line up and it doesn't stretch across the window."""
+        if hasattr(self, 'coh_diagram') and hasattr(self, 'seq_box'):
+            self.coh_diagram.setFixedWidth(max(self.seq_box.sizeHint().width(), 360))
 
     def on_count_changed(self):
         self.rebuild_det_combo()
@@ -504,6 +767,39 @@ class MainWindow(QMainWindow):
 
     def _on_det_combo(self):
         self.recompute()
+
+    def _on_tau_combo(self):
+        self.recompute()
+
+    def _linked_target(self, i):
+        """Gap index that τ{i+1} links to, or None when it is free."""
+        if i == 0:
+            return None
+        txt = self.tau_combo[i].currentText()
+        if txt == "free":
+            return None
+        return int(txt.split('τ')[1]) - 1        # "= τk" -> gap index k-1
+
+    def _tau_value(self, i):
+        """Effective value of gap i, following links back to a free τ.
+
+        Links only point to earlier gaps (j < i), so this always terminates.
+        """
+        j = self._linked_target(i)
+        if j is None:
+            return self.tau[i].value()
+        return self._tau_value(j)
+
+    def _sync_tau_free(self):
+        """Lock and mirror each linked τ's spinbox to the τ it points at, so it
+        always shows the value actually used; free τ stay editable."""
+        for i in range(MAX_PULSES - 1):
+            linked = self._linked_target(i) is not None
+            self.tau[i].setReadOnly(linked)
+            if linked:
+                self.tau[i].blockSignals(True)
+                self.tau[i].setValue(self._tau_value(i))
+                self.tau[i].blockSignals(False)
 
     def _sync_det_free(self):
         """If a τ is chosen for detection, mirror that τ's value into the free
@@ -516,7 +812,7 @@ class MainWindow(QMainWindow):
         self.det_free.setReadOnly(not is_free)
         if not is_free:
             self.det_free.blockSignals(True)
-            self.det_free.setValue(self.tau[idx].value())
+            self.det_free.setValue(self._tau_value(idx))
             self.det_free.blockSignals(False)
 
     def _det_tau(self):
@@ -526,7 +822,7 @@ class MainWindow(QMainWindow):
         idx = self.det_combo.currentIndex()
         if self.det_combo.currentText() == "free" or idx >= ntau:
             return self.det_free.value()
-        return self.tau[idx].value()
+        return self._tau_value(idx)
 
     def compute_positions(self):
         """Cumulative-tau positions: pulse 0 at 0, each += its tau; det += det tau.
@@ -536,13 +832,14 @@ class MainWindow(QMainWindow):
         n = self.count.value()
         pos = [0.0]
         for i in range(n - 1):
-            pos.append(self.r32(pos[-1] + self.tau[i].value()))
+            pos.append(self.r32(pos[-1] + self._tau_value(i)))
         det = self.r32(pos[-1] + self._det_tau())
         return pos, det
 
     def recompute(self):
         if self._building:
             return
+        self._sync_tau_free()      # keep linked τ spinboxes mirrored + locked
         self._sync_det_free()      # keep the locked detection spinbox in sync
         n = self.count.value()
         pos, det = self.compute_positions()
@@ -573,6 +870,35 @@ class MainWindow(QMainWindow):
         except Exception as e:
             lines.append(f"Phase cycle: could not expand ({e})")
 
+        # --- coherence transfer pathways: what the cycle keeps / phases out ---
+        try:
+            an = analyze_pathways(recv, phases, pos, det)
+            self.coh_diagram.set_data(an["survivors"], pos, det, n)
+            kept = len(an["survivors"])
+            lines.append("")
+            lines.append(f"Coherence transfer pathways  (electron p in -1,0,+1; "
+                         f"detection -1)")
+            lines.append(f"  {an['total']} pathways, {an['steps']}-step cycle  ->  "
+                         f"{kept} survive, {an['suppressed']} phased out")
+            lines.append(f"  pathway (per delay, detection last) | echo @ ns | role")
+            lines.append("  " + "-" * 52)
+            for s in an["survivors"]:
+                notation = "".join(COH_SYM[x] for x in s["p"])
+                lines.append(f"  {notation:<12} | {s['echo']:>8.1f} | {s['role']}")
+            lines.append("")
+            lines.append("  FIDs (decay from each pulse; ideally only the echo is kept):")
+            for f in an["fids"]:
+                state = "kept" if f["survives"] else "phased out"
+                lines.append(f"    P{f['pulse']} FID @ {f['echo']:>8.1f} ns  ->  {state}")
+            lines.append("")
+            lines.append("  Note: lists the pathways the phase cycle lets through, not their")
+            lines.append("  amplitudes. Whether each is actually excited (and how strongly)")
+            lines.append("  depends on pulse flip angle / bandwidth / offset, which is NOT")
+            lines.append("  modelled here; no relaxation; electron coherence only (S = 1/2).")
+        except Exception as e:
+            self.coh_diagram.set_data([], pos, det, n)
+            lines.append(f"\nCoherence pathways: could not analyze ({e})")
+
         self.results.setPlainText("\n".join(lines))
 
     # --------------------------- templates -------------------------------- #
@@ -586,6 +912,8 @@ class MainWindow(QMainWindow):
         pulses = tpl["pulses"]
         n = len(pulses)
         self.count.setValue(n)
+        for c in self.tau_combo:          # templates are explicit: clear links
+            c.setCurrentText("free")
         for i, p in enumerate(pulses):
             self.phase[i].setPlainText(p["ph"])
             self.adv[i] = {"len": p["len"], "type": p["type"], "fr": p["fr"], "sw": p["sw"],
@@ -783,7 +1111,22 @@ def _self_test():
     assert res["pulses"] == [['+x', '-x'], ['+x', '+x']], res["pulses"]
     assert res["receiver"] == ['+x', '-x'], res["receiver"]
 
-    print("print SELF-TEST PASSED: cumulative-tau grid + phase expansion OK")
+    # Coherence transfer pathways. Hahn: 3 pathways, 2 survive the 2-step cycle,
+    # only 0->+1->-1 refocuses on the detection window (the other lands at t=0).
+    h = analyze_pathways('-1,2', ['(x)', 'x'], [0.0, 288.0], 576.0)
+    assert h["total"] == 3 and len(h["survivors"]) == 2, h
+    des = [s for s in h["survivors"] if s["desired"]]
+    assert len(des) == 1 and des[0]["p"] == [1, -1] and des[0]["echo"] == 576.0, des
+
+    # 4p-DEER: 27 pathways, 6 survive the 8-step cycle, desired echo "-++-" on the
+    # window; the other five are the artefact echoes the DEER paper discusses.
+    d = analyze_pathways('1,-2,0,2', ['(x)', 'x', '[x]', 'x'],
+                         [0.0, 208.0, 320.0, 1936.0], 3456.0)
+    assert d["total"] == 27 and len(d["survivors"]) == 6, d
+    des = [s for s in d["survivors"] if s["desired"]]
+    assert len(des) == 1 and des[0]["p"] == [-1, 1, 1, -1], des
+
+    print("print SELF-TEST PASSED: cumulative-tau grid + phase expansion + pathways OK")
 
 
 def main():
