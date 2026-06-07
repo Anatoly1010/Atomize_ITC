@@ -50,9 +50,12 @@ them internally and the preset writer uses those; custom pulses fall back to
 defaults. Tweak them afterwards in the AWG/RECT tool if needed.
 
 One-click "Open in AWG / RECT": writes the preset and (a) if that tool's window
-is already open, it reloads in place via a temp signal file polled by the tool;
-(b) if it is closed, prints an ``open_awg``/``open_rect`` sentinel that the main
-window turns into a launch. No hardware is touched here.
+is already open, it pushes in place via a temp signal file polled by the tool —
+the tool applies ONLY the pulse layout (positions, phases, pulse count), leaving
+every tuned acquisition parameter (field, rep rate, detection window, scans,
+sweep type, amplitudes, ...) untouched; (b) if it is closed, prints an
+``open_awg``/``open_rect`` sentinel that the main window turns into a launch
+(which loads the preset in full as a fresh starting point). No hardware here.
 """
 
 import os
@@ -529,6 +532,15 @@ class MainWindow(QMainWindow):
             lbl.setFixedWidth(w)
         return lbl
 
+    def _hsep(self):
+        """Horizontal divider between sections (same style as the pulse-profile
+        plot/controls separator)."""
+        line = QFrame()
+        line.setFrameShape(QFrame.Shape.HLine)
+        line.setFrameShadow(QFrame.Shadow.Plain)
+        line.setStyleSheet(f'color: {BORDER};')
+        return line
+
     # ------------------------------- UI ----------------------------------- #
     def build_ui(self):
         central = QWidget()
@@ -608,12 +620,16 @@ class MainWindow(QMainWindow):
         self.seq_grid.setRowMinimumHeight(0, FREE_ABOVE)
         self.seq_grid.setRowMinimumHeight(3, FREE_BELOW)
 
-        outer.addSpacing(14)
+        outer.addSpacing(8)
+        outer.addWidget(self._hsep())          # presets | pulses
+        outer.addSpacing(8)
         seq_lbl = QLabel("Pulse sequence — phase boxes are pulses, τ the gaps, detection last")
         seq_lbl.setStyleSheet(f"color: {ACCENT}; font-weight: bold; font-size: 15px;")
         outer.addWidget(seq_lbl)
         outer.addWidget(seq_box)
-        outer.addSpacing(10)
+        outer.addSpacing(8)
+        outer.addWidget(self._hsep())          # pulses | coherence pathways
+        outer.addSpacing(8)
 
         # --- coherence transfer pathway diagram ---
         coh_lbl = QLabel("Coherence transfer pathways — bright = detected, faint = "
@@ -623,7 +639,9 @@ class MainWindow(QMainWindow):
         self.coh_diagram = CoherenceDiagram()
         # Left-aligned so its width can be pinned to the pulse-strip content width.
         outer.addWidget(self.coh_diagram, alignment=Qt.AlignmentFlag.AlignLeft)
-        outer.addSpacing(10)
+        outer.addSpacing(8)
+        outer.addWidget(self._hsep())          # coherence pathways | main text
+        outer.addSpacing(8)
 
         # --- results panel ---
         self.results = QPlainTextEdit()
