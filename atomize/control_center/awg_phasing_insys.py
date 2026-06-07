@@ -105,7 +105,10 @@ class MainWindow(QMainWindow):
             return
         self._seqcalc_nonce = nonce
         if channel == SEQCALC_CHANNEL and os.path.isfile(path):
-            self.open_file(path)
+            # This window is already open and likely tuned (field, rep rate,
+            # window, decimation, scans, sweep, amplitudes...). Apply ONLY the
+            # pulse layout from the calculator; never touch those parameters.
+            self.apply_seqcalc_pulses(path)
 
     def closeEvent(self, event):
         event.ignore()
@@ -2513,6 +2516,47 @@ class MainWindow(QMainWindow):
         # (without it) fall back to 0 so they still load.
         if d_start2 is not None:
             d_start2.setValue( float( array[10] ) if len( array ) > 10 else 0.0 )
+
+    def apply_seqcalc_pulses(self, filename):
+        """Apply ONLY the pulse layout from a Sequence-Calculator preset.
+
+        Unlike ``open_file`` (which restores a whole experiment), this leaves
+        every tuned acquisition parameter alone — field, rep rate, detection
+        window, decimation, scans, sweep type, amplitudes, IQ correction, etc.
+        It is what the calculator's "Open in AWG" pushes into an already-open,
+        already-tuned window, so a delay/phase tweak never clobbers the setup.
+
+        Per pulse it sets the start position and the phase. P1 is the detection
+        pulse: its start is the detection position and its phase is the receiver.
+        The number of pulses follows the preset (a pulse is "used" when its
+        length field is non-zero). Lengths, types, amplitudes, frequencies and
+        increments the operator already tuned are preserved; we assign them only
+        for a pulse the preset newly switches on (currently length 0), and we
+        switch a pulse off (length 0) when the new sequence no longer uses it.
+        """
+        self.opened = 1
+        lines = open(filename).read().split('\n')
+        for i in range(1, 10):
+            try:
+                array = lines[i - 1].split(':  ')[1].split(',  ')
+            except IndexError:
+                continue
+            preset_len = float( array[2] )
+            used = (i == 1) or (preset_len != 0.0)
+            st_box = getattr(self, f'P{i}_st')
+            len_box = getattr(self, f'P{i}_len')
+            if used:
+                st_box.setValue( float( array[1] ) )
+                getattr(self, f'Phase_{i}').setPlainText( str( array[7][1:-1] ) )
+                if len_box.value() == 0.0:          # pulse newly switched on
+                    getattr(self, f'P{i}_type').setCurrentText( array[0] )
+                    len_box.setValue( preset_len )
+            else:
+                len_box.setValue( 0.0 )             # drop a now-unused pulse
+        self.dig_stop()
+        self.fft = 0
+        self.quad = 0
+        self.opened = 0
 
     def save_file(self, filename):
         """
