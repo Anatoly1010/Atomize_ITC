@@ -5701,7 +5701,10 @@ class Insys_FPGA:
                     
                     norm_factor = 2 * np.tanh(b * x_mean)
                     phase_arg = (bw / b) * np.log(np.cosh(b * dx)) / norm_factor
-                    total_phase = 2 * np.pi * phase_arg + pulse_phase_np[index] + ph_cor
+                    # carrier offset: centre the sweep on (f_start+f_end)/2 like WURST
+                    center_freq = (pulse_frequency[index][0] + pulse_frequency[index][1]) / 2
+                    phase_carrier = 2 * np.pi * center_freq / self.sample_rate_awg * xs
+                    total_phase = 2 * np.pi * phase_arg + phase_carrier + pulse_phase_np[index] + ph_cor
                     
                     y1 = (norm_c * self.amplitude_0_awg / pulse_amp[index]) * envelope * np.sin(total_phase)
                     y2 = (norm_c * self.amplitude_1_awg / pulse_amp[index]) * envelope * np.sin(total_phase + self.phase_shift_ch1_seq_mode_awg)
