@@ -294,7 +294,7 @@ class MainWindow(QMainWindow):
         self.tabs.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
         # Floor the tab strip at its full width so all tabs stay visible without
         # the scroll arrows (the 6 tabs need ~465 px); the graph takes the rest.
-        self.tabs.setMinimumWidth(475)
+        self.tabs.setMinimumWidth(525)
         panel.addWidget(self.tabs, stretch=1)
 
         panel.addWidget(self._hline())
@@ -934,6 +934,10 @@ class MainWindow(QMainWindow):
 
     # ------------------------------------------------------------- loading
     def _register_datasets(self, mapping):
+        # Opening new data resets the workflow: turn off live update so the freshly
+        # loaded raw trace is shown as-is, not immediately reprocessed by whatever
+        # tab/parameters were left over from the previous dataset.
+        self.live_check.setChecked(False)
         self.datasets = dict(mapping)
         self._refresh_combos(select_i=next(iter(mapping), None),
                              select_q=(list(mapping)[1] if len(mapping) > 1 else None))
@@ -1447,6 +1451,22 @@ class MainWindow(QMainWindow):
         self.fft_skip.setValue(int(k))
         self.set_status(f'Echo centre at point {k} (skip set).')
 
+    @staticmethod
+    def _fft_freq_scale(dt, xname):
+        """Sample step + frequency unit for an FFT, from the X-axis unit parsed
+        out of `xname` (mirrors the 2D tool's _freq_axis): ns/µs/ms → MHz, s → Hz,
+        unknown/none → raw 1/(X units). Returns (step_for_fftfreq, freq_unit)."""
+        unit = _split_unit(xname)[1].strip().lower()
+        if unit == 'ns':
+            return dt*1e-3, 'MHz'          # dt in ns -> µs, so 1/d is MHz
+        if unit in ('us', 'µs', 'μs'):
+            return dt, 'MHz'
+        if unit == 'ms':
+            return dt*1e3, 'MHz'           # dt in ms -> µs
+        if unit == 's':
+            return dt, 'Hz'
+        return dt, ''                      # unknown unit: keep raw 1/(X units)
+
     def do_fft(self):
         x, i = self.i_xy()
         if x is None or len(x) < 2:
@@ -1483,7 +1503,13 @@ class MainWindow(QMainWindow):
         zf = self.fft_zerofill.currentText()
         n = self._zerofill_n(len(signal), zf)
         sp = np.fft.fft(signal, n)
-        freq = np.fft.fftfreq(n, dt)
+        # Frequency axis in physical units derived from the X (time) unit, so the
+        # spectrum is the same whether the trace arrived in 's' (from a plot, where
+        # dt≈2e-9) or in 'ns' (from a file, where dt≈2): s→Hz, ns/µs/ms→MHz. Using
+        # the raw 1/dt instead leaves the two sources off by 1e9 (see the 2D tool's
+        # _freq_axis, the same convention).
+        d, funit = self._fft_freq_scale(dt, self._xname())
+        freq = np.fft.fftfreq(n, d)
         order = np.argsort(freq)
         freq = freq[order]
         sp = sp[order]
@@ -1496,15 +1522,16 @@ class MainWindow(QMainWindow):
 
         mode = self.fft_mode.currentText()
         channels = self._spectrum_channels(sp, mode)
+        fxname = f'Frequency ({funit})' if funit else 'Frequency'
         meta = [f'FFT ({"complex I+iQ" if pair else "real"}), output: {mode}',
-                'frequency in 1/(X units)',
+                f'frequency in {funit}' if funit else 'frequency in 1/(X units)',
                 f'skip {skip} leading pts (echo centre)' if skip else 'no leading skip',
                 f'window: {win}' + (f' (param={wparam:.4g})'
                                     if win in self.WINDOW_PARAM else ''),
                 f'points: {len(signal)} -> {n} (zero fill: {zf})',
                 f'passband: {ftype}' + ('' if ftype == 'None' else
                     f' (lo={self.fft_cut_lo.value():.4g}, hi={self.fft_cut_hi.value():.4g} x f_max)')]
-        self._set_result(freq, channels, meta, show_source=False, xname='Frequency')
+        self._set_result(freq, channels, meta, show_source=False, xname=fxname)
         self.set_status(f'FFT ({mode}); window {win}; passband {ftype}; '
                         f'{len(signal)}→{n} pts.')
 

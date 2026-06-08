@@ -3823,9 +3823,12 @@ class Worker():
                     # Live count_nip readout: send the per-nid packet-count array
                     # so the GUI can show acquisition progress dynamically. Sent
                     # as its own message type so the parent updates only this line
-                    # and leaves the rest of the log intact.
+                    # and leaves the rest of the log intact. An all-zero array
+                    # carries no information (often the case intentionally), so
+                    # skip it rather than cluttering the log.
                     try:
-                        conn.send( ('Count', np.array2string(pb.count_nip, max_line_width = np.inf, threshold = np.inf)) )
+                        if pb.count_nip is not None and np.any(pb.count_nip):
+                            conn.send( ('Count', np.array2string(pb.count_nip, max_line_width = np.inf, threshold = np.inf)) )
                     except Exception:
                         pass
                 if PHASES != 1:

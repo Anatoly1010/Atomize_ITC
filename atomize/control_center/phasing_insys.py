@@ -11,7 +11,7 @@ import traceback
 import numpy as np
 from multiprocessing import Process, Pipe
 from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QLabel, QDoubleSpinBox, QSpinBox, QComboBox, QPushButton, QTextEdit, QGridLayout, QFrame, QCheckBox, QFileDialog, QVBoxLayout, QTabWidget, QScrollArea, QHBoxLayout, QPlainTextEdit, QProgressBar,  QTreeView, QHeaderView, QSizeGrip, QLineEdit, QFileIconProvider
-from PyQt6.QtGui import QIcon, QColor, QAction
+from PyQt6.QtGui import QIcon, QColor, QAction, QTextCursor
 from PyQt6.QtCore import Qt, QTimer
 import atomize.general_modules.general_functions as general
 import atomize.general_modules.csv_opener_saver as openfile
@@ -2497,6 +2497,8 @@ class MainWindow(QMainWindow):
             self.button_blue()    
         elif msg_type == 'Average':
             self.Acq_number.setValue(int(data))
+        elif msg_type == 'Count':
+            self.update_count_nip(data)
         else:
             self.timer.stop()
             if ( data.startswith('Exp') ) and (msg_type == 'test'):
@@ -2511,6 +2513,23 @@ class MainWindow(QMainWindow):
                     pass
                 else:
                     self.is_experiment = False
+
+    def update_count_nip(self, text):
+        """
+        Show the live count_nip array in the errors log, refreshing only that
+        line. If the last line is already a count_nip readout it is replaced in
+        place; otherwise a new one is appended. Any other messages already in the
+        log are left untouched.
+        """
+        marker = 'count_nip: '
+        line = marker + text
+        cursor = self.errors.textCursor()
+        cursor.movePosition(QTextCursor.MoveOperation.End)
+        cursor.select(QTextCursor.SelectionType.LineUnderCursor)
+        if cursor.selectedText().startswith(marker):
+            cursor.insertText(line)
+        else:
+            self.errors.appendPlainText(line)
 
     def check_messages(self):
         if not hasattr(self, 'last_error'):
@@ -2999,6 +3018,17 @@ class Worker():
 
                 if not script_test:
                     self.command = 'start'
+                    # Live count_nip readout: send the per-nid packet-count array
+                    # so the GUI can show acquisition progress dynamically. Sent
+                    # as its own message type so the parent updates only this line
+                    # and leaves the rest of the log intact. An all-zero array
+                    # carries no information (often the case intentionally), so
+                    # skip it rather than cluttering the log.
+                    try:
+                        if pb.count_nip is not None and np.any(pb.count_nip):
+                            conn.send( ('Count', np.array2string(pb.count_nip, max_line_width = np.inf, threshold = np.inf)) )
+                    except Exception:
+                        pass
 
                 if PHASES != 1:
                     pb.pulser_pulse_reset()

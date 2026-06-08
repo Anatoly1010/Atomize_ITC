@@ -687,6 +687,7 @@ class MainWindow(QMainWindow):
             # auto-fill X/Y step + unit from the acquisition header when present;
             # files without it keep the current axis fields (see _parse_axis_header).
             parsed = self._apply_header_axes(dx, xu, dy, yu)
+            self.live_check.setChecked(False)   # new data: don't auto-reprocess
             self.reset_to_raw()
             msg = (f'Loaded I={os.path.basename(path)}, Q={qmsg} '
                    f'(matrix {i.shape[0]}×{i.shape[1]} [traces × points]).')
@@ -801,6 +802,7 @@ class MainWindow(QMainWindow):
         for s, v in spins:
             s.blockSignals(True); s.setValue(float(v)); s.blockSignals(False)
         self.raw_i, self.raw_q = i, q
+        self.live_check.setChecked(False)   # new data: don't auto-reprocess
         self.reset_to_raw()
         self.set_status(f'Loaded {os.path.basename(path)} — {res["format"]}, '
                         f'{i.shape[0]}×{i.shape[1]} [traces × points], '
@@ -850,6 +852,7 @@ class MainWindow(QMainWindow):
             for s, v in spins:
                 s.blockSignals(True); s.setValue(float(v)); s.blockSignals(False)
             self.raw_i, self.raw_q = i, q
+            self.live_check.setChecked(False)   # new data: don't auto-reprocess
             self.reset_to_raw()
             msg = (f'Loaded 2D plot from buffer '
                    f'({i.shape[0]}×{i.shape[1]} [traces × points]).')

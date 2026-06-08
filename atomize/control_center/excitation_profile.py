@@ -250,7 +250,7 @@ class MainWindow(QMainWindow):
         panel = QScrollArea()
         panel.setWidgetResizable(True)
         panel.setStyleSheet(SCROLL_STYLE)
-        panel.setFixedWidth(310)
+        panel.setFixedWidth(350)
 
         inner = QWidget()
         panel.setWidget(inner)
