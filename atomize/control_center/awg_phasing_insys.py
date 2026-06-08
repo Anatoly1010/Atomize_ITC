@@ -1426,7 +1426,7 @@ class MainWindow(QMainWindow):
         self.tab_pulse.tabBar().setTabTextColor(4, QColor(193, 202, 227))
 
         # ---- Labels & Inputs ----
-        labels = [("Amplitude I", "label_a1"), ("Amplitude Q", "label_a2"), ("Phase", "label_a3"), ("N [wurst; sech/tanh]", "label_a4"), ("b [sech/tanh]", "label_a5"), ("Resonator Profile", "label_a6")]
+        labels = [("Amplitude I", "label_a1"), ("Amplitude Q", "label_a2"), ("Phase", "label_a3"), ("N [wurst; sech/tanh]", "label_a4"), ("b [sech/tanh]", "label_a5"), ("Resonator Profile", "label_a6"), ("Correction Model", "label_a7"), ('Resonator f<sub style="font-size: 12pt;">0</sub>', "label_a8"), ("Resonator Q", "label_a9")]
 
         for name, attr_name in labels:
             lbl = QLabel(name)
@@ -1439,7 +1439,9 @@ class MainWindow(QMainWindow):
                         (QSpinBox, "Ampl_2", "ch1_ampl", self.ch1_amp, 1, 260, 260, 1, 0, ""),
                         (QDoubleSpinBox, "Phase", "cur_phase", self.awg_phase, 0, 360, 90, 0.1, 2, " deg"),
                         (QSpinBox, "N_wurst", "n_wurst_cur", self.n_wurst, 1, 100, 10, 1, 0, ""),
-                        (QDoubleSpinBox, "B_sech", "b_sech_cur", self.b_sech_func, 0.005, 10, 0.02, 0.001, 3, " 1/ns")
+                        (QDoubleSpinBox, "B_sech", "b_sech_cur", self.b_sech_func, 0.005, 10, 0.02, 0.001, 3, " 1/ns"),
+                        (QDoubleSpinBox, "F0_res", "f0_cur", self.f0_func, 1000, 100000, 9700, 10, 1, " MHz"),
+                        (QDoubleSpinBox, "Q_res", "q_cur", self.q_func, 1, 100000, 88, 1, 1, "")
                         ]
 
         for widget_class, attr_name, par_name, func, v_min, v_max, cur_val, v_step, dec, suf in double_boxes:
@@ -1472,7 +1474,8 @@ class MainWindow(QMainWindow):
                     setattr(self, par_name, float(spin_box.value()))
 
         # ---- Combo box----
-        combo_laser = [("No", "Combo_cor", "", self.combo_cor_fun, ["No", "Only Pi/2", "All"])
+        combo_laser = [("No", "Combo_cor", "", self.combo_cor_fun, ["No", "Only Pi/2", "All"]),
+                       ("Measured", "Combo_model", "", self.combo_model_fun, ["Measured", "Ideal RLC", "Ideal RLC + phase"])
                       ]
 
         for cur_text, attr_name, par_name, func, item in combo_laser:
@@ -1492,6 +1495,7 @@ class MainWindow(QMainWindow):
                 """)
 
         self.combo_cor_fun()
+        self.combo_model_fun()
 
         # ---- Separators ----
         def hline():
@@ -1526,10 +1530,16 @@ class MainWindow(QMainWindow):
         right_grid.addWidget(hline(), 3, 0, 1, 2)
         right_grid.addWidget(self.label_a6, 4, 0)
         right_grid.addWidget(self.Combo_cor, 4, 1)
-        right_grid.addWidget(hline(), 5, 0, 1, 2)
+        right_grid.addWidget(self.label_a7, 5, 0)
+        right_grid.addWidget(self.Combo_model, 5, 1)
+        right_grid.addWidget(self.label_a8, 6, 0)
+        right_grid.addWidget(self.F0_res, 6, 1)
+        right_grid.addWidget(self.label_a9, 7, 0)
+        right_grid.addWidget(self.Q_res, 7, 1)
+        right_grid.addWidget(hline(), 8, 0, 1, 2)
 
-        right_grid.setRowStretch(6, 1)
-        right_grid.setColumnStretch(6, 1)
+        right_grid.setRowStretch(9, 1)
+        right_grid.setColumnStretch(9, 1)
         
         container_layout.addLayout(left_grid)
         container_layout.addSpacing(20)
@@ -1769,6 +1779,52 @@ class MainWindow(QMainWindow):
             self.combo_cor = 1
         elif txt == 'All':
             self.combo_cor = 2
+
+    def combo_model_fun(self):
+        """Resonator-correction model: measured profile or ideal RLC (+ phase)."""
+        txt = str( self.Combo_model.currentText() )
+        if txt == 'Measured':
+            self.cor_model_cur = 'measured'
+            self.phase_cor_cur = 'False'
+        elif txt == 'Ideal RLC':
+            self.cor_model_cur = 'ideal'
+            self.phase_cor_cur = 'False'
+        elif txt == 'Ideal RLC + phase':
+            self.cor_model_cur = 'ideal'
+            self.phase_cor_cur = 'True'
+
+    def f0_func(self):
+        """Resonator centre frequency (MHz) for the ideal-RLC correction."""
+        self.f0_cur = float( self.F0_res.value() )
+
+    def q_func(self):
+        """Loaded Q for the ideal-RLC correction."""
+        self.q_cur = float( self.Q_res.value() )
+
+    def _apply_awg_correction(self, pb, mode):
+        """Read correction.param and push resonator-correction settings to pb.
+
+        mode 0 = off, 1 = only Pi/2 (high-amplitude pulses), 2 = all swept pulses.
+        The measured triple-Lorentzian magnitude fit (+ LOW/LIMIT clamp) comes
+        from correction.param; the model (measured / ideal RLC), f0, Q and the
+        phase-correction flag come from the AWG-tab controls.
+        """
+        if mode == 0:
+            pb.awg_correction_off()
+            return
+
+        path_file = os.path.join( os.path.abspath( os.getcwd() ),
+                                  '../atomize/control_center/correction.param' )
+        with open(path_file, 'r') as file_to_read:
+            text_from_file = file_to_read.read().split('\n')
+        coef = [ float( text_from_file[i].split(' ')[1] ) for i in range(10) ]
+
+        pb.awg_correction(only_pi_half = ('True' if mode == 1 else 'False'),
+            coef_array = coef,
+            low_level = float( text_from_file[10].split(' ')[1] ),
+            limit = float( text_from_file[11].split(' ')[1] ),
+            model = self.cor_model_cur, f0 = self.f0_cur, q_factor = self.q_cur,
+            phase_correction = self.phase_cor_cur )
 
     def b_sech_func(self):
         """
@@ -3481,63 +3537,10 @@ class Worker():
             pb.phase_shift_ch1_seq_mode_awg = p17
             ###
 
-            # correction from file
-            if p33 == 0:
-                pass
-            elif p33 == 1:
-                path_to_main = os.path.abspath( os.getcwd() )
-                path_file = os.path.join(path_to_main, '../atomize/control_center/correction.param')
-                file_to_read = open(path_file, 'r')
+            # correction from file (measured profile from correction.param;
+            # model / f0 / Q / phase from the AWG-tab controls)
+            self._apply_awg_correction(pb, p33)
 
-                text_from_file = file_to_read.read().split('\n')
-                # ['BL: 5.92087', 'A1: 412.868', 'X1: -124.647', 'W1: 62.0069', 'A2: 420.717', 'X2: -35.8879', 
-                # 'W2: 34.4214', A3: 9893.97', 'X3: 12.4056', 'W3: 150.304', 'LOW: 16', 'LIMIT: 23', '']
-
-                coef = [float( text_from_file[0].split(' ')[1] ), 
-                        float( text_from_file[1].split(' ')[1] ), 
-                        float( text_from_file[2].split(' ')[1] ), 
-                        float( text_from_file[3].split(' ')[1] ), 
-                        float( text_from_file[4].split(' ')[1] ), 
-                        float( text_from_file[5].split(' ')[1] ), 
-                        float( text_from_file[6].split(' ')[1] ), 
-                        float( text_from_file[7].split(' ')[1] ), 
-                        float( text_from_file[8].split(' ')[1] ), 
-                        float( text_from_file[9].split(' ')[1] )
-                        ]
-
-                pb.awg_correction(only_pi_half = 'True', 
-                    coef_array = coef, 
-                    low_level = float( text_from_file[10].split(' ')[1] ), 
-                    limit = float( text_from_file[11].split(' ')[1] )
-                    )
-
-            elif p33 == 2:
-                path_to_main = os.path.abspath( os.getcwd() )
-                path_file = os.path.join(path_to_main, '../atomize/control_center/correction.param')
-                file_to_read = open(path_file, 'r')
-
-                text_from_file = file_to_read.read().split('\n')
-                # ['BL: 5.92087', 'A1: 412.868', 'X1: -124.647', 'W1: 62.0069', 'A2: 420.717', 'X2: -35.8879', 
-                # 'W2: 34.4214', A3: 9893.97', 'X3: 12.4056', 'W3: 150.304', 'LOW: 16', 'LIMIT: 23', '']
-                
-                coef = [float( text_from_file[0].split(' ')[1] ), 
-                        float( text_from_file[1].split(' ')[1] ), 
-                        float( text_from_file[2].split(' ')[1] ), 
-                        float( text_from_file[3].split(' ')[1] ), 
-                        float( text_from_file[4].split(' ')[1] ), 
-                        float( text_from_file[5].split(' ')[1] ), 
-                        float( text_from_file[6].split(' ')[1] ),
-                        float( text_from_file[7].split(' ')[1] ),  
-                        float( text_from_file[8].split(' ')[1] ), 
-                        float( text_from_file[9].split(' ')[1] )
-                        ]
-
-                pb.awg_correction(only_pi_half = 'False', 
-                    coef_array = coef, 
-                    low_level = float( text_from_file[10].split(' ')[1] ),
-                    limit = float( text_from_file[11].split(' ')[1] )
-                    )
-            
             pb.awg_amplitude('CH0', str(p18), 'CH1', str(p19) )
 
             # DETECTION pulse
@@ -3957,61 +3960,7 @@ class Worker():
             pb.phase_shift_ch1_seq_mode_awg = iq_phase
 
             # correction from file
-            if correction == 0:
-                pass
-            elif correction == 1:
-                path_to_main = os.path.abspath( os.getcwd() )
-                path_file = os.path.join(path_to_main, '../atomize/control_center/correction.param')
-                file_to_read = open(path_file, 'r')
-
-                text_from_file = file_to_read.read().split('\n')
-                # ['BL: 5.92087', 'A1: 412.868', 'X1: -124.647', 'W1: 62.0069', 'A2: 420.717', 'X2: -35.8879', 
-                # 'W2: 34.4214', A3: 9893.97', 'X3: 12.4056', 'W3: 150.304', 'LOW: 16', 'LIMIT: 23', '']
-
-                coef = [float( text_from_file[0].split(' ')[1] ), 
-                        float( text_from_file[1].split(' ')[1] ), 
-                        float( text_from_file[2].split(' ')[1] ), 
-                        float( text_from_file[3].split(' ')[1] ), 
-                        float( text_from_file[4].split(' ')[1] ), 
-                        float( text_from_file[5].split(' ')[1] ), 
-                        float( text_from_file[6].split(' ')[1] ), 
-                        float( text_from_file[7].split(' ')[1] ), 
-                        float( text_from_file[8].split(' ')[1] ), 
-                        float( text_from_file[9].split(' ')[1] )
-                        ]
-
-                pb.awg_correction(only_pi_half = 'True', 
-                    coef_array = coef, 
-                    low_level = float( text_from_file[10].split(' ')[1] ), 
-                    limit = float( text_from_file[11].split(' ')[1] )
-                    )
-
-            elif correction == 2:
-                path_to_main = os.path.abspath( os.getcwd() )
-                path_file = os.path.join(path_to_main, '../atomize/control_center/correction.param')
-                file_to_read = open(path_file, 'r')
-
-                text_from_file = file_to_read.read().split('\n')
-                # ['BL: 5.92087', 'A1: 412.868', 'X1: -124.647', 'W1: 62.0069', 'A2: 420.717', 'X2: -35.8879', 
-                # 'W2: 34.4214', A3: 9893.97', 'X3: 12.4056', 'W3: 150.304', 'LOW: 16', 'LIMIT: 23', '']
-                
-                coef = [float( text_from_file[0].split(' ')[1] ), 
-                        float( text_from_file[1].split(' ')[1] ), 
-                        float( text_from_file[2].split(' ')[1] ), 
-                        float( text_from_file[3].split(' ')[1] ), 
-                        float( text_from_file[4].split(' ')[1] ), 
-                        float( text_from_file[5].split(' ')[1] ), 
-                        float( text_from_file[6].split(' ')[1] ),
-                        float( text_from_file[7].split(' ')[1] ),  
-                        float( text_from_file[8].split(' ')[1] ), 
-                        float( text_from_file[9].split(' ')[1] )
-                        ]
-
-                pb.awg_correction(only_pi_half = 'False', 
-                    coef_array = coef, 
-                    low_level = float( text_from_file[10].split(' ')[1] ),
-                    limit = float( text_from_file[11].split(' ')[1] )
-                    )
+            self._apply_awg_correction(pb, correction)
             
             pb.awg_amplitude('CH0', str(ch0_ampl), 'CH1', str(ch1_ampl) )
             
@@ -4529,57 +4478,7 @@ class Worker():
             pb.phase_shift_ch1_seq_mode_awg = iq_phase
 
             # correction from file
-            if correction == 0:
-                pass
-            elif correction == 1:
-                path_to_main = os.path.abspath( os.getcwd() )
-                path_file = os.path.join(path_to_main, '../atomize/control_center/correction.param')
-                file_to_read = open(path_file, 'r')
-
-                text_from_file = file_to_read.read().split('\n')
-
-                coef = [float( text_from_file[0].split(' ')[1] ),
-                        float( text_from_file[1].split(' ')[1] ),
-                        float( text_from_file[2].split(' ')[1] ),
-                        float( text_from_file[3].split(' ')[1] ),
-                        float( text_from_file[4].split(' ')[1] ),
-                        float( text_from_file[5].split(' ')[1] ),
-                        float( text_from_file[6].split(' ')[1] ),
-                        float( text_from_file[7].split(' ')[1] ),
-                        float( text_from_file[8].split(' ')[1] ),
-                        float( text_from_file[9].split(' ')[1] )
-                        ]
-
-                pb.awg_correction(only_pi_half = 'True',
-                    coef_array = coef,
-                    low_level = float( text_from_file[10].split(' ')[1] ),
-                    limit = float( text_from_file[11].split(' ')[1] )
-                    )
-
-            elif correction == 2:
-                path_to_main = os.path.abspath( os.getcwd() )
-                path_file = os.path.join(path_to_main, '../atomize/control_center/correction.param')
-                file_to_read = open(path_file, 'r')
-
-                text_from_file = file_to_read.read().split('\n')
-
-                coef = [float( text_from_file[0].split(' ')[1] ),
-                        float( text_from_file[1].split(' ')[1] ),
-                        float( text_from_file[2].split(' ')[1] ),
-                        float( text_from_file[3].split(' ')[1] ),
-                        float( text_from_file[4].split(' ')[1] ),
-                        float( text_from_file[5].split(' ')[1] ),
-                        float( text_from_file[6].split(' ')[1] ),
-                        float( text_from_file[7].split(' ')[1] ),
-                        float( text_from_file[8].split(' ')[1] ),
-                        float( text_from_file[9].split(' ')[1] )
-                        ]
-
-                pb.awg_correction(only_pi_half = 'False',
-                    coef_array = coef,
-                    low_level = float( text_from_file[10].split(' ')[1] ),
-                    limit = float( text_from_file[11].split(' ')[1] )
-                    )
+            self._apply_awg_correction(pb, correction)
 
             pb.awg_amplitude('CH0', str(ch0_ampl), 'CH1', str(ch1_ampl) )
 
@@ -5144,61 +5043,7 @@ class Worker():
             pb.phase_shift_ch1_seq_mode_awg = iq_phase
 
             # correction from file
-            if correction == 0:
-                pass
-            elif correction == 1:
-                path_to_main = os.path.abspath( os.getcwd() )
-                path_file = os.path.join(path_to_main, '../atomize/control_center/correction.param')
-                file_to_read = open(path_file, 'r')
-
-                text_from_file = file_to_read.read().split('\n')
-                # ['BL: 5.92087', 'A1: 412.868', 'X1: -124.647', 'W1: 62.0069', 'A2: 420.717', 'X2: -35.8879', 
-                # 'W2: 34.4214', A3: 9893.97', 'X3: 12.4056', 'W3: 150.304', 'LOW: 16', 'LIMIT: 23', '']
-
-                coef = [float( text_from_file[0].split(' ')[1] ), 
-                        float( text_from_file[1].split(' ')[1] ), 
-                        float( text_from_file[2].split(' ')[1] ), 
-                        float( text_from_file[3].split(' ')[1] ), 
-                        float( text_from_file[4].split(' ')[1] ), 
-                        float( text_from_file[5].split(' ')[1] ), 
-                        float( text_from_file[6].split(' ')[1] ), 
-                        float( text_from_file[7].split(' ')[1] ), 
-                        float( text_from_file[8].split(' ')[1] ), 
-                        float( text_from_file[9].split(' ')[1] )
-                        ]
-
-                pb.awg_correction(only_pi_half = 'True', 
-                    coef_array = coef, 
-                    low_level = float( text_from_file[10].split(' ')[1] ), 
-                    limit = float( text_from_file[11].split(' ')[1] )
-                    )
-
-            elif correction == 2:
-                path_to_main = os.path.abspath( os.getcwd() )
-                path_file = os.path.join(path_to_main, '../atomize/control_center/correction.param')
-                file_to_read = open(path_file, 'r')
-
-                text_from_file = file_to_read.read().split('\n')
-                # ['BL: 5.92087', 'A1: 412.868', 'X1: -124.647', 'W1: 62.0069', 'A2: 420.717', 'X2: -35.8879', 
-                # 'W2: 34.4214', A3: 9893.97', 'X3: 12.4056', 'W3: 150.304', 'LOW: 16', 'LIMIT: 23', '']
-                
-                coef = [float( text_from_file[0].split(' ')[1] ), 
-                        float( text_from_file[1].split(' ')[1] ), 
-                        float( text_from_file[2].split(' ')[1] ), 
-                        float( text_from_file[3].split(' ')[1] ), 
-                        float( text_from_file[4].split(' ')[1] ), 
-                        float( text_from_file[5].split(' ')[1] ), 
-                        float( text_from_file[6].split(' ')[1] ),
-                        float( text_from_file[7].split(' ')[1] ),  
-                        float( text_from_file[8].split(' ')[1] ), 
-                        float( text_from_file[9].split(' ')[1] )
-                        ]
-
-                pb.awg_correction(only_pi_half = 'False', 
-                    coef_array = coef, 
-                    low_level = float( text_from_file[10].split(' ')[1] ),
-                    limit = float( text_from_file[11].split(' ')[1] )
-                    )
+            self._apply_awg_correction(pb, correction)
             
             pb.awg_amplitude('CH0', str(ch0_ampl), 'CH1', str(ch1_ampl) )
             
@@ -5627,61 +5472,7 @@ class Worker():
             pb.phase_shift_ch1_seq_mode_awg = iq_phase
 
             # correction from file
-            if correction == 0:
-                pass
-            elif correction == 1:
-                path_to_main = os.path.abspath( os.getcwd() )
-                path_file = os.path.join(path_to_main, '../atomize/control_center/correction.param')
-                file_to_read = open(path_file, 'r')
-
-                text_from_file = file_to_read.read().split('\n')
-                # ['BL: 5.92087', 'A1: 412.868', 'X1: -124.647', 'W1: 62.0069', 'A2: 420.717', 'X2: -35.8879', 
-                # 'W2: 34.4214', A3: 9893.97', 'X3: 12.4056', 'W3: 150.304', 'LOW: 16', 'LIMIT: 23', '']
-
-                coef = [float( text_from_file[0].split(' ')[1] ), 
-                        float( text_from_file[1].split(' ')[1] ), 
-                        float( text_from_file[2].split(' ')[1] ), 
-                        float( text_from_file[3].split(' ')[1] ), 
-                        float( text_from_file[4].split(' ')[1] ), 
-                        float( text_from_file[5].split(' ')[1] ), 
-                        float( text_from_file[6].split(' ')[1] ), 
-                        float( text_from_file[7].split(' ')[1] ), 
-                        float( text_from_file[8].split(' ')[1] ), 
-                        float( text_from_file[9].split(' ')[1] )
-                        ]
-
-                pb.awg_correction(only_pi_half = 'True', 
-                    coef_array = coef, 
-                    low_level = float( text_from_file[10].split(' ')[1] ), 
-                    limit = float( text_from_file[11].split(' ')[1] )
-                    )
-
-            elif correction == 2:
-                path_to_main = os.path.abspath( os.getcwd() )
-                path_file = os.path.join(path_to_main, '../atomize/control_center/correction.param')
-                file_to_read = open(path_file, 'r')
-
-                text_from_file = file_to_read.read().split('\n')
-                # ['BL: 5.92087', 'A1: 412.868', 'X1: -124.647', 'W1: 62.0069', 'A2: 420.717', 'X2: -35.8879', 
-                # 'W2: 34.4214', A3: 9893.97', 'X3: 12.4056', 'W3: 150.304', 'LOW: 16', 'LIMIT: 23', '']
-                
-                coef = [float( text_from_file[0].split(' ')[1] ), 
-                        float( text_from_file[1].split(' ')[1] ), 
-                        float( text_from_file[2].split(' ')[1] ), 
-                        float( text_from_file[3].split(' ')[1] ), 
-                        float( text_from_file[4].split(' ')[1] ), 
-                        float( text_from_file[5].split(' ')[1] ), 
-                        float( text_from_file[6].split(' ')[1] ),
-                        float( text_from_file[7].split(' ')[1] ),  
-                        float( text_from_file[8].split(' ')[1] ), 
-                        float( text_from_file[9].split(' ')[1] )
-                        ]
-
-                pb.awg_correction(only_pi_half = 'False', 
-                    coef_array = coef, 
-                    low_level = float( text_from_file[10].split(' ')[1] ),
-                    limit = float( text_from_file[11].split(' ')[1] )
-                    )
+            self._apply_awg_correction(pb, correction)
             
             pb.awg_amplitude('CH0', str(ch0_ampl), 'CH1', str(ch1_ampl) )
             
@@ -6171,61 +5962,7 @@ class Worker():
             pb.phase_shift_ch1_seq_mode_awg = iq_phase
 
             # correction from file
-            if correction == 0:
-                pass
-            elif correction == 1:
-                path_to_main = os.path.abspath( os.getcwd() )
-                path_file = os.path.join(path_to_main, '../atomize/control_center/correction.param')
-                file_to_read = open(path_file, 'r')
-
-                text_from_file = file_to_read.read().split('\n')
-                # ['BL: 5.92087', 'A1: 412.868', 'X1: -124.647', 'W1: 62.0069', 'A2: 420.717', 'X2: -35.8879', 
-                # 'W2: 34.4214', A3: 9893.97', 'X3: 12.4056', 'W3: 150.304', 'LOW: 16', 'LIMIT: 23', '']
-
-                coef = [float( text_from_file[0].split(' ')[1] ), 
-                        float( text_from_file[1].split(' ')[1] ), 
-                        float( text_from_file[2].split(' ')[1] ), 
-                        float( text_from_file[3].split(' ')[1] ), 
-                        float( text_from_file[4].split(' ')[1] ), 
-                        float( text_from_file[5].split(' ')[1] ), 
-                        float( text_from_file[6].split(' ')[1] ), 
-                        float( text_from_file[7].split(' ')[1] ), 
-                        float( text_from_file[8].split(' ')[1] ), 
-                        float( text_from_file[9].split(' ')[1] )
-                        ]
-
-                pb.awg_correction(only_pi_half = 'True', 
-                    coef_array = coef, 
-                    low_level = float( text_from_file[10].split(' ')[1] ), 
-                    limit = float( text_from_file[11].split(' ')[1] )
-                    )
-
-            elif correction == 2:
-                path_to_main = os.path.abspath( os.getcwd() )
-                path_file = os.path.join(path_to_main, '../atomize/control_center/correction.param')
-                file_to_read = open(path_file, 'r')
-
-                text_from_file = file_to_read.read().split('\n')
-                # ['BL: 5.92087', 'A1: 412.868', 'X1: -124.647', 'W1: 62.0069', 'A2: 420.717', 'X2: -35.8879', 
-                # 'W2: 34.4214', A3: 9893.97', 'X3: 12.4056', 'W3: 150.304', 'LOW: 16', 'LIMIT: 23', '']
-                
-                coef = [float( text_from_file[0].split(' ')[1] ), 
-                        float( text_from_file[1].split(' ')[1] ), 
-                        float( text_from_file[2].split(' ')[1] ), 
-                        float( text_from_file[3].split(' ')[1] ), 
-                        float( text_from_file[4].split(' ')[1] ), 
-                        float( text_from_file[5].split(' ')[1] ), 
-                        float( text_from_file[6].split(' ')[1] ),
-                        float( text_from_file[7].split(' ')[1] ),  
-                        float( text_from_file[8].split(' ')[1] ), 
-                        float( text_from_file[9].split(' ')[1] )
-                        ]
-
-                pb.awg_correction(only_pi_half = 'False', 
-                    coef_array = coef, 
-                    low_level = float( text_from_file[10].split(' ')[1] ),
-                    limit = float( text_from_file[11].split(' ')[1] )
-                    )
+            self._apply_awg_correction(pb, correction)
             
             pb.awg_amplitude('CH0', str(ch0_ampl), 'CH1', str(ch1_ampl) )
             
