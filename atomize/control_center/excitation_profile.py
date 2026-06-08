@@ -16,6 +16,12 @@ the linear-response (FFT) approximation. "Hold" freezes the current profile as a
 faint overlay so several pulses can be compared on one axis, the way the original
 Julia/Pluto notebook stacked inversion profiles.
 
+An optional **resonator transfer function** (ideal RLC, the same form the Insys
+AWG correction uses) can filter the pulse before it reaches the spins: 'simulate'
+shows the distorted, uncorrected pulse; 'compensate' shows the profile once the
+AWG pre-distortion is applied. This turns the tool into a non-ideal-pulse model
+that accounts for finite resonator bandwidth, not just the programmed waveform.
+
 No hardware is touched: this is a design/visualisation aid. Everything runs in
 this process; nothing is pushed to LivePlot or the main GUI.
 """
@@ -363,6 +369,109 @@ class MainWindow(QMainWindow):
         g.addWidget(self.show_mode, r, 1); r += 1
         v.addWidget(shared)
 
+        # ---- Resonator transfer function (shared) ----
+        sepR = QFrame(); sepR.setFrameShape(QFrame.Shape.HLine)
+        sepR.setStyleSheet("color: %s;" % ACCENT)
+        v.addWidget(sepR)
+
+        rbox = QWidget()
+        rg = QGridLayout(rbox)
+        rg.setContentsMargins(0, 0, 0, 0)
+        rg.setVerticalSpacing(6)
+        self._reson_rows = []          # (label, widget) pairs for show/hide
+
+        self.reson_on = QCheckBox("Resonator transfer function")
+        self.reson_on.setStyleSheet(CHECKBOX_STYLE)
+        self.reson_on.setToolTip(
+            "Filter the pulse through an ideal RLC resonator "
+            "H = 1/(1 + iQ(ν/ν₀ − ν₀/ν)) before it reaches the spins — the same "
+            "model the Insys AWG correction uses. 'simulate' = the distorted, "
+            "uncorrected pulse; 'compensate' = the profile once the AWG "
+            "pre-distortion (awg_correction) is applied.")
+        self.reson_on.toggled.connect(self._on_reson_toggled)
+        rg.addWidget(self.reson_on, 0, 0, 1, 2)
+
+        rr = 1
+
+        def _rrow(text, widget):
+            nonlocal rr
+            lab = self._label(text)
+            rg.addWidget(lab, rr, 0)
+            rg.addWidget(widget, rr, 1)
+            self._reson_rows.append((lab, widget))
+            rr += 1
+
+        # Defaults are the spectrometer's MD-series values (Insys_FPGA: f0 = 9700
+        # MHz, Q ≈ 88 → power bandwidth ν0/Q ≈ 110 MHz).
+        self.reson_nu0 = self._dspin(0.1, 300.0, 9.7, 0.1, 3)
+        _rrow("Centre " + _lsub('ν', '0') + " (GHz)", self.reson_nu0)
+        self.reson_bw = self._dspin(1.0, 5000.0, 110.0, 5.0, 1)
+        _rrow("Bandwidth Δν (MHz)", self.reson_bw)
+        self.reson_det = self._dspin(-2500.0, 2500.0, 0.0, 5.0, 1)
+        self.reson_det.setToolTip(
+            "Resonator centre minus carrier (MHz). 0 = carrier tuned to the "
+            "resonator. Note the bridge's LO−RF mixing can invert this sign.")
+        _rrow("Detuning (MHz)", self.reson_det)
+        self.reson_mode = QComboBox()
+        self.reson_mode.addItems(['simulate (distort)', 'compensate (pre-distort)'])
+        self.reson_mode.setStyleSheet(COMBO_STYLE)
+        self.reson_mode.setFixedWidth(150)
+        self.reson_mode.currentTextChanged.connect(self.schedule)
+        _rrow("Mode", self.reson_mode)
+
+        # Ring-down: in simulate mode, let the resonator keep emitting after the
+        # drive stops (the field decays with tau = Q/(pi ν₀)). The spins nutate
+        # under this tail, which partly restores the flip angle a finite-bandwidth
+        # resonator otherwise steals from a short hard pulse.
+        self.reson_ring = QCheckBox("Include ring-down")
+        self.reson_ring.setStyleSheet(CHECKBOX_STYLE)
+        self.reson_ring.setToolTip(
+            "Propagate the post-pulse resonator ring-down (decay τ = Q/πν₀) into "
+            "the free-evolution window. Simulate mode only.")
+        self.reson_ring.toggled.connect(self.schedule)
+        rg.addWidget(self.reson_ring, rr, 0, 1, 2)
+        self._reson_rows.append((self.reson_ring, self.reson_ring))
+        rr += 1
+        v.addWidget(rbox)
+
+        # ---- B1 inhomogeneity (shared) ----
+        sepB = QFrame(); sepB.setFrameShape(QFrame.Shape.HLine)
+        sepB.setStyleSheet("color: %s;" % ACCENT)
+        v.addWidget(sepB)
+
+        bbox = QWidget()
+        bg = QGridLayout(bbox)
+        bg.setContentsMargins(0, 0, 0, 0)
+        bg.setVerticalSpacing(6)
+        self._b1_rows = []          # (label, widget) pairs for show/hide
+
+        self.b1_on = QCheckBox("B₁ inhomogeneity")
+        self.b1_on.setStyleSheet(CHECKBOX_STYLE)
+        self.b1_on.setToolTip(
+            "Average the profile over a Gaussian spread of nutation frequency "
+            "(B₁). The same scale factor multiplies every pulse of the "
+            "sequence (one spin sees one B₁), modelling the resonator-mode / "
+            "sample B₁ distribution — e.g. why a π pulse never fully inverts.")
+        self.b1_on.toggled.connect(self._on_b1_toggled)
+        bg.addWidget(self.b1_on, 0, 0, 1, 2)
+
+        br = 1
+
+        def _brow(text, widget):
+            nonlocal br
+            lab = self._label(text)
+            bg.addWidget(lab, br, 0)
+            bg.addWidget(widget, br, 1)
+            self._b1_rows.append((lab, widget))
+            br += 1
+
+        # Relative Gaussian spread (std as % of nominal B1) and sampling points.
+        self.b1_spread = self._dspin(0.1, 60.0, 10.0, 1.0, 1)
+        _brow("Spread σ (%)", self.b1_spread)
+        self.b1_pts = self._ispin(3, 51, 11)
+        _brow("Points", self.b1_pts)
+        v.addWidget(bbox)
+
         sep2 = QFrame(); sep2.setFrameShape(QFrame.Shape.HLine)
         sep2.setStyleSheet("color: %s;" % ACCENT)
         v.addWidget(sep2)
@@ -388,6 +497,14 @@ class MainWindow(QMainWindow):
         self.delay_box.setVisible(False)
         self.cont_phase.setVisible(False)
         self.p2_box.setVisible(False)
+        # Resonator parameter rows start hidden (the checkbox reveals them).
+        for lab, wdg in self._reson_rows:
+            lab.setVisible(False)
+            wdg.setVisible(False)
+        # B1-inhomogeneity rows likewise start hidden.
+        for lab, wdg in self._b1_rows:
+            lab.setVisible(False)
+            wdg.setVisible(False)
         return panel
 
     def _build_plots(self):
@@ -476,6 +593,38 @@ class MainWindow(QMainWindow):
             self.show_mode.setCurrentText('Mx, My')
         self.schedule()
 
+    def _on_reson_toggled(self, on):
+        for lab, wdg in self._reson_rows:
+            lab.setVisible(on)
+            wdg.setVisible(on)
+        self.schedule()
+
+    def _on_b1_toggled(self, on):
+        for lab, wdg in self._b1_rows:
+            lab.setVisible(on)
+            wdg.setVisible(on)
+        self.schedule()
+
+    def _gather_b1(self):
+        """B1-scale samples and Gaussian weights, or ([1.0], [1.0]) if off.
+
+        Each scale multiplies the nominal nu1 of *every* pulse in the sequence
+        (the same spin sees one B1); the profile is the weighted average. The
+        spread is a relative Gaussian (std as a fraction of nominal B1), sampled
+        over ±2.5 sigma.
+        """
+        if not self.b1_on.isChecked():
+            return np.array([1.0]), np.array([1.0])
+        sig = self.b1_spread.value() / 100.0
+        n = self.b1_pts.value()
+        if sig <= 0 or n < 2:
+            return np.array([1.0]), np.array([1.0])
+        k = 2.5
+        scales = np.linspace(max(1e-3, 1.0 - k * sig), 1.0 + k * sig, n)
+        w = np.exp(-0.5 * ((scales - 1.0) / sig) ** 2)
+        w /= w.sum()
+        return scales, w
+
     def schedule(self):
         self._timer.start()
 
@@ -484,12 +633,32 @@ class MainWindow(QMainWindow):
         params = {name: store[name].value() for name in SHAPE_PARAMS[shape]}
         return shape, params
 
-    def _pulse_waveform(self, store, dt_disp, t0=0.0, phi_offset=0.0):
+    def _gather_resonator(self):
+        """Resonator-filter parameters for pe.apply_resonator, or None if off.
+
+        Loaded Q is derived from the power bandwidth: Q = ν0 / Δν (both abs.).
+        """
+        if not self.reson_on.isChecked():
+            return None
+        nu0 = self.reson_nu0.value()                       # GHz
+        bw = self.reson_bw.value()                         # MHz
+        Q = nu0 * 1000.0 / bw if bw > 0 else 1e9
+        det = self.reson_det.value() / 1000.0              # MHz -> GHz
+        mode = ('compensate' if self.reson_mode.currentText().startswith('compensate')
+                else 'simulate')
+        # Ring-down window: ~5 time constants captures the decay to ~1%.
+        ring = 5.0 * pe.ringdown_time(nu0, Q) if (mode == 'simulate'
+                                                  and self.reson_ring.isChecked()) else 0.0
+        return dict(nu0=nu0, Q=Q, detuning=det, mode=mode, ringdown=ring)
+
+    def _pulse_waveform(self, store, dt_disp, t0=0.0, phi_offset=0.0, resonator=None):
         """Normalised I/Q + envelope of one pulse on an absolute time axis (ns).
 
         ``phi_offset`` (rad) is added to the pulse phase — used to carry the
         carrier-phase-continuity term so the displayed waveform matches what the
-        spins actually see.
+        spins actually see. ``resonator`` (dict or None) distorts the displayed
+        waveform the same way it distorts the propagated one, so the shape panel
+        shows the real (resonator-filtered) pulse.
         """
         shape, params = self._gather_params_group(store)
         tp = store['tp'].value()
@@ -502,7 +671,14 @@ class MainWindow(QMainWindow):
         steps = np.diff(edges)
         a, nu = pe.waveform(shape, tmid, tp, params)
         phi = phi0 + 2.0 * np.pi * (np.cumsum(nu * steps) - 0.5 * nu * steps)
-        return tmid + t0, a * np.cos(phi), a * np.sin(phi), a
+        w = a * np.exp(1j * phi)
+        if resonator is not None:
+            w = pe.apply_resonator(w, d, **resonator)
+        t_axis = tmid
+        if w.size > tmid.size:                       # ring-down tail past tp
+            extra = w.size - tmid.size
+            t_axis = np.concatenate((tmid, tmid[-1] + d * np.arange(1, extra + 1)))
+        return t_axis + t0, np.real(w), np.imag(w), np.abs(w)
 
     def recompute(self):
         shape1, params1 = self._gather_params_group(self.p1)
@@ -515,18 +691,15 @@ class MainWindow(QMainWindow):
         npts = self.npts.value()
         init = INIT_STATES[self.init.currentText()]
         two = self.two_pulse.isChecked()
+        reson = self._gather_resonator()
+        scales, weights = self._gather_b1()
 
         offsets = np.linspace(-span, span, npts)     # GHz
         self._off_mhz = offsets * 1000.0
+        init_arr = np.asarray(init, dtype=float)
 
-        # ---- excitation profile: P1, then optionally  τ  then P2 ----
-        M = np.tile(np.asarray(init, dtype=float), (npts, 1))
-        M = pe.propagate_pulse(M, shape1, tp1, nu1_1, offsets, params1,
-                               dt=dt1, phi0=phi1)
-
-        # ---- waveform (time domain): P1, gap at baseline, P2 ----
-        t1, I1, Q1, e1 = self._pulse_waveform(self.p1, dt_disp, 0.0)
-
+        # Pulse-2 parameters + carrier-phase continuity + ring-down, needed by the
+        # sequence propagation below.
         if two:
             tau = self.delay.value()
             shape2, params2 = self._gather_params_group(self.p2)
@@ -534,7 +707,6 @@ class MainWindow(QMainWindow):
             nu1_2 = self.p2['nu1'].value() / 1000.0
             phi2 = np.deg2rad(self.p2['phi0'].value())
             dt2 = min(dt_disp, tp2)
-
             # Carrier-phase continuity: with a continuous LO, P2's phase is
             # referenced to absolute time, so its constant carrier nu0_2 has
             # advanced by 2*pi*nu0_2*(tp1+tau) by the time P2 starts.
@@ -542,33 +714,57 @@ class MainWindow(QMainWindow):
             if self.cont_phase.isChecked():
                 nu0_2 = params2.get('center', 0.0) / 1000.0   # MHz -> GHz
                 phi2_extra = 2.0 * np.pi * nu0_2 * (tp1 + tau)
+            # P1's ring-down occupies the first `rd` ns of the programmed delay,
+            # so only `tau - rd` is true field-free precession before P2.
+            rd = reson['ringdown'] if reson else 0.0
 
-            M = pe.free_evolution(M, offsets, tau)
-            M = pe.propagate_pulse(M, shape2, tp2, nu1_2, offsets, params2,
-                                   dt=dt2, phi0=phi2 + phi2_extra)
+        def seq_after(b1):
+            """Magnetization after the last pulse (P1, or P2 for two-pulse) for a
+            B1-scale ``b1`` — NO detection delay (applied once after averaging)."""
+            M = np.tile(init_arr, (npts, 1))
+            M = pe.propagate_pulse(M, shape1, tp1, nu1_1 * b1, offsets, params1,
+                                   dt=dt1, phi0=phi1, resonator=reson)
+            if two:
+                M = pe.free_evolution(M, offsets, max(0.0, tau - rd))
+                M = pe.propagate_pulse(M, shape2, tp2, nu1_2 * b1, offsets, params2,
+                                       dt=dt2, phi0=phi2 + phi2_extra, resonator=reson)
+            return M
 
-            # Detection delay: free precession to the read-out point. When locked,
-            # find the actual echo time numerically (finite pulses shift it off
-            # tau) and reflect it in the disabled field; else use the typed value.
+        # Detection delay from the nominal-B1 echo (the read-out time is set by the
+        # experiment, not by each spin's B1, so it is found once at b1 = 1).
+        M_nom = seq_after(1.0)
+        if two:
             if self.lock_taud.isChecked():
-                tau_d = self._echo_taud(M, offsets, tau)
+                tau_d = self._echo_taud(M_nom, offsets, tau)
                 if abs(self.det_delay.value() - tau_d) > 0.05:
                     self.det_delay.blockSignals(True)
                     self.det_delay.setValue(round(tau_d, 1))
                     self.det_delay.blockSignals(False)
             else:
                 tau_d = self.det_delay.value()
-            if tau_d > 0:
-                M = pe.free_evolution(M, offsets, tau_d)
 
+        # B1-averaged magnetization after the pulses. Free precession (detection)
+        # is linear and B1-independent, so it is applied once after the average.
+        if scales.size == 1:
+            M = M_nom
+        else:
+            M = np.zeros_like(M_nom)
+            for s, w in zip(scales, weights):
+                M = M + w * seq_after(s)
+        if two and tau_d > 0:
+            M = pe.free_evolution(M, offsets, tau_d)
+
+        # ---- waveform (time domain): P1, gap at baseline, P2 (nominal B1) ----
+        t1, I1, Q1, e1 = self._pulse_waveform(self.p1, dt_disp, 0.0, resonator=reson)
+        if two:
             # baseline markers bracket the free-evolution gap so the trace drops
-            # to zero between the two pulses instead of drawing a diagonal; a
-            # trailing pair spans the detection delay out to the read-out point.
-            gx = np.array([tp1, tp1 + tau])
+            # to zero between the two pulses; a trailing pair spans the detection
+            # delay. t1 already includes P1's ring-down tail, so start the gap there.
+            gx = np.array([min(t1[-1], tp1 + tau), tp1 + tau])
             gz = np.zeros(2)
             t2, I2, Q2, e2 = self._pulse_waveform(self.p2, dt_disp, tp1 + tau,
-                                                  phi_offset=phi2_extra)
-            t_end = tp1 + tau + tp2
+                                                  phi_offset=phi2_extra, resonator=reson)
+            t_end = t2[-1]                            # P2 end incl. its ring-down
             dx = np.array([t_end, t_end + tau_d])
             dz = np.zeros(2)
             self._t = np.concatenate([t1, gx, t2, dx])
@@ -589,6 +785,11 @@ class MainWindow(QMainWindow):
             txt += "   |   P2: %.0f° (%.2f π)" % (np.rad2deg(fa2), fa2 / np.pi)
         elif swept1:
             txt += "  — nominal area; adiabatic inversion is offset-dependent."
+        if reson is not None:
+            txt += "   |   Resonator Q≈%.0f, BW %.0f MHz (%s)" % (
+                reson['Q'], self.reson_bw.value(), reson['mode'])
+        if scales.size > 1:
+            txt += "   |   B₁ spread %.0f%% (%d pts)" % (self.b1_spread.value(), scales.size)
         self.info.setText(txt)
 
         self.replot()
