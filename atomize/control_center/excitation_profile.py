@@ -26,6 +26,7 @@ No hardware is touched: this is a design/visualisation aid. Everything runs in
 this process; nothing is pushed to LivePlot or the main GUI.
 """
 
+import os
 import sys
 
 import numpy as np
@@ -37,6 +38,7 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QLabel, QPushBu
     QCheckBox, QFrame, QScrollArea)
 
 import atomize.math_modules.pulse_excitation as pe
+import atomize.general_modules.csv_opener_saver as openfile
 # Reuse the main-window plot stack (crosshair, Shift-drag ruler, FFT/log
 # right-click toggles) so this preview behaves like the rest of the EPR suite.
 from atomize.main.widgets import CrosshairPlotWidget, CloseableDock
@@ -108,7 +110,12 @@ class MainWindow(QMainWindow):
         self.setGeometry(150, 120, 1180, 720)
 
         self._holds = []          # list of (offsets_MHz, Mz, label, color)
+        self._spec = None         # current lineshape weight over offsets, or None
+        self._Qad = None          # adiabaticity Q_crit over offsets (P1), or None
+        self._spec_file = None    # loaded experimental spectrum as (x_raw, y_raw)
         self._param_rows = {}     # name -> (label_widget, spin_widget)
+        self.opener = openfile.Saver_Opener()  # CSV loader (in-process dialog)
+        self.last_dir = ''        # remembered directory for the load dialog
         self._shape_items = []    # live curve items on the waveform panel
         self._prof_items = []     # live curve items on the profile panel
 
@@ -362,7 +369,8 @@ class MainWindow(QMainWindow):
         g.addWidget(self._label("Show"), r, 0)
         self.show_mode = QComboBox()
         self.show_mode.addItems(['Mz (inversion)', 'Mxy (transverse)',
-                                 'Mx, My', 'Mx, My, Mz', 'all'])
+                                 'Mx, My', 'Mx, My, Mz', 'all',
+                                 'Adiabaticity Q (swept)'])
         self.show_mode.setStyleSheet(COMBO_STYLE)
         self.show_mode.setFixedWidth(150)
         self.show_mode.currentTextChanged.connect(self.replot)
@@ -472,6 +480,112 @@ class MainWindow(QMainWindow):
         _brow("Points", self.b1_pts)
         v.addWidget(bbox)
 
+        # ---- Spectral / EPR-lineshape weighting (shared) ----
+        sepS = QFrame(); sepS.setFrameShape(QFrame.Shape.HLine)
+        sepS.setStyleSheet("color: %s;" % ACCENT)
+        v.addWidget(sepS)
+
+        sbox = QWidget()
+        sg = QGridLayout(sbox)
+        sg.setContentsMargins(0, 0, 0, 0)
+        sg.setVerticalSpacing(6)
+        self._spec_rows = []          # every (label, widget) row, for the hide-all
+        self._spec_always = []        # rows shown whenever weighting is on
+        self._spec_analytic_rows = [] # rows shown only for the analytic source
+        self._spec_file_rows = []     # rows shown only for the file source
+
+        self.spec_on = QCheckBox("Spectral weighting")
+        self.spec_on.setStyleSheet(CHECKBOX_STYLE)
+        self.spec_on.setToolTip(
+            "Weight the per-offset response by the EPR lineshape g(Δν) centred on "
+            "the offset axis (Δν = 0 = carrier) — either an analytic line or a "
+            "loaded experimental absorption spectrum. Turns the profile into the "
+            "experimentally relevant numbers — the fraction of spins inverted "
+            "⟨(1−Mz)/2⟩ and excited ⟨|Mxy|⟩ over the line — i.e. echo intensity / "
+            "DEER modulation depth. The lineshape is overlaid (filled) for visual "
+            "overlap with the excitation band.")
+        self.spec_on.toggled.connect(self._on_spec_toggled)
+        sg.addWidget(self.spec_on, 0, 0, 1, 2)
+
+        sr = 1
+
+        def _srow(text, widget, bucket):
+            nonlocal sr
+            lab = self._label(text)
+            sg.addWidget(lab, sr, 0)
+            sg.addWidget(widget, sr, 1)
+            self._spec_rows.append((lab, widget))
+            bucket.append((lab, widget))
+            sr += 1
+
+        # Source: analytic line vs a loaded experimental spectrum.
+        self.spec_src = QComboBox()
+        self.spec_src.addItems(['Analytic', 'Experimental file'])
+        self.spec_src.setStyleSheet(COMBO_STYLE)
+        self.spec_src.setFixedWidth(150)
+        self.spec_src.currentTextChanged.connect(self._on_spec_src_changed)
+        _srow("Source", self.spec_src, self._spec_always)
+
+        # --- analytic line ---
+        self.spec_shape = QComboBox()
+        self.spec_shape.addItems(['Gaussian', 'Lorentzian'])
+        self.spec_shape.setStyleSheet(COMBO_STYLE)
+        self.spec_shape.setFixedWidth(150)
+        self.spec_shape.currentTextChanged.connect(self.schedule)
+        _srow("Lineshape", self.spec_shape, self._spec_analytic_rows)
+        self.spec_width = self._dspin(0.1, 10000.0, 100.0, 5.0, 1)
+        _srow("FWHM (MHz)", self.spec_width, self._spec_analytic_rows)
+
+        # --- experimental file ---
+        self.spec_load = QPushButton("Load spectrum…")
+        self.spec_load.setStyleSheet(BUTTON_STYLE)
+        self.spec_load.clicked.connect(self.open_spectrum)
+        _srow("File", self.spec_load, self._spec_file_rows)
+        self.spec_file_lbl = QLabel("(no file)")
+        self.spec_file_lbl.setStyleSheet("QLabel { color: %s; }" % FG)
+        self.spec_file_lbl.setWordWrap(True)
+        sg.addWidget(self.spec_file_lbl, sr, 0, 1, 2)
+        self._spec_rows.append((self.spec_file_lbl, self.spec_file_lbl))
+        self._spec_file_rows.append((self.spec_file_lbl, self.spec_file_lbl))
+        sr += 1
+        # X-axis unit of the loaded file + g-factor for the field→frequency map.
+        self.spec_xunit = QComboBox()
+        self.spec_xunit.addItems(['MHz', 'GHz', 'mT', 'G'])
+        self.spec_xunit.setStyleSheet(COMBO_STYLE)
+        self.spec_xunit.setFixedWidth(150)
+        self.spec_xunit.currentTextChanged.connect(self._on_spec_src_changed)
+        _srow("X unit", self.spec_xunit, self._spec_file_rows)
+        self.spec_g = self._dspin(1.0, 10.0, 2.0023, 0.0001, 4)
+        self.spec_g.setToolTip("g-factor for ΔB→Δν: Δν = g·μB/h·ΔB "
+                               "(≈ 28.0 MHz/mT for g = 2).")
+        _srow("g-factor", self.spec_g, self._spec_file_rows)
+        self.spec_autocenter = QCheckBox("Auto-centre (centroid → Δν₀)")
+        self.spec_autocenter.setStyleSheet(CHECKBOX_STYLE)
+        self.spec_autocenter.setChecked(True)
+        self.spec_autocenter.setToolTip(
+            "Shift the loaded spectrum so its intensity-weighted centroid sits at "
+            "the centre offset below (essential for field-axis files, whose "
+            "absolute values are far off-axis).")
+        self.spec_autocenter.toggled.connect(self.schedule)
+        sg.addWidget(self.spec_autocenter, sr, 0, 1, 2)
+        self._spec_rows.append((self.spec_autocenter, self.spec_autocenter))
+        self._spec_file_rows.append((self.spec_autocenter, self.spec_autocenter))
+        sr += 1
+
+        # --- shared: centre offset applies to both sources ---
+        self.spec_center = self._dspin(-5000.0, 5000.0, 0.0, 5.0, 1)
+        _srow("Centre Δν₀ (MHz)", self.spec_center, self._spec_always)
+        # Where to draw the lineshape overlay (baseline → peak). The full-range
+        # and inverted maps let it sit alongside the excited/inverted part of the
+        # profile so the overlap is easy to read.
+        self.spec_overlay = QComboBox()
+        self.spec_overlay.addItems(['0 → 1', '1 → 0', '0 → −1', '−1 → 1', '1 → −1'])
+        self.spec_overlay.setStyleSheet(COMBO_STYLE)
+        self.spec_overlay.setFixedWidth(150)
+        self.spec_overlay.currentTextChanged.connect(self.replot)
+        _srow("Overlay", self.spec_overlay, self._spec_always)
+        v.addWidget(sbox)
+
         sep2 = QFrame(); sep2.setFrameShape(QFrame.Shape.HLine)
         sep2.setStyleSheet("color: %s;" % ACCENT)
         v.addWidget(sep2)
@@ -503,6 +617,10 @@ class MainWindow(QMainWindow):
             wdg.setVisible(False)
         # B1-inhomogeneity rows likewise start hidden.
         for lab, wdg in self._b1_rows:
+            lab.setVisible(False)
+            wdg.setVisible(False)
+        # Spectral-weighting rows likewise start hidden.
+        for lab, wdg in self._spec_rows:
             lab.setVisible(False)
             wdg.setVisible(False)
         return panel
@@ -604,6 +722,122 @@ class MainWindow(QMainWindow):
             lab.setVisible(on)
             wdg.setVisible(on)
         self.schedule()
+
+    def _on_spec_toggled(self, on):
+        self._update_spec_rows()
+        self.schedule()
+
+    def _on_spec_src_changed(self, *_):
+        self._update_spec_rows()
+        self.schedule()
+
+    def _update_spec_rows(self):
+        """Show the source's rows (analytic vs file); g-factor only for fields."""
+        on = self.spec_on.isChecked()
+        file_src = on and self.spec_src.currentText().startswith('Experimental')
+        ana_src = on and not file_src
+        for lab, wdg in self._spec_always:
+            lab.setVisible(on); wdg.setVisible(on)
+        for lab, wdg in self._spec_analytic_rows:
+            lab.setVisible(ana_src); wdg.setVisible(ana_src)
+        for lab, wdg in self._spec_file_rows:
+            lab.setVisible(file_src); wdg.setVisible(file_src)
+        # The g-factor only matters when the file's X axis is a magnetic field.
+        field = self.spec_xunit.currentText() in ('mT', 'G')
+        self.spec_g.setVisible(file_src and field)
+        # the g-factor's own label is the row before it in _spec_file_rows
+        for lab, wdg in self._spec_file_rows:
+            if wdg is self.spec_g:
+                lab.setVisible(file_src and field)
+
+    def open_spectrum(self):
+        """Load a two-column (X, Y) absorption spectrum via the in-process dialog."""
+        path = self.opener.open_file_dialog(multiprocessing=True,
+                                            directory=self.last_dir)
+        if not path or path == 'None':
+            return
+        try:
+            _, data = self.opener.open_1d(path)
+            data = np.atleast_2d(data)
+            if data.shape[0] < 2:
+                self.spec_file_lbl.setText("✗ needs ≥ 2 columns (X, Y)")
+                self._spec_file = None
+                return
+            x = np.asarray(data[0], float)
+            y = np.asarray(data[1], float)
+            mask = ~(np.isnan(x) | np.isnan(y))
+            self._spec_file = (x[mask], y[mask])
+            self.last_dir = os.path.dirname(path)
+            self.spec_file_lbl.setText("✓ " + os.path.basename(path))
+        except Exception as e:
+            self._spec_file = None
+            self.spec_file_lbl.setText("✗ %s" % e)
+        self.schedule()
+
+    def _gather_spectrum(self, offsets):
+        """Normalised lineshape weight g(offset) over the offset axis, or None.
+
+        ``offsets`` is the GHz offset grid. The weight is peak-normalised to 1
+        (for the overlay); the weighted *average* below divides by its own sum,
+        so the absolute scale is irrelevant. Both sources are referenced to
+        Δν = 0 (the carrier), the same axis the profile is plotted against.
+        """
+        if not self.spec_on.isChecked():
+            return None
+        c = self.spec_center.value() / 1000.0           # MHz -> GHz (centre Δν0)
+
+        if self.spec_src.currentText().startswith('Experimental'):
+            return self._spectrum_from_file(offsets, c)
+
+        # --- analytic line ---
+        fwhm = self.spec_width.value() / 1000.0          # MHz -> GHz
+        if fwhm <= 0:
+            return None
+        x = offsets - c
+        if self.spec_shape.currentText() == 'Lorentzian':
+            g = 1.0 / (1.0 + (2.0 * x / fwhm) ** 2)
+        else:                                            # Gaussian
+            g = np.exp(-4.0 * np.log(2.0) * (x / fwhm) ** 2)
+        return g
+
+    def _spectrum_from_file(self, offsets, c):
+        """Interpolate the loaded experimental absorption onto ``offsets`` (GHz).
+
+        The file X axis is converted to a frequency offset by its unit (a field
+        axis uses Δν = g·μB/h·ΔB), baseline-subtracted and peak-normalised, then
+        optionally re-centred on its centroid; ``c`` (GHz) places that centroid.
+        Points outside the file's range get zero weight (linear, no wrap).
+        """
+        if self._spec_file is None:
+            return None
+        x_raw, y = self._spec_file
+        if x_raw.size < 2:
+            return None
+        unit = self.spec_xunit.currentText()
+        if unit == 'MHz':
+            x = x_raw / 1000.0                           # MHz -> GHz
+        elif unit == 'GHz':
+            x = x_raw.copy()
+        else:                                            # mT or G -> GHz
+            # g*muB/h = g * 13.99624 MHz/mT = g * 13.99624e-3 GHz/mT.
+            mhz_per_mt = self.spec_g.value() * 13.99624
+            per_unit = mhz_per_mt if unit == 'mT' else mhz_per_mt * 0.1  # G = 0.1 mT
+            x = x_raw * per_unit / 1000.0                # -> GHz
+        # baseline-subtract + peak-normalise (absorption ≥ 0 after this).
+        w = y - np.min(y)
+        wmax = np.max(w)
+        if wmax <= 0:
+            return None
+        w = w / wmax
+        # centre: on the intensity-weighted centroid if requested, else as-is.
+        if self.spec_autocenter.isChecked():
+            x0 = float(np.sum(x * w) / np.sum(w))
+        else:
+            x0 = 0.0
+        xs = x - x0                                      # centroid (or file) at 0
+        order = np.argsort(xs)
+        g = np.interp(offsets - c, xs[order], w[order], left=0.0, right=0.0)
+        return g
 
     def _gather_b1(self):
         """B1-scale samples and Gaussian weights, or ([1.0], [1.0]) if off.
@@ -776,6 +1010,26 @@ class MainWindow(QMainWindow):
 
         self._Mx, self._My, self._Mz = M[:, 0], M[:, 1], M[:, 2]
 
+        # ---- adiabaticity factor Q_crit(offset) of P1 (swept-pulse diagnostic) ----
+        # Computed every recompute (cheap, vectorised) so the "Adiabaticity Q"
+        # Show mode is instant; uses the same resonator filter as the profile so
+        # a compensated pulse can be compared with a distorted one.
+        self._Qad = pe.adiabaticity_profile(shape1, tp1, nu1_1, offsets, params1,
+                                            dt=dt1, phi0=phi1, resonator=reson)
+
+        # ---- spectral / lineshape weighting ----
+        # g(offset) turns the per-offset response into the fraction of spins the
+        # line actually presents to the pulse: inverted ⟨(1−Mz)/2⟩ and excited
+        # ⟨|Mxy|⟩, weighted by the lineshape (echo intensity / DEER depth).
+        self._spec = self._gather_spectrum(offsets)
+        self._inv_frac = self._exc_frac = None
+        if self._spec is not None:
+            gsum = self._spec.sum()
+            if gsum > 0:                       # else the line lies outside the window
+                Mxy_w = np.hypot(self._Mx, self._My)
+                self._inv_frac = float((self._spec * (1.0 - self._Mz) / 2.0).sum() / gsum)
+                self._exc_frac = float((self._spec * Mxy_w).sum() / gsum)
+
         # ---- info line ----
         fa1 = pe.flip_angle(shape1, tp1, nu1_1, params1, dt=dt1)
         swept1 = shape1 in ('WURST', 'sech/tanh')
@@ -790,6 +1044,27 @@ class MainWindow(QMainWindow):
                 reson['Q'], self.reson_bw.value(), reson['mode'])
         if scales.size > 1:
             txt += "   |   B₁ spread %.0f%% (%d pts)" % (self.b1_spread.value(), scales.size)
+        if self._spec is not None and self._inv_frac is not None:
+            txt += "   |   spectral ⟨inv⟩ %.1f%%, ⟨|Mxy|⟩ %.1f%%" % (
+                100.0 * self._inv_frac, 100.0 * self._exc_frac)
+        elif self._spec is not None:
+            txt += "   |   spectral: line outside offset window"
+        # Adiabaticity at the sweep centre (the literature Q = 2π·ν₁²·tp/bw;
+        # Q ≳ 5 ⇒ clean inversion) plus the band over which Q stays ≥ 5.
+        if swept1 and self._Qad is not None:
+            cen = params1.get('center', 0.0) / 1000.0
+            ic = int(np.argmin(np.abs(offsets - cen)))
+            txt += "   |   P1 Q@centre %.1f" % float(self._Qad[ic])
+            good = self._Qad >= 5.0
+            if good[ic]:                       # contiguous ±width around centre
+                lo = ic
+                while lo > 0 and good[lo - 1]:
+                    lo -= 1
+                hi = ic
+                while hi < good.size - 1 and good[hi + 1]:
+                    hi += 1
+                hw = 0.5 * (offsets[hi] - offsets[lo]) * 1000.0   # MHz
+                txt += " (Q≥5 over ±%.0f MHz)" % hw
         self.info.setText(txt)
 
         self.replot()
@@ -821,14 +1096,61 @@ class MainWindow(QMainWindow):
 
         # --- profile panel (x in Hz → axis auto-prefixes to MHz) ---
         self._clear_items(self.p_prof, self._prof_items, self.prof_legend)
+        off_hz = self._off_mhz * 1e6
+        mode = self.show_mode.currentText()
+
+        # Adiabaticity Q is a positive, wide-dynamic-range quantity → its own
+        # log-y view with Q=1 / Q=5 reference thresholds; holds and the lineshape
+        # (both M-space) are suppressed here.
+        if mode == 'Adiabaticity Q (swept)':
+            self.p_prof.setLogMode(x=False, y=True)
+            self.p_prof.enableAutoRange(axis='y', enable=True)
+            self.p_prof.setLabel('left', 'Adiabaticity Q')
+            if self._Qad is not None:
+                self._prof_items.append(self.p_prof.plot(
+                    off_hz, np.maximum(self._Qad, 1e-3),
+                    pen=pg.mkPen((120, 200, 255), width=2), name='Q'))
+                for q, col in ((1.0, (255, 90, 90)), (5.0, (160, 230, 130))):
+                    self._prof_items.append(self.p_prof.plot(
+                        off_hz, np.full_like(off_hz, q),
+                        pen=pg.mkPen(col, width=1, style=Qt.PenStyle.DashLine),
+                        name='Q = %g' % q))
+            return
+
+        # M-space modes: restore the fixed linear ±1 axis.
+        self.p_prof.setLogMode(x=False, y=False)
+        self.p_prof.setYRange(-1.05, 1.05)
+        self.p_prof.setLabel('left', 'M / ' + _sub('M', '0'))
+
         # held overlays first (faint), under the live curves
         for off, mz, label, color in self._holds:
             self._prof_items.append(self.p_prof.plot(
                 off * 1e6, mz,
                 pen=pg.mkPen(color, width=1, style=Qt.PenStyle.DotLine), name=label))
 
-        mode = self.show_mode.currentText()
-        off_hz = self._off_mhz * 1e6
+        # lineshape overlay (faint filled), under the live curves so the overlap
+        # between the EPR line and the excitation band is visible at a glance.
+        # It can be shifted/inverted into the −1…0 half to sit alongside the
+        # excited (inverted-Mz) part of the profile.
+        if self._spec is not None:
+            # baseline → peak, by combo index (g is normalised 0…1):
+            #   0:'0 → 1'  1:'1 → 0'  2:'0 → −1'  3:'−1 → 1'  4:'1 → −1'
+            ov = self.spec_overlay.currentIndex()
+            if ov == 1:
+                y_ov, fill = 1.0 - self._spec, 1.0          # top, inverted
+            elif ov == 2:
+                y_ov, fill = -self._spec, 0.0               # peak hangs to −1
+            elif ov == 3:
+                y_ov, fill = 2.0 * self._spec - 1.0, -1.0   # full span, upright
+            elif ov == 4:
+                y_ov, fill = 1.0 - 2.0 * self._spec, 1.0    # full span, inverted
+            else:
+                y_ov, fill = self._spec, 0.0                # default: 0…1 on top
+            self._prof_items.append(self.p_prof.plot(
+                off_hz, y_ov,
+                pen=pg.mkPen((150, 150, 170, 160), width=1),
+                fillLevel=fill, fillBrush=(150, 150, 170, 50), name='lineshape g'))
+
         Mxy = np.hypot(self._Mx, self._My)
         mx_n, my_n = _sub('M', 'x'), _sub('M', 'y')
         mz_n, mxy_n = _sub('M', 'z'), _sub('M', 'xy')
