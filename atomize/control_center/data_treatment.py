@@ -242,6 +242,14 @@ class MainWindow(QMainWindow):
         src_row.addWidget(btn_clear)
         panel.addLayout(src_row)
 
+        # Name of the dataset currently loaded (file basename, or 'Loaded from
+        # plot' for the in-memory buffer). Kept on its own line so a long path
+        # wraps instead of stretching the panel.
+        self.loaded_label = QLabel('File: —')
+        self.loaded_label.setStyleSheet(LABEL_STYLE)
+        self.loaded_label.setWordWrap(True)
+        panel.addWidget(self.loaded_label)
+
         ch_grid = QGridLayout()
         ch_grid.addWidget(self._label('I / primary channel'), 0, 0)
         self.i_combo = QComboBox()
@@ -1041,6 +1049,7 @@ class MainWindow(QMainWindow):
                 self.xname_edit.setText(labels[0])
                 self._preset_deer_unit(labels[0])
             self._register_datasets(mapping)
+            self._set_loaded_file(os.path.basename(file_path))
             self.set_status(f'Loaded {os.path.basename(file_path)} '
                             f'({data.shape[0] - 1} curve(s)).')
         except Exception as e:
@@ -1077,6 +1086,7 @@ class MainWindow(QMainWindow):
         tmap = {'ns': 'ns', 'us': 'µs', 'µs': 'µs', 'μs': 'µs', 'ms': 'ms'}
         if u in tmap:                              # preset the DEER time unit
             self.deer_tunit.setCurrentText(tmap[u])
+        self._set_loaded_file(os.path.basename(file_path))
         self.set_status(f'Loaded {os.path.basename(file_path)} — {res["format"]}, '
                         f'{len(x)} pts, '
                         + ('complex (I/Q pair).' if res['complex'] else 'real.'))
@@ -1125,6 +1135,7 @@ class MainWindow(QMainWindow):
             if buf_xname:
                 self.xname_edit.setText(buf_xname)
             self._register_datasets(mapping)
+            self._set_loaded_file('Loaded from plot')
             self.set_status(f'Loaded {len(mapping)} curve(s) from the current plot.')
         except Exception as e:
             self._consume_buffer()   # drop a malformed buffer so it doesn't recur
@@ -1315,6 +1326,7 @@ class MainWindow(QMainWindow):
                 self.legend.removeItem(lbl)
             except Exception:
                 pass
+        self._set_loaded_file(None)
         self.set_status('Cleared. Load a dataset to begin.')
 
     # ----------------------------------------------------- preview (in-process)
@@ -1393,6 +1405,10 @@ class MainWindow(QMainWindow):
     def set_status(self, text):
         self.status.setText(text)
         general.message(text)
+
+    def _set_loaded_file(self, name):
+        """Show the source of the current dataset under the Source buttons."""
+        self.loaded_label.setText(f'File: {name}' if name else 'File: —')
 
     # ---------------------------------------------------------- operations
     def do_fit(self):

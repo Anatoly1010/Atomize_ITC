@@ -263,6 +263,13 @@ class MainWindow(QMainWindow):
         src_row.addWidget(btn_clear)
         panel.addLayout(src_row)
 
+        # Name of the dataset currently loaded (file basename, or 'Loaded from
+        # plot' for the in-memory buffer).
+        self.loaded_label = QLabel('File: —')
+        self.loaded_label.setStyleSheet(LABEL_STYLE)
+        self.loaded_label.setWordWrap(True)
+        panel.addWidget(self.loaded_label)
+
         self.transpose_check = QCheckBox('Transpose on load (swap trace / point axes)')
         self.transpose_check.setStyleSheet(CHECKBOX_STYLE)
         panel.addWidget(self.transpose_check)
@@ -689,6 +696,7 @@ class MainWindow(QMainWindow):
             parsed = self._apply_header_axes(dx, xu, dy, yu)
             self.live_check.setChecked(False)   # new data: don't auto-reprocess
             self.reset_to_raw()
+            self._set_loaded_file(os.path.basename(path))
             msg = (f'Loaded I={os.path.basename(path)}, Q={qmsg} '
                    f'(matrix {i.shape[0]}×{i.shape[1]} [traces × points]).')
             if parsed:
@@ -804,6 +812,7 @@ class MainWindow(QMainWindow):
         self.raw_i, self.raw_q = i, q
         self.live_check.setChecked(False)   # new data: don't auto-reprocess
         self.reset_to_raw()
+        self._set_loaded_file(os.path.basename(path))
         self.set_status(f'Loaded {os.path.basename(path)} — {res["format"]}, '
                         f'{i.shape[0]}×{i.shape[1]} [traces × points], '
                         + ('complex.' if res['complex'] else 'real (Q = 0).'))
@@ -854,6 +863,7 @@ class MainWindow(QMainWindow):
             self.raw_i, self.raw_q = i, q
             self.live_check.setChecked(False)   # new data: don't auto-reprocess
             self.reset_to_raw()
+            self._set_loaded_file('Loaded from plot')
             msg = (f'Loaded 2D plot from buffer '
                    f'({i.shape[0]}×{i.shape[1]} [traces × points]).')
             if zeroed:
@@ -975,6 +985,7 @@ class MainWindow(QMainWindow):
         self.raw_i = self.raw_q = self.src_i = self.src_q = None
         self.res_i = self.res_q = None
         self._clear_preview()
+        self._set_loaded_file(None)
         self.set_status('Cleared. Open an I/Q 2D dataset.')
 
     def _clear_preview(self):
@@ -1073,6 +1084,10 @@ class MainWindow(QMainWindow):
     def set_status(self, text):
         self.status.setText(text)
         general.message(text)
+
+    def _set_loaded_file(self, name):
+        """Show the source of the current dataset under the Source buttons."""
+        self.loaded_label.setText(f'File: {name}' if name else 'File: —')
 
     # ---------------------------------------------------------- operations
     @staticmethod
