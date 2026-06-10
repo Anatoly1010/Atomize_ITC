@@ -3234,6 +3234,9 @@ class MainWindow(QMainWindow):
                 self.timer.stop()
                 break
             except Exception as e:
+                # never swallow silently: surface the failure in the TextEdit
+                import traceback
+                self.errors.appendPlainText('GUI message-pump error:\n' + traceback.format_exc())
                 break
 
         if self.digitizer_process.is_alive() and not self.timer.isActive():
@@ -3248,7 +3251,12 @@ class MainWindow(QMainWindow):
 
             if getattr(self, 'is_testing', False):
                 self.is_testing = False
-                if not self.last_error:
+                exit_code = getattr(self.digitizer_process, 'exitcode', None)
+                # A clean preflight returns exitcode 0. If it died WITHOUT sending
+                # an 'Error' (hard crash in a ctypes device call, a kill, a non-zero
+                # sys.exit, a hang we just joined) last_error is still False but
+                # exitcode != 0 -- surface that instead of silently starting the run.
+                if (not self.last_error) and (exit_code in (0, None)):
                     self.last_error = False 
                     time.sleep(0.2)
                     if self.is_experiment == False:
@@ -3256,6 +3264,15 @@ class MainWindow(QMainWindow):
                     else:
                         self.run_experiment()
                 else:
+                    if not self.last_error:
+                        self.errors.appendPlainText(
+                            'Preflight process exited abnormally (exitcode ' + str(exit_code) +
+                            ') without reporting an error; experiment not started.')
+                        if hasattr(self, 'progress_bar'):
+                            self.progress_bar.setValue(0)
+                        if hasattr(self, 'button_blue'):
+                            self.button_blue()
+                        self.is_experiment = False
                     self.last_error = False
                     field_param.clear_lock()
             else:

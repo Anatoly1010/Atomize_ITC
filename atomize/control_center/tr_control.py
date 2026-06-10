@@ -571,6 +571,9 @@ class MainWindow(QMainWindow):
                 self.timer.stop()
                 break
             except Exception as e:
+                # never swallow silently: surface the failure in the TextEdit
+                import traceback
+                self.errors.appendPlainText('GUI message-pump error:\n' + traceback.format_exc())
                 break
         
         if self.exp_process.is_alive() and not self.timer.isActive():
