@@ -1,0 +1,32 @@
+P1:  DETECTION,  384.0,  128.0,  [+x,-x,+x,-x,-x,+x,-x,+x,+x,-x,+x,-x,-x,+x,-x,+x],  16.0,  0.0
+P2:  MW,  0.0,  16.0,  [+x,+x,+x,+x,+x,+x,+x,+x,+x,+x,+x,+x,+x,+x,+x,+x],  0.0,  0.0
+P3:  MW,  128.0,  16.0,  [+x,+y,-x,-y,+x,+y,-x,-y,+x,+y,-x,-y,+x,+y,-x,-y],  0.0,  0.0
+P4:  MW,  224.0,  32.0,  [+x,+y,-x,-y,+x,+y,-x,-y,-x,-y,+x,+y,-x,-y,+x,+y],  16.0,  0.0
+P5:  MW,  320.0,  16.0,  [+x,+y,-x,-y,-x,-y,+x,+y,+x,+y,-x,-y,-x,-y,+x,+y],  16.0,  0.0
+P6:  MW,  0.0,  0.0,  [+x,+x],  0.0,  0.0
+P7:  MW,  0.0,  0.0,  [+x,+x],  0.0,  0.0
+P8:  MW,  0.0,  0.0,  [+x,+x],  0.0,  0.0
+P9:  MW,  0.0,  0.0,  [+x,+x],  0.0,  0.0
+Rep rate:  1000.0
+Field:  3478.0
+Points:  2016
+Horizontal offset:  1024
+Window left:  120.0
+Window right:  200.0
+Acquisitions:  1
+Points to Drop:  0
+Zero order:  0.0
+First order:  0.0
+Second order:  0.0
+Laser:  Nd:YaG
+Decimation:  1
+Points:  128
+Scans:  1
+Log Start:  1.0
+Log End:  7.0
+Start Field:  2400.0
+End Field:  4400.0
+Field Step:  1.0
+Sweep Type:  Linear Time
+X0:  0.0
+dX:  0.0

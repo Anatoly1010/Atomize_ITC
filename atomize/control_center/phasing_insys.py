@@ -265,6 +265,7 @@ class MainWindow(QMainWindow):
 
         eseem_sequences = {
             '3pESEEM; 4S': '3peseem_4s.phase',
+            'HYSCORE; 16S': 'hyscore_16s.phase',
         }
 
         for label, file_name in eseem_sequences.items():
@@ -2278,6 +2279,11 @@ class MainWindow(QMainWindow):
         file_to_read.write('Window Left: ' + str( int(self.cur_win_left) ) +'\n') #/ self.time_per_point
         file_to_read.write('Window Right: ' + str( int(self.cur_win_right ) ) +'\n') #/ self.time_per_point
         file_to_read.write('Decimation: ' + str( self.decimation ) +'\n')
+        # phase corrections (worker units: rad, rad/s, rad/s^2) so acquisition
+        # scripts can pick them up via digitizer_read_settings() without a preset
+        file_to_read.write('Zero order: ' + str( getattr(self, 'zero_order', 0.0) ) +'\n')
+        file_to_read.write('First order: ' + str( getattr(self, 'first_order', 0.0) ) +'\n')
+        file_to_read.write('Second order: ' + str( getattr(self, 'second_order', 0.0) ) +'\n')
 
         file_to_read.close()
 

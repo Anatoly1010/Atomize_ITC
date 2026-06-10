@@ -7,3 +7,6 @@ CH1 Offset: 0
 Window Left: 0
 Window Right: 800
 Decimation: 1
+Zero order: 0.0
+First order: 0.0
+Second order: 0.0
