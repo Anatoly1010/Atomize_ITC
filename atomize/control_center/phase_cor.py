@@ -10,6 +10,7 @@ from PyQt6 import QtWidgets, uic
 from PyQt6.QtGui import QIcon        
 import atomize.general_modules.general_functions as general
 import atomize.general_modules.csv_opener_saver as openfile
+import atomize.general_modules.last_dir as ldir
 import atomize.math_modules.fft as fft_module
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -91,7 +92,7 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         A function to open file with experimental data
         """
-        filedialog = QFileDialog(self, 'Open File', directory = self.path, filter = "Data (*.csv)",\
+        filedialog = QFileDialog(self, 'Open File', directory = ldir.load('phase_cor', self.path), filter = "Data (*.csv)",\
             options = QtWidgets.QFileDialog.Option.DontUseNativeDialog)
         # use QFileDialog.DontUseNativeDialog to change directory
         filedialog.setStyleSheet("QWidget { background-color : rgb(42, 42, 64); color: rgb(211, 194, 78);}")
@@ -103,7 +104,7 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         A function to open file with experimental 1D data
         """
-        filedialog = QFileDialog(self, 'Open File', directory = self.path, filter = "Data (*.csv)",\
+        filedialog = QFileDialog(self, 'Open File', directory = ldir.load('phase_cor', self.path), filter = "Data (*.csv)",\
             options = QtWidgets.QFileDialog.Option.DontUseNativeDialog)
         # use QFileDialog.DontUseNativeDialog to change directory
         filedialog.setStyleSheet("QWidget { background-color : rgb(42, 42, 64); color: rgb(211, 194, 78);}")
@@ -116,7 +117,9 @@ class MainWindow(QtWidgets.QMainWindow):
         A function to open 1D data
         """
         self.opened_file_1d = filename
-        temp = np.genfromtxt(filename, dtype = float, delimiter = ',', skip_header = 1, comments='#') 
+        self.path = os.path.dirname(filename)
+        ldir.save('phase_cor', self.path)
+        temp = np.genfromtxt(filename, dtype = float, delimiter = ',', skip_header = 1, comments='#')
         self.data_1d = np.transpose(temp)
         
         # 3 or 4 columns variant
@@ -137,7 +140,7 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         A function to open a new window for choosing parameters
         """
-        filedialog = QFileDialog(self, 'Save File', directory = self.path, filter = "Data (*.csv)",\
+        filedialog = QFileDialog(self, 'Save File', directory = ldir.load('phase_cor', self.path), filter = "Data (*.csv)",\
             options = QtWidgets.QFileDialog.Option.DontUseNativeDialog)
         filedialog.setAcceptMode(QFileDialog.AcceptSave)
         # use QFileDialog.DontUseNativeDialog to change directory
@@ -150,7 +153,7 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         A function to open a new window for choosing parameters
         """
-        filedialog = QFileDialog(self, 'Save File', directory = self.path, filter = "Data (*.csv)",\
+        filedialog = QFileDialog(self, 'Save File', directory = ldir.load('phase_cor', self.path), filter = "Data (*.csv)",\
             options = QtWidgets.QFileDialog.Option.DontUseNativeDialog)
         filedialog.setAcceptMode(QFileDialog.AcceptSave)
         # use QFileDialog.DontUseNativeDialog to change directory
@@ -164,6 +167,8 @@ class MainWindow(QtWidgets.QMainWindow):
         A function to open data for both I and Q channel
         """
         self.opened_file = filename
+        self.path = os.path.dirname(filename)
+        ldir.save('phase_cor', self.path)
         filename_param = filename.split(".csv")[0] + ".param"
         self.points = int( open(filename_param).read().split("Points: ")[1].split("\n")[0] )
         self.h_res = float( open(filename_param).read().split("Horizontal Resolution: ")[1].split(" ns")[0] )
@@ -204,6 +209,8 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         A function to save phase corrected 2D data
         """
+        self.path = os.path.dirname(filename)
+        ldir.save('phase_cor', self.path)
         if self.op_2d == 1:
             freq, fft_x, fft_y = self.fft.fft( self.data_i[0][self.drop:], self.data_i[:,self.drop:], self.data_q[:,self.drop:], self.h_res, re = 'True' )
             data = self.fft.ph_correction( freq, fft_x, fft_y, self.zero_cor, self.first_cor, self.second_cor )
@@ -223,6 +230,8 @@ class MainWindow(QtWidgets.QMainWindow):
         """
         A function to save phase corrected 1D data
         """
+        self.path = os.path.dirname(filename)
+        ldir.save('phase_cor', self.path)
         if self.op_1d == 1:
             if len( self.data_1d ) == 4:
                 freq, fft_x, fft_y = self.fft.fft( self.data_1d[0][self.drop:], self.data_1d[1][self.drop:], self.data_1d[2][self.drop:], self.h_res, re = 'True' )

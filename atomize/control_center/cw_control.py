@@ -10,6 +10,7 @@ from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QLabel, QDoubleS
 from PyQt6.QtGui import QIcon, QAction
 from PyQt6.QtCore import Qt, QTimer
 import atomize.general_modules.csv_opener_saver as openfile
+import atomize.general_modules.last_dir as ldir
 import atomize.control_center.field_param as field_param
 
 
@@ -583,7 +584,7 @@ class MainWindow(QMainWindow):
         """
         A function to open a new window for choosing a pulse list
         """
-        filedialog = QFileDialog(self, 'Open File', directory = self.path, filter = "CW Parameters (*.cw)", options = QFileDialog.Option.DontUseNativeDialog)
+        filedialog = QFileDialog(self, 'Open File', directory = ldir.load('cw', self.path), filter = "CW Parameters (*.cw)", options = QFileDialog.Option.DontUseNativeDialog)
         filedialog.setMinimumWidth(800)
 
         tree = filedialog.findChild(QTreeView)
@@ -812,7 +813,7 @@ class MainWindow(QMainWindow):
         """
         A function to open a new window for choosing a pulse list
         """
-        filedialog = QFileDialog(self, 'Save File', directory = self.path, filter = "CW Parameters (*.cw)", options = QFileDialog.Option.DontUseNativeDialog)
+        filedialog = QFileDialog(self, 'Save File', directory = ldir.load('cw', self.path), filter = "CW Parameters (*.cw)", options = QFileDialog.Option.DontUseNativeDialog)
         filedialog.setAcceptMode(QFileDialog.AcceptMode.AcceptSave)
         filedialog.setMinimumWidth(800)
         
@@ -1043,6 +1044,8 @@ class MainWindow(QMainWindow):
         A function to open a pulse list
         :param filename: string
         """
+        self.path = os.path.dirname(filename)
+        ldir.save('cw', self.path)
         text = open(filename).read()
         lines = text.split('\n')
 
@@ -1063,6 +1066,8 @@ class MainWindow(QMainWindow):
         A function to save a new pulse list
         :param filename: string
         """
+        self.path = os.path.dirname(filename)
+        ldir.save('cw', self.path)
         if filename[-2:] != 'cw':
             filename = filename + '.cw'
         with open(filename, 'w') as file:

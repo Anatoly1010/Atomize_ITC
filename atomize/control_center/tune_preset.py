@@ -10,6 +10,7 @@ from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QLabel, QDoubleS
 from PyQt6.QtGui import QIcon, QAction
 from PyQt6.QtCore import Qt, QTimer
 import atomize.general_modules.csv_opener_saver as openfile
+import atomize.general_modules.last_dir as ldir
 
 class MainWindow(QMainWindow):
     """
@@ -522,7 +523,7 @@ class MainWindow(QMainWindow):
         """
         A function to open a new window for choosing a pulse list
         """
-        filedialog = QFileDialog(self, 'Open File', directory = self.path, filter = "Tune Parameters (*.tn)", options = QFileDialog.Option.DontUseNativeDialog)
+        filedialog = QFileDialog(self, 'Open File', directory = ldir.load('tune', self.path), filter = "Tune Parameters (*.tn)", options = QFileDialog.Option.DontUseNativeDialog)
         
         tree = filedialog.findChild(QTreeView)
         header = tree.header()
@@ -750,7 +751,7 @@ class MainWindow(QMainWindow):
         """
         A function to open a new window for choosing a pulse list
         """
-        filedialog = QFileDialog(self, 'Save File', directory = self.path, filter = "Tune Parameters (*.tn)", options = QFileDialog.Option.DontUseNativeDialog)
+        filedialog = QFileDialog(self, 'Save File', directory = ldir.load('tune', self.path), filter = "Tune Parameters (*.tn)", options = QFileDialog.Option.DontUseNativeDialog)
         filedialog.setAcceptMode(QFileDialog.AcceptMode.AcceptSave)
 
         tree = filedialog.findChild(QTreeView)
@@ -980,6 +981,8 @@ class MainWindow(QMainWindow):
         A function to open a pulse list
         :param filename: string
         """
+        self.path = os.path.dirname(filename)
+        ldir.save('tune', self.path)
         text = open(filename).read()
         lines = text.split('\n')
 
@@ -996,6 +999,8 @@ class MainWindow(QMainWindow):
         A function to save a new pulse list
         :param filename: string
         """
+        self.path = os.path.dirname(filename)
+        ldir.save('tune', self.path)
         if filename[-2:] != 'tn':
             filename = filename + '.tn'
         with open(filename, 'w') as file:

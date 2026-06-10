@@ -13,6 +13,7 @@ from PyQt6.QtWidgets import QWidget, QGridLayout, QLabel, QPushButton, QComboBox
 from PyQt6.QtGui import QColor
 from atomize.main.main_window import MainWindow, NameList
 from atomize.general_modules.gui_style import apply_app_style
+import atomize.general_modules.last_dir as ldir
 os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "1"
 
 ###
@@ -153,6 +154,8 @@ class MyExtendedNameList(NameList):
         :param filename: string
         """
         file_path = filename
+        self.open_dir = os.path.dirname(filename)
+        ldir.save('data', self.open_dir)      # remember the data folder
 
         header_lines = []
 

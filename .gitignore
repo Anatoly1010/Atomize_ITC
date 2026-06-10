@@ -17,5 +17,15 @@ libs/exam_adc.ini
 libs/exam_edac.ini
 libs/status
 libs/treatment_buffer.csv
+libs/treatment_lastdir.txt
+libs/excitation_lastdir.txt
+libs/script_lastdir.txt
+libs/data_lastdir.txt
+libs/cw_lastdir.txt
+libs/tr_lastdir.txt
+libs/tune_lastdir.txt
+libs/phase_lastdir.txt
+libs/phase_awg_lastdir.txt
+libs/phase_cor_lastdir.txt
 *.param
 CLAUDE.md

@@ -15,6 +15,7 @@ from PyQt6.QtGui import QIcon, QColor, QAction, QTextCursor
 from PyQt6.QtCore import Qt, QTimer
 import atomize.general_modules.general_functions as general
 import atomize.general_modules.csv_opener_saver as openfile
+import atomize.general_modules.last_dir as ldir
 import atomize.control_center.field_param as field_param
 from atomize.control_center.time_log_spinbox import TimeLogSpinBox
 
@@ -1452,7 +1453,7 @@ class MainWindow(QMainWindow):
         """
         A function to open a new window for choosing a pulse list
         """
-        filedialog = QFileDialog(self, 'Open File', directory = self.path, filter = "Pulse Phase List (*.phase)", options = QFileDialog.Option.DontUseNativeDialog)
+        filedialog = QFileDialog(self, 'Open File', directory = ldir.load('phase', self.path), filter = "Pulse Phase List (*.phase)", options = QFileDialog.Option.DontUseNativeDialog)
         
         filedialog.setMinimumWidth(800)
         tree = filedialog.findChild(QTreeView)
@@ -1681,7 +1682,7 @@ class MainWindow(QMainWindow):
         """
         A function to open a new window for choosing a pulse list
         """
-        filedialog = QFileDialog(self, 'Save File', directory = self.path, filter = "Pulse Phase List (*.phase)", options = QFileDialog.Option.DontUseNativeDialog)
+        filedialog = QFileDialog(self, 'Save File', directory = ldir.load('phase', self.path), filter = "Pulse Phase List (*.phase)", options = QFileDialog.Option.DontUseNativeDialog)
         filedialog.setAcceptMode(QFileDialog.AcceptMode.AcceptSave)
         filedialog.setMinimumWidth(800)
 
@@ -1912,6 +1913,8 @@ class MainWindow(QMainWindow):
         A function to open a pulse list
         :param filename: string
         """
+        self.path = os.path.dirname(filename)
+        ldir.save('phase', self.path)
         self.opened = 1
         text = open(filename).read()
         lines = text.split('\n')
@@ -2027,6 +2030,8 @@ class MainWindow(QMainWindow):
         A function to save a new pulse list
         :param filename: string
         """
+        self.path = os.path.dirname(filename)
+        ldir.save('phase', self.path)
         if filename[-5:] != 'phase':
             filename = filename + '.phase'
         with open(filename, 'w') as file:
