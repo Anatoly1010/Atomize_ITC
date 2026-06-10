@@ -71,6 +71,31 @@ def _lsub(base, sub):
 # awg_phasing_insys / sequence_calculator so a length set here is realisable.
 GRID = 3.2
 
+# Remembers the folder of the last spectrum opened here so the next dialog starts
+# there — survives a window relaunch (the tool is its own short-lived QProcess).
+# libs/ runtime-IPC convention, same as data_treatment's treatment_lastdir.txt.
+LASTDIR_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
+    os.path.abspath(__file__)))), 'libs', 'excitation_lastdir.txt')
+
+
+def _load_last_dir():
+    try:
+        with open(LASTDIR_PATH, 'r', errors='ignore') as fh:
+            d = fh.read().strip()
+        return d if d and os.path.isdir(d) else ''
+    except Exception:
+        return ''
+
+
+def _save_last_dir(path):
+    try:
+        d = path if os.path.isdir(path) else os.path.dirname(path)
+        if d:
+            with open(LASTDIR_PATH, 'w') as fh:
+                fh.write(d)
+    except Exception:
+        pass
+
 
 def round_to_closest(x, y):
     """Round x up to the closest multiple of y (awg_phasing/Insys grid rule)."""
@@ -113,9 +138,10 @@ class MainWindow(QMainWindow):
         self._spec = None         # current lineshape weight over offsets, or None
         self._Qad = None          # adiabaticity Q_crit over offsets (P1), or None
         self._spec_file = None    # loaded experimental spectrum as (x_raw, y_raw)
+        self._reson_meas = None   # loaded measured transfer fn as (freq_GHz, H_complex)
         self._param_rows = {}     # name -> (label_widget, spin_widget)
         self.opener = openfile.Saver_Opener()  # CSV loader (in-process dialog)
-        self.last_dir = ''        # remembered directory for the load dialog
+        self.last_dir = _load_last_dir()   # start dialogs in the last folder
         self._shape_items = []    # live curve items on the waveform panel
         self._prof_items = []     # live curve items on the profile panel
 
@@ -387,6 +413,7 @@ class MainWindow(QMainWindow):
         rg.setContentsMargins(0, 0, 0, 0)
         rg.setVerticalSpacing(6)
         self._reson_rows = []          # (label, widget) pairs for show/hide
+        self._reson_meas_rows = []     # rows shown only for the measured model
 
         self.reson_on = QCheckBox("Resonator transfer function")
         self.reson_on.setStyleSheet(CHECKBOX_STYLE)
@@ -426,6 +453,48 @@ class MainWindow(QMainWindow):
         self.reson_mode.setFixedWidth(150)
         self.reson_mode.currentTextChanged.connect(self.schedule)
         _rrow("Mode", self.reson_mode)
+
+        # Model: ideal RLC (uses ν0 + bandwidth above) vs a loaded measured complex
+        # transfer function (VNA S21). With a measured H the across-band magnitude
+        # ripple and phase are taken from the file; ν0/detuning still set the
+        # carrier (nu = ν0 − detuning + f) and ν0/Q still clock the ring-down.
+        self.reson_model = QComboBox()
+        self.reson_model.addItems(['Ideal RLC', 'Measured file'])
+        self.reson_model.setStyleSheet(COMBO_STYLE)
+        self.reson_model.setFixedWidth(150)
+        self.reson_model.setToolTip(
+            "Ideal RLC = analytic H = 1/(1 + iQ(ν/ν₀ − ν₀/ν)). Measured file = a "
+            "loaded complex transfer function (magnitude + phase); ν₀/detuning "
+            "still map the carrier, ν₀/Q still set the ring-down time.")
+        self.reson_model.currentTextChanged.connect(self._on_reson_model_changed)
+        _rrow("Model", self.reson_model)
+
+        # --- measured transfer-function file (shown only for 'Measured file') ---
+        self.reson_fmt = QComboBox()
+        self.reson_fmt.addItems(['GHz · dB · deg', 'GHz · lin · deg',
+                                 'GHz · lin · rad', 'GHz · Re · Im',
+                                 'MHz · dB · deg', 'MHz · Re · Im'])
+        self.reson_fmt.setStyleSheet(COMBO_STYLE)
+        self.reson_fmt.setFixedWidth(150)
+        self.reson_fmt.setToolTip(
+            "Column format of the loaded file: freq · magnitude · phase (or "
+            "freq · Re · Im). dB = 20·log₁₀|H|; deg/rad = phase unit.")
+        self.reson_fmt.currentTextChanged.connect(self.open_resonator_reparse)
+        lab_fmt = self._label("File format")
+        rg.addWidget(lab_fmt, rr, 0); rg.addWidget(self.reson_fmt, rr, 1)
+        self._reson_meas_rows.append((lab_fmt, self.reson_fmt)); rr += 1
+
+        self.reson_load = QPushButton("Load transfer fn…")
+        self.reson_load.setStyleSheet(BUTTON_STYLE)
+        self.reson_load.clicked.connect(self.open_resonator)
+        lab_load = self._label("File")
+        rg.addWidget(lab_load, rr, 0); rg.addWidget(self.reson_load, rr, 1)
+        self._reson_meas_rows.append((lab_load, self.reson_load)); rr += 1
+        self.reson_file_lbl = QLabel("(no file)")
+        self.reson_file_lbl.setStyleSheet("QLabel { color: %s; }" % FG)
+        self.reson_file_lbl.setWordWrap(True)
+        rg.addWidget(self.reson_file_lbl, rr, 0, 1, 2)
+        self._reson_meas_rows.append((self.reson_file_lbl, self.reson_file_lbl)); rr += 1
 
         # Ring-down: in simulate mode, let the resonator keep emitting after the
         # drive stops (the field decays with tau = Q/(pi ν₀)). The spins nutate
@@ -564,8 +633,9 @@ class MainWindow(QMainWindow):
         self.spec_autocenter.setChecked(True)
         self.spec_autocenter.setToolTip(
             "Shift the loaded spectrum so its intensity-weighted centroid sits at "
-            "the centre offset below (essential for field-axis files, whose "
-            "absolute values are far off-axis).")
+            "the centre offset below. When off, the geometric midpoint of the "
+            "axis is used instead — either keeps a field-axis file (whose "
+            "absolute values are far off-axis) visible.")
         self.spec_autocenter.toggled.connect(self.schedule)
         sg.addWidget(self.spec_autocenter, sr, 0, 1, 2)
         self._spec_rows.append((self.spec_autocenter, self.spec_autocenter))
@@ -613,6 +683,9 @@ class MainWindow(QMainWindow):
         self.p2_box.setVisible(False)
         # Resonator parameter rows start hidden (the checkbox reveals them).
         for lab, wdg in self._reson_rows:
+            lab.setVisible(False)
+            wdg.setVisible(False)
+        for lab, wdg in self._reson_meas_rows:
             lab.setVisible(False)
             wdg.setVisible(False)
         # B1-inhomogeneity rows likewise start hidden.
@@ -712,10 +785,23 @@ class MainWindow(QMainWindow):
         self.schedule()
 
     def _on_reson_toggled(self, on):
+        self._update_reson_rows()
+        self.schedule()
+
+    def _on_reson_model_changed(self, *_):
+        self._update_reson_rows()
+        self.schedule()
+
+    def _update_reson_rows(self):
+        """Show the resonator rows; the measured-file rows only for that model."""
+        on = self.reson_on.isChecked()
         for lab, wdg in self._reson_rows:
             lab.setVisible(on)
             wdg.setVisible(on)
-        self.schedule()
+        meas = on and self.reson_model.currentText().startswith('Measured')
+        for lab, wdg in self._reson_meas_rows:
+            lab.setVisible(meas)
+            wdg.setVisible(meas)
 
     def _on_b1_toggled(self, on):
         for lab, wdg in self._b1_rows:
@@ -767,12 +853,67 @@ class MainWindow(QMainWindow):
             y = np.asarray(data[1], float)
             mask = ~(np.isnan(x) | np.isnan(y))
             self._spec_file = (x[mask], y[mask])
-            self.last_dir = os.path.dirname(path)
+            self.last_dir = os.path.dirname(path) or self.last_dir
+            _save_last_dir(self.last_dir)
             self.spec_file_lbl.setText("✓ " + os.path.basename(path))
         except Exception as e:
             self._spec_file = None
             self.spec_file_lbl.setText("✗ %s" % e)
         self.schedule()
+
+    def _parse_transfer(self, c0, c1, c2):
+        """(freq_GHz, H_complex) from three columns per the File-format combo."""
+        fmt = self.reson_fmt.currentText()
+        f = c0 / 1000.0 if fmt.startswith('MHz') else c0      # -> GHz
+        if 'Re · Im' in fmt:
+            H = c1 + 1j * c2
+        else:
+            mag = 10.0 ** (c1 / 20.0) if 'dB' in fmt else c1
+            ph = np.deg2rad(c2) if 'deg' in fmt else c2
+            H = mag * np.exp(1j * ph)
+        return f, H
+
+    def open_resonator(self):
+        """Load a 3-column measured transfer function via the in-process dialog."""
+        path = self.opener.open_file_dialog(multiprocessing=True,
+                                            directory=self.last_dir)
+        if not path or path == 'None':
+            return
+        self._reson_path = path
+        self._load_resonator(path)
+        self.schedule()
+
+    def open_resonator_reparse(self, *_):
+        """Re-read the already-loaded file when the column format changes."""
+        path = getattr(self, '_reson_path', None)
+        if path:
+            self._load_resonator(path)
+            self.schedule()
+
+    def _load_resonator(self, path):
+        try:
+            _, data = self.opener.open_1d(path)
+            data = np.atleast_2d(data)
+            if data.shape[0] < 3:
+                self.reson_file_lbl.setText("✗ needs ≥ 3 columns (f, mag, phase)")
+                self._reson_meas = None
+                return
+            f, H = self._parse_transfer(np.asarray(data[0], float),
+                                        np.asarray(data[1], float),
+                                        np.asarray(data[2], float))
+            mask = ~(np.isnan(f) | np.isnan(H.real) | np.isnan(H.imag))
+            if mask.sum() < 2:
+                self.reson_file_lbl.setText("✗ < 2 valid points")
+                self._reson_meas = None
+                return
+            self._reson_meas = (f[mask], H[mask])
+            self.last_dir = os.path.dirname(path) or self.last_dir
+            _save_last_dir(self.last_dir)
+            self.reson_file_lbl.setText("✓ %s (%d pts)"
+                                        % (os.path.basename(path), int(mask.sum())))
+        except Exception as e:
+            self._reson_meas = None
+            self.reson_file_lbl.setText("✗ %s" % e)
 
     def _gather_spectrum(self, offsets):
         """Normalised lineshape weight g(offset) over the offset axis, or None.
@@ -829,12 +970,16 @@ class MainWindow(QMainWindow):
         if wmax <= 0:
             return None
         w = w / wmax
-        # centre: on the intensity-weighted centroid if requested, else as-is.
+        # Reference to zero so the file lands on the (small) offset axis: the
+        # intensity-weighted centroid if auto-centre is on, else the geometric
+        # midpoint of the range. Either keeps an absolute field axis (e.g.
+        # 3310-3410 G -> ~9.3 GHz) visible; for an already-zero-centred offset
+        # file both are ~0, so the file is shown as-is.
         if self.spec_autocenter.isChecked():
             x0 = float(np.sum(x * w) / np.sum(w))
         else:
-            x0 = 0.0
-        xs = x - x0                                      # centroid (or file) at 0
+            x0 = 0.5 * (float(np.min(x)) + float(np.max(x)))
+        xs = x - x0                                      # centroid (or midpoint) at 0
         order = np.argsort(xs)
         g = np.interp(offsets - c, xs[order], w[order], left=0.0, right=0.0)
         return g
@@ -883,7 +1028,11 @@ class MainWindow(QMainWindow):
         # Ring-down window: ~5 time constants captures the decay to ~1%.
         ring = 5.0 * pe.ringdown_time(nu0, Q) if (mode == 'simulate'
                                                   and self.reson_ring.isChecked()) else 0.0
-        return dict(nu0=nu0, Q=Q, detuning=det, mode=mode, ringdown=ring)
+        # Measured complex H replaces the ideal RLC when that model is selected
+        # and a file is loaded; otherwise None falls back to resonator_transfer.
+        meas = (self._reson_meas
+                if self.reson_model.currentText().startswith('Measured') else None)
+        return dict(nu0=nu0, Q=Q, detuning=det, mode=mode, ringdown=ring, measured=meas)
 
     def _pulse_waveform(self, store, dt_disp, t0=0.0, phi_offset=0.0, resonator=None):
         """Normalised I/Q + envelope of one pulse on an absolute time axis (ns).
