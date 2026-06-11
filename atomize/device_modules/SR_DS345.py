@@ -127,7 +127,6 @@ class SR_DS345:
                     self.status_flag = 1
                     try:
                         # test should be here
-                        self.status_flag = 1
                         self.device_write('*CLS')
                         general.wait('50 ms')
 
@@ -176,6 +175,7 @@ class SR_DS345:
             self.test_mod_rate_divider = 10
             self.start_freq = 1e3
             self.stop_freq = 10e3
+            self.tr_source = 0
 
     def device_write(self, command):
         if self.status_flag == 1:
@@ -194,7 +194,7 @@ class SR_DS345:
                     general.wait('50 ms')
                     answer = self.device.read().decode()
                 else:
-                    answer = self.device.query(command)
+                    answer = self.device.query(command, 0.05)
 
             elif self.config['interface'] == 'rs232':
                 answer = self.device.query(command)
@@ -753,8 +753,8 @@ class SR_DS345:
         TSRC i
         TSRC?
         """
-        if len(function) == 1:
-            func = str(function[0])
+        if len(tr_type) == 1:
+            func = str(tr_type[0])
             flag = self.modulation_trigger_dict[func]
             self.tr_source = flag
             if self.test_flag != 'test':
@@ -762,7 +762,7 @@ class SR_DS345:
             elif self.test_flag == 'test':
                 assert(func in self.modulation_trigger_dict), f"Invalid trigger source. Available options are {list(self.modulation_trigger_dict.keys())}"
 
-        elif len(function) == 0:
+        elif len(tr_type) == 0:
             if self.test_flag != 'test':            
                 raw_answer = int(self.device_query('TSRC?'))
                 self.tr_source = raw_answer
@@ -794,7 +794,7 @@ class SR_DS345:
                 temp = rate[0].split(" ")
                 scaling = temp[1]
                 assert(scaling in self.rate_freq_list), f"Incorrect SI suffix. Available options are {self.rate_freq_list}"
-                assert( freq >= 0.001 and freq <= 10e3 ), f"Incorrect trigger rate range. The available range is from 1 mHz to 10 kHz"
+                assert( freq >= 0.001 and freq <= 10e3 ), f"Incorrect trigger rate. The available range is from 1 mHz to 10 kHz"
 
         elif len(rate) == 0:
             if self.test_flag != 'test':

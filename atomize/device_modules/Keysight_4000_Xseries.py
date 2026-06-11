@@ -218,13 +218,13 @@ class Keysight_4000_Xseries:
                 #    mod_tb = pg.siEval(self.oscilloscope_timebase()) + 0.01 * tb_0
                 #    self.oscilloscope_timebase( pg.siFormat( mod_tb, suffix = 's', precision = 5, allowUnicode = False))
                 #    answer = int(self.device_query(':WAVeform:POINts?'))
-                
+                #
                 #    if i == 0:
                 #        general.message('Incorrect number of points. Timebase will be changed')
                 #        i = 1
-
+                #
                 #    if (time.time() - st_time) > 60:
-                #        general.message(f'Correct timebase was not found. The number of point is {answer}')
+                #        general.message(f'Correct timebase was not found. The number of points is {answer}')
                 #        self.oscilloscope_timebase( pg.siFormat( tb_0, suffix = 's', precision = 5, allowUnicode = False))
                 #        break
                 
