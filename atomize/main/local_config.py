@@ -13,7 +13,7 @@ def get_user_documents_dir():
     return user_documents_dir()
 
 def copy_config(src, src2):
-    app_name = "atomize-py"
+    app_name = "atomize-itc"
     config_dir = get_user_config_dir(app_name)
     config_dir2 = os.path.join(config_dir, "device_config")
     config_file_path = os.path.join(config_dir, "main_config.ini")
@@ -35,7 +35,7 @@ def copy_config(src, src2):
     return config_file_path, config_dir2
 
 def load_config():
-    app_name = "atomize-py"
+    app_name = "atomize-itc"
     config_dir = get_user_config_dir(app_name)
     config_dir2 = os.path.join(config_dir, "device_config")
     config_file_path = os.path.join(config_dir, "main_config.ini")
@@ -43,13 +43,13 @@ def load_config():
     return config_file_path, config_dir2
 
 def load_config_device():
-    app_name = "atomize-py"
+    app_name = "atomize-itc"
     config_dir2 = os.path.join(get_user_config_dir(app_name), "device_config")
 
     return config_dir2
 
 def load_scripts(src):
-    app_name = "atomize-py"
+    app_name = "atomize-itc"
     config_dir = os.path.join( get_user_documents_dir(), app_name, "default" )
 
     # Ensure config directory exists
