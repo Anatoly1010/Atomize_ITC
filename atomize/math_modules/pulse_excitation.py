@@ -3,9 +3,10 @@
 Excitation / inversion profiles of shaped EPR pulses.
 =====================================================
 
-Physics core (no GUI) behind the "Excitation Profile" control-center tool. The
-approach is the standard EasySpin one and is a vectorised port of A. Isaev's
-Julia/Pluto propagator notebook:
+Compute how, and with what phase, a shaped microwave pulse acts on spins across
+a range of resonance offsets. The approach is the standard EasySpin one
+(numerical spin-dynamics propagation, valid for adiabatic pulses, not just the
+linear-response/FFT approximation):
 
 A single S = 1/2 spin in the rotating frame of the microwave carrier sees
 
@@ -29,7 +30,8 @@ Units
 -----
 Internally everything is in **GHz** (frequencies) and **ns** (time); a product
 GHz*ns is a number of cycles, so the rotation angle of a step is simply
-``2*pi * dt * Omega_eff``. The GUI works in MHz and converts on the way in.
+``2*pi * dt * Omega_eff``. Frequency arguments and the offset axis are GHz, times
+are ns. (Callers that prefer MHz convert on the way in.)
 
 Reference: Doll & Jeschke, https://doi.org/10.5194/mr-1-59-2020 (WURST/chirp);
 Stoll & Schweiger, EasySpin (``pulse`` / ``exciteprofile``).
@@ -37,38 +39,36 @@ Stoll & Schweiger, EasySpin (``pulse`` / ``exciteprofile``).
 
 import numpy as np
 
-# AWG sample rate (samples / ns). The shaped-pulse formulas are kept byte-for-
-# byte identical to Insys_FPGA.define_buffer_single_joined_awg, which builds the
-# waveform on a sample grid; this is the only place that grid leaks into the
-# continuous form (the sech/tanh envelope/sweep arguments are defined in samples,
-# so they scale with the sample rate). 1250 MHz = 1.25 samples/ns.
+# AWG sample rate (samples / ns). The shaped-pulse formulas are built on a sample
+# grid, as a typical arbitrary-waveform generator does; this is the only place
+# that grid leaks into the continuous form (the sech/tanh envelope/sweep arguments
+# are defined in samples, so they scale with the sample rate). 1.25 = 1250 MHz.
 SAMPLE_RATE = 1.25
 
-# Pulse shapes this module understands. Parameters follow the Insys AWG
-# convention (awg_pulse / define_buffer_single_joined_awg):
+# Pulse shapes this module understands. Parameters follow the common AWG
+# convention:
 #   sigma  : Gaussian/sinc width in ns (NOT FWHM)
 #   n      : WURST exponent / sech-tanh order (HSn)
 #   b      : sech/tanh truncation (1/ns)
 #   bw     : frequency sweep width in MHz (WURST/sech)
-#   center : carrier frequency in MHz (SINE/GAUSS/SINC: the carrier; WURST/sech:
+#   center : carrier frequency in MHz (rect/gaussian/sinc: the carrier; WURST/sech:
 #            the sweep centre).
-# half-sine / quartersine are extra (not Insys shapes) but kept for design use.
 SHAPES = (
-    'rectangular',   # center             (Insys SINE)
-    'gaussian',      # sigma (ns), center (Insys GAUSS)
-    'sinc',          # sigma (ns), center (Insys SINC)
-    'half-sine',     # center             (extra)
-    'quartersine',   # edge (ns), center  (extra)
-    'WURST',         # n, bw (MHz), center (Insys WURST)
-    'sech/tanh',     # b, n, bw (MHz), center (Insys SECH/TANH)
+    'rectangular',   # center
+    'gaussian',      # sigma (ns), center
+    'sinc',          # sigma (ns), center
+    'half-sine',     # center
+    'quartersine',   # edge (ns), center
+    'WURST',         # n, bw (MHz), center
+    'sech/tanh',     # b, n, bw (MHz), center
 )
 
 
 def waveform(shape, t, tp, params):
     """Amplitude envelope and instantaneous frequency of a pulse shape.
 
-    The shaped-pulse formulas mirror Insys_FPGA.define_buffer_single_joined_awg
-    so a pulse designed here reproduces the one the AWG generates.
+    The shaped-pulse formulas follow the AWG sample-grid convention, so a pulse
+    designed here reproduces the one an arbitrary-waveform generator emits.
 
     Parameters
     ----------
@@ -93,16 +93,16 @@ def waveform(shape, t, tp, params):
     tau = t - 0.5 * tp                  # time from pulse centre (ns)
     center = float(params.get('center', 0.0)) / 1000.0      # MHz -> GHz
 
-    if shape == 'rectangular':          # Insys SINE
+    if shape == 'rectangular':          # constant envelope (SINE carrier)
         a = np.ones_like(t)
         nu = np.full_like(t, center)
 
-    elif shape == 'gaussian':           # Insys GAUSS: exp(-0.5 ((t-tp/2)/sigma)^2)
+    elif shape == 'gaussian':           # exp(-0.5 ((t-tp/2)/sigma)^2)
         sigma = max(float(params.get('sigma', 0.25 * tp)), 1e-9)
         a = np.exp(-0.5 * (tau / sigma) ** 2)
         nu = np.full_like(t, center)
 
-    elif shape == 'sinc':               # Insys SINC: sinc(2 (t-tp/2)/sigma)
+    elif shape == 'sinc':               # sinc(2 (t-tp/2)/sigma)
         sigma = max(float(params.get('sigma', 0.25 * tp)), 1e-9)
         a = np.sinc(2.0 * tau / sigma)  # np.sinc(u) = sin(pi u)/(pi u)
         nu = np.full_like(t, center)
@@ -120,13 +120,13 @@ def waveform(shape, t, tp, params):
         a[fall] = np.sin(0.5 * np.pi * (tp - t[fall]) / edge)
         nu = np.full_like(t, center)
 
-    elif shape == 'WURST':              # Insys WURST
+    elif shape == 'WURST':
         n = float(params.get('n', 20.0))
         bw = float(params.get('bw', 100.0)) / 1000.0        # MHz -> GHz
         a = 1.0 - np.abs(np.sin(np.pi * tau / tp)) ** n
         nu = center + bw * tau / tp                          # linear sweep across bw
 
-    elif shape == 'sech/tanh':          # Insys SECH/TANH (HSn)
+    elif shape == 'sech/tanh':          # HSn (hyperbolic-secant) adiabatic
         # Defined on the sample grid exactly as the AWG buffer:
         #   env_arg = b * x_mean * 2^(n-1) * (|dx|/length)^n
         #   envelope = sech(env_arg)
@@ -148,8 +148,6 @@ def waveform(shape, t, tp, params):
 
 def resonator_transfer(freqs, nu0, Q, detuning=0.0):
     """Complex voltage transfer function of an ideal (lumped RLC) resonator.
-
-    Same form the Insys AWG correction uses (``Insys_FPGA.awg_correction``):
 
         H(nu) = 1 / (1 + i Q (nu/nu0 - nu0/nu))
 
@@ -256,9 +254,8 @@ def apply_resonator(w, dt, nu0, Q, detuning=0.0, mode='simulate', max_gain=10.0,
     mode : str
         ``'simulate'``  — multiply by ``H``: what the spins see when the pulse is
         sent *uncorrected* (the resonator distorts amplitude and phase).
-        ``'compensate'`` — multiply by ``1/H``: the pre-distortion the AWG applies
-        (Insys ``awg_correction``) so the spins see the ideal pulse. The boost is
-        capped at ``max_gain`` (mirrors the hardware low_level/limit clamp) since
+        ``'compensate'`` — multiply by ``1/H``: the pre-distortion needed so the
+        spins see the ideal pulse. The boost is capped at ``max_gain`` since
         ``1/H`` diverges far off resonance.
     max_gain : float
         Maximum ``|1/H|`` allowed in compensate mode.
@@ -266,10 +263,7 @@ def apply_resonator(w, dt, nu0, Q, detuning=0.0, mode='simulate', max_gain=10.0,
         If > 0 (and ``mode == 'simulate'``), append this many ns of post-pulse
         ring-down: the resonator keeps emitting after the drive stops, so
         ``ringdown/dt`` extra samples (driven by zero input) are returned. The
-        spins keep nutating under this decaying field. Ignored in compensate mode
-        (the compensated drive is meant to cancel the resonator's distortion of
-        the *driven* portion; modelling its ring-down would need the predistorted
-        drive followed by the real H, which this single-multiply form can't do).
+        spins keep nutating under this decaying field. Ignored in compensate mode.
     measured : (ndarray, ndarray) or None
         Optional ``(freq_meas_GHz, H_meas_complex)`` measured transfer function. If
         given, ``H`` is built from it via :func:`measured_transfer` (carrier taken
