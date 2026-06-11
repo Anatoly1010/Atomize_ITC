@@ -235,6 +235,7 @@ class MainExtended(MainWindow):
         self.process_awg_phasing = QtCore.QProcess(self)
         self.process_sequence_calc = QtCore.QProcess(self)
         self.process_excitation = QtCore.QProcess(self)
+        self.process_spin_sim = QtCore.QProcess(self)
         self.process_treatment = QtCore.QProcess(self)
         self.process_treatment_2d = QtCore.QProcess(self)
         #self.process_t2 = QtCore.QProcess(self)
@@ -246,7 +247,7 @@ class MainExtended(MainWindow):
             self.process_osc2, self.process_cw, self.process_temp,
             self.process_field, self.process_mw, self.process_tune_preset,
             self.process_phasing, self.process_awg_phasing, self.process_sequence_calc,
-            self.process_excitation, self.process_treatment, self.process_treatment_2d
+            self.process_excitation, self.process_spin_sim, self.process_treatment, self.process_treatment_2d
         ]
         #, self.process_t2, self.process_t1, self.process_ed, self.process_eseem]
 
@@ -308,12 +309,12 @@ class MainExtended(MainWindow):
 
         button_name_1 = ["CW EPR", "TR EPR", "2012A; IP x.2.21", "2012A_2; IP x.2.22", "Set Temperature", "Set MF"]
         button_name_2 = ["Pulsed MW Bridge", "", "RECT Channel", "AWG Channel"]
-        button_name_3 = ["Resonator Tuning", "", "Data Treatment", "Data Treatment 2D", "Pulse Sequence", "Excitation Profile"]
+        button_name_3 = ["Resonator Tuning", "", "Data Treatment", "Data Treatment 2D", "Pulse Sequence", "Excitation Profile", "Sequence Simulator"]
         #, "T2 Measurement", "T1 Measurement", "ED Spectrum", "3pESEEM"]
 
         actions_1 = [self.start_cw, self.start_tr_control, self.start_osc_control, self.start_osc_control_2, self.start_temp_control, self.start_field_control]
         actions_2 = [self.start_mw_control, None, self.start_rect_phasing, self.start_awg_phasing]
-        actions_3 = [self.start_tune_preset, None, self.start_treatment_control, self.start_treatment_2d_control, self.start_sequence_calculator, self.start_excitation_profile]
+        actions_3 = [self.start_tune_preset, None, self.start_treatment_control, self.start_treatment_2d_control, self.start_sequence_calculator, self.start_excitation_profile, self.start_spin_sim]
         #, self.start_t2_preset, self.start_t1_preset, self.start_ed_preset, self.start_eseem_preset]
 
         columns_data = [(button_name_1, actions_1, 1), (button_name_2, actions_2, 2), (button_name_3, actions_3, 3)]
@@ -380,7 +381,9 @@ class MainExtended(MainWindow):
         #gridlayout.setRowMinimumHeight(0, 12)
         gridlayout.setHorizontalSpacing(15)
         gridlayout.setColumnStretch(6, 3)
-        gridlayout.setRowStretch(6, 3)
+        # Stretch row sits below the tallest button column (column 3 now has a
+        # button on row 6), so the version label stays pinned to the bottom.
+        gridlayout.setRowStretch(7, 3)
 
         bottom_label = QLabel("https://anatoly1010.github.io/atomize_docs/; Version 0.3.2; 01/03/2026")
         bottom_label.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
@@ -396,7 +399,7 @@ class MainExtended(MainWindow):
             self.process_osc2, self.process_cw, self.process_temp, 
             self.process_field, self.process_mw, self.process_tune_preset,
             self.process_phasing, self.process_awg_phasing, self.process_sequence_calc,
-            self.process_excitation, self.process_treatment, self.process_treatment_2d
+            self.process_excitation, self.process_spin_sim, self.process_treatment, self.process_treatment_2d
         ]
             #, self.process_t2, self.process_t1, self.process_ed, self.process_eseem]
 
@@ -424,7 +427,7 @@ class MainExtended(MainWindow):
             self.process_osc2, self.process_cw, self.process_temp, 
             self.process_field, self.process_mw, self.process_tune_preset,
             self.process_phasing, self.process_awg_phasing, self.process_sequence_calc,
-            self.process_excitation, self.process_treatment, self.process_treatment_2d
+            self.process_excitation, self.process_spin_sim, self.process_treatment, self.process_treatment_2d
         ]
             #, self.process_t2, self.process_t1, self.process_ed, self.process_eseem]
 
@@ -600,6 +603,13 @@ class MainExtended(MainWindow):
         """
         self.process_excitation.setArguments([os.path.join('..','atomize/control_center/excitation_profile.py')])
         self.process_excitation.start()
+
+    def start_spin_sim(self):
+        """
+        A function to run the density-matrix pulse-sequence simulator.
+        """
+        self.process_spin_sim.setArguments([os.path.join('..','atomize/control_center/spin_dynamics_sim.py')])
+        self.process_spin_sim.start()
 
     def start_tune_preset(self):
         """
