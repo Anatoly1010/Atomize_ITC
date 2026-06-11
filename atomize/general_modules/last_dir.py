@@ -10,7 +10,7 @@ shared between every dialog that uses the same ``key``.
 Two keys are used by the app:
     'script'  - the experimental-script open/save dialogs (MainWindow)
     'data'    - the 1D/2D/TR data-open dialogs (NameList + CrosshairDock pyqtgraph
-                menu) — one working data folder for all of them
+                menu) - one working data folder for all of them
 
 Resolved against ``__file__`` (not the cwd), since main_window chdir's into
 ``libs/`` at startup.
