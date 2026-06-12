@@ -3832,6 +3832,23 @@ class Insys_FPGA:
             
         return BufTot
 
+    def time_to_ticks_pulser(self, time_str):
+        """
+        Convert a '<float> <unit>' time string to pulser clock ticks
+        (3.2 ns grid, ceil-rounded). The unit is taken from the last two
+        characters ('ns' / 'us' / 'ms'), replicating the historical
+        suffix parsing of convertion_to_numpy_pulser()
+        """
+        unit = time_str[-2:]
+        if unit == 'ns':
+            return int( ceil(round( float(time_str[:-3]) / self.timebase_pulser, 1) ) )
+        elif unit == 'us':
+            return int( ceil(round( float(time_str[:-3]) * 1000 / self.timebase_pulser, 1) ) )
+        elif unit == 'ms':
+            return int( ceil(round( float(time_str[:-3]) * 1000000 / self.timebase_pulser, 1) ) )
+        elif unit == 's':
+            return int( ceil(round( float(time_str[:-3]) * 1000000000 / self.timebase_pulser, 1) ) )
+
     def convertion_to_numpy_pulser(self, p_array):
         """
         Convertion of the pulse_array_pulser into numpy array in the form of
@@ -3862,14 +3879,7 @@ class Insys_FPGA:
                     st = self.change_pulse_settings_pulser(p_array[i]['start'], -self.rect_awg_switch_delay_pulser)
                     self.awg_pulses_pulser = 1
 
-                if st[-2:] == 'ns':
-                    st_time = int( ceil(round( float(st[:-3]) / self.timebase_pulser, 1) ) )
-                elif st[-2:] == 'us':
-                    st_time = int( ceil(round( float(st[:-3]) * 1000 / self.timebase_pulser, 1) ) )
-                elif st[-2:] == 'ms':
-                    st_time = int( ceil(round( float(st[:-3]) * 1000000 / self.timebase_pulser, 1) ) )
-                elif st[-2:] == 's':
-                    st_time = int( ceil(round( float(st[:-3]) * 1000000000 / self.timebase_pulser, 1) ) )
+                st_time = self.time_to_ticks_pulser(st)
                 
                 # get length
                 #mod
@@ -3880,36 +3890,12 @@ class Insys_FPGA:
                     leng = self.change_pulse_settings_pulser(p_array[i]['length'], self.rect_awg_switch_delay_pulser + self.rect_awg_delay_pulser)
                     self.awg_pulses_pulser = 1
 
-                if leng[-2:] == 'ns':
-                    leng_time = int( ceil(round( float(leng[:-3]) / self.timebase_pulser, 1) ) )
-                elif leng[-2:] == 'us':
-                    leng_time = int( ceil(round( float(leng[:-3]) * 1000 / self.timebase_pulser, 1) ) )
-                elif leng[-2:] == 'ms':
-                    leng_time = int( ceil(round( float(leng[:-3]) * 1000000 / self.timebase_pulser, 1) ) )
-                elif leng[-2:] == 's':
-                    leng_time = int( ceil(round( float(leng[:-3]) * 1000000000 / self.timebase_pulser, 1) ) )
+                leng_time = self.time_to_ticks_pulser(leng)
 
-                # get delta start
-                del_st = p_array[i]['delta_start']
-                if del_st[-2:] == 'ns':
-                    delta_start = int( ceil(round( float(del_st[:-3]) / self.timebase_pulser, 1) ) )
-                elif del_st[-2:] == 'us':
-                    delta_start = int( ceil(round( float(del_st[:-3]) * 1000 / self.timebase_pulser, 1) ) )
-                elif del_st[-2:] == 'ms':
-                    delta_start = int( ceil(round( float(leng[:-3]) * 1000000 / self.timebase_pulser, 1) ) )
-                elif del_st[-2:] == 's':
-                    delta_start = int( ceil(round( float(del_st[:-3]) * 1000000000 / self.timebase_pulser, 1) ) )
-
-                # get length_increment
-                len_in = p_array[i]['length_increment']
-                if len_in[-2:] == 'ns':
-                    length_increment = int( ceil(round( float(len_in[:-3]) / self.timebase_pulser, 1) ) )
-                elif len_in[-2:] == 'us':
-                    length_increment = int( ceil(round( float(len_in[:-3]) * 1000 / self.timebase_pulser, 1) ) )
-                elif len_in[-2:] == 'ms':
-                    length_increment = int( ceil(round( float(len_in[:-3]) * 1000000 / self.timebase_pulser, 1) ) )
-                elif len_in[-2:] == 's':
-                    length_increment = int( ceil(round( float(len_in[:-3]) * 1000000000 / self.timebase_pulser, 1) ) )
+                # delta_start and length_increment are not part of the
+                # [channel, start, end] rows built below, so they are
+                # intentionally not parsed here (they used to be parsed
+                # and discarded)
 
                 # creating converted array
                 # in terms of bits the number of channel is 2**(ch_num - 1)
@@ -3941,14 +3927,7 @@ class Insys_FPGA:
                     st = self.change_pulse_settings_pulser(p_array[i]['start'], -self.rect_awg_switch_delay_pulser)
                     self.awg_pulses_pulser = 1
 
-                if st[-2:] == 'ns':
-                    st_time = int( ceil(round( float(st[:-3]) / self.timebase_pulser, 1) ) )
-                elif st[-2:] == 'us':
-                    st_time = int( ceil(round( float(st[:-3]) * 1000 / self.timebase_pulser, 1) ) )
-                elif st[-2:] == 'ms':
-                    st_time = int( ceil(round( float(st[:-3]) * 1000000 / self.timebase_pulser, 1) ) )
-                elif st[-2:] == 's':
-                    st_time = int( ceil(round( float(st[:-3]) * 1000000000 / self.timebase_pulser, 1) ) )
+                st_time = self.time_to_ticks_pulser(st)
 
                 # get length
                 #mod
@@ -3959,38 +3938,12 @@ class Insys_FPGA:
                     leng = self.change_pulse_settings_pulser(p_array[i]['length'], self.rect_awg_switch_delay_pulser + self.rect_awg_delay_pulser)
                     self.awg_pulses_pulser = 1
 
-                if leng[-2:] == 'ns':
-                    leng_time = int( ceil(round( float(leng[:-3]) / self.timebase_pulser, 1) ) )
-                elif leng[-2:] == 'us':
-                    leng_time = int( ceil(round( float(leng[:-3]) * 1000 / self.timebase_pulser, 1) ) )
-                elif leng[-2:] == 'ms':
-                    leng_time = int( ceil(round( float(leng[:-3]) * 1000000 / self.timebase_pulser, 1) ) )
-                elif leng[-2:] == 's':
-                    leng_time = int( ceil(round( float(leng[:-3]) * 1000000000 / self.timebase_pulser, 1) ) )
+                leng_time = self.time_to_ticks_pulser(leng)
 
-                # get delta start
-                del_st = p_array[i]['delta_start']
-
-                if del_st[-2:] == 'ns':
-                    delta_start = int( ceil(round( float(del_st[:-3]) / self.timebase_pulser, 1) ) )
-                elif del_st[-2:] == 'us':
-                    delta_start = int( ceil(round( float(del_st[:-3]) * 1000 / self.timebase_pulser, 1) ) )
-                elif del_st[-2:] == 'ms':
-                    delta_start = int( ceil(round( float(del_st[:-3]) * 1000000 / self.timebase_pulser, 1) ) )
-                elif del_st[-2:] == 's':
-                    delta_start = int( ceil(round( float(del_st[:-3]) * 1000000000 / self.timebase_pulser, 1) ) )
-
-                # get length_increment
-                len_in = p_array[i]['length_increment']
-
-                if len_in[-2:] == 'ns':
-                    length_increment = int( ceil(round( float(len_in[:-3]) / self.timebase_pulser, 1) ) )
-                elif len_in[-2:] == 'us':
-                    length_increment = int( ceil(round( float(len_in[:-3]) * 1000 / self.timebase_pulser, 1) ) )
-                elif len_in[-2:] == 'ms':
-                    length_increment = int( ceil(round( float(len_in[:-3]) * 1000000 / self.timebase_pulser, 1) ) )
-                elif len_in[-2:] == 's':
-                    length_increment = int( ceil(round( float(len_in[:-3]) * 1000000000 / self.timebase_pulser, 1) ) )
+                # delta_start and length_increment are not part of the
+                # [channel, start, end] rows built below, so they are
+                # intentionally not parsed here (they used to be parsed
+                # and discarded)
 
                 # creating converted array
                 # in terms of bits the number of channel is 2**(ch_num - 1)
@@ -4259,13 +4212,13 @@ class Insys_FPGA:
         It is used when we deal with AMP_ON and LNA_PROTECT pulses
         with less than 12 ns distance
         """
-        if self.test_flag != 'test':
-            no_duplicate_array = np.unique(np_array, axis = 0)
-            return no_duplicate_array
-
-        elif self.test_flag == 'test':
-            no_duplicate_array = np.unique(np_array, axis = 0)
-            return no_duplicate_array
+        rows = np.asarray(np_array)
+        if len(rows) == 0:
+            return np.unique(rows, axis = 0)
+        # np.unique(..., axis = 0) sorts rows lexicographically; for the
+        # small arrays used here a Python set + sort is much faster and
+        # gives the identical result
+        return np.asarray(sorted(set(map(tuple, rows.tolist()))), dtype = np.int64)
 
     def preparing_to_bit_pulse_pulser(self, np_array):
         """
@@ -4390,16 +4343,21 @@ class Insys_FPGA:
                         # get assertion error if the distance < 40 ns
 
                 # combine all pulses
-                #np.concatenate( (self.convertion_to_numpy_pulser( self.pulse_array_pulser ), cor_pulses_amp_final, cor_pulses_lna_final), axis = None)
+                # split_pulse_array already contains the extended RECT_AWG
+                # pulses; sorting the MW / AWG groups and flattening it is
+                # equivalent to self.extending_rect_awg_pulser( self.pulse_array_pulser )
+                # but avoids re-parsing the whole pulse array
+                extended = [ self.check_problem_pulses_pulser(element) \
+                    if ( element[0, 0] == 2**self.channel_dict_pulser['MW'] or element[0, 0] == 2**self.channel_dict_pulser['AWG'] ) \
+                    else element for element in split_pulse_array ]
                 try:
-                    raw = np.row_stack( (self.extending_rect_awg_pulser( self.pulse_array_pulser ), cor_pulses_amp_final, cor_pulses_lna_final))
+                    raw = np.row_stack( (np.asarray(list(chain(*extended))), cor_pulses_amp_final, cor_pulses_lna_final))
                     answer = self.process_and_merge_rect_awg(raw, target_channel=128, gap_threshold=75)
                     return answer
 
                 # when we do not MW pulses at all
                 except UnboundLocalError:
-                    #return self.convertion_to_numpy_pulser( self.pulse_array_pulser )
-                    return self.extending_rect_awg_pulser( self.pulse_array_pulser )
+                    return np.asarray(list(chain(*extended)))
 
         elif self.test_flag == 'test':
             if self.auto_defense_pulser == 'False':
@@ -4507,14 +4465,21 @@ class Insys_FPGA:
                         self.check_problem_pulses_pulser(element)
 
                 # combine all pulses
-                #np.concatenate( (self.convertion_to_numpy_pulser( self.pulse_array_pulser ), cor_pulses_amp_final, cor_pulses_lna_final), axis = None) 
+                # split_pulse_array already contains the extended RECT_AWG
+                # pulses; sorting the MW / AWG / TRIGGER_AWG groups and
+                # flattening it is equivalent to
+                # self.extending_rect_awg_pulser( self.pulse_array_pulser )
+                extended = [ self.check_problem_pulses_pulser(element) \
+                    if ( element[0, 0] == 2**self.channel_dict_pulser['MW'] or element[0, 0] == 2**self.channel_dict_pulser['AWG'] \
+                         or element[0, 0] == 2**self.channel_dict_pulser['TRIGGER_AWG'] ) \
+                    else element for element in split_pulse_array ]
                 try:
-                    raw = np.row_stack( (self.extending_rect_awg_pulser( self.pulse_array_pulser ), cor_pulses_amp_final, cor_pulses_lna_final))
+                    raw = np.row_stack( (np.asarray(list(chain(*extended))), cor_pulses_amp_final, cor_pulses_lna_final))
                     answer = self.process_and_merge_rect_awg(raw, target_channel=128, gap_threshold=75)
                     return answer
 
                 except UnboundLocalError:
-                    return self.extending_rect_awg_pulser( self.pulse_array_pulser )
+                    return np.asarray(list(chain(*extended)))
 
     def split_into_parts_pulser(self, np_array, rep_time):
         """
@@ -4536,12 +4501,9 @@ class Insys_FPGA:
             sorted_arrays_parts = np.split(sorted_pulses_start, index_jump + 1)
 
             for index, element in enumerate(sorted_arrays_parts):
-                temp, min_value = self.convert_to_bit_pulse_pulser(element)
+                instructions, min_value = self.instructions_from_part_pulser(element)
 
-                ###??????
-                temp = np.concatenate((np.array([0]), temp), axis=None)
-
-                answer.append(self.instruction_pulse_pulser(temp))
+                answer.append(instructions)
                 # keep them all for further shifting
                 min_list.append(min_value)
             # at this point we have different array for different interval:
@@ -4601,10 +4563,9 @@ class Insys_FPGA:
             sorted_arrays_parts = np.split(sorted_pulses_start, index_jump + 1)
 
             for index, element in enumerate(sorted_arrays_parts):
-                temp, min_value = self.convert_to_bit_pulse_pulser(element)
-                temp = np.concatenate((np.array([0]), temp), axis=None)
+                instructions, min_value = self.instructions_from_part_pulser(element)
 
-                answer.append(self.instruction_pulse_pulser(temp))
+                answer.append(instructions)
                 # keep them all for further shifting
                 min_list.append(min_value)
 
@@ -4640,6 +4601,58 @@ class Insys_FPGA:
                 return one_array
             else:
                 assert(1 == 2), 'Pulse sequence is longer than one period of the repetition rate'             
+
+    def instructions_from_part_pulser(self, np_array):
+        """
+        Event-based replacement for the convert_to_bit_pulse_pulser() +
+        leading-zero prepend + instruction_pulse_pulser() sequence used in
+        split_into_parts_pulser(), producing exactly the same instruction
+        list without materializing the per-clock-tick bit array.
+
+        The output word in every time interval is the bitwise OR of the
+        channel bits of all pulses covering that interval; instructions
+        are the maximal intervals of constant output word, including
+        zero-word gaps. As in the original code one extra zero tick is
+        prepended in front of the part.
+        Returns (final_pulse_array, min_pulse) where final_pulse_array is
+        a list of [output_word, start, length] instructions in clock
+        ticks and min_pulse is the start of the part in clock ticks
+        """
+        part = np_array if isinstance(np_array, list) else np_array.tolist()
+        starts = [p[1] for p in part]
+        ends = [p[2] for p in part]
+        max_pulse = max(ends)
+        min_pulse = min(starts) - self.add_shift_pulser
+
+        # boundaries of the intervals on which the output word is constant;
+        # (min_pulse - 1) accounts for the prepended zero tick and the last
+        # boundary is always max_pulse (the largest pulse end)
+        boundaries = [min_pulse - 1] + sorted(set(starts).union(ends, (min_pulse,)))
+
+        # output word on [boundaries[k], boundaries[k+1]): bitwise OR of
+        # channel bits of all pulses covering the left edge
+        words = []
+        for k in range(len(boundaries) - 1):
+            left_edge = boundaries[k]
+            word = 0
+            for p in part:
+                if p[1] <= left_edge < p[2]:
+                    word |= p[0]
+            words.append(word)
+
+        # merge adjacent intervals with equal output word and convert
+        # to [output_word, start, length] instructions
+        final_pulse_array = []
+        seg_start = boundaries[0]
+        prev_word = words[0]
+        for k in range(1, len(words)):
+            if words[k] != prev_word:
+                final_pulse_array.append( [prev_word, seg_start - boundaries[0], boundaries[k] - seg_start] )
+                seg_start = boundaries[k]
+                prev_word = words[k]
+        final_pulse_array.append( [prev_word, seg_start - boundaries[0], max_pulse - seg_start] )
+
+        return final_pulse_array, min_pulse
 
     def convert_to_bit_pulse_pulser(self, np_array):
         """
@@ -5049,69 +5062,36 @@ class Insys_FPGA:
         Returns both specified parts for further convertion in shich problematic part
         are joined using check_short_pulses_pulser() and joining_pulses_pulser()
         """
-        if self.test_flag != 'test':
-            if self.auto_defense_pulser == 'False':
-                pass
-            elif self.auto_defense_pulser == 'True':
-                problem_list = []
-                # memorize index of problem elements
-                problem_index = []
-                # numpy arrays don't support element deletion
-                no_problem_list = deepcopy(p_list.tolist())
+        if self.auto_defense_pulser == 'False':
+            pass
+        elif self.auto_defense_pulser == 'True':
+            rows = p_list.tolist()
+            problem_list = []
+            # memorize index of problem elements
+            problem_index = set()
 
-                # there STILL can be errors
-                # now compare two pulses with I and I+2 indexes, since there are two pulses SHAPER and AMP_ON; LNA_PROTECT and VIDEO_PROTECT
-                # (end and start + 1)
-                for index, element in enumerate(p_list[:-1]):
+            # there STILL can be errors
+            # now compare two consequent pulses (end and start + 1)
+            for index in range(len(rows) - 1):
+                # minimal_distance_amp_lna_pulser is 0 ns now
+                if rows[index + 1][1] - rows[index][2] < self.minimal_distance_amp_lna_pulser:
+                    problem_list.append(rows[index])
+                    problem_list.append(rows[index + 1])
+                    # memorize indexes of the problem pulses
+                    problem_index.add(index)
+                    problem_index.add(index + 1)
 
-                    # minimal_distance_amp_lna_pulser is 0 ns now
-                    if p_list[index + 1][1] - element[2] < self.minimal_distance_amp_lna_pulser:
-                        problem_list.append(element)
-                        problem_list.append(p_list[index + 1])
-                        # memorize indexes of the problem pulses
-                        problem_index.append(index)
-                        problem_index.append(index + 1)
+            # delete problem pulses from no_problem_list
+            no_problem_list = [row for index, row in enumerate(rows) if index not in problem_index]
 
-                # delete duplicates in the index list: list(dict.fromkeys(problem_index)) )
-                # delete problem pulses from no_problem_list
-                # np.delete( no_problem_list, list(dict.fromkeys(problem_index)), axis = 0 ).tolist() )
-                no_problem_list = np.delete( no_problem_list, list(dict.fromkeys(problem_index)), axis = 0 ).tolist()
-
-                # for not returning an empty list
-                # the same conditions are used in preparing_to_bit_pulse_pulser()
-                if len(problem_list) == 0:
-                    return self.delete_duplicates_pulser(np.asarray(no_problem_list)), np.array([[0]])
-                elif len(no_problem_list) == 0:
-                    return np.array([[0]]), self.delete_duplicates_pulser(np.asarray(problem_list))
-                else:
-                    return self.delete_duplicates_pulser(np.asarray(no_problem_list)), self.delete_duplicates_pulser(np.asarray(problem_list))
-
-        elif self.test_flag == 'test':
-            if self.auto_defense_pulser == 'False':
-                pass
-            elif self.auto_defense_pulser == 'True':            
-                problem_list = []
-                problem_index = []
-                # numpy arrays don't support element deletion
-                no_problem_list = deepcopy(p_list.tolist())
-
-                for index, element in enumerate(p_list[:-1]):
-                    # minimal_distance_amp_lna_pulser is 0 ns now
-                    if p_list[index + 1][1] - element[2] < (self.minimal_distance_amp_lna_pulser):
-                        problem_list.append(element)
-                        problem_list.append(p_list[index + 1])
-                        # memorize indexes of the problem pulses
-                        problem_index.append(index)
-                        problem_index.append(index + 1)
-
-                no_problem_list = np.delete( no_problem_list, list(dict.fromkeys(problem_index)), axis = 0 ).tolist()
-
-                if len(problem_list) == 0:
-                    return self.delete_duplicates_pulser(np.asarray(no_problem_list)), np.array([[0]])
-                elif len(no_problem_list) == 0:
-                    return np.array([[0]]), self.delete_duplicates_pulser(np.asarray(problem_list))
-                else:
-                    return self.delete_duplicates_pulser(np.asarray(no_problem_list)), self.delete_duplicates_pulser(np.asarray(problem_list))
+            # for not returning an empty list
+            # the same conditions are used in preparing_to_bit_pulse_pulser()
+            if len(problem_list) == 0:
+                return self.delete_duplicates_pulser(np.asarray(no_problem_list)), np.array([[0]])
+            elif len(no_problem_list) == 0:
+                return np.array([[0]]), self.delete_duplicates_pulser(np.asarray(problem_list))
+            else:
+                return self.delete_duplicates_pulser(np.asarray(no_problem_list)), self.delete_duplicates_pulser(np.asarray(problem_list))
 
     def convert_to_bit_pulse_amp_lna_pulser(self, p_list, channel):
         """
