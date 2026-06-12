@@ -216,16 +216,10 @@ In the case of Insys FM214x3GDA `length_increment` will be rounded to a multiple
 ### pulser_reset() { #pulser_reset data-toc-label="pulser_reset" }
 
 ```python
-pulser_reset()                       # default
-pulser_reset(internal_cycle=True)    # for use with pulser_instruction_from_file
+pulser_reset()    # reset all pulses and update the pulse programmer
 ```
 
 The function switches the pulse programmer back to the initial state (including phase) in which it was in at the start of the experiment. This function can be called only without arguments. It includes the complete functionality of [`pulser_pulse_reset()`](#pulser_pulse_reset), but also immediately updates the pulse programmer as it is done by calling [`pulser_update()`](#pulser_update).
-
-The additional keyword `internal_cycle` can be used in combination with the [`pulser_instruction_from_file()`](#pulser_instruction_from_file) function to achieve correct update of the pulse programmer. The default option is `False`.
-
-**Allowed internal_cycle:** `True`, `False`
-{: .enum }
 
 !!! note
     This function is not available for Insys FM214x3GDA. The function
@@ -241,11 +235,6 @@ pulser_pulse_reset('P1')    # reset only the named pulses
 ```
 
 This function switches the pulse programmer back to the initial state in which it was in at the start of the experiment. This function can be called with either no argument or with a list of comma separated pulse names. If no argument is given all pulses are reset to their initial states (including phases). The function does not update the pulser, if you want to reset all pulses and also update the pulser use the function [`pulser_reset()`](#pulser_reset) instead.
-
-The additional keyword `internal_cycle` can be used in combination with the [`pulser_instruction_from_file()`](#pulser_instruction_from_file) function to achieve correct update of the pulse programmer. The default option is `False`.
-
-**Allowed internal_cycle:** `True`, `False`
-{: .enum }
 
 ---
 
@@ -340,23 +329,6 @@ pulser_phase_reset()    # reset the phase index to zero
 ```
 
 This function resets the phase index to zero in order to start phase cycling once again.
-
-!!! note
-    This function is only available for Pulse Blaster ESR 500 Pro and
-    Pulse Blaster Micran.
-
----
-
-### pulser_instruction_from_file(flag, filename) { #pulser_instruction_from_file data-toc-label="pulser_instruction_from_file" }
-
-```python
-pulser_instruction_from_file(1, filename='instructions.out')
-```
-
-This special function reads the instructions for pulse programmer from the specified file. The keyword argument `filename` corresponds to the file to read. `1` means that the instructions will be read from the file.
-
-**Allowed flag:** `0`, `1`
-{: .enum }
 
 !!! note
     This function is only available for Pulse Blaster ESR 500 Pro and

@@ -5,8 +5,6 @@ import os
 import sys
 import math
 from copy import deepcopy
-from operator import iconcat
-from functools import reduce
 from itertools import groupby, chain
 import numpy as np
 import atomize.main.local_config as lconf
@@ -136,11 +134,8 @@ class PB_ESR_500_Pro:
             self.current_phase_index = 0
             self.awg_pulses = 0
             self.phase_pulses = 0
-            self.instr_from_file = 0
-            self.iterator_of_updates = 0
 
         elif self.test_flag == 'test':
-            open('instructions.out', 'w').close()
             self.test_rep_rate = '2 Hz'
             
             self.pulse_array = []
@@ -156,7 +151,6 @@ class PB_ESR_500_Pro:
             self.current_phase_index = 0
             self.awg_pulses = 0
             self.phase_pulses = 0
-            self.instr_from_file = 0
 
     # Module functions
     def pulser_name(self):
@@ -611,11 +605,7 @@ class PB_ESR_500_Pro:
                 #temp, visualizer = self.convert_to_bit_pulse( self.pulse_array )
                 
                 #to_spinapi = self.instruction_pulse( temp, rep_time )
-                if self.instr_from_file == 0:
-                    to_spinapi = self.split_into_parts( self.pulse_array, rep_time )
-                elif self.instr_from_file == 1:
-                    raw_data = np.fromstring( self.raw_instructions[self.iterator_of_updates], dtype = int, sep = ',' )
-                    to_spinapi = raw_data.reshape( ( int(len(raw_data)/3), 3 ) ).tolist()
+                to_spinapi = self.split_into_parts( self.pulse_array, rep_time )
 
                 ##for element in to_spinapi:
                 ##    if element[2] < 10: # it was 12; 06.10.2021
@@ -678,8 +668,6 @@ class PB_ESR_500_Pro:
                 self.shift_count = 0
                 self.increment_count = 0
                 self.rep_rate_count = 0
-
-                self.iterator_of_updates += 1
             else:
                 pass
 
@@ -699,13 +687,6 @@ class PB_ESR_500_Pro:
                 # using a special functions for convertion to instructions
                 #to_spinapi = self.instruction_pulse( self.convert_to_bit_pulse( self.pulse_array ) )
                 to_spinapi = self.split_into_parts( self.pulse_array, rep_time )
-                
-                # instructions from file:
-                if self.instr_from_file == 1:
-                    with open("instructions.out", "a") as f:
-                        np.savetxt(f, [reduce(iconcat, to_spinapi, [])], delimiter = ',', fmt = '%u') 
-                
-                    f.close()
 
                 for element in to_spinapi:
                     if element[2] < 10:  # it was 12; 06.10.2021
@@ -998,7 +979,7 @@ class PB_ESR_500_Pro:
         """
         self.current_phase_index = 0
 
-    def pulser_reset(self, interal_cycle = 'False'):
+    def pulser_reset(self):
         """
         Reset all pulses to the initial state it was in at the start of the experiment.
         It includes the complete functionality of pulser_pulse_reset(), but also immediately
@@ -1019,17 +1000,7 @@ class PB_ESR_500_Pro:
             # using a special functions for convertion to instructions
             # we get two return arrays because of pulser_visualizer. It is not the case for test flag.
             #temp, visualizer = self.convert_to_bit_pulse( self.pulse_array )
-            if interal_cycle == 'False':
-                self.iterator_of_updates = 0
-            elif interal_cycle == 'True':
-                pass
-
-            if self.instr_from_file == 0:
-                to_spinapi = self.split_into_parts( self.pulse_array, rep_time )
-            elif self.instr_from_file == 1:
-                #self.iterator_of_updates = 0
-                raw_data = np.fromstring( self.raw_instructions[self.iterator_of_updates], dtype = int, sep = ',' )
-                to_spinapi = raw_data.reshape( (int(len(raw_data)/3), 3 ) ).tolist()
+            to_spinapi = self.split_into_parts( self.pulse_array, rep_time )
 
             #general.message( to_spinapi )
 
@@ -1080,8 +1051,6 @@ class PB_ESR_500_Pro:
             self.shift_count = 0
             self.current_phase_index = 0
 
-            self.iterator_of_updates += 1
-
         elif self.test_flag == 'test':
             # get repetition rate
             rep_rate = self.rep_rate[0]
@@ -1105,10 +1074,10 @@ class PB_ESR_500_Pro:
             self.shift_count = 0
             self.current_phase_index = 0
 
-    def pulser_pulse_reset(self, *pulses, interal_cycle = 'False'):
+    def pulser_pulse_reset(self, *pulses):
         """
         Reset all pulses to the initial state it was in at the start of the experiment.
-        It does not update the pulser, if you want to reset all pulses and and also update 
+        It does not update the pulser, if you want to reset all pulses and and also update
         the pulser use the function pulser_reset() instead.
         """
         if self.test_flag != 'test':
@@ -1118,10 +1087,6 @@ class PB_ESR_500_Pro:
                 self.increment_count = 0
                 self.shift_count = 0
                 self.current_phase_index = 0
-                if interal_cycle == 'False':
-                    self.iterator_of_updates = 0
-                elif interal_cycle == 'True':
-                    pass
 
             else:
                 set_from_list = set(pulses)
@@ -1136,8 +1101,6 @@ class PB_ESR_500_Pro:
                         self.increment_count = 0
                         self.shift_count = 0
                         self.current_phase_index = 0
-
-                        #self.iterator_of_updates = 0
 
         elif self.test_flag == 'test':
             if len(pulses) == 0:
@@ -1320,25 +1283,6 @@ class PB_ESR_500_Pro:
             ##        assert (1 == 2), 'Incorrect operation in the acquisition cycle'
 
             return (answer.real / len(acq_cycle))[0], (answer.imag / len(acq_cycle))[0]
-    
-    def pulser_instruction_from_file(self, flag, filename = 'instructions.out'):
-        """
-        Special function to read instructions from the .txt file
-        """
-        if self.test_flag != 'test':
-            if flag == 1:
-                self.instr_from_file = 1
-                f = open(filename)
-                self.raw_instructions = f.read().splitlines()
-                f.close()
-            elif flag == 0:
-                self.instr_from_file = 0
-
-        elif self.test_flag == 'test':
-            if flag == 1:
-                self.instr_from_file = 1
-            elif flag == 0:
-                self.instr_from_file = 0
 
     # Auxilary functions
     def time_to_ticks(self, time_str):
