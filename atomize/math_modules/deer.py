@@ -265,6 +265,39 @@ def _normalize_masses(P):
     return P/s if s > 0 else P
 
 
+def tikhonov_ci(K, F, alpha, P, L=None, dr=1.0, z=1.96):
+    """Covariance-based confidence band on the regularized P(r) — the asymptotic
+    (curvature) CI DeerLab shows by default.
+
+    For the linear Tikhonov estimator P = (KᵀK + α²LᵀL)⁻¹ Kᵀ F, the noise on the
+    form factor propagates as cov(P) = σ² M Mᵀ with M = (KᵀK + α²LᵀL)⁻¹ Kᵀ and σ²
+    estimated from the fit residuals (effective dof = N − tr(K M)). Returns
+    (lower, upper) at confidence z (default 95%) on the same density scale as
+    P/sum(P)/dr, clipped at 0. The non-negativity constraint is not propagated, so
+    the band is a slightly conservative linear approximation (as in DeerLab's
+    moment-based CI)."""
+    K = np.asarray(K, float)
+    F = np.asarray(F, float)
+    P = np.asarray(P, float)
+    n = K.shape[1]
+    if L is None:
+        L = regularization_matrix(n, 2)
+    G = K.T @ K + (alpha**2)*(L.T @ L)
+    try:
+        Ginv = np.linalg.inv(G)
+    except np.linalg.LinAlgError:
+        Ginv = np.linalg.pinv(G)
+    M = Ginv @ K.T
+    resid = F - K @ P
+    dof = max(float(K.shape[0]) - float(np.trace(K @ M)), 1.0)
+    sigma2 = float(np.sum(resid**2)/dof)
+    std = np.sqrt(np.maximum(sigma2*np.einsum('ij,ij->i', M, M), 0.0))
+    scale = 1.0/((float(np.sum(P)) or 1.0)*dr)         # masses -> density
+    dens = P*scale
+    band = z*std*scale
+    return np.maximum(dens - band, 0.0), dens + band
+
+
 def deer_invert(t, V, r=None, bg_start=None, bg_end=None, dim=3.0, fit_dim=False,
                 alpha=None, alphas=None, reg_order=2, nu_dd=NU_DD,
                 scan_lcurve=True, method='gcv', engine='sequential',
@@ -323,9 +356,11 @@ def deer_invert(t, V, r=None, bg_start=None, bg_end=None, dim=3.0, fit_dim=False
     P_norm = _normalize_masses(P)
     dr = float(r[1] - r[0]) if len(r) > 1 else 1.0
     P_density = P_norm/dr
+    P_lower, P_upper = tikhonov_ci(K, F, alpha, P, L=L, dr=dr)
     return {'t': t, 'r': r, 'form_factor': F, 'F_fit': F_fit,
             'residuals': F - F_fit, 'P': P, 'P_norm': P_norm,
-            'P_density': P_density, 'kernel': K, 'alpha': float(alpha),
+            'P_density': P_density, 'P_lower': P_lower, 'P_upper': P_upper,
+            'kernel': K, 'alpha': float(alpha),
             'l_curve': lc, 'background': bg, 'lambda': bg['lambda'],
             'k': bg['k'], 'dim': bg['dim'], 'engine': 'sequential'}
 
@@ -341,90 +376,186 @@ def deer_invert_joint(t, V, r=None, bg_start=None, bg_end=None, dim=3.0,
     short or shallow backgrounds, where the tail fit and the inversion are coupled.
 
     Model:  V(t) = B(t) * [ (1 - lam) + lam * (K P)(t) ],  B(t) = exp(-(k|t|)^(d/3)).
-    Substituting P~ = lam * P and K'(t, r) = K(t, r) - 1 (note K(0, r) = 1) makes
-    the linear part free of lam:
 
-        V/B - 1 = K' P~ ,     lam = sum(P~) recovered afterwards, P = P~/lam .
+    The background decay rate (k, and d when `fit_dim`) is the only nonlinear
+    unknown. For each trial rate the modulation depth lam is *pinned* to the mean
+    baseline of V/B over the background window [bg_start, bg_end] (where the
+    intramolecular form factor has decayed and V ~ (1-lam) B), and the non-negative
+    regularized P(r) follows from K P = (V/B - (1-lam))/lam. The rate is chosen to
+    minimize the whole-trace residual ||V - B[(1-lam)+lam KP]||.
 
-    So only the background (k, and d when `fit_dim`) is nonlinear. For each trial
-    background the optimal P~ >= 0 is the regularized NNLS solution of the
-    V-space-weighted system diag(B) K' P~ = V - B (down-weighting the noisy long-t
-    tail), and the V-space residual is minimized over (k[, d]) with
-    scipy.optimize.least_squares. K' is constant, so alpha (GCV by default) is
-    stable across the search; it is re-selected once at the converged background.
-
-    `bg_start`/`bg_end` only seed the initial background guess here (the joint fit
-    uses the whole trace). Same return dict as `deer_invert`, with engine='joint'.
+    Pinning lam to the baseline is essential: with lam free the fit is degenerate
+    (a near-flat background plus extra long-r P(r) mass reproduces V equally well)
+    and collapses to k -> 0; the baseline constraint removes that direction and
+    recovers the correct, deeper background -- matching DeerLab's joint fit.
+    `bg_start`/`bg_end` therefore set the baseline window. Same return dict as
+    `deer_invert`, with engine='joint'.
     """
     _require_scipy()
-    from scipy.optimize import least_squares
+    from scipy.optimize import least_squares, minimize_scalar
     t = np.asarray(t, float)
     V = np.asarray(V, float)
     r = default_r_axis() if r is None else np.asarray(r, float)
     V = V/V[int(np.argmin(np.abs(t)))]            # normalize V(0) = 1
     K = dipolar_kernel(t, r, nu_dd=nu_dd)
-    Kp = K - 1.0                                  # K'(t, r); K'(0, r) = 0
     L = regularization_matrix(len(r), reg_order)
     if alphas is None:
-        alphas = np.logspace(-4, 3, 36)
+        alphas = np.logspace(-4, 3, 24)
 
-    # seed (k, d) from the cheap sequential tail fit
     if bg_start is None:
-        bg_start = t[0] + 0.5*(t[-1] - t[0])
+        bg_start = t[0] + 0.6*(t[-1] - t[0])      # bias into the decayed tail
+    hi = bg_end if (bg_end is not None and bg_end > bg_start) else float(t.max())
+    mask = (t >= bg_start) & (t <= hi)
+    if int(mask.sum()) < 3:
+        mask = t >= bg_start
+
     bg0 = background_fit(t, V, bg_start, bg_end=bg_end, dim=dim, fit_dim=fit_dim)
     k0, d0 = bg0['k'], bg0['dim']
 
-    def solve_lin(k, d, al):
-        B = np.exp(-(k*np.abs(t))**(d/3.0))
-        A = B[:, None]*Kp                         # diag(B) K'
-        return B, A, (V - B)
+    def lam_of(B):
+        return min(max(1.0 - float(np.mean((V/B)[mask])), 0.02), 0.95)
 
-    # pick alpha by GCV on the initial background (K' fixed => alpha is stable)
-    B0, A0, y0 = solve_lin(k0, d0, None)
-    lc = (l_curve(A0, y0, alphas, L, method=method)
+    def solve_P(k, d, al):
+        B = np.exp(-(k*np.abs(t))**(d/3.0))
+        lam = lam_of(B)
+        F = (V/B - (1 - lam))/lam
+        return B, lam, F, tikhonov_nnls(K, F, al, L)
+
+    # select alpha once on the seed background; F is normalized (F(0)=1) so the
+    # regularization weight is stable across the rate search
+    B0 = np.exp(-(k0*np.abs(t))**(d0/3.0))
+    lam0 = lam_of(B0)
+    F0 = (V/B0 - (1 - lam0))/lam0
+    lc = (l_curve(K, F0, alphas, L, method=method)
           if (scan_lcurve or alpha is None) else None)
     alpha_use = float(alpha) if alpha is not None else lc['alpha_opt']*float(alpha_factor)
 
-    def resid(theta):
-        k = abs(theta[0]); d = theta[1] if fit_dim else d0
-        B, A, y = solve_lin(k, d, alpha_use)
-        return A@tikhonov_nnls(A, y, alpha_use, L) - y
+    def vss(k, d):                                # whole-trace V-space residual SS
+        B, lam, F, P = solve_P(k, d, alpha_use)
+        return float(np.sum((V - B*((1 - lam) + lam*(K@P)))**2))
 
-    theta0 = [k0, d0] if fit_dim else [k0]
-    lb = [0.0, 1.0] if fit_dim else [0.0]
-    ub = [np.inf, 6.0] if fit_dim else [np.inf]
-    try:
-        sol = least_squares(resid, theta0, bounds=(lb, ub), max_nfev=2000)
-        k = abs(sol.x[0]); d = sol.x[1] if fit_dim else d0
-    except Exception:
-        k, d = k0, d0                             # fall back to the seed background
+    kref = max(float(k0), 1e-4)
+    if fit_dim:
+        def resid(theta):
+            k = abs(theta[0]); d = min(max(theta[1], 1.0), 6.0)
+            B, lam, F, P = solve_P(k, d, alpha_use)
+            return V - B*((1 - lam) + lam*(K@P))
+        try:
+            sol = least_squares(resid, [kref, d0],
+                                bounds=([0.0, 1.0], [np.inf, 6.0]), max_nfev=200)
+            k = abs(sol.x[0]); d = min(max(sol.x[1], 1.0), 6.0)
+        except Exception:
+            k, d = kref, d0
+    else:
+        d = d0
+        try:
+            sol = minimize_scalar(lambda lk: vss(np.exp(lk), d),
+                                  bounds=(np.log(kref/100.0), np.log(kref*100.0)),
+                                  method='bounded', options={'xatol': 3e-2})
+            k = float(np.exp(sol.x))
+        except Exception:
+            k = kref
 
-    # final solution at the converged background, alpha re-selected there
+    # final solution at the fitted background (alpha from the seed selection is
+    # reused: F is normalized to F(0)=1, so the weight transfers across the rate
+    # search — re-scanning here only adds a costly GCV pass for no gain)
     B = np.exp(-(k*np.abs(t))**(d/3.0))
-    A = B[:, None]*Kp
-    y = V - B
-    if alpha is None and scan_lcurve:
-        lc = l_curve(A, y, alphas, L, method=method)
-        alpha_use = lc['alpha_opt']*float(alpha_factor)
-    Ptil = tikhonov_nnls(A, y, alpha_use, L)
-    lam = float(np.sum(Ptil))
-    if abs(lam) < 1e-9:
-        lam = 1e-9
-    P = Ptil/lam                                  # masses, sum = 1
-    P_norm = _normalize_masses(P)
+    lam = lam_of(B)
+    F = (V/B - (1 - lam))/lam
+    P_masses = tikhonov_nnls(K, F, alpha_use, L)
+    P_norm = _normalize_masses(P_masses)
     dr = float(r[1] - r[0]) if len(r) > 1 else 1.0
-    F = (V/B - (1 - lam))/lam                      # background-corrected form factor
     F_fit = K@P_norm
+    P_lower, P_upper = tikhonov_ci(K, F, alpha_use, P_masses, L=L, dr=dr)
     bg = {'lambda': lam, 'k': float(k), 'dim': float(d), 'A': float(1 - lam),
           'B': B, 'form_factor': F, 'V_norm': V, 't': t,
           'bg_start': float(bg_start),
           'bg_end': (None if bg_end is None else float(bg_end)),
-          'mask': (t >= bg_start)}
+          'mask': mask}
     return {'t': t, 'r': r, 'form_factor': F, 'F_fit': F_fit,
-            'residuals': F - F_fit, 'P': Ptil, 'P_norm': P_norm,
-            'P_density': P_norm/dr, 'kernel': K, 'alpha': float(alpha_use),
+            'residuals': F - F_fit, 'P': P_masses, 'P_norm': P_norm,
+            'P_density': P_norm/dr, 'P_lower': P_lower, 'P_upper': P_upper,
+            'kernel': K, 'alpha': float(alpha_use),
             'l_curve': lc, 'background': bg, 'lambda': lam,
             'k': float(k), 'dim': float(d), 'engine': 'joint'}
+
+
+# --------------------------------------------------------------------------- #
+#  Zero-time (reference-time) fitting
+# --------------------------------------------------------------------------- #
+def fit_zero_time(t, V, bg_start=None, bg_end=None, n_grid=16, search_frac=0.15,
+                  refine=True, **kwargs):
+    """Find the zero-time t0 (the dipolar reference time) that best aligns the
+    kernel with the data, by minimizing the V-space reconstruction residual.
+
+    DEER is sensitive to where t = 0 of the dipolar evolution sits: an error of
+    even a few tens of ns misaligns the kernel, broadens P(r) and biases the mean
+    distance long. DeerLab fits this `reftime` by default; this is the equivalent
+    for the engines here. A candidate offset s shifts both the time axis and the
+    (data-anchored) background window, so only the kernel alignment changes; the
+    residual ‖V - V_fit‖ is smooth with a single minimum in s, so a coarse grid
+    over the first `search_frac` of the trace plus a parabolic refine pins it down
+    in ~`n_grid` inversions.
+
+    t, V, bg_start, bg_end are in the kernel time unit (µs). `kwargs` pass through
+    to `deer_invert` (r, dim, fit_dim, alpha, alpha_factor, ...). Returns the
+    optimal t0 in the same units as `t`.
+
+    For speed the search uses a fixed-alpha *sequential* inversion at each offset:
+    t0 is set by the shape of the residual, not by the engine or the exact
+    regularization, so this avoids a per-offset GCV scan and the slower joint
+    background fit. The caller runs its chosen engine once at the returned t0.
+    """
+    t = np.asarray(t, float)
+    V = np.asarray(V, float)
+    span = float(t[-1] - t[0]) or 1.0
+    grid = np.linspace(float(t[0]), float(t[0]) + search_frac*span,
+                       int(max(3, n_grid)))
+
+    # fast, fixed-alpha sequential inversion for the search, on a capped distance
+    # grid (t0 is set by the residual shape, not the P(r) resolution)
+    opts = dict(kwargs)
+    opts['engine'] = 'sequential'
+    opts['scan_lcurve'] = False
+    opts.pop('alpha_factor', None)
+    rr = opts.get('r')
+    if rr is not None and len(np.asarray(rr)) > 100:
+        rr = np.asarray(rr, float)
+        opts['r'] = np.linspace(rr[0], rr[-1], 100)
+    if opts.get('alpha') is None:                 # select alpha once, then hold it
+        s0 = float(grid[len(grid)//2])
+        try:
+            res0 = deer_invert(t - s0, V,
+                               bg_start=(None if bg_start is None else bg_start - s0),
+                               bg_end=(None if bg_end is None else bg_end - s0),
+                               **opts)
+            opts['alpha'] = float(res0['alpha'])
+        except Exception:
+            opts['alpha'] = None
+
+    def resid_at(s):
+        try:
+            res = deer_invert(t - s, V,
+                              bg_start=(None if bg_start is None else bg_start - s),
+                              bg_end=(None if bg_end is None else bg_end - s),
+                              **opts)
+        except Exception:
+            return np.inf
+        bg = res['background']
+        lam = res['lambda']
+        v_fit = bg['B']*((1 - lam) + lam*res['F_fit'])
+        return float(np.sqrt(np.mean((bg['V_norm'] - v_fit)**2)))
+
+    rs = np.array([resid_at(s) for s in grid])
+    i = int(np.argmin(rs))
+    t0 = float(grid[i])
+    # parabolic refine through the grid minimum and its two neighbours
+    if refine and 0 < i < len(grid) - 1 and np.all(np.isfinite(rs[i-1:i+2])):
+        y0, y1, y2 = rs[i-1], rs[i], rs[i+1]
+        denom = y0 - 2*y1 + y2
+        if denom > 0:
+            t0 = float(grid[i] + 0.5*(y0 - y2)/denom*(grid[1] - grid[0]))
+    return t0
 
 
 # --------------------------------------------------------------------------- #
