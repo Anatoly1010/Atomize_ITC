@@ -225,7 +225,9 @@ class MainWindow(QMainWindow):
         self.p_time = CrosshairPlotWidget()
         self.p_time.showGrid(x=True, y=True, alpha=0.2)
         self.p_time.setLabel('bottom', 'Time', units='s')
-        self.time_legend = self.p_time.addLegend(offset=(-10, 10))
+        # nudge the legend left of the right edge so it clears the (right-side)
+        # background-end cursor line
+        self.time_legend = self.p_time.addLegend(offset=(-55, 10))
         dock_time = CloseableDock(name='Time domain', widget=self.p_time)
         dock_time.close_button.hide()
 
@@ -279,8 +281,15 @@ class MainWindow(QMainWindow):
         tabs.addTab(self._scroll(self._build_source_tab()), 'Source')
         tabs.addTab(self._scroll(self._build_phase_tab()), 'Phase')
         tabs.addTab(self._scroll(self._build_background_tab()), 'Background')
-        tabs.addTab(self._scroll(self._build_deer_tab()), 'DEER')
+        tabs.addTab(self._scroll(self._build_deer_tab()), 'Tikhonov')
+        tabs.addTab(self._scroll(self._build_mellin_tab()), 'Mellin')
         outer.addWidget(tabs, stretch=1)
+
+        # Shared inversion controls (distance grid + top-plot view) used by BOTH
+        # the DEER and Mellin engines, kept always visible below the tabs so
+        # neither tab has to be left to set them.
+        outer.addWidget(self._hline())
+        outer.addWidget(self._build_shared_controls())
 
         # Status line lives below the tabs so it is always visible.
         self.status = QLabel('Load a V(t) trace to begin.')
@@ -289,6 +298,96 @@ class MainWindow(QMainWindow):
         outer.addWidget(self.status)
         container.setFixedWidth(430)
         return container
+
+    def _build_shared_controls(self):
+        """Distance grid (min / max / points) and the top-plot view selector —
+        shared by the Tikhonov (DEER) and Mellin engines, so they live in an
+        always-visible strip below the tabs rather than inside one engine's tab."""
+        w = QWidget()
+        grid = QGridLayout(w)
+        grid.setContentsMargins(0, 4, 0, 0)
+        r = 0
+
+        grid.addWidget(self._label('Distance min/max (nm)'), r, 0)
+        rr_row = QHBoxLayout()
+        self.deer_rmin = QDoubleSpinBox()
+        self.deer_rmin.setStyleSheet(DSPIN_STYLE)
+        self.deer_rmin.setRange(0.5, 50.0); self.deer_rmin.setDecimals(2)
+        self.deer_rmin.setSingleStep(0.1); self.deer_rmin.setValue(1.5)
+        self.deer_rmin.valueChanged.connect(self._live_update)
+        self.deer_rmin.valueChanged.connect(self._mellin_live)
+        self.deer_rmax = QDoubleSpinBox()
+        self.deer_rmax.setStyleSheet(DSPIN_STYLE)
+        self.deer_rmax.setRange(0.5, 50.0); self.deer_rmax.setDecimals(2)
+        self.deer_rmax.setSingleStep(0.1); self.deer_rmax.setValue(8.0)
+        self.deer_rmax.valueChanged.connect(self._live_update)
+        self.deer_rmax.valueChanged.connect(self._mellin_live)
+        btn_autormax = QPushButton('Auto')
+        btn_autormax.setStyleSheet(BUTTON_STYLE)
+        btn_autormax.setToolTip(
+            'Set the distance max to the longest distance the trace length '
+            'supports: r_max ≈ 5·(t_max/2)^⅓ nm (DeerAnalysis/Jeschke rule). '
+            'Set automatically on load; mass beyond it is not constrained by the '
+            'data.')
+        btn_autormax.clicked.connect(self._auto_rmax)
+        rr_row.addWidget(self.deer_rmin); rr_row.addWidget(self.deer_rmax)
+        rr_row.addWidget(btn_autormax)
+        grid.addLayout(rr_row, r, 1); r += 1
+
+        grid.addWidget(self._label('Distance points'), r, 0)
+        self.deer_rn = QSpinBox()
+        self.deer_rn.setStyleSheet(SPIN_STYLE)
+        self.deer_rn.setRange(20, 2000); self.deer_rn.setValue(200)
+        self.deer_rn.valueChanged.connect(self._live_update)
+        self.deer_rn.valueChanged.connect(self._mellin_live)
+        grid.addWidget(self.deer_rn, r, 1); r += 1
+
+        grid.addWidget(self._label('Show (top plot)'), r, 0)
+        self.deer_show = QComboBox()
+        self.deer_show.setStyleSheet(COMBO_STYLE)
+        self.deer_show.addItems(['V(t) + background + fit', 'Form factor + fit',
+                                 'Background fit', 'L-curve'])
+        self.deer_show.setToolTip('Top-plot view (the L-curve view applies to the '
+                                  'Tikhonov engine only).')
+        self.deer_show.currentIndexChanged.connect(self._deer_rerender)
+        grid.addWidget(self.deer_show, r, 1); r += 1
+
+        # Uncertainty options shared by both engines.
+        self.deer_ci_chk = QCheckBox('Show 95% confidence band')
+        self.deer_ci_chk.setStyleSheet(CHECKBOX_STYLE)
+        self.deer_ci_chk.setChecked(True)
+        self.deer_ci_chk.setToolTip(
+            'Shade the 95% confidence interval on P(r). Tikhonov: covariance / '
+            'curvature CI (as DeerLab shows by default). Mellin: Monte-Carlo band '
+            'from re-inverting the form factor with the fit-residual noise. '
+            'Superseded by the Validate band when that is on.')
+        self.deer_ci_chk.stateChanged.connect(self._ci_toggled)
+        grid.addWidget(self.deer_ci_chk, r, 0, 1, 2); r += 1
+
+        self.deer_validate_chk = QCheckBox('Validate (background sweep → P(r) band)')
+        self.deer_validate_chk.setStyleSheet(CHECKBOX_STYLE)
+        self.deer_validate_chk.setToolTip(
+            'Re-run the inversion over a sweep of background-start times and show '
+            'the median P(r) with a 5–95% uncertainty band (DeerAnalysis-style). '
+            'Works for both the Tikhonov and Mellin engines.')
+        self.deer_validate_chk.stateChanged.connect(self._live_update)
+        self.deer_validate_chk.stateChanged.connect(self._mellin_live)
+        grid.addWidget(self.deer_validate_chk, r, 0, 1, 2); r += 1
+        return w
+
+    def _ci_toggled(self, *args):
+        """Confidence-band checkbox: Tikhonov keeps its CI in the result so a
+        re-render suffices; the Mellin CI is a Monte-Carlo pass computed only when
+        requested, so toggling it on needs a re-inversion."""
+        if self.deer_result is None:
+            return
+        if self.deer_result.get('engine') == 'mellin':
+            if self.real_xy[0] is not None:
+                self.do_mellin()
+            else:
+                self._render()
+        else:
+            self._render()
 
     def _scroll(self, inner):
         """Wrap a tab's content in a scroll area so it never clips on a short
@@ -480,47 +579,30 @@ class MainWindow(QMainWindow):
         self.deer_engine = QComboBox()
         self.deer_engine.setStyleSheet(COMBO_STYLE)
         self.deer_engine.addItems(['Sequential', 'Joint (global)'])
+        self.deer_engine.setCurrentIndex(1)            # Joint (global) is the default
         self.deer_engine.setToolTip(
             'Sequential: fit the background on the tail window, divide it out, '
             'then invert (fast).\nJoint (global): fit background + modulation '
             'depth together with P(r) in one pass (DeerLab-style) — more robust '
-            'when the background window is short or hard to place.')
+            'when the background window is short or hard to place, and required '
+            'for a clean Mellin fit. Default.')
         self.deer_engine.currentIndexChanged.connect(self._live_update)
+        self.deer_engine.currentIndexChanged.connect(self._mellin_live)
         grid.addWidget(self.deer_engine, r, 1); r += 1
         panel.addLayout(grid)
         panel.addStretch(1)
         return w
 
-    # ---- Tab 4: DEER / PDS inversion ----
+    # ---- Tab 4: Tikhonov inversion ----
     def _build_deer_tab(self):
         w = QWidget()
         panel = QVBoxLayout(w)
         panel.addWidget(self._note('Invert the dipolar kernel to a distance '
-                                   'distribution P(r) (Tikhonov + NNLS). Needs scipy.'))
+                                   'distribution P(r) (Tikhonov + NNLS). Needs scipy. '
+                                   'Distance grid and the top-plot view are set in '
+                                   'the shared controls below the tabs.'))
         grid = QGridLayout()
         r = 0
-
-        grid.addWidget(self._label('Distance min/max (nm)'), r, 0)
-        rr_row = QHBoxLayout()
-        self.deer_rmin = QDoubleSpinBox()
-        self.deer_rmin.setStyleSheet(DSPIN_STYLE)
-        self.deer_rmin.setRange(0.5, 50.0); self.deer_rmin.setDecimals(2)
-        self.deer_rmin.setSingleStep(0.1); self.deer_rmin.setValue(1.5)
-        self.deer_rmin.valueChanged.connect(self._live_update)
-        self.deer_rmax = QDoubleSpinBox()
-        self.deer_rmax.setStyleSheet(DSPIN_STYLE)
-        self.deer_rmax.setRange(0.5, 50.0); self.deer_rmax.setDecimals(2)
-        self.deer_rmax.setSingleStep(0.1); self.deer_rmax.setValue(8.0)
-        self.deer_rmax.valueChanged.connect(self._live_update)
-        rr_row.addWidget(self.deer_rmin); rr_row.addWidget(self.deer_rmax)
-        grid.addLayout(rr_row, r, 1); r += 1
-
-        grid.addWidget(self._label('Distance points'), r, 0)
-        self.deer_rn = QSpinBox()
-        self.deer_rn.setStyleSheet(SPIN_STYLE)
-        self.deer_rn.setRange(20, 2000); self.deer_rn.setValue(200)
-        self.deer_rn.valueChanged.connect(self._live_update)
-        grid.addWidget(self.deer_rn, r, 1); r += 1
 
         grid.addWidget(self._label('Regularization α'), r, 0)
         al_row = QHBoxLayout()
@@ -559,40 +641,12 @@ class MainWindow(QMainWindow):
         self.deer_alpha_factor.valueChanged.connect(self._live_update)
         grid.addWidget(self.deer_alpha_factor, r, 1); r += 1
 
-        grid.addWidget(self._label('Show (top plot)'), r, 0)
-        self.deer_show = QComboBox()
-        self.deer_show.setStyleSheet(COMBO_STYLE)
-        self.deer_show.addItems(['V(t) + background + fit', 'Form factor + fit',
-                                 'Background fit', 'L-curve'])
-        self.deer_show.currentIndexChanged.connect(self._deer_rerender)
-        grid.addWidget(self.deer_show, r, 1); r += 1
-
-        self.deer_ci_chk = QCheckBox('Show 95% confidence band')
-        self.deer_ci_chk.setStyleSheet(CHECKBOX_STYLE)
-        self.deer_ci_chk.setChecked(True)
-        self.deer_ci_chk.setToolTip(
-            'Shade the covariance-based 95% confidence interval on P(r) '
-            '(propagated fit-noise / curvature CI, as DeerLab shows by default). '
-            'Superseded by the Validate band when that is on.')
-        self.deer_ci_chk.stateChanged.connect(self._deer_rerender)
-        grid.addWidget(self.deer_ci_chk, r, 0, 1, 2); r += 1
-
-        self.deer_validate_chk = QCheckBox('Validate (background sweep → P(r) band)')
-        self.deer_validate_chk.setStyleSheet(CHECKBOX_STYLE)
-        self.deer_validate_chk.setToolTip(
-            'Re-run the inversion over a sweep of background-start times at fixed '
-            'α and show the median P(r) with a 5–95% uncertainty band. This is '
-            'the DeerAnalysis validation step that turns a single spiky GCV '
-            'solution into the smooth, banded distribution of JACS 2021 Fig. 4.')
-        self.deer_validate_chk.stateChanged.connect(self._live_update)
-        grid.addWidget(self.deer_validate_chk, r, 0, 1, 2); r += 1
-
         self.live_check = QCheckBox('Live update on parameter change')
         self.live_check.setStyleSheet(CHECKBOX_STYLE)
         grid.addWidget(self.live_check, r, 0, 1, 2); r += 1
 
         run_row = QHBoxLayout()
-        self.deer_run_btn = QPushButton('Run DEER')
+        self.deer_run_btn = QPushButton('Run Tikhonov')
         self.deer_run_btn.setStyleSheet(BUTTON_STYLE)
         self.deer_run_btn.clicked.connect(self.do_deer)
         btn_exp = QPushButton('Export all…')
@@ -610,6 +664,139 @@ class MainWindow(QMainWindow):
         panel.addWidget(self.deer_info)
         panel.addStretch(1)
         return w
+
+    # ---- Tab 5: Mellin transform (analytic, model-free inversion) ----
+    def _build_mellin_tab(self):
+        w = QWidget()
+        panel = QVBoxLayout(w)
+        panel.addWidget(self._note(
+            'Model-free inversion by the analytic integral <b>Mellin transform</b> '
+            '(Matveeva, Nekrasov, Maryasov, <i>PCCP</i> 2017, '
+            'doi 10.1039/C7CP04059H). No Tikhonov, no NNLS, no L-curve: the '
+            'distance distribution is recovered analytically, so it is not '
+            'broadened and bimodal peaks are not merged. Noise enters P(r) '
+            'additively and groups at <b>short r</b> (the method\'s signature), so '
+            'ripples below the reliable range are propagated noise, not structure.'))
+        panel.addWidget(self._note(
+            'Uses the <b>Background</b> tab\'s zero-time / window / dimension / '
+            'fit engine and the shared distance grid below the tabs. The Mellin '
+            'kernel decays to zero, so it cannot absorb a DC pedestal left by a '
+            'too-shallow background — the <b>Joint</b> background engine '
+            '(Background tab) is recommended for a clean fit.'))
+        grid = QGridLayout()
+        r = 0
+
+        grid.addWidget(self._label('Split δ'), r, 0)
+        delta_row = QHBoxLayout()
+        self.mellin_delta = QDoubleSpinBox()
+        self.mellin_delta.setStyleSheet(DSPIN_STYLE)
+        self.mellin_delta.setRange(0.0, 1e9)
+        self.mellin_delta.setDecimals(5)
+        self.mellin_delta.setSingleStep(0.001)
+        self.mellin_delta.setValue(0.0)          # 0 ⇒ auto (F(δ) ≈ 0.95)
+        self.mellin_delta.setToolTip(
+            'Mellin split point δ (display time units), the lone regularizing '
+            'knob: on [0, δ] the form factor is taken constant and integrated '
+            'analytically; [δ, end] is integrated numerically. The practical '
+            'estimate is F(δ) ≈ 0.95 (paper recommendation). 0 = auto. Larger δ '
+            'regularizes more (smoother, less short-r noise); too large loses '
+            'resolution.')
+        self.mellin_delta.valueChanged.connect(self._mellin_live)
+        self.mellin_delta_auto = QCheckBox('Auto')
+        self.mellin_delta_auto.setStyleSheet(CHECKBOX_STYLE)
+        self.mellin_delta_auto.setChecked(True)
+        self.mellin_delta_auto.setToolTip('Estimate δ from F(δ) ≈ 0.95.')
+        self.mellin_delta_auto.stateChanged.connect(self._mellin_delta_toggle)
+        self.mellin_delta.setEnabled(False)
+        delta_row.addWidget(self.mellin_delta); delta_row.addWidget(self.mellin_delta_auto)
+        grid.addLayout(delta_row, r, 1); r += 1
+
+        grid.addWidget(self._label('τ max'), r, 0)
+        tm_row = QHBoxLayout()
+        self.mellin_taumax = QDoubleSpinBox()
+        self.mellin_taumax.setStyleSheet(DSPIN_STYLE)
+        self.mellin_taumax.setRange(2.0, 200.0)
+        self.mellin_taumax.setDecimals(1)
+        self.mellin_taumax.setSingleStep(5.0)
+        self.mellin_taumax.setValue(25.0)
+        self.mellin_taumax.setEnabled(False)
+        self.mellin_taumax.setToolTip(
+            'Upper limit of the Mellin variable τ (the transform runs over '
+            '[−τmax, τmax]). The high-τ cutoff is the regularizer: too small '
+            'blurs P(r); too large amplifies noise. 20–30 is typical.')
+        self.mellin_taumax.valueChanged.connect(self._mellin_live)
+        self.mellin_taumax_auto = QCheckBox('Auto')
+        self.mellin_taumax_auto.setStyleSheet(CHECKBOX_STYLE)
+        self.mellin_taumax_auto.setChecked(True)
+        self.mellin_taumax_auto.setToolTip(
+            'Choose the cutoff by the discrepancy principle: scan τmax and pick '
+            'the smallest one whose V-space fit residual reaches the noise floor '
+            '(σ_fit ≈ σ_noise). Smaller under-fits (residual ≫ noise), larger '
+            'over-fits (injects noise into P(r)). The chosen value and the '
+            'σ_fit/σ_noise ratio are reported below.')
+        self.mellin_taumax_auto.stateChanged.connect(self._mellin_taumax_toggle)
+        self.mellin_taumax_auto.stateChanged.connect(self._mellin_live)
+        tm_row.addWidget(self.mellin_taumax); tm_row.addWidget(self.mellin_taumax_auto)
+        grid.addLayout(tm_row, r, 1); r += 1
+
+        grid.addWidget(self._label('τ points'), r, 0)
+        self.mellin_ntau = QSpinBox()
+        self.mellin_ntau.setStyleSheet(SPIN_STYLE)
+        self.mellin_ntau.setRange(101, 20001)
+        self.mellin_ntau.setSingleStep(200)
+        self.mellin_ntau.setValue(2001)
+        self.mellin_ntau.setToolTip(
+            'Number of τ samples across [−τmax, τmax]. Must resolve the τ-domain '
+            'oscillations (dτ ≲ 0.05); 2001 over ±25 (dτ = 0.025) is ample.')
+        self.mellin_ntau.valueChanged.connect(self._mellin_live)
+        grid.addWidget(self.mellin_ntau, r, 1); r += 1
+
+        self.mellin_signed_chk = QCheckBox('Overlay signed P(r) (with noise ripples)')
+        self.mellin_signed_chk.setStyleSheet(CHECKBOX_STYLE)
+        self.mellin_signed_chk.setToolTip(
+            'Also draw the raw signed distribution (before clipping negatives), '
+            'whose short-r ripples are the propagated noise — the diagnostic the '
+            'Mellin method is prized for.')
+        self.mellin_signed_chk.stateChanged.connect(self._deer_rerender)
+        grid.addWidget(self.mellin_signed_chk, r, 0, 1, 2); r += 1
+
+        self.mellin_live = QCheckBox('Live update on parameter change')
+        self.mellin_live.setStyleSheet(CHECKBOX_STYLE)
+        grid.addWidget(self.mellin_live, r, 0, 1, 2); r += 1
+
+        run_row = QHBoxLayout()
+        self.mellin_run_btn = QPushButton('Run Mellin')
+        self.mellin_run_btn.setStyleSheet(BUTTON_STYLE)
+        self.mellin_run_btn.clicked.connect(self.do_mellin)
+        btn_exp = QPushButton('Export all…')
+        btn_exp.setStyleSheet(BUTTON_STYLE)
+        btn_exp.clicked.connect(self.save_deer_all)
+        run_row.addWidget(self.mellin_run_btn); run_row.addWidget(btn_exp)
+        grid.addLayout(run_row, r, 0, 1, 2); r += 1
+        panel.addLayout(grid)
+
+        self.mellin_info = QLabel('')
+        self.mellin_info.setStyleSheet(LABEL_STYLE)
+        self.mellin_info.setWordWrap(True)
+        self.mellin_info.setTextFormat(Qt.TextFormat.RichText)
+        self.mellin_info.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+        panel.addWidget(self.mellin_info)
+        panel.addStretch(1)
+        return w
+
+    def _mellin_delta_toggle(self, *args):
+        self.mellin_delta.setEnabled(not self.mellin_delta_auto.isChecked())
+
+    def _mellin_taumax_toggle(self, *args):
+        self.mellin_taumax.setEnabled(not self.mellin_taumax_auto.isChecked())
+
+    def _mellin_live(self, *args):
+        if self._suppress_live:
+            return
+        if (self.mellin_live.isChecked() and self.real_xy[0] is not None
+                and self.deer_result is not None
+                and self.deer_result.get('engine') == 'mellin'):
+            self.do_mellin()
 
     # ----------------------------------------------------------- status
     def set_status(self, text):
@@ -1039,20 +1226,49 @@ class MainWindow(QMainWindow):
         self.set_status(f'Auto background start = {bg:.4g} '
                         f'{self.deer_tunit.currentText()}.')
 
+    # Longest distance the trace length supports: r_max ≈ 5·(t_max/2)^(1/3) nm
+    # (t_max in µs) — the DeerAnalysis/Jeschke rule of thumb for the reliable
+    # mean distance; mass beyond it is unconstrained by the data.
+    R_MAX_FACTOR = 5.0
+
+    def _auto_rmax_value(self):
+        """Trace-length-supported maximum distance (nm), or None if no data."""
+        x, _ = self.real_xy
+        if x is None or len(x) < 2:
+            return None
+        x = np.asarray(x, dtype=float)
+        t_us = abs(float(x[-1] - x[0]))*self._deer_tfactor()
+        if t_us <= 0:
+            return None
+        rmax = self.R_MAX_FACTOR*(t_us/2.0)**(1.0/3.0)
+        return float(np.clip(round(rmax, 1), self.deer_rmin.value() + 0.5, 50.0))
+
+    def _auto_rmax(self):
+        rmax = self._auto_rmax_value()
+        if rmax is None:
+            self.set_status('Load a V(t) trace first.')
+            return
+        self.deer_rmax.setValue(rmax)
+        self.set_status(f'Auto distance max = {rmax:.1f} nm '
+                        f'(trace-supported, 5·(t/2)^⅓).')
+
     def _reset_bg_window(self):
-        """Set a sensible default background window for the current (trimmed)
-        trace: start ~2/3 in (auto), end at the last point so the end cursor is
-        visible/draggable rather than the hidden 'to-end' (0) sentinel."""
+        """Set sensible defaults for the current (trimmed) trace: background start
+        ~2/3 in (auto), background end at the last point (so the end cursor shows),
+        and the distance max at the trace-length-supported limit."""
         bg = self._auto_bg_start_value()
+        rmax = self._auto_rmax_value()
         xr = self.real_xy[0]
-        self.deer_bgstart.blockSignals(True)
-        self.deer_bgend.blockSignals(True)
+        for sb in (self.deer_bgstart, self.deer_bgend, self.deer_rmax):
+            sb.blockSignals(True)
         if bg is not None:
             self.deer_bgstart.setValue(bg)
         if xr is not None and len(xr):
             self.deer_bgend.setValue(float(np.asarray(xr, dtype=float)[-1]))
-        self.deer_bgstart.blockSignals(False)
-        self.deer_bgend.blockSignals(False)
+        if rmax is not None:
+            self.deer_rmax.setValue(rmax)
+        for sb in (self.deer_bgstart, self.deer_bgend, self.deer_rmax):
+            sb.blockSignals(False)
 
     def _deer_t0_max(self):
         x, v = self.real_xy
@@ -1142,19 +1358,98 @@ class MainWindow(QMainWindow):
         self.deer_run_btn.setEnabled(False)
         self.deer_run_btn.setStyleSheet(BUTTON_BUSY_STYLE)
         self.set_status('Fitting zero-time t0…' if fit_t0
-                        else ('DEER validation: sweeping background start…'
-                              if validate else 'Running DEER…'))
+                        else ('Tikhonov validation: sweeping background start…'
+                              if validate else 'Running Tikhonov…'))
+        self._deer_worker = _DeerWorker(compute)
+        self._deer_worker.done.connect(self._deer_finished)
+        self._deer_worker.start()
+
+    def do_mellin(self):
+        """Invert V(t) to P(r) by the analytic Mellin transform (model-free, no
+        Tikhonov). Reuses the Background tab's zero-time / window / dimension and
+        the shared distance grid; the Mellin tab supplies δ, τmax, τ points.
+        Runs on the same worker thread + finisher as `do_deer`."""
+        x, v = self.real_xy
+        if x is None or len(x) < 8:
+            self.set_status('Load a V(t) trace first (≥ 8 points).')
+            return
+        if self._deer_busy:
+            self.set_status('Busy — wait for the running inversion to finish.')
+            return
+        tf = self._deer_tfactor()
+        rmin, rmax = self.deer_rmin.value(), self.deer_rmax.value()
+        if rmax <= rmin:
+            self.set_status('Distance max must exceed min.')
+            return
+        # snapshot plain values for the worker (no Qt access inside compute)
+        x = np.asarray(x, dtype=float)
+        v = np.asarray(v, dtype=float)
+        r = np.linspace(rmin, rmax, int(self.deer_rn.value()))
+        dim = float(self.deer_dim.value())
+        fit_dim = self.deer_fitdim.isChecked()
+        fit_t0 = self.deer_fit_t0.isChecked()
+        bg_engine = 'joint' if self.deer_engine.currentIndex() == 1 else 'sequential'
+        bgs_disp = float(self.deer_bgstart.value())
+        bge_disp = float(self.deer_bgend.value())
+        t0_cur = float(self.deer_t0.value())
+        delta_disp = (0.0 if self.mellin_delta_auto.isChecked()
+                      else float(self.mellin_delta.value()))
+        tau_max = (None if self.mellin_taumax_auto.isChecked()
+                   else float(self.mellin_taumax.value()))
+        n_tau = int(self.mellin_ntau.value())
+        validate = self.deer_validate_chk.isChecked()
+        n_mc = 50 if self.deer_ci_chk.isChecked() else 0
+
+        def compute():
+            t0_disp = t0_cur
+            if fit_t0:
+                t0u = deer_module.fit_zero_time(
+                    x * tf, v, bg_start=bgs_disp * tf,
+                    bg_end=(bge_disp * tf if bge_disp > bgs_disp else None),
+                    r=r, dim=dim, fit_dim=fit_dim)
+                t0_disp = t0u / tf
+            t_us = (x - t0_disp) * tf
+            bg_us = (bgs_disp - t0_disp) * tf
+            bg_end_us = ((bge_disp - t0_disp) * tf if bge_disp > bgs_disp else None)
+            delta_us = (delta_disp * tf) if delta_disp > 0 else None
+            mk = dict(delta=delta_us, tau_max=tau_max, n_tau=n_tau,
+                      bg_engine=bg_engine)
+            if validate:
+                val = deer_module.deer_validate(
+                    t_us, v, r=r, bg_start=bg_us, bg_end=bg_end_us, dim=dim,
+                    fit_dim=fit_dim, engine='mellin', **mk)
+                res, band = val['base'], val
+            else:
+                res = deer_module.deer_invert_mellin(
+                    t_us, v, r=r, bg_start=bg_us, bg_end=bg_end_us, dim=dim,
+                    fit_dim=fit_dim, n_mc=n_mc, **mk)
+                band = None
+            res['t'] = x * tf
+            if bg_end_us is not None:
+                res['background']['bg_end'] = bge_disp * tf
+            return {'t0_disp': t0_disp, 'res': res, 'band': band}
+
+        self._deer_busy = True
+        self._deer_pending = False
+        self.mellin_run_btn.setEnabled(False)
+        self.mellin_run_btn.setStyleSheet(BUTTON_BUSY_STYLE)
+        self.set_status('Fitting zero-time t0…' if fit_t0
+                        else ('Mellin validation: sweeping background start…'
+                              if validate else ('Running Mellin transform '
+                              '(+ CI)…' if n_mc else 'Running Mellin transform…')))
         self._deer_worker = _DeerWorker(compute)
         self._deer_worker.done.connect(self._deer_finished)
         self._deer_worker.start()
 
     def _deer_finished(self, payload):
-        """Apply a finished inversion (runs on the main thread via the signal)."""
+        """Apply a finished inversion (runs on the main thread via the signal).
+        Shared by the Tikhonov (`do_deer`) and Mellin (`do_mellin`) engines."""
         self._deer_busy = False
-        self.deer_run_btn.setStyleSheet(BUTTON_STYLE)
-        self.deer_run_btn.setEnabled(True)
+        for btn in (self.deer_run_btn, self.mellin_run_btn):
+            btn.setStyleSheet(BUTTON_STYLE)
+            btn.setEnabled(True)
         if isinstance(payload, Exception):
-            self.set_status(f'DEER failed: {payload}')
+            self.set_status(f'Inversion failed: {payload}')
             return
         if self.real_xy[0] is None:       # data cleared while the fit ran; discard
             self._deer_pending = False
@@ -1163,10 +1458,11 @@ class MainWindow(QMainWindow):
         self.deer_result = res
         self.deer_band = band
         tf = self._deer_tfactor()
+        is_mellin = res.get('engine') == 'mellin'
         self.deer_t0.blockSignals(True)
         self.deer_t0.setValue(t0_disp)
         self.deer_t0.blockSignals(False)
-        if self.deer_alpha_auto.isChecked():
+        if not is_mellin and self.deer_alpha_auto.isChecked():
             self.deer_alpha.blockSignals(True)
             self.deer_alpha.setValue(float(res['alpha']))
             self.deer_alpha.blockSignals(False)
@@ -1186,19 +1482,54 @@ class MainWindow(QMainWindow):
             r_peak = float(res['r'][int(np.argmax(res['P_density']))])
             r_mean = float(np.sum(res['r'] * res['P_norm']))
             extra, consensus = '', ''
-        self.deer_info.setText(
+
+        if is_mellin:
+            tunit = self.deer_tunit.currentText()
+            delta_disp = float(res.get('delta', 0.0)) / tf
+            # reflect the auto-chosen δ / τmax back into the (disabled) spin boxes
+            self.mellin_delta.blockSignals(True)
+            self.mellin_delta.setValue(delta_disp)
+            self.mellin_delta.blockSignals(False)
+            if res.get('auto_taumax'):
+                self.mellin_taumax.blockSignals(True)
+                self.mellin_taumax.setValue(float(res.get('tau_max', 0)))
+                self.mellin_taumax.blockSignals(False)
+            sf, sn = res.get('sigma_fit'), res.get('sigma_noise')
+            if sf and sn and np.isfinite(sf) and np.isfinite(sn) and sn > 0:
+                ratio = sf / sn
+                verdict = ('overfit' if ratio < 0.9
+                           else 'matched' if ratio <= 1.6 else 'underfit')
+                disc = (f'<br>σ_fit/σ_noise = {ratio:.2f} '
+                        f'<i>({verdict})</i>')
+            else:
+                disc = ''
+            tag_auto = ' (auto)' if res.get('auto_taumax') else ''
+            reg = (f'split δ = {delta_disp:.4g} {tunit}<br>'
+                   f'τ max = {res.get("tau_max", 0):.0f}{tag_auto}{disc}')
+        else:
+            reg = f'α = {res["alpha"]:.4g}'
+        info_html = (
             '<div style="line-height: 165%;">'
-            f'<b style="color: rgb(211, 194, 78);">P(r)</b>{consensus}<br>'
+            f'<b style="color: rgb(211, 194, 78);">P(r)</b>{consensus}'
+            f' &nbsp;<i>({res.get("engine", "—")})</i><br>'
             f'mod. depth λ = {res["lambda"]:.3f}<br>'
             f'bg decay k = {res["k"]:.4g}, dim = {res["dim"]:.2f}<br>'
-            f'α = {res["alpha"]:.4g}<br>'
+            f'{reg}<br>'
             f'peak r = {r_peak:.3f} nm<br>'
             f'mean r = {r_mean:.3f} nm<br>'
             f'form-factor R² = {r2:.4f}{extra}</div>')
+        self.deer_info.setText(info_html)
+        if is_mellin:
+            self.mellin_info.setText(info_html)
         self._render()
-        tag = f' ({band["n_trials"]}-trial band)' if band else ''
-        self.set_status(f'DEER: λ={res["lambda"]:.3f}, α={res["alpha"]:.3g}, '
-                        f'peak r={r_peak:.2f} nm, R²={r2:.3f}{tag}.')
+        if is_mellin:
+            self.set_status(f'Mellin: λ={res["lambda"]:.3f}, δ={delta_disp:.3g} '
+                            f'{self.deer_tunit.currentText()}, peak r={r_peak:.2f} nm, '
+                            f'R²={r2:.3f}.')
+        else:
+            tag = f' ({band["n_trials"]}-trial band)' if band else ''
+            self.set_status(f'Tikhonov: λ={res["lambda"]:.3f}, α={res["alpha"]:.3g}, '
+                            f'peak r={r_peak:.2f} nm, R²={r2:.3f}{tag}.')
         # a parameter/cursor change arrived while we were busy -> refit once
         if self._deer_pending:
             self._deer_pending = False
@@ -1233,8 +1564,15 @@ class MainWindow(QMainWindow):
                 self._show_deer_band(True, res['r'], res['P_lower'], res['P_upper'])
             else:
                 self._show_deer_band(False)
-            self._repaint(self.p_pr, self.pr_legend, self._pr_items,
-                          [('P(r)', res['r'], res['P_density'], C_FIT, 2)],
+            pr_curves = [('P(r)', res['r'], res['P_density'], C_FIT, 2)]
+            # Mellin: optionally overlay the raw signed distribution (short-r
+            # ripples = propagated noise), the method's diagnostic output.
+            if (res.get('engine') == 'mellin'
+                    and res.get('P_signed_density') is not None
+                    and self.mellin_signed_chk.isChecked()):
+                pr_curves.append(('P(r) signed', res['r'],
+                                  res['P_signed_density'], C_IM, 1))
+            self._repaint(self.p_pr, self.pr_legend, self._pr_items, pr_curves,
                           'Distance (nm)', '_pr_key', left_label='P(r) (nm⁻¹)',
                           force=True)
 
@@ -1365,7 +1703,7 @@ class MainWindow(QMainWindow):
                 pen=pg.mkPen((211, 194, 78), width=2, style=Qt.PenStyle.DashLine),
                 hoverPen=pg.mkPen((255, 230, 120), width=3),
                 label='bg start', labelOpts={'color': (211, 194, 78),
-                                             'position': 0.92})
+                                             'position': 0.93})
             # ignoreBounds: keep the cursor out of autoRange so a view switch
             # refits to the data, not to the cursor's (time) position
             self.p_time.addItem(self._bg_cursor, ignoreBounds=True)
@@ -1396,7 +1734,7 @@ class MainWindow(QMainWindow):
                 pen=pg.mkPen((120, 200, 255), width=2, style=Qt.PenStyle.DashLine),
                 hoverPen=pg.mkPen((180, 225, 255), width=3),
                 label='bg end', labelOpts={'color': (120, 200, 255),
-                                           'position': 0.84})
+                                           'position': 0.86})
             self.p_time.addItem(self._bg_cursor_end, ignoreBounds=True)
             self._bg_cursor_end.sigPositionChangeFinished.connect(self._on_bg_cursor_end)
         active = float(self.deer_bgend.value()) > float(self.deer_bgstart.value())
@@ -1433,7 +1771,7 @@ class MainWindow(QMainWindow):
         chosen path: <base>_distance / _formfactor / _background / _lcurve.csv."""
         res = self.deer_result
         if res is None:
-            self.set_status('Run DEER first — nothing to export.')
+            self.set_status('Run an inversion first — nothing to export.')
             return
         file_path = self._save_dialog()
         if not file_path or file_path == 'None':
@@ -1442,9 +1780,16 @@ class MainWindow(QMainWindow):
         tunit = self.deer_tunit.currentText()
         t_disp = res['t'] / self._deer_tfactor()
         bg = res['background']
-        hdr = ['DEER/PDS analysis (Tikhonov + NNLS)',
-               f'lambda = {res["lambda"]:.6g}, k = {res["k"]:.6g}, '
-               f'dim = {res["dim"]:.6g}, alpha = {res["alpha"]:.6g}',
+        is_mellin = res.get('engine') == 'mellin'
+        reg_line = (f'lambda = {res["lambda"]:.6g}, k = {res["k"]:.6g}, '
+                    f'dim = {res["dim"]:.6g}, '
+                    + (f'delta = {res.get("delta", 0)/self._deer_tfactor():.6g} {tunit}, '
+                       f'tau_max = {res.get("tau_max", 0):.6g}' if is_mellin
+                       else f'alpha = {res["alpha"]:.6g}'))
+        hdr = ['DEER/PDS analysis ('
+               + ('analytic Mellin transform, doi 10.1039/C7CP04059H)'
+                  if is_mellin else 'Tikhonov + NNLS)'),
+               reg_line,
                f'r {res["r"][0]:.4g}-{res["r"][-1]:.4g} nm ({len(res["r"])} pts), '
                f'time unit {tunit}, bg start {self.deer_bgstart.value():.6g} {tunit}'
                + (f', bg end {res["background"]["bg_end"]/self._deer_tfactor():.6g} {tunit}'
@@ -1468,6 +1813,9 @@ class MainWindow(QMainWindow):
             _save('distance', [res['r'], res['P_density'], res['P_lower'],
                                res['P_upper'], res['P_norm']],
                   'r (nm), P(r) density, 95% CI lower, 95% CI upper, P (masses)')
+        elif is_mellin and res.get('P_signed_density') is not None:
+            _save('distance', [res['r'], res['P_density'], res['P_signed_density']],
+                  'r (nm), P(r) density (clipped, normalized), P(r) signed density')
         else:
             _save('distance', [res['r'], res['P_density'], res['P_norm']],
                   'r (nm), P(r) density, P (masses)')
@@ -1504,6 +1852,7 @@ class MainWindow(QMainWindow):
                     pass
         self._time_key = self._pr_key = None
         self.deer_info.setText('')
+        self.mellin_info.setText('')
         self._set_loaded_file(None)
         self.set_status('Cleared. Load a V(t) trace to begin.')
 
