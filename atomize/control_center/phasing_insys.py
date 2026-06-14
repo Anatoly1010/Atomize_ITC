@@ -2782,7 +2782,7 @@ class Worker():
 
         self.command = 'start'
     
-    def dig_on(self, conn, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11, p12, p13, p14, p15, p16, p17, p18, p19, p20, p21, p22, p23, p24, p25, script_test=False):
+    def dig_on(self, conn, decimation, l_mode, n_averages, win_left, win_right, rect1, rect2, rect3, rect4, rect5, rect6, rect7, laser_flag, rep_rate, mag_field, fft_flag, quad, zero_order, first_order, second_order, p_to_drop, laser_num, laser_qsw_delay, rect8, rect9, script_test=False):
         """
         function that contains updating of the digitizer.
 
@@ -2812,21 +2812,21 @@ class Worker():
             fft = fft_module.Fast_Fourier()
             bh15 = itc.BH_15()
             
-            #bh15.magnet_setup( p15, 0.5 )
-            bh15.magnet_field( p15 ) #, calibration = 'True'
+            #bh15.magnet_setup( mag_field, 0.5 )
+            bh15.magnet_field( mag_field ) #, calibration = 'True'
 
             process = 'None'
             
-            # p1 decimation
-            # p2 LIVE MODE
+            # decimation = digitizer decimation
+            # l_mode = live mode
 
             #parameters for initial initialization
 
-            #p4 window left
-            #p5 window right
+            #win_left window left
+            #win_right window right
             
-            if p13 != 1:
-                pulses = [p6, p7, p8, p9, p10, p11, p12, p24, p25]
+            if laser_flag != 1:
+                pulses = [rect1, rect2, rect3, rect4, rect5, rect6, rect7, rect8, rect9]
 
                 for i, p in enumerate(pulses):
                     length_str = p[2].split(' ')[0]
@@ -2839,16 +2839,16 @@ class Worker():
                             phase_list=p[3]
                         )
                 
-                pb.pulser_repetition_rate( str(p14) + ' Hz' )
+                pb.pulser_repetition_rate( str(rep_rate) + ' Hz' )
 
             else:
 
 
-                pulses = [p6, p7, p8, p9, p10, p11, p12, p24, p25]
+                pulses = [rect1, rect2, rect3, rect4, rect5, rect6, rect7, rect8, rect9]
 
                 for i, p in enumerate(pulses):
                     if i != 1:
-                        start_val = float(p[1].split(' ')[0]) + p23
+                        start_val = float(p[1].split(' ')[0]) + laser_qsw_delay
                         p[1] = f"{self.round_to_closest(start_val, 3.2)} ns"
 
                     length_val = int(float(p[2].split(' ')[0]))
@@ -2868,19 +2868,19 @@ class Worker():
 
                         pb.pulser_pulse(**kwargs)
 
-                if p22 == 1:
+                if laser_num == 1:
                     pb.pulser_repetition_rate( '9.9 Hz' )
-                elif p22 == 2:
-                    pb.pulser_repetition_rate( str(p14) + ' Hz' )
+                elif laser_num == 2:
+                    pb.pulser_repetition_rate( str(rep_rate) + ' Hz' )
                 else:
-                    pb.pulser_repetition_rate( str(p14) + ' Hz' )
+                    pb.pulser_repetition_rate( str(rep_rate) + ' Hz' )
 
 
             POINTS = 1
-            pb.digitizer_decimation(p1)
+            pb.digitizer_decimation(decimation)
             DETECTION_WINDOW = round( pb.adc_window * 3.2, 1 )
             TR_ADC = round(3.2 / 8, 1)
-            WIN_ADC = int( pb.adc_window * 8 / p1 )
+            WIN_ADC = int( pb.adc_window * 8 / decimation )
 
             #31/03/2026
             if DETECTION_WINDOW <= 1200:
@@ -2892,17 +2892,17 @@ class Worker():
             ##data = np.random.random( ( 2, WIN_ADC, 1 ) )
             x_axis = np.linspace(0, ( DETECTION_WINDOW - TR_ADC), num = WIN_ADC)
 
-            t_res = 0.4 * p1
+            t_res = 0.4 * decimation
 
             #31/03/2026
-            p14 = float(p14)
-            if (p3 / p14 ) < ms_per_point:
-                p3 = int( ms_per_point * p14)
+            rep_rate = float(rep_rate)
+            if (n_averages / rep_rate ) < ms_per_point:
+                n_averages = int( ms_per_point * rep_rate)
                 if not script_test:
-                    conn.send( ('Average', p3) )
+                    conn.send( ('Average', n_averages) )
 
-            pb.digitizer_number_of_averages(p3)
-            PHASES = len( p6[3] )
+            pb.digitizer_number_of_averages(n_averages)
+            PHASES = len( rect1[3] )
             
             #general.plot_remove('Dig')
             
@@ -2929,70 +2929,70 @@ class Worker():
 
                 elif self.command[0:2] == 'LM':
                     pass
-                    #p2 = int( self.command[2:] )
+                    #l_mode = int( self.command[2:] )
 
                 elif self.command[0:2] == 'NA':
-                    p3 = int( self.command[2:] )
+                    n_averages = int( self.command[2:] )
 
                     #31/03/2026
-                    if (p3 / p14 ) < ms_per_point:
-                        p3 = int( ms_per_point * p14)
+                    if (n_averages / rep_rate ) < ms_per_point:
+                        n_averages = int( ms_per_point * rep_rate)
                         if not script_test:
-                            conn.send( ('Average', p3) )
+                            conn.send( ('Average', n_averages) )
 
-                    pb.digitizer_number_of_averages( p3 )
+                    pb.digitizer_number_of_averages( n_averages )
 
                 elif self.command[0:2] == 'WL':
-                    p4 = int( self.command[2:] )
+                    win_left = int( self.command[2:] )
                 elif self.command[0:2] == 'WR':
-                    p5 = int( self.command[2:] )
+                    win_right = int( self.command[2:] )
                 elif self.command[0:2] == 'RR':
-                    p14 = float( self.command[2:] )
+                    rep_rate = float( self.command[2:] )
 
                     #31/03/2026
-                    if (p3 / p14 ) < ms_per_point:
-                        p3 = int( ms_per_point * p14)
-                        pb.digitizer_number_of_averages( p3 )
+                    if (n_averages / rep_rate ) < ms_per_point:
+                        n_averages = int( ms_per_point * rep_rate)
+                        pb.digitizer_number_of_averages( n_averages )
                         if not script_test:
-                            conn.send( ('Average', p3) )
+                            conn.send( ('Average', n_averages) )
 
-                    if p14 > 49:
-                        pb.pulser_repetition_rate( str(p14) + ' Hz' )
+                    if rep_rate > 49:
+                        pb.pulser_repetition_rate( str(rep_rate) + ' Hz' )
                     elif not script_test:
                         conn.send( ('Message', 'For REPETITION RATE lower then 50 Hz, please, press RUN PULSES') )
 
                 elif self.command[0:2] == 'FI':
-                    p15 = float( self.command[2:] )
-                    bh15.magnet_field( p15 ) #, calibration = 'True'
+                    mag_field = float( self.command[2:] )
+                    bh15.magnet_field( mag_field ) #, calibration = 'True'
                 elif self.command[0:2] == 'FF':
-                    p16 = int( self.command[2:] )
+                    fft_flag = int( self.command[2:] )
                 elif self.command[0:2] == 'QC':
-                    p17 = int( self.command[2:] )
+                    quad = int( self.command[2:] )
                 elif self.command[0:2] == 'ZO':
-                    p18 = float( self.command[2:] )
+                    zero_order = float( self.command[2:] )
                 elif self.command[0:2] == 'FO':
-                    p19 = float( self.command[2:] )
+                    first_order = float( self.command[2:] )
                 elif self.command[0:2] == 'SO':
-                    p20 = float( self.command[2:] )
+                    second_order = float( self.command[2:] )
                 elif self.command[0:2] == 'PD':
-                    p21 = int( self.command[2:] )
+                    p_to_drop = int( self.command[2:] )
 
                 # check integration window
-                if p4 > WIN_ADC:
-                    p4 = WIN_ADC
-                if p5 > WIN_ADC:
-                    p5 = WIN_ADC
+                if win_left > WIN_ADC:
+                    win_left = WIN_ADC
+                if win_right > WIN_ADC:
+                    win_right = WIN_ADC
 
                 # phase cycle
-                PHASES = len( p6[3] )
+                PHASES = len( rect1[3] )
 
                 #pb.pulser_visualize()
 
                 for i in range( PHASES ):
                     pb.pulser_next_phase()
-                    if p2 == 0:
+                    if l_mode == 0:
                         data[0], data[1] = pb.digitizer_get_curve(POINTS, PHASES, live_mode = 1)
-                    elif p2 == 1:
+                    elif l_mode == 1:
                         data[0], data[1] = pb.digitizer_get_curve(POINTS, PHASES, live_mode = 0)
                     ##general.wait('100 ms')
                     ##data = np.random.random( ( 2, WIN_ADC, 1 ) )
@@ -3000,30 +3000,30 @@ class Worker():
                     data_x = data[0].ravel()
                     data_y = data[1].ravel()
 
-                    if p17 == 1:
-                        data_x, data_y = pb.digitizer_iq(data_x, data_y, 0, p18, p19, p20)
+                    if quad == 1:
+                        data_x, data_y = pb.digitizer_iq(data_x, data_y, 0, zero_order, first_order, second_order)
                     else:
                         pass
 
-                    if script_test and p16 == 1:
+                    if script_test and fft_flag == 1:
                         # FFT mode in test: omit the I/Q text on the Dig plot since FFT is shown
                         general.plot_1d('Dig', x_axis / 1e9, ( data_x, data_y ),
                             xscale = 's', yscale = 'mV', label = 'ch',
-                            vline = (p4 * t_res / 1e9, p5 * t_res / 1e9)
+                            vline = (win_left * t_res / 1e9, win_right * t_res / 1e9)
                             )
                     else:
-                        int_x = round( np.sum( data_x[p4:p5] ) * 1 * t_res , 1 )
-                        int_y = round( np.sum( data_y[p4:p5] ) * 1 * t_res , 1 )
+                        int_x = round( np.sum( data_x[win_left:win_right] ) * 1 * t_res , 1 )
+                        int_y = round( np.sum( data_y[win_left:win_right] ) * 1 * t_res , 1 )
 
                         general.plot_1d('Dig', x_axis / 1e9, ( data_x, data_y ),
                             xscale = 's', yscale = 'mV', label = 'ch',
-                            vline = (p4 * t_res / 1e9, p5 * t_res / 1e9),
+                            vline = (win_left * t_res / 1e9, win_right * t_res / 1e9),
                             text = 'I/Q ' + str(int_x) + '/' + str(int_y)
                             )
 
-                    if p16 == 1:
+                    if fft_flag == 1:
 
-                        if p17 == 0:
+                        if quad == 0:
                             freq_axis, abs_values = fft.fft(x_axis, data_x, data_y, t_res * 1)
                             m_val = round( np.amax( abs_values ), 2 )
                             #i_max = abs(round( freq_axis[ np.argmax( abs_values ) ], 2))
@@ -3032,13 +3032,13 @@ class Worker():
                                 yscale = 'A.U.', text = 'Max ' + str(m_val)
                                 ) #str(m_val)
                         else:
-                            if p21 > len( data_x ) - 0.4 * p1:
-                                p21 = len( data_x ) - 0.8 * p1
+                            if p_to_drop > len( data_x ) - 0.4 * decimation:
+                                p_to_drop = len( data_x ) - 0.8 * decimation
                                 general.message('Maximum length of the data achieved. A number of drop points was corrected.')
                             # fixed resolution of digitizer; 0.4 ns
-                            freq, fft_x, fft_y = fft.fft( x_axis[p21:] , data_x[p21:], data_y[p21:], t_res * 1, re = 'True' )
+                            freq, fft_x, fft_y = fft.fft( x_axis[p_to_drop:] , data_x[p_to_drop:], data_y[p_to_drop:], t_res * 1, re = 'True' )
                             data_fft = fft.ph_correction( freq * 1e6, fft_x, fft_y, 0, 0, 0)
-                                #p18, p19, p20 )
+                                #zero_order, first_order, second_order )
                             general.plot_1d('FFT', freq, ( data_fft[0], data_fft[1] ),
                                 xname = 'Offset', xscale = 'Hz',
                                 yscale = 'A.U.', label = 'FFT'
@@ -3097,8 +3097,8 @@ class Worker():
 
     def exp(self, conn, decimation, num_ave, scans, points,
             win_left, exp_name, curve_name,
-            win_right, p1_exp, p2_exp, p3_exp, p4_exp,
-            p5_exp, p6_exp, p7_exp, p8_exp, p9_exp, laser_flag,
+            win_right, rect1, rect2, rect3, rect4,
+            rect5, rect6, rect7, rect8, rect9, laser_flag,
             rep_rate, field, laser_num, q_switch_delay, x0, xd,
             zero_order, first_order, sec_order, ph_cor, script_test=False):
 
@@ -3131,21 +3131,21 @@ class Worker():
             pb.win_right = win_right
 
             if xd == 0.0:
-                pulses2 = [p2_exp, p3_exp, p4_exp, p5_exp, p6_exp, p7_exp, p8_exp, p9_exp]
-                #p1_exp DETECTION
-                if p1_exp[4] != '0.0 ns':
+                pulses2 = [rect2, rect3, rect4, rect5, rect6, rect7, rect8, rect9]
+                #rect1 DETECTION
+                if rect1[4] != '0.0 ns':
                     #delta_start
-                    step = round( float( p1_exp[4].split(' ')[0] ), 1)
+                    step = round( float( rect1[4].split(' ')[0] ), 1)
                     for p in pulses2:
                         if p[5] != '0.0 ns':
                             f_delay = self.round_to_closest( float(p[2].split(' ')[0]), 3.2)
                             break
                         else:
-                            f_delay = self.round_to_closest( float(p1_exp[1].split(' ')[0]), 3.2)
-                elif p1_exp[5] != '0.0 ns':
+                            f_delay = self.round_to_closest( float(rect1[1].split(' ')[0]), 3.2)
+                elif rect1[5] != '0.0 ns':
                     #length_increment
-                    step = round( float( p1_exp[5].split(' ')[0] ), 1)
-                    f_delay = self.round_to_closest( float(p1_exp[2].split(' ')[0]), 3.2)
+                    step = round( float( rect1[5].split(' ')[0] ), 1)
+                    f_delay = self.round_to_closest( float(rect1[2].split(' ')[0]), 3.2)
                 else:                
                     for p in pulses2:
                         if p[4] != '0.0 ns':
@@ -3170,7 +3170,7 @@ class Worker():
             FIELD = field
             AVERAGES = num_ave
             SCANS = scans
-            PHASES = len(p1_exp[3])
+            PHASES = len(rect1[3])
             DEC_COEF = decimation
             process = 'None'
             REP_RATE = f'{rep_rate} Hz'
@@ -3182,9 +3182,9 @@ class Worker():
 
             if laser_flag != 1:
                 pulses = [
-                        p1_exp, p2_exp, p3_exp, p4_exp, 
-                        p5_exp, p6_exp, p7_exp, p8_exp, 
-                        p9_exp
+                        rect1, rect2, rect3, rect4, 
+                        rect5, rect6, rect7, rect8, 
+                        rect9
                         ]
 
                 for i, p in enumerate(pulses):
@@ -3204,9 +3204,9 @@ class Worker():
             else:
 
                 pulses = [
-                        p1_exp, p2_exp, p3_exp, p4_exp, 
-                        p5_exp, p6_exp, p7_exp, p8_exp, 
-                        p9_exp
+                        rect1, rect2, rect3, rect4, 
+                        rect5, rect6, rect7, rect8, 
+                        rect9
                         ]
 
                 for i, p in enumerate(pulses):
@@ -3369,8 +3369,8 @@ class Worker():
 
     def exp_field(self, conn, decimation, num_ave, scans, start_field,
             end_field, step_field, win_left, exp_name, curve_name,
-            win_right, p1_exp, p2_exp, p3_exp, p4_exp,
-            p5_exp, p6_exp, p7_exp, p8_exp, p9_exp, laser_flag,
+            win_right, rect1, rect2, rect3, rect4,
+            rect5, rect6, rect7, rect8, rect9, laser_flag,
             rep_rate, laser_num, q_switch_delay,
             zero_order, first_order, sec_order, ph_cor, script_test=False):
 
@@ -3407,7 +3407,7 @@ class Worker():
             
             AVERAGES = num_ave
             SCANS = scans
-            PHASES = len(p1_exp[3])
+            PHASES = len(rect1[3])
             DEC_COEF = decimation
             process = 'None'
             REP_RATE = f'{rep_rate} Hz'
@@ -3419,9 +3419,9 @@ class Worker():
 
             if laser_flag != 1:
                 pulses = [
-                        p1_exp, p2_exp, p3_exp, p4_exp, 
-                        p5_exp, p6_exp, p7_exp, p8_exp, 
-                        p9_exp
+                        rect1, rect2, rect3, rect4, 
+                        rect5, rect6, rect7, rect8, 
+                        rect9
                         ]
 
                 for i, p in enumerate(pulses):
@@ -3444,9 +3444,9 @@ class Worker():
             else:
 
                 pulses = [
-                        p1_exp, p2_exp, p3_exp, p4_exp,
-                        p5_exp, p6_exp, p7_exp, p8_exp,
-                        p9_exp
+                        rect1, rect2, rect3, rect4,
+                        rect5, rect6, rect7, rect8,
+                        rect9
                         ]
 
                 for i, p in enumerate(pulses):
@@ -3623,8 +3623,8 @@ class Worker():
 
     def exp_log(self, conn, decimation, num_ave, scans, points,
             log_start, log_end, win_left, exp_name, curve_name,
-            win_right, p1_exp, p2_exp, p3_exp, p4_exp,
-            p5_exp, p6_exp, p7_exp, p8_exp, p9_exp, laser_flag,
+            win_right, rect1, rect2, rect3, rect4,
+            rect5, rect6, rect7, rect8, rect9, laser_flag,
             rep_rate, field, laser_num, q_switch_delay, x0, xd,
             zero_order, first_order, sec_order, ph_cor, script_test=False):
 
@@ -3670,7 +3670,7 @@ class Worker():
             FIELD = field
             AVERAGES = num_ave
             SCANS = scans
-            PHASES = len(p1_exp[3])
+            PHASES = len(rect1[3])
             DEC_COEF = decimation
             process = 'None'
             REP_RATE = f'{rep_rate} Hz'
@@ -3685,9 +3685,9 @@ class Worker():
             name_list = []
             rel_shift = np.array( [] )
             pulses = [
-                    p1_exp, p2_exp, p3_exp, p4_exp, 
-                    p5_exp, p6_exp, p7_exp, p8_exp, 
-                    p9_exp
+                    rect1, rect2, rect3, rect4, 
+                    rect5, rect6, rect7, rect8, 
+                    rect9
                     ]
 
             for p in pulses:
@@ -3709,7 +3709,7 @@ class Worker():
             rel_shift = ( (rel_shift ) / next_after_min).astype(int)
 
             if rel_shift[0] != 0.0:
-                x_axis = x_axis * rel_shift[0] + self.round_to_closest( float(p1_exp[1].split(" ")[0]) , 3.2)
+                x_axis = x_axis * rel_shift[0] + self.round_to_closest( float(rect1[1].split(" ")[0]) , 3.2)
             else:
                 indices = np.where(rel_shift[1:] != 0)[0] + 1
                 if indices.size > 0:
