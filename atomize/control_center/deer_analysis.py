@@ -322,16 +322,19 @@ class MainWindow(QMainWindow):
         self.deer_rmax.setSingleStep(0.1); self.deer_rmax.setValue(8.0)
         self.deer_rmax.valueChanged.connect(self._live_update)
         self.deer_rmax.valueChanged.connect(self._mellin_live)
-        btn_autormax = QPushButton('Auto')
-        btn_autormax.setStyleSheet(BUTTON_STYLE)
-        btn_autormax.setToolTip(
-            'Set the distance max to the longest distance the trace length '
-            'supports: r_max ≈ 5·(t_max/2)^⅓ nm (DeerAnalysis/Jeschke rule). '
-            'Set automatically on load; mass beyond it is not constrained by the '
-            'data.')
-        btn_autormax.clicked.connect(self._auto_rmax)
+        btn_autorange = QPushButton('Auto')
+        btn_autorange.setStyleSheet(BUTTON_STYLE)
+        btn_autorange.setToolTip(
+            'Set the reliable distance window the data support:\n'
+            '• min ≈ (4·NU_DD·Δt)^⅓ nm — shortest distance whose dipolar '
+            'oscillation the time step Δt still samples (Nyquist).\n'
+            '• max ≈ 5·(t_max/2)^⅓ nm — longest distance the trace length '
+            'supports (DeerAnalysis/Jeschke rule).\n'
+            'Both are set automatically on load; mass outside this window is '
+            'not constrained by the data.')
+        btn_autorange.clicked.connect(self._auto_rrange)
         rr_row.addWidget(self.deer_rmin); rr_row.addWidget(self.deer_rmax)
-        rr_row.addWidget(btn_autormax)
+        rr_row.addWidget(btn_autorange)
         grid.addLayout(rr_row, r, 1); r += 1
 
         grid.addWidget(self._label('Distance points'), r, 0)
@@ -911,13 +914,16 @@ class MainWindow(QMainWindow):
             return
         x = np.asarray(res['x'], dtype=float)
         mapping = {lbl: (x, np.asarray(y, dtype=float)) for lbl, y in res['channels']}
-        self._register_datasets(mapping)
-        if res['complex']:
-            self.pair_check.setChecked(True)
+        # Preset the time unit BEFORE registering: _register_datasets runs the
+        # auto distance range, which scales with _deer_tfactor(). Setting the
+        # unit afterwards leaves the auto min/max one load behind.
         u = (res['x_unit'] or '').strip().lower()
         tmap = {'ns': 'ns', 'us': 'µs', 'µs': 'µs', 'μs': 'µs', 'ms': 'ms'}
         if u in tmap:
             self.deer_tunit.setCurrentText(tmap[u])
+        self._register_datasets(mapping)
+        if res['complex']:
+            self.pair_check.setChecked(True)
         self._set_loaded_file(os.path.basename(file_path))
         self.set_status(f'Loaded {os.path.basename(file_path)} — {res["format"]}, '
                         f'{len(x)} pts, '
@@ -1243,6 +1249,22 @@ class MainWindow(QMainWindow):
         rmax = self.R_MAX_FACTOR*(t_us/2.0)**(1.0/3.0)
         return float(np.clip(round(rmax, 1), self.deer_rmin.value() + 0.5, 50.0))
 
+    def _auto_rmin_value(self):
+        """Shortest distance the time step still resolves (nm), or None.
+
+        The fastest dipolar component (parallel, 2·nu_perp = 2·NU_DD/r^3 MHz)
+        must be Nyquist-sampled by the time increment Δt: 1/Δt ≥ 2·(2·NU_DD/r^3)
+        ⇒ r_min = (4·NU_DD·Δt)^⅓ (Δt in μs)."""
+        x, _ = self.real_xy
+        if x is None or len(x) < 2:
+            return None
+        x = np.asarray(x, dtype=float)
+        dt_us = abs(float(np.median(np.diff(x))))*self._deer_tfactor()
+        if dt_us <= 0:
+            return None
+        rmin = (4.0*deer_module.NU_DD*dt_us)**(1.0/3.0)
+        return float(np.clip(round(rmin, 1), 0.5, self.deer_rmax.value() - 0.5))
+
     def _auto_rmax(self):
         rmax = self._auto_rmax_value()
         if rmax is None:
@@ -1252,6 +1274,22 @@ class MainWindow(QMainWindow):
         self.set_status(f'Auto distance max = {rmax:.1f} nm '
                         f'(trace-supported, 5·(t/2)^⅓).')
 
+    def _auto_rrange(self):
+        rmax = self._auto_rmax_value()
+        rmin = self._auto_rmin_value()
+        if rmax is None or rmin is None:
+            self.set_status('Load a V(t) trace first.')
+            return
+        for sb in (self.deer_rmin, self.deer_rmax):
+            sb.blockSignals(True)
+        self.deer_rmax.setValue(rmax)
+        self.deer_rmin.setValue(min(rmin, rmax - 0.5))
+        for sb in (self.deer_rmin, self.deer_rmax):
+            sb.blockSignals(False)
+        self.deer_rmax.valueChanged.emit(rmax)
+        self.set_status(f'Auto distance window = {self.deer_rmin.value():.1f}'
+                        f'–{rmax:.1f} nm (Δt-resolved min, trace-supported max).')
+
     def _reset_bg_window(self):
         """Set sensible defaults for the current (trimmed) trace: background start
         ~2/3 in (auto), background end at the last point (so the end cursor shows),
@@ -1259,7 +1297,8 @@ class MainWindow(QMainWindow):
         bg = self._auto_bg_start_value()
         rmax = self._auto_rmax_value()
         xr = self.real_xy[0]
-        for sb in (self.deer_bgstart, self.deer_bgend, self.deer_rmax):
+        sboxes = (self.deer_bgstart, self.deer_bgend, self.deer_rmin, self.deer_rmax)
+        for sb in sboxes:
             sb.blockSignals(True)
         if bg is not None:
             self.deer_bgstart.setValue(bg)
@@ -1267,7 +1306,10 @@ class MainWindow(QMainWindow):
             self.deer_bgend.setValue(float(np.asarray(xr, dtype=float)[-1]))
         if rmax is not None:
             self.deer_rmax.setValue(rmax)
-        for sb in (self.deer_bgstart, self.deer_bgend, self.deer_rmax):
+        rmin = self._auto_rmin_value()    # uses rmax just set above as the upper clamp
+        if rmin is not None and rmax is not None:
+            self.deer_rmin.setValue(min(rmin, rmax - 0.5))
+        for sb in sboxes:
             sb.blockSignals(False)
 
     def _deer_t0_max(self):
