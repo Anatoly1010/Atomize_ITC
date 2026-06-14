@@ -101,6 +101,27 @@ PRESET_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'experimen
 COL_OBS = (120, 200, 255)
 COL_PUMP = (255, 170, 90)
 COL_DET = (160, 230, 130, 70)
+COL_ECHO = (235, 90, 120)
+
+
+class GrabbableLine(pg.InfiniteLine):
+    """A draggable vertical line with a wider invisible grab band.
+
+    InfiniteLine's pickable area is only a couple of pixels around the drawn
+    line, which is fiddly to grab. We widen the bounding rect (used for
+    mouse hit-testing) by ``grab_px`` pixels on each side without changing how
+    the thin line is painted.
+    """
+
+    grab_px = 12
+
+    def boundingRect(self):
+        br = super().boundingRect()
+        _, ortho = self.pixelVectors(pg.Point(1, 0))
+        if ortho is None:
+            return br
+        pad = abs(self.grab_px * ortho.y())
+        return br.adjusted(0, -pad, 0, pad)
 
 
 class MainWindow(QMainWindow):
@@ -112,7 +133,9 @@ class MainWindow(QMainWindow):
 
         self.preset = None         # parsed preset_loader.Preset
         self.preset_path = None
-        self._axis = None          # last simulated x-axis
+        self._axis = None          # last simulated x-axis (ns for time, MHz for field)
+        self._axis_unit = 's'      # 's' (time sweep) or 'Hz' (offset/field sweep)
+        self._x_log = False        # log x-axis (log-time sweep, e.g. T1 recovery)
         self._sig = None           # last simulated complex trace
         self._stop = False
         self._busy = False
@@ -121,6 +144,7 @@ class MainWindow(QMainWindow):
         self._nuc_rows = []        # per-nucleus [(label,widget)...] groups
         self._sig_items = []       # tracked curve items on the signal panel
         self._seq_items = []       # tracked items on the sequence panel
+        self._echo_line = None     # movable echo marker on the sequence panel
 
         self.setStyleSheet("background-color: %s;" % BG)
 
@@ -151,6 +175,7 @@ class MainWindow(QMainWindow):
         self._on_partner_toggled(False)
         self._on_line_changed()
         self._on_reson_toggled(False)
+        self._on_sweep_mode_changed()
         self._update_status("Load a .phase_awg / .phase preset to begin.")
 
     # ------------------------------------------------------------------ #
@@ -205,6 +230,9 @@ class MainWindow(QMainWindow):
         self.p_sig.showGrid(x=True, y=True, alpha=0.2)
         self.p_sig.setLabel('bottom', 'Sweep axis', units='s')
         self.p_sig.setLabel('left', 'Echo signal (norm.)')
+        # The signal axis is normalised/unitless: SI auto-prefix would scale
+        # 0.6 -> "600 m", so turn it off (the time axis keeps it for ns/us).
+        self.p_sig.getPlotItem().getAxis('left').enableAutoSIPrefix(False)
         self.sig_legend = self.p_sig.addLegend(offset=(-10, 10))
         dock_sig = CloseableDock(name='Simulated signal', widget=self.p_sig)
         dock_sig.close_button.hide()
@@ -213,6 +241,7 @@ class MainWindow(QMainWindow):
         self.p_seq.showGrid(x=True, y=True, alpha=0.2)
         self.p_seq.setLabel('bottom', 'Time', units='s')
         self.p_seq.setLabel('left', 'Pulse (norm. amp)')
+        self.p_seq.getPlotItem().getAxis('left').enableAutoSIPrefix(False)
         dock_seq = CloseableDock(name='Pulse sequence (inspected step)', widget=self.p_seq)
         dock_seq.close_button.hide()
 
@@ -251,12 +280,28 @@ class MainWindow(QMainWindow):
         fc = QWidget(); fg = QGridLayout(fc)
         fg.setContentsMargins(0, 0, 0, 0); fg.setVerticalSpacing(6)
         r = 0
+        cal_tip = (
+            "Pins the one hardware-dependent number: the flip angle a pulse "
+            "amplitude actually produces (the amplifier is nonlinear, so it "
+            "can't be read from the preset). State one nutation-calibrated "
+            "fact — 'a pulse at amplitude COEF %, length LENGTH ns, rotates the "
+            "spin by FLIP degrees' — from your own nutation measurement. Every "
+            "AWG pulse's amplitude is then scaled by its coef relative to this. "
+            "Defaults give π/2 at amplitude 100 %, length 22.4 ns.")
         fg.addWidget(self._label("Ref amplitude coef (%)"), r, 0)
-        self.cal_coef = self._dspin(0.1, 100.0, 100.0, 1.0, 1); fg.addWidget(self.cal_coef, r, 1); r += 1
+        self.cal_coef = self._dspin(0.1, 100.0, 100.0, 1.0, 1)
+        self.cal_coef.setToolTip(cal_tip + "\n\nReference amplitude in % of full "
+            "AWG drive — the 'coef' field of the pulse you calibrated against.")
+        fg.addWidget(self.cal_coef, r, 1); r += 1
         fg.addWidget(self._label("Ref length (ns)"), r, 0)
-        self.cal_len = self._dspin(1.0, 1000.0, 22.4, 0.1, 1); fg.addWidget(self.cal_len, r, 1); r += 1
+        self.cal_len = self._dspin(1.0, 1000.0, 22.4, 0.1, 1)
+        self.cal_len.setToolTip(cal_tip + "\n\nLength (ns) of that reference pulse.")
+        fg.addWidget(self.cal_len, r, 1); r += 1
         fg.addWidget(self._label("Ref flip (deg)"), r, 0)
-        self.cal_flip = self._dspin(1.0, 720.0, 90.0, 5.0, 1); fg.addWidget(self.cal_flip, r, 1); r += 1
+        self.cal_flip = self._dspin(1.0, 720.0, 90.0, 5.0, 1)
+        self.cal_flip.setToolTip(cal_tip + "\n\nFlip angle (deg) that reference "
+            "pulse produces on resonance — 90 for a π/2, 180 for a π.")
+        fg.addWidget(self.cal_flip, r, 1); r += 1
         v.addWidget(fc)
         self.ideal_chk = QCheckBox("Ideal pulses (instantaneous rotations)")
         self.ideal_chk.setStyleSheet(CHECKBOX_STYLE)
@@ -291,12 +336,32 @@ class MainWindow(QMainWindow):
             I = QComboBox(); I.addItems(['1/2', '1']); I.setStyleSheet(COMBO_STYLE)
             I.setFixedWidth(140); I.currentTextChanged.connect(self.schedule)
             bg.addWidget(I, 1, 1)
-            bg.addWidget(self._label("Larmor " + _lsub('ν', 'I') + " (MHz)"), 2, 0)
-            nu = self._dspin(-200.0, 200.0, 14.9, 0.1, 3); bg.addWidget(nu, 2, 1)
-            bg.addWidget(self._label("A (MHz)"), 3, 0)
-            A = self._dspin(-200.0, 200.0, 4.0, 0.1, 3); bg.addWidget(A, 3, 1)
-            bg.addWidget(self._label("B (MHz)"), 4, 0)
-            B = self._dspin(-200.0, 200.0, 3.0, 0.1, 3); bg.addWidget(B, 4, 1)
+            lab_nu = self._label("Larmor " + _lsub('ν', 'I') + " (MHz)")
+            lab_nu.setToolTip(
+                "Nuclear Larmor (Zeeman) frequency = γ_n·B0/2π. It is a "
+                "FREQUENCY (MHz), not the field itself — the external field B0 "
+                "enters only through it. E.g. ¹H at 348 mT ≈ 14.9 MHz, ¹⁴N ≈ "
+                "1.07 MHz. This is what sets the ESEEM/modulation frequency.")
+            bg.addWidget(lab_nu, 2, 0)
+            nu = self._dspin(-200.0, 200.0, 14.9, 0.1, 3)
+            nu.setToolTip(lab_nu.toolTip())
+            bg.addWidget(nu, 2, 1)
+            lab_A = self._label("A (MHz)")
+            lab_A.setToolTip(
+                "Secular hyperfine coupling A (MHz): the A·Sz·Iz term — shifts "
+                "the nuclear frequency depending on the electron state.")
+            bg.addWidget(lab_A, 3, 0)
+            A = self._dspin(-200.0, 200.0, 4.0, 0.1, 3)
+            A.setToolTip(lab_A.toolTip()); bg.addWidget(A, 3, 1)
+            lab_B = self._label("B (MHz)")
+            lab_B.setToolTip(
+                "Pseudo-secular hyperfine coupling B (MHz): the B·Sz·Ix term — "
+                "the anisotropic/dipolar part that mixes nuclear states and "
+                "DRIVES the ESEEM modulation. NOT the external magnetic field. "
+                "B = 0 gives no two-/three-pulse ESEEM.")
+            bg.addWidget(lab_B, 4, 0)
+            B = self._dspin(-200.0, 200.0, 3.0, 0.1, 3)
+            B.setToolTip(lab_B.toolTip()); bg.addWidget(B, 4, 1)
             rows = {'I': I, 'nu': nu, 'A': A, 'B': B, 'box': box}
             v.addWidget(box)
             self._nuc_rows.append(rows)
@@ -361,7 +426,7 @@ class MainWindow(QMainWindow):
         self.relax_box = QWidget(); rg = QGridLayout(self.relax_box)
         rg.setContentsMargins(0, 0, 0, 0); rg.setVerticalSpacing(4)
         rg.addWidget(self._label("T1 (µs)"), 0, 0)
-        self.t1 = self._dspin(0.001, 1e6, 1.0, 0.1, 3); rg.addWidget(self.t1, 0, 1)
+        self.t1 = self._dspin(0.001, 1e6, 100.0, 0.1, 3); rg.addWidget(self.t1, 0, 1)
         rg.addWidget(self._label("Tm (µs)"), 1, 0)
         self.tm = self._dspin(0.001, 1e6, 2.0, 0.1, 3); rg.addWidget(self.tm, 1, 1)
         v.addWidget(self.relax_box)
@@ -395,9 +460,45 @@ class MainWindow(QMainWindow):
         v.addWidget(self._head("Sweep & run"))
         wc = QWidget(); wg = QGridLayout(wc)
         wg.setContentsMargins(0, 0, 0, 0); wg.setVerticalSpacing(6); r = 0
+        wg.addWidget(self._label("Sweep mode"), r, 0)
+        self.sweep_mode = QComboBox()
+        self.sweep_mode.addItems(['Time delay (preset)', 'Offset / field (EDFS)'])
+        self.sweep_mode.setStyleSheet(COMBO_STYLE); self.sweep_mode.setFixedWidth(140)
+        self.sweep_mode.setToolTip(
+            "Time delay: replay the preset, stepping its swept delay (ESEEM / "
+            "DEER / echo decay).\nOffset / field: keep the sequence fixed and "
+            "sweep the spin packets' offset past the fixed excitation — an "
+            "echo-detected field sweep (EDFS). The x-axis becomes frequency "
+            "offset; the line shape is the EPR spectrum being mapped.")
+        self.sweep_mode.currentTextChanged.connect(self._on_sweep_mode_changed)
+        wg.addWidget(self.sweep_mode, r, 1); r += 1
         wg.addWidget(self._label("Sweep points"), r, 0)
         self.sweep_pts = self._ispin(1, 4000, 80); wg.addWidget(self.sweep_pts, r, 1); r += 1
-        wg.addWidget(self._label("Detect window dt (ns)"), r, 0)
+        self.field_lbl = self._label("Field sweep ±(MHz)")
+        self.field_span = self._dspin(1.0, 20000.0, 500.0, 10.0, 1)
+        self.field_span.setToolTip(
+            "Half-width of the offset/field sweep (MHz). The echo is recorded "
+            "as the spin packets are shifted from −span to +span past the fixed "
+            "excitation.")
+        wg.addWidget(self.field_lbl, r, 0); wg.addWidget(self.field_span, r, 1); r += 1
+        wg.addWidget(self._label("Window left (ns)"), r, 0)
+        self.win_left = self._dspin(-6400.0, 6400.0, 0.0, 1.0, 1)
+        self.win_left.setToolTip(
+            "Echo-integration window, left edge — an offset from the detection "
+            "pulse's start, exactly the spectrometer's 'Window left'. The "
+            "detection-pulse length is only the digitizer record; the echo is "
+            "integrated over [left, right] inside it.")
+        self.win_left.valueChanged.connect(self.redraw_sequence)
+        wg.addWidget(self.win_left, r, 1); r += 1
+        wg.addWidget(self._label("Window right (ns)"), r, 0)
+        self.win_right = self._dspin(-6400.0, 6400.0, 320.0, 1.0, 1)
+        self.win_right.setToolTip(
+            "Echo-integration window, right edge — an offset from the detection "
+            "pulse's start ('Window right'). Loaded from the preset; adjust to "
+            "match the echo position you see in the sequence panel.")
+        self.win_right.valueChanged.connect(self.redraw_sequence)
+        wg.addWidget(self.win_right, r, 1); r += 1
+        wg.addWidget(self._label("Detect sample dt (ns)"), r, 0)
         self.detect_dt = self._dspin(0.1, 50.0, 2.0, 0.1, 2); wg.addWidget(self.detect_dt, r, 1); r += 1
         wg.addWidget(self._label("Echo integrate"), r, 0)
         self.integ = QComboBox()
@@ -415,6 +516,34 @@ class MainWindow(QMainWindow):
         self.step_spin.valueChanged.connect(self.redraw_sequence)
         wg.addWidget(self.step_spin, r, 1); r += 1
         v.addWidget(wc)
+
+        self.snap_chk = QCheckBox("Snap pulses to 3.2 ns grid")
+        self.snap_chk.setStyleSheet(CHECKBOX_STYLE)
+        self.snap_chk.setChecked(True)
+        self.snap_chk.setToolTip(
+            "Round every pulse start/length and the detection start to the "
+            "3.2 ns AWG time quantum, so the simulated sequence matches what the "
+            "spectrometer actually plays (the other tools use the same grid).")
+        self.snap_chk.toggled.connect(self.redraw_sequence)
+        v.addWidget(self.snap_chk)
+        self.echo_chk = QCheckBox("Echo marker")
+        self.echo_chk.setStyleSheet(CHECKBOX_STYLE)
+        self.echo_chk.setChecked(True)
+        self.echo_chk.setToolTip(
+            "Show a movable marker for the ideal echo position on the sequence "
+            "panel. Drag it (or type below) to where you expect the echo from "
+            "the pulse positions; use it to place Window left/right.")
+        self.echo_chk.toggled.connect(self.redraw_sequence)
+        v.addWidget(self.echo_chk)
+        ew = QWidget(); ewg = QGridLayout(ew)
+        ewg.setContentsMargins(0, 0, 0, 0); ewg.setVerticalSpacing(4)
+        ewg.addWidget(self._label("Echo position (ns)"), 0, 0)
+        self.echo_pos = self._dspin(0.0, 100000.0, 480.0, 3.2, 1)
+        self.echo_pos.setToolTip(
+            "Ideal echo time, measured from the first pulse (t = 0 on the "
+            "sequence panel). Set it manually or drag the marker.")
+        ewg.addWidget(self.echo_pos, 0, 1)
+        v.addWidget(ew)
 
         rowb = QWidget(); rb = QHBoxLayout(rowb); rb.setContentsMargins(0, 0, 0, 0)
         self.run_btn = QPushButton("Simulate")
@@ -475,6 +604,11 @@ class MainWindow(QMainWindow):
         self.reson_box.setVisible(on)
         self.schedule()
 
+    def _on_sweep_mode_changed(self, *_):
+        field = self.sweep_mode.currentText().startswith('Offset')
+        self.field_lbl.setVisible(field)
+        self.field_span.setVisible(field)
+
     def _on_stop(self):
         self._stop = True
 
@@ -486,8 +620,11 @@ class MainWindow(QMainWindow):
     # Preset loading
     # ------------------------------------------------------------------ #
     def open_preset(self):
-        path = self.opener.open_file_dialog(multiprocessing=True,
-                                            directory=self.last_dir)
+        path = self.opener.open_file_dialog(
+            multiprocessing=True, directory=self.last_dir,
+            name_filters=['Phasing presets (*.phase_awg *.phase)',
+                          'AWG presets (*.phase_awg)', 'RECT presets (*.phase)',
+                          'All files (*)'])
         if not path or path == 'None':
             return
         try:
@@ -512,6 +649,20 @@ class MainWindow(QMainWindow):
                pre.globals.get('freq_obs', 0.0), npts))
         if npts > 0:
             self.sweep_pts.setValue(min(npts, self.sweep_pts.maximum()))
+        # Seed the integration window from the preset's Window left/right.
+        det = pre.detection or {}
+        self.win_left.blockSignals(True); self.win_right.blockSignals(True)
+        self.win_left.setValue(float(det.get('win_left', 0.0)))
+        self.win_right.setValue(float(det.get('win_right', det.get('length', 320.0))))
+        self.win_left.blockSignals(False); self.win_right.blockSignals(False)
+        # Default the echo marker to the centre of the integration window
+        # (t = 0 at the first pulse, matching the sequence panel).
+        _, det_lay = pre.layout(step=0, det_window=self._det_window(),
+                                time_grid=self._time_grid())
+        if det_lay is not None:
+            self.echo_pos.blockSignals(True)
+            self.echo_pos.setValue(det_lay['start'] + 0.5 * det_lay['length'])
+            self.echo_pos.blockSignals(False)
         # Seed the calibration from the project convention for the preset kind.
         if pre.kind == 'rect':
             self.cal_coef.setValue(100.0); self.cal_len.setValue(22.4); self.cal_flip.setValue(90.0)
@@ -592,6 +743,12 @@ class MainWindow(QMainWindow):
         return (self.cal_coef.value(), self.cal_len.value(),
                 np.deg2rad(self.cal_flip.value()))
 
+    def _det_window(self):
+        return (self.win_left.value(), self.win_right.value())
+
+    def _time_grid(self):
+        return pl.TIME_GRID if self.snap_chk.isChecked() else None
+
     def _idealize(self, events):
         """Replace each shaped Pulse with an ideal rotation of the same flip."""
         out = []
@@ -615,58 +772,136 @@ class MainWindow(QMainWindow):
         self._busy = True
         self._stop = False
         self.run_btn.setEnabled(False)
+        self.run_btn.setText("Simulating…")
         self.stop_btn.setEnabled(True)
-        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         try:
             self._run_sweep()
         except Exception as e:
             self._update_status("✗ %s" % e)
         finally:
-            QApplication.restoreOverrideCursor()
+            self.run_btn.setText("Simulate")
             self.run_btn.setEnabled(True)
             self.stop_btn.setEnabled(False)
             self._busy = False
 
+    def _relaxation(self):
+        if not self.relax_chk.isChecked():
+            return None
+        return {'T1': self.t1.value() * 1000.0, 'Tm': self.tm.value() * 1000.0}
+
+    def _integrate(self, win, integ):
+        """Reduce one detection window to a single complex echo value."""
+        v = win['v']
+        if integ == 'Peak |V|':
+            return v[int(np.argmax(np.abs(v)))]
+        if integ == 'Window integral':
+            return np.trapz(v, win['t'])
+        return v[v.size // 2]                            # center point
+
+    def _build_events(self, step):
+        """Events + phase cycle for one preset step (with ideal-pulse option)."""
+        events, cyc = self.preset.build(
+            step=step, flip_cal=self._flip_cal(), resonator=self._resonator(),
+            detect_dt=self.detect_dt.value(), det_window=self._det_window(),
+            time_grid=self._time_grid(), npoints=int(self.sweep_pts.value()))
+        if self.ideal_chk.isChecked():
+            events = self._idealize(events)
+        return events, cyc
+
     def _run_sweep(self):
+        if self.sweep_mode.currentText().startswith('Offset'):
+            self._run_field_sweep()
+        else:
+            self._run_time_sweep()
+
+    def _run_time_sweep(self):
         sysm = self._build_system()
         offs, weights = self._build_ensemble()
         offs, b1, weights = self._apply_b1(offs, weights)
-        relax = None
-        if self.relax_chk.isChecked():
-            relax = {'T1': self.t1.value() * 1000.0, 'Tm': self.tm.value() * 1000.0}
-        eng = sd.Engine(sysm, offsets=offs, b1=b1, weights=weights, relaxation=relax)
+        eng = sd.Engine(sysm, offsets=offs, b1=b1, weights=weights,
+                        relaxation=self._relaxation())
 
         npts = int(self.sweep_pts.value())
         axis = self.preset.sweep_axis(npoints=npts)
-        flip_cal = self._flip_cal()
-        reson = self._resonator()
-        ddt = self.detect_dt.value()
         integ = self.integ.currentText()
-        ideal = self.ideal_chk.isChecked()
 
         sig = np.full(npts, np.nan, dtype=complex)
+        self._axis_unit = 's'
+        self._x_log = self.preset.globals.get('sweep_type') == 'log'
         self._update_status("Simulating 0 / %d…" % npts)
         for i in range(npts):
             if self._stop:
                 self._update_status("Stopped at %d / %d." % (i, npts))
                 break
-            events, cyc = self.preset.build(step=i, flip_cal=flip_cal,
-                                            resonator=reson, detect_dt=ddt)
-            if ideal:
-                events = self._idealize(events)
-            win = eng.run(events, phase_cycle=cyc)[0]
-            v = win['v']
-            if integ == 'Peak |V|':
-                k = int(np.argmax(np.abs(v)))
-                sig[i] = v[k]
-            elif integ == 'Window integral':
-                sig[i] = np.trapz(v, win['t'])
-            else:                                       # center point
-                sig[i] = v[v.size // 2]
+            events, cyc = self._build_events(step=i)
+            sig[i] = self._integrate(eng.run(events, phase_cycle=cyc)[0], integ)
             if i % 4 == 0 or i == npts - 1:
                 self._axis, self._sig = axis, sig
                 self._replot_only()
                 self._update_status("Simulating %d / %d…" % (i + 1, npts))
+                QApplication.processEvents()
+        self._axis, self._sig = axis, sig
+        self._replot_only()
+        if not self._stop:
+            self._update_status("Done: %d points.%s" % (npts, self._aliasing_warning(npts)))
+
+    def _aliasing_warning(self, npts):
+        """Warn if the discrete offset grid is too coarse for the sequence.
+
+        A uniform offset grid of N points over +/-span makes every signal
+        (notably the first pulse's FID) recur at 1/Delta_offset; when that
+        recurrence lands within a detection window it corrupts the echo with a
+        spurious ripple. Returns '' if fine, else an actionable message."""
+        if self.line_shape.currentText() == 'Single packet':
+            return ''
+        span = self.off_span.value()                     # MHz
+        n = int(self.off_pts.value())
+        if span <= 0 or n < 2:
+            return ''
+        recur = 1000.0 * (n - 1) / (2.0 * span)          # ns
+        try:
+            _, det = self.preset.layout(step=npts - 1, det_window=self._det_window(),
+                                        time_grid=self._time_grid(), npoints=npts)
+            tmax = (det['start'] + det['length']) if det else 0.0
+        except Exception:
+            tmax = 0.0
+        if tmax > 0 and recur < tmax:
+            need = int(np.ceil(1 + 2.0 * span * tmax / 1000.0))
+            return ("  ⚠ offset-grid recurrence %.0f ns < sequence %.0f ns "
+                    "→ aliasing ripple; raise Offset points to ≥%d or lower "
+                    "Offset span." % (recur, tmax, need))
+        return ''
+
+    def _run_field_sweep(self):
+        """Echo-detected field sweep: fixed sequence, sweep the spin packets'
+        offset past the excitation. The line shape is the EPR spectrum; the
+        result is that spectrum convolved with the pulses' excitation profile."""
+        sysm = self._build_system()
+        base, weights = self._build_ensemble()           # GHz line about 0
+        relax = self._relaxation()
+        integ = self.integ.currentText()
+        events, cyc = self._build_events(step=0)          # sequence fixed
+
+        npts = int(self.sweep_pts.value())
+        fspan = self.field_span.value()                   # MHz
+        axis = np.linspace(-fspan, fspan, npts)           # MHz (x-axis)
+        faxis = axis / 1000.0                             # GHz shift per point
+
+        sig = np.full(npts, np.nan, dtype=complex)
+        self._axis_unit = 'Hz'
+        self._x_log = False
+        self._update_status("Field sweep 0 / %d…" % npts)
+        for i in range(npts):
+            if self._stop:
+                self._update_status("Stopped at %d / %d." % (i, npts))
+                break
+            offs, b1, w = self._apply_b1(base + faxis[i], weights)
+            eng = sd.Engine(sysm, offsets=offs, b1=b1, weights=w, relaxation=relax)
+            sig[i] = self._integrate(eng.run(events, phase_cycle=cyc)[0], integ)
+            if i % 4 == 0 or i == npts - 1:
+                self._axis, self._sig = axis, sig
+                self._replot_only()
+                self._update_status("Field sweep %d / %d…" % (i + 1, npts))
                 QApplication.processEvents()
         self._axis, self._sig = axis, sig
         self._replot_only()
@@ -692,7 +927,12 @@ class MainWindow(QMainWindow):
         self._clear_items(self.p_sig, self._sig_items, self.sig_legend)
         if self._axis is None or self._sig is None:
             return
-        x = self._axis * 1e-9                            # ns -> s for the axis units
+        if self._axis_unit == 'Hz':
+            x = self._axis * 1e6                         # MHz -> Hz
+            self.p_sig.setLabel('bottom', 'Field / offset', units='Hz')
+        else:
+            x = self._axis * 1e-9                        # ns -> s
+            self.p_sig.setLabel('bottom', 'Sweep axis', units='s')
         v = self._sig
         good = ~np.isnan(v.real)
         if good.sum() == 0:
@@ -700,14 +940,39 @@ class MainWindow(QMainWindow):
         x, v = x[good], v[good]
         mode = self.show_mode.currentText()
         if mode == 'Magnitude':
-            self._sig_items.append(self.p_sig.plot(x, np.abs(v), pen=pg.mkPen(COL_OBS, width=2), name='|V|'))
+            ys = [np.abs(v)]
+            self._sig_items.append(self.p_sig.plot(x, ys[0], pen=pg.mkPen(COL_OBS, width=2), name='|V|'))
         elif mode == 'Real':
-            self._sig_items.append(self.p_sig.plot(x, v.real, pen=pg.mkPen(COL_OBS, width=2), name='Re'))
+            ys = [v.real]
+            self._sig_items.append(self.p_sig.plot(x, ys[0], pen=pg.mkPen(COL_OBS, width=2), name='Re'))
         elif mode == 'Imag':
-            self._sig_items.append(self.p_sig.plot(x, v.imag, pen=pg.mkPen(COL_PUMP, width=2), name='Im'))
+            ys = [v.imag]
+            self._sig_items.append(self.p_sig.plot(x, ys[0], pen=pg.mkPen(COL_PUMP, width=2), name='Im'))
         else:
-            self._sig_items.append(self.p_sig.plot(x, v.real, pen=pg.mkPen(COL_OBS, width=2), name='Re'))
-            self._sig_items.append(self.p_sig.plot(x, v.imag, pen=pg.mkPen(COL_PUMP, width=2), name='Im'))
+            ys = [v.real, v.imag]
+            self._sig_items.append(self.p_sig.plot(x, ys[0], pen=pg.mkPen(COL_OBS, width=2), name='Re'))
+            self._sig_items.append(self.p_sig.plot(x, ys[1], pen=pg.mkPen(COL_PUMP, width=2), name='Im'))
+        # A log-time sweep (T1 recovery) spans decades -> show it on a log x-axis.
+        self.p_sig.setLogMode(x=self._x_log, y=False)
+        # Fit the view explicitly (infinite-extent crosshair/legend items keep
+        # auto-range from settling on a sensible scale, leaving ugly tick labels).
+        if x.size:
+            if self._x_log:
+                xp = np.log10(x[x > 0])
+                if xp.size:
+                    self.p_sig.setXRange(xp.min(), xp.max(), padding=0.03)
+            else:
+                xspan = float(x.max() - x.min())
+                xpad = 0.02 * xspan if xspan > 1e-15 else max(abs(float(x.max())), 1e-9)
+                self.p_sig.setXRange(x.min() - xpad, x.max() + xpad, padding=0)
+            lo = min(float(np.min(a)) for a in ys)
+            hi = max(float(np.max(a)) for a in ys)
+            yspan = hi - lo
+            # A flat trace (single packet -> no echo envelope) has zero span;
+            # give it a real window so the line is visible and the Y ticks stay
+            # clean instead of collapsing to long-decimal labels.
+            ypad = 0.08 * yspan if yspan > 1e-9 else max(0.1 * max(abs(lo), abs(hi)), 0.05)
+            self.p_sig.setYRange(lo - ypad, hi + ypad, padding=0)
 
     def redraw_sequence(self, *_):
         """Draw the loaded sequence (pulse blocks + detection window) for a step."""
@@ -715,10 +980,13 @@ class MainWindow(QMainWindow):
         if self.preset is None:
             return
         step = int(self.step_spin.value())
-        pulses, det = self.preset.layout(step=step)
+        pulses, det = self.preset.layout(step=step, det_window=self._det_window(),
+                                         time_grid=self._time_grid(),
+                                         npoints=int(self.sweep_pts.value()))
         if not pulses:
             return
-        for p in pulses:
+        self._echo_line = None
+        for k, p in enumerate(pulses):
             s = p['start'] * 1e-9
             e = (p['start'] + p['length']) * 1e-9
             h = 1.0 if self.preset.kind == 'rect' else max(0.1, p['coef'] / 100.0)
@@ -726,13 +994,67 @@ class MainWindow(QMainWindow):
             self._seq_items.append(self.p_seq.plot(
                 [s, s, e, e], [0, h, h, 0], pen=pg.mkPen(col, width=2),
                 fillLevel=0, brush=pg.mkBrush(col[0], col[1], col[2], 60)))
+            # Mark the pulse position (start time, ns) above the block.
+            txt = pg.TextItem('P%d @ %.0f' % (k + 1, p['start']),
+                              color=col, anchor=(0.5, 1.0))
+            txt.setPos(0.5 * (s + e), h)
+            self.p_seq.addItem(txt, ignoreBounds=True)
+            self._seq_items.append(txt)
         if det is not None:
             region = pg.LinearRegionItem(
                 values=(det['start'] * 1e-9, (det['start'] + det['length']) * 1e-9),
                 brush=pg.mkBrush(*COL_DET), movable=False)
             region.setZValue(-10)
-            self.p_seq.addItem(region)
+            self.p_seq.addItem(region, ignoreBounds=True)
             self._seq_items.append(region)
+
+        if self.echo_chk.isChecked():
+            t_echo = self.echo_pos.value()
+            line = GrabbableLine(
+                pos=t_echo * 1e-9, angle=90, movable=True,
+                pen=pg.mkPen(COL_ECHO, width=2, style=Qt.PenStyle.DashLine),
+                hoverPen=pg.mkPen(COL_ECHO, width=3),
+                label='echo %.1f ns' % t_echo,
+                labelOpts={'position': 0.88, 'color': (255, 255, 255),
+                           'fill': pg.mkBrush(COL_ECHO[0], COL_ECHO[1],
+                                              COL_ECHO[2], 200),
+                           'border': pg.mkPen(COL_ECHO, width=1),
+                           'movable': False, 'rotateAxis': (1, 0)})
+            line.sigPositionChanged.connect(self._on_echo_moving)
+            line.sigPositionChangeFinished.connect(self._on_echo_dragged)
+            self.p_seq.addItem(line, ignoreBounds=True)
+            self._seq_items.append(line)
+            self._echo_line = line
+        # Fit the view to the actual sequence. The infinite-extent items (region,
+        # marker, text) can't drive auto-range, so set the x-range explicitly
+        # from the finite pulse/detection/echo extents — otherwise the view stays
+        # at the default [0, 1] s and the SI auto-prefix shows ugly tick labels.
+        xs_hi = [p['start'] + p['length'] for p in pulses]
+        xs_lo = [p['start'] for p in pulses] + [0.0]
+        if det is not None:
+            xs_hi.append(det['start'] + det['length'])
+            xs_lo.append(det['start'])
+        if self.echo_chk.isChecked():
+            xs_hi.append(self.echo_pos.value())
+            xs_lo.append(self.echo_pos.value())
+        xmax, xmin = max(xs_hi), min(xs_lo)
+        pad = 0.05 * max(xmax - xmin, 1.0)
+        self.p_seq.setXRange((xmin - pad) * 1e-9, (xmax + pad) * 1e-9, padding=0)
+        self.p_seq.setYRange(-0.05, 1.2, padding=0)
+
+    def _on_echo_moving(self):
+        """Live-update the marker's label while it is being dragged."""
+        if self._echo_line is not None:
+            self._echo_line.label.setFormat(
+                'echo %.1f ns' % (self._echo_line.value() * 1e9))
+
+    def _on_echo_dragged(self):
+        """Write a dragged marker back to the Echo position box (no redraw)."""
+        if self._echo_line is None:
+            return
+        self.echo_pos.blockSignals(True)
+        self.echo_pos.setValue(self._echo_line.value() * 1e9)
+        self.echo_pos.blockSignals(False)
 
     # ------------------------------------------------------------------ #
     def save_trace(self):
@@ -746,8 +1068,9 @@ class MainWindow(QMainWindow):
         good = ~np.isnan(self._sig.real)
         data = np.column_stack((self._axis[good], self._sig[good].real,
                                 self._sig[good].imag))
-        header = ("Spin-dynamics simulation of %s\naxis_ns, Re, Im"
-                  % (os.path.basename(self.preset_path or 'preset')))
+        axis_col = 'offset_MHz' if self._axis_unit == 'Hz' else 'axis_ns'
+        header = ("Spin-dynamics simulation of %s\n%s, Re, Im"
+                  % (os.path.basename(self.preset_path or 'preset'), axis_col))
         try:
             self.opener.save_data(path, data.T, header=header)
             self.last_dir = os.path.dirname(path) or self.last_dir

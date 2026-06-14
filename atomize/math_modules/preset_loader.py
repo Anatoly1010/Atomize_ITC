@@ -104,6 +104,19 @@ NU1_REF = 0.25 / 22.4                 # GHz  (full-drive pi/2-at-22.4ns nutation
 COEF_REF = 15.0
 NU1_PER_COEF = NU1_REF / COEF_REF     # GHz per amplitude-%
 
+# AWG waveform time quantum (ns). Pulse starts/lengths and inter-pulse delays
+# the hardware plays are multiples of this; snapping to it keeps the simulated
+# sequence identical to what the spectrometer would emit (matches the other
+# tools). Pass ``time_grid=None`` to build()/layout() to keep raw timing.
+TIME_GRID = 3.2
+
+
+def _snap(x, grid):
+    """Round a time to the nearest multiple of ``grid`` (no-op if grid falsy)."""
+    if not grid:
+        return x
+    return round(x / grid) * grid
+
 _SHAPE = {
     'SINE': 'rectangular',
     'MW': 'rectangular',
@@ -151,8 +164,31 @@ class Preset:
         self.globals = {}
 
     # ------------------------------------------------------------------ #
+    def _step_shift(self, step, st_inc, npoints=None):
+        """Time shift (ns) of a moving element at sweep index ``step``.
+
+        Linear sweeps shift by ``step * st_inc``. For a ``Sweep Type: Log
+        Time`` preset every moving element (``st_inc != 0``) instead shifts by
+        the log-spaced delay increment ``T(step) - T(0)`` with
+        ``T(i) = 10**(log_start + i*(log_end - log_start)/(n-1))`` ns -- so an
+        inversion-recovery / T1 sweep covers decades (e.g. 200 ns -> 10 ms)
+        instead of a few linear nanosecond steps. ``npoints`` is the total
+        number of sweep points actually being run; it MUST match
+        :meth:`sweep_axis` or the log schedule and the x-axis disagree."""
+        if st_inc == 0.0:
+            return 0.0
+        if self.globals.get('sweep_type') == 'log':
+            n = int(npoints) if npoints else int(self.globals.get('sweep_points', 0))
+            a = self.globals.get('log_start', 0.0)
+            b = self.globals.get('log_end', 0.0)
+            if n > 1 and b > a:
+                return 10.0 ** (a + step * (b - a) / (n - 1)) - 10.0 ** a
+        return step * st_inc
+
+    # ------------------------------------------------------------------ #
     def build(self, step=0, nu1_per_coef=NU1_PER_COEF, nu1_rect=NU1_REF,
-              flip_cal=None, dt=0.5, resonator=None, detect_dt=1.0, detect=True):
+              flip_cal=None, dt=0.5, resonator=None, detect_dt=1.0, detect=True,
+              det_window=None, time_grid=TIME_GRID, npoints=None):
         """Events + phase cycle for one sweep point.
 
         Parameters
@@ -184,6 +220,17 @@ class Preset:
         detect : bool
             Append the detection window. False returns only the pulse train
             (e.g. to read ``rho_last`` yourself).
+        det_window : (left_ns, right_ns) or None
+            Integration-window edges as offsets from the detection pulse's
+            *start* (exactly the spectrometer's ``Window left`` / ``Window
+            right``). The detected window spans ``[det_start + left, det_start +
+            right]``. ``None`` uses the preset's stored ``Window left`` /
+            ``Window right`` (falling back to the whole record length).
+        time_grid : float or None
+            Snap every pulse start/length and the detection start to this
+            quantum (ns) -- the AWG time grid (default 3.2 ns), so the
+            simulated timing matches what the hardware actually plays. ``None``
+            keeps raw timing.
 
         Returns
         -------
@@ -199,8 +246,12 @@ class Preset:
             nu1_per_coef = nu1_rect / cf
         active = []
         for p in self.pulses:
-            start = p['start'] + step * p['st_inc']
+            start = p['start'] + self._step_shift(step, p['st_inc'], npoints)
             length = p['length'] + step * p['len_inc']
+            if length <= 0:
+                continue
+            start = _snap(start, time_grid)
+            length = _snap(length, time_grid)
             if length <= 0:
                 continue
             active.append(dict(p, start=start, length=length))
@@ -242,17 +293,26 @@ class Preset:
             cursor = q['start'] + q['length'] + ring
 
         if detect and self.detection is not None:
-            det_start = self.detection['start'] + step * self.detection['st_inc']
-            gap = det_start - cursor
+            det_start = _snap(self.detection['start']
+                              + self._step_shift(step, self.detection['st_inc'], npoints), time_grid)
+            if det_window is not None:
+                wl, wr = det_window
+            else:
+                wl = self.detection.get('win_left', 0.0)
+                wr = self.detection.get('win_right', self.detection['length'])
+            win_start = det_start + wl
+            win_len = max(wr - wl, detect_dt)
+            gap = win_start - cursor
             if gap > 1e-9:
                 events.append(sd.Delay(gap))
-            events.append(sd.Detect(length=self.detection['length'], dt=detect_dt))
+            events.append(sd.Detect(length=win_len, dt=detect_dt))
 
         phase_cycle = self._phase_cycle(pulses_in_order)
         return events, phase_cycle
 
     # ------------------------------------------------------------------ #
-    def layout(self, step=0, freq_obs=None):
+    def layout(self, step=0, freq_obs=None, det_window=None, time_grid=TIME_GRID,
+               npoints=None):
         """Absolute pulse/detection timing for a sweep step (for plotting).
 
         Returns ``(pulses, detection)`` on the same time axis as :meth:`build`
@@ -263,8 +323,8 @@ class Preset:
         """
         active = []
         for p in self.pulses:
-            start = p['start'] + step * p['st_inc']
-            length = p['length'] + step * p['len_inc']
+            start = _snap(p['start'] + self._step_shift(step, p['st_inc'], npoints), time_grid)
+            length = _snap(p['length'] + step * p['len_inc'], time_grid)
             if length > 0:
                 active.append(dict(p, start=start, length=length))
         active.sort(key=lambda q: q['start'])
@@ -277,8 +337,14 @@ class Preset:
                    'coef': q['coef']} for q in active]
         det = None
         if self.detection is not None:
-            det = {'start': self.detection['start'] + step * self.detection['st_inc'] - t0,
-                   'length': self.detection['length']}
+            det_start = _snap(self.detection['start']
+                              + self._step_shift(step, self.detection['st_inc'], npoints), time_grid) - t0
+            if det_window is not None:
+                wl, wr = det_window
+            else:
+                wl = self.detection.get('win_left', 0.0)
+                wr = self.detection.get('win_right', self.detection['length'])
+            det = {'start': det_start + wl, 'length': max(wr - wl, 0.0)}
         return pulses, det
 
     # ------------------------------------------------------------------ #
@@ -310,6 +376,11 @@ class Preset:
         n = int(self.globals.get('sweep_points', 0)) if npoints is None else int(npoints)
         if n <= 0:
             n = 1
+        if self.globals.get('sweep_type') == 'log':
+            a = self.globals.get('log_start', 0.0)
+            b = self.globals.get('log_end', 0.0)
+            if b > a:
+                return 10.0 ** np.linspace(a, b, n)
         x0 = self.globals.get('x0', 0.0)
         dx = self.globals.get('dx', 0.0)
         if dx == 0.0:
@@ -370,6 +441,12 @@ def parse_preset(path):
         else:
             det_fields = {'start': float(f[1]), 'length': float(f[2]),
                           'recv': f[3], 'st_inc': float(f[4])}
+        # Digitizer integration window (offsets from the detection-pulse start).
+        # ``length`` above is only the record length; the echo is integrated
+        # over [Window left, Window right]. Older presets omit them -> whole
+        # record.
+        det_fields['win_left'] = fnum('Window left', 0.0)
+        det_fields['win_right'] = fnum('Window right', det_fields['length'])
     pre.detection = det_fields
 
     for idx in sorted(pulse_lines):
@@ -407,6 +484,7 @@ def parse_preset(path):
             sweep_points = float(points_seen[1])
         except ValueError:
             sweep_points = 0.0
+    sweep_type = 'log' if 'log' in sc.get('Sweep Type', '').lower() else 'linear'
     pre.globals = {
         'freq_obs': freq_obs,
         'n_wurst': fnum('N WURST; SECH/TANH', 10.0),
@@ -416,5 +494,8 @@ def parse_preset(path):
         'dx': fnum('dX', 0.0),
         'rep_rate': fnum('Rep rate', 0.0),
         'field': fnum('Field', 0.0),
+        'sweep_type': sweep_type,
+        'log_start': fnum('Log Start', 0.0),
+        'log_end': fnum('Log End', 0.0),
     }
     return pre
