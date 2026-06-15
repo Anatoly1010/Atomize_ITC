@@ -752,10 +752,24 @@ def joint_background(t, V, bg_start=None, bg_end=None, dim=3.0, fit_dim=False,
             'bg_end': (None if bg_end is None else float(bg_end)), 'mask': mask}
 
 
-def mellin_delta(t, F, level=0.95):
+def mellin_delta(t, F, level=0.95, floor=0.09, cap=0.12):
     """Practical split point delta: the first T > 0 where the form factor has
     fallen to `level` of F(0) (the paper's F(delta) ~ 0.95 estimate). Falls back
-    to the first positive sample if F never drops that far."""
+    to the first positive sample if F never drops that far.
+
+    The raw F-level estimate is then clipped to [`floor`, `cap`] (in the kernel
+    time unit, us). The floor is the key correction for *sharp* distributions:
+    a fast-decaying form factor crosses `level` within a couple of samples, which
+    leaves the analytic parabolic [0,delta] echo-top anchor too narrow -- the
+    'thin parabola' at t=0 -- so the recovered F_fit top comes out too steep and
+    the short-r density is unstable. Widening delta to ~90 ns gives the parabolic
+    term enough low-T support; the cap (~120 ns) stops a slow-decaying (long-r)
+    trace from over-smoothing P(r) by handling too much of the modulation
+    analytically. Both bounds were tuned on the synthetic benchmark (overlap-
+    optimal across 13 distributions x 4 noise levels x 2 conditions; the floor
+    lifts e.g. gauss_narrow easy from 0.90 to 0.92). Set floor/cap to None to
+    disable. The bounds are also clamped to the trace so delta never exceeds the
+    last positive sample."""
     t = np.asarray(t, dtype=float)
     F = np.asarray(F, dtype=float)
     pos = t > 0
@@ -766,9 +780,12 @@ def mellin_delta(t, F, level=0.95):
         return 1e-3
     f0 = float(Fp[0]) or 1.0
     below = np.where(Fp < level*f0)[0]
-    if len(below):
-        return float(Tp[below[0]])
-    return float(Tp[0])
+    d = float(Tp[below[0]]) if len(below) else float(Tp[0])
+    if floor is not None:
+        d = max(d, float(floor))
+    if cap is not None:
+        d = min(d, float(cap))
+    return float(min(d, Tp[-1]))                        # never past the last sample
 
 
 def _tail_noise(t, y, frac=0.35, smooth_w=7):
@@ -879,7 +896,7 @@ def deer_invert_mellin(t, V, r=None, bg_start=None, bg_end=None, dim=3.0,
         bg = background_fit(t, V, bg_start, bg_end=bg_end, dim=dim, fit_dim=fit_dim)
     F = bg['form_factor']
     if delta is None or delta <= 0:
-        delta = mellin_delta(t, F, level=0.85)         # wider split: parabolic [0,delta]
+        delta = mellin_delta(t, F, level=0.85)         # parabolic [0,delta], floored >=90 ns
     D = 2.0*np.pi*nu_dd                                 # w = D / r^3 (rad/us)
     w = D/r**3
     dr = float(r[1] - r[0]) if len(r) > 1 else 1.0

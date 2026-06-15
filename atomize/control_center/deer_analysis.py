@@ -696,19 +696,21 @@ class MainWindow(QMainWindow):
         self.mellin_delta.setRange(0.0, 1e9)
         self.mellin_delta.setDecimals(5)
         self.mellin_delta.setSingleStep(0.001)
-        self.mellin_delta.setValue(0.0)          # 0 ⇒ auto (F(δ) ≈ 0.95)
+        self.mellin_delta.setValue(0.0)          # 0 ⇒ auto (F(δ)≈0.85, clipped 90–120 ns)
         self.mellin_delta.setToolTip(
             'Mellin split point δ (display time units), the lone regularizing '
-            'knob: on [0, δ] the form factor is taken constant and integrated '
-            'analytically; [δ, end] is integrated numerically. The practical '
-            'estimate is F(δ) ≈ 0.95 (paper recommendation). 0 = auto. Larger δ '
-            'regularizes more (smoother, less short-r noise); too large loses '
-            'resolution.')
+            'knob: on [0, δ] the form factor is integrated analytically (keeping '
+            'the parabolic echo top F≈F0+b·T²); [δ, end] is integrated '
+            'numerically. 0 = auto: F(δ)≈0.85, then clipped to 90–120 ns (the '
+            'floor keeps the echo-top anchor wide enough on sharp peaks; the cap '
+            'avoids over-smoothing long-r). Larger δ regularizes more (smoother, '
+            'less short-r noise); too large loses resolution.')
         self.mellin_delta.valueChanged.connect(self._mellin_live)
         self.mellin_delta_auto = QCheckBox('Auto')
         self.mellin_delta_auto.setStyleSheet(CHECKBOX_STYLE)
         self.mellin_delta_auto.setChecked(True)
-        self.mellin_delta_auto.setToolTip('Estimate δ from F(δ) ≈ 0.95.')
+        self.mellin_delta_auto.setToolTip(
+            'Auto δ: where F falls to ≈0.85·F(0), clipped to 90–120 ns.')
         self.mellin_delta_auto.stateChanged.connect(self._mellin_delta_toggle)
         self.mellin_delta.setEnabled(False)
         delta_row.addWidget(self.mellin_delta); delta_row.addWidget(self.mellin_delta_auto)
