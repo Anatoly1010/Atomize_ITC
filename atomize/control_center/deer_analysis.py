@@ -349,7 +349,8 @@ class MainWindow(QMainWindow):
         self.deer_show = QComboBox()
         self.deer_show.setStyleSheet(COMBO_STYLE)
         self.deer_show.addItems(['V(t) + background + fit', 'Form factor + fit',
-                                 'Background fit', 'L-curve'])
+                                 'Background fit', 'Residual', 'Residual ACF',
+                                 'L-curve'])
         self.deer_show.setToolTip('Top-plot view (the L-curve view applies to the '
                                   'Tikhonov engine only).')
         self.deer_show.currentIndexChanged.connect(self._deer_rerender)
@@ -726,7 +727,7 @@ class MainWindow(QMainWindow):
         self.mellin_taumax.setStyleSheet(DSPIN_STYLE)
         self.mellin_taumax.setRange(2.0, 200.0)
         self.mellin_taumax.setDecimals(1)
-        self.mellin_taumax.setSingleStep(5.0)
+        self.mellin_taumax.setSingleStep(1.0)
         self.mellin_taumax.setValue(25.0)
         self.mellin_taumax.setEnabled(False)
         self.mellin_taumax.setToolTip(
@@ -768,6 +769,19 @@ class MainWindow(QMainWindow):
             'Mellin method is prized for.')
         self.mellin_signed_chk.stateChanged.connect(self._deer_rerender)
         grid.addWidget(self.mellin_signed_chk, r, 0, 1, 2); r += 1
+
+        self.mellin_signed_fit_chk = QCheckBox('Signed forward fit (negative-aware)')
+        self.mellin_signed_fit_chk.setStyleSheet(CHECKBOX_STYLE)
+        self.mellin_signed_fit_chk.setToolTip(
+            'Build the forward fit F_fit = K·P from the honest SIGNED density (the '
+            'masses the Mellin inverse actually produced) instead of the clipped, '
+            'low-r-tapered one. Reproduces the echo-top/trough amplitude more '
+            'faithfully (whiter residual); used for both the τmax-penalty rmsF and '
+            'the displayed fit. Uncheck for low-λ data with a strong short-r noise '
+            'spike, where the negatives can give a double-peaked echo top.')
+        self.mellin_signed_fit_chk.setChecked(True)        # signed forward fit = default
+        self.mellin_signed_fit_chk.stateChanged.connect(self._deer_rerender)
+        grid.addWidget(self.mellin_signed_fit_chk, r, 0, 1, 2); r += 1
 
         self.mellin_consensus_chk = QCheckBox('Robust consensus (noisy data)')
         self.mellin_consensus_chk.setStyleSheet(CHECKBOX_STYLE)
@@ -1480,7 +1494,8 @@ class MainWindow(QMainWindow):
             bg_end_us = ((bge_disp - t0_disp) * tf if bge_disp > bgs_disp else None)
             delta_us = (delta_disp * tf) if delta_disp > 0 else None
             mk = dict(delta=delta_us, tau_max=tau_max, n_tau=n_tau,
-                      bg_engine=bg_engine)
+                      bg_engine=bg_engine,
+                      signed_fit=self.mellin_signed_fit_chk.isChecked())
             if consensus:
                 # robust mode: pass the RAW recorded axis + bg window (consensus
                 # fits t0 internally); it manages tau_max, so do not forward it
@@ -1488,7 +1503,8 @@ class MainWindow(QMainWindow):
                     x * tf, v, r=r, bg_start=bgs_disp * tf,
                     bg_end=(bge_disp * tf if bge_disp > bgs_disp else None),
                     dim=dim, fit_dim=fit_dim, delta=delta_us, n_tau=n_tau,
-                    bg_engine=bg_engine, n_mc=8)
+                    bg_engine=bg_engine, n_mc=8,
+                    signed_fit=self.mellin_signed_fit_chk.isChecked())
                 t0_disp = float(res['t0']) / tf
                 if res.get('consensus') and res.get('P_lower') is not None:
                     _ens = res.get('ensemble')
@@ -1563,9 +1579,20 @@ class MainWindow(QMainWindow):
             self.deer_alpha.setValue(float(res['alpha']))
             self.deer_alpha.blockSignals(False)
 
-        F, Ff = res['form_factor'], res['F_fit']
+        F, Ff = res['form_factor'], self._fit_curve(res)
         ss_tot = float(np.sum((F - F.mean()) ** 2)) or 1.0
         r2 = 1 - float(np.sum((F - Ff) ** 2)) / ss_tot
+        # residual-whiteness goodness of fit (Durbin-Watson + lag-1 autocorrelation):
+        # a structured/oscillating residual flags an over-smoothed P(r) that has not
+        # captured all the dipolar modulation. Computed engine-agnostically from the
+        # V-space residual so it works for Tikhonov / joint / Mellin / consensus.
+        wht = self._whiteness_of(res)
+        if wht is not None and np.isfinite(wht['durbin_watson']):
+            wv = ('white' if wht['white'] else 'structured')
+            wht_txt = (f'<br>resid: DW = {wht["durbin_watson"]:.2f}, '
+                       f'r₁ = {wht["acf1"]:+.2f} <i>({wv})</i>')
+        else:
+            wht_txt = ''
         if band is not None and band.get('consensus_mode'):
             r_peak, r_mean = band['peak'], band['r_mean']
             lo, hi = band['percentiles']
@@ -1626,7 +1653,7 @@ class MainWindow(QMainWindow):
             f'{reg}<br>'
             f'peak r = {r_peak:.3f} nm<br>'
             f'mean r = {r_mean:.3f} nm<br>'
-            f'form-factor R² = {r2:.4f}{extra}</div>')
+            f'form-factor R² = {r2:.4f}{wht_txt}{extra}</div>')
         self.deer_info.setText(info_html)
         if is_mellin:
             self.mellin_info.setText(info_html)
@@ -1687,10 +1714,11 @@ class MainWindow(QMainWindow):
 
         # ---- top plot: chosen time-domain / L-curve view ----
         view = self.deer_show.currentText()
+        ff = self._fit_curve(res)
         if view == 'Form factor + fit':
             self._repaint(self.p_time, self.time_legend, self._time_items,
                           [('F(t)', t_disp, res['form_factor'], C_DATA, 2),
-                           ('K·P fit', t_disp, res['F_fit'], C_FIT, 2)],
+                           ('K·P fit', t_disp, ff, C_FIT, 2)],
                           f'Time ({tunit})', '_time_key', force=True)
             self._show_bg_cursor(True)
             self._show_lcurve_marker(False)
@@ -1702,6 +1730,50 @@ class MainWindow(QMainWindow):
                           f'Time ({tunit})', '_time_key', force=True)
             self._show_bg_cursor(True)
             self._show_lcurve_marker(False)
+        elif view == 'Residual':
+            # plain time-domain residual (data − fit), V space, with the ±σ noise
+            # band: a flat residual inside the band ⇒ adequate fit; a coherent
+            # oscillation ⇒ unmodelled dipolar modulation (over-smoothed P(r)).
+            v_fit = bg['B'] * ((1 - res['lambda']) + res['lambda'] * ff)
+            resid = bg['V_norm'] - v_fit
+            # smoothed overlay exposes the coherent (systematic) part of the
+            # residual — averaging out the white noise; a flat smoothed line ⇒
+            # white, an oscillation ⇒ unmodelled dipolar modulation.
+            wn = int(max(5, len(resid) // 50)) | 1
+            resid_sm = np.convolve(resid, np.ones(wn) / wn, mode='same')
+            curves = [('residual (V − fit)', t_disp, resid, C_DATA, 1),
+                      ('smoothed (coherent)', t_disp, resid_sm, C_FIT, 2)]
+            sig = res.get('noise_level') or res.get('sigma_noise')
+            if sig and np.isfinite(sig) and sig > 0:
+                ones = np.ones_like(t_disp)
+                curves += [('+σ noise', t_disp, sig * ones, C_BG, 1),
+                           ('−σ noise', t_disp, -sig * ones, C_BG, 1)]
+            self._repaint(self.p_time, self.time_legend, self._time_items, curves,
+                          f'Time ({tunit})', '_time_key',
+                          left_label='residual', force=True)
+            self._show_bg_cursor(True)
+            self._show_lcurve_marker(False)
+        elif view == 'Residual ACF':
+            # residual-whiteness autocorrelogram: ACF of the fit residual vs lag,
+            # with the ±1.96/√N white-noise band. Bars inside the band ⇒ white
+            # (adequate fit); a decaying/oscillating ACF reaching past it ⇒ the
+            # residual is structured (over-smoothed P(r) / unmodelled modulation).
+            self._show_bg_cursor(False)
+            self._show_lcurve_marker(False)
+            wht = self._whiteness_of(res)
+            if wht is None or not len(wht.get('acf', [])):
+                self.set_status('No residual ACF available for this result.')
+                return
+            lags = np.asarray(wht['lags'], float)
+            acf = np.asarray(wht['acf'], float)
+            ci = float(wht['ci95'])
+            ones = np.ones_like(lags)
+            self._repaint(self.p_time, self.time_legend, self._time_items,
+                          [('residual ACF', lags, acf, C_FIT, 2),
+                           ('+95% white noise', lags, ci * ones, C_BG, 1),
+                           ('−95% white noise', lags, -ci * ones, C_BG, 1)],
+                          'lag (points)', '_time_key',
+                          left_label='autocorrelation', force=True)
         elif view == 'L-curve':
             self._show_bg_cursor(False)
             lc = res.get('l_curve')
@@ -1718,7 +1790,7 @@ class MainWindow(QMainWindow):
             self._show_lcurve_marker(True, x[idx], y[idx])
         else:  # 'V(t) + background + fit'
             level = (1 - res['lambda']) * bg['B']
-            v_fit = bg['B'] * ((1 - res['lambda']) + res['lambda'] * res['F_fit'])
+            v_fit = bg['B'] * ((1 - res['lambda']) + res['lambda'] * ff)
             self._repaint(self.p_time, self.time_legend, self._time_items,
                           [('V(t)', t_disp, bg['V_norm'], C_DATA, 2),
                            ('background', t_disp, level, C_BG, 2),
@@ -1726,6 +1798,35 @@ class MainWindow(QMainWindow):
                           f'Time ({tunit})', '_time_key', force=True)
             self._show_bg_cursor(True)
             self._show_lcurve_marker(False)
+
+    def _fit_curve(self, res):
+        """The forward fit F_fit to display/score. The Mellin engine already builds
+        it from the signed or clipped density per its `signed_fit` flag (set from the
+        'Signed forward fit' checkbox), so we use it directly; other engines return
+        their own F_fit."""
+        return np.asarray(res['F_fit'], float)
+
+    def _whiteness_of(self, res):
+        """Residual-whiteness diagnostic from the V-space residual over the valid
+        dipolar fit region (t>0, via bg['t']) — matching the engine's own pos-based
+        whiteness so the toggle-off number reproduces it, and honouring the signed-
+        forward-fit toggle. Engine-agnostic. Returns the residual_whiteness dict."""
+        try:
+            bg = res['background']
+            Vn = np.asarray(bg['V_norm'], float)
+            B = np.asarray(bg['B'], float)
+            lam = float(res['lambda'])
+            resid = Vn - B * ((1 - lam) + lam * self._fit_curve(res))
+            tt = bg.get('t')
+            if tt is not None:
+                tt = np.asarray(tt, float)
+                if len(tt) == len(resid):
+                    resid = resid[tt > 0]            # dipolar region only (drop pre-t0)
+            if len(resid) < 4:
+                return None
+            return deer_module.residual_whiteness(resid)
+        except Exception:
+            return None
 
     # --------------------------------------------------------- overlays
     @staticmethod
