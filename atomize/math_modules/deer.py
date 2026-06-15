@@ -876,7 +876,7 @@ def deer_invert_mellin(t, V, r=None, bg_start=None, bg_end=None, dim=3.0,
                        n_tau=601, bg_engine='joint', n_mc=0, ci_z=1.96, seed=0,
                        taumax_method='discrepancy', noise_space='V',
                        wiener=0.0, taumax_extend=True, extend_short_frac=0.18,
-                       **_ignored):
+                       fit_rmin_frac=0.18, **_ignored):
     """Model-free DEER inversion by the analytic integral Mellin transform
     (doi 10.1039/C7CP04059H). Background-corrects V(t), then recovers the distance
     distribution analytically: no Tikhonov, no NNLS, no L-curve. The only
@@ -955,14 +955,15 @@ def deer_invert_mellin(t, V, r=None, bg_start=None, bg_end=None, dim=3.0,
     *signed* and area-normalized (negative excursions, the propagated-noise
     signature at short r, are NOT clipped to zero -- so P(r) can dip below zero).
     The DISPLAYED P_density keeps every negative (they are genuine short-r noise
-    and are not corrected). F_fit, however, is the forward kernel applied to the
-    NON-NEGATIVE (sum-normalized) density: a negative density propagated through K
-    flips the curvature of F_fit at t=0 into a spurious double peak, so the forward
-    *model* of the time trace is clipped (this changes only the fit curve, never
-    the reported P_density, so F_fit is not exactly K@P_density). The cost is that
-    the clipping concentrates the noise-driven short-r mass, so the F_fit echo top
-    decays a little too fast (a slightly too-narrow top) at high noise -- a clean
-    no-double-peak fit is preferred over matching that last bit of the top. kernel,
+    and are not corrected). F_fit is the forward kernel applied to the NON-NEGATIVE
+    density with a low-r taper (`fit_rmin_frac`): negatives would flip the t=0
+    curvature into a spurious double peak (so they are clipped), and the clipped
+    short-r noise spike would make the echo top decay too fast (a too-narrow top),
+    so the low-r region -- where the Mellin noise piles up -- is smoothly
+    down-weighted for the forward model only. This matches the echo top without a
+    double peak; it changes only the fit curve, never the reported P_density. A
+    genuine short-r peak is attenuated (not deleted) in F_fit, and is unaffected in
+    the displayed P(r). kernel,
     background, lambda / k / dim. Mellin-specific extras: engine='mellin', delta,
     tau_max, auto_taumax, sigma_fit, sigma_noise, P_signed_density (== P_density,
     kept for back-compat), tau, V_image, kernel_image, n_mc. There is no
@@ -1014,13 +1015,27 @@ def deer_invert_mellin(t, V, r=None, bg_start=None, bg_end=None, dim=3.0,
         return dens*dr, dens
 
     def _phys(fr):
-        """Non-negative, sum-normalized masses for the FORWARD FIT only (F_fit and
-        the V-space sigma_fit). The displayed P(r) keeps every negative excursion
-        (they are genuine short-r noise and are not corrected), but the *forward
-        model* of the time trace must be physical: a negative density propagated
-        through K flips the curvature of F_fit at t=0 into a spurious double peak.
-        Clipping here changes only the fit curve, never the reported P_density."""
+        """Non-negative, sum-normalized masses (used by the tau_max auto-selection
+        residual). The displayed P(r) keeps every negative excursion (genuine
+        short-r noise), but the forward model must be physical: a negative density
+        propagated through K flips the F_fit curvature at t=0 into a double peak."""
         m = np.maximum(fr, 0.0)*dr
+        s = float(np.sum(m))
+        return m/s if s > 0 else m
+
+    # Low-r noise penalty for the DISPLAYED forward fit. The Mellin noise piles at
+    # short r (the r^-2.5 Jacobian); its positive spike makes the clipped F_fit
+    # echo top decay too fast (a too-narrow top), and a hard cut there would wreck
+    # F_fit for a genuine short-r peak. So down-weight the low-r density smoothly
+    # with a raised-cosine taper (0 at the grid bottom -> 1 by `fit_rmin_frac` of
+    # the range): real short-r mass is only attenuated, not deleted. Forward model
+    # only -- the reported P_density and the tau_max selection are untouched.
+    _u = np.clip((r - r[0])/max(float(fit_rmin_frac)*(r[-1] - r[0]), 1e-9), 0.0, 1.0)
+    _fit_w = 0.5*(1.0 - np.cos(np.pi*_u))
+
+    def _phys_fit(fr):
+        """Non-negative density for F_fit, with the low-r taper applied."""
+        m = np.maximum(fr, 0.0)*_fit_w*dr
         s = float(np.sum(m))
         return m/s if s > 0 else m
 
@@ -1160,7 +1175,7 @@ def deer_invert_mellin(t, V, r=None, bg_start=None, bg_end=None, dim=3.0,
     tau, Phi, _invert_F = _build(float(tau_max), int(n_tau))
     f_r, Vimg = _invert_F(F)
     masses, P_density = _masses(f_r)                     # signed density (displayed, negatives kept)
-    F_fit = K@_phys(f_r)                                # forward fit from physical >=0 density
+    F_fit = K@_phys_fit(f_r)                            # forward fit: clipped + low-r taper
                                                         # (clipped: keeps F_fit monotone -- a signed
                                                         # density flips the t=0 curvature into a
                                                         # spurious double peak)
