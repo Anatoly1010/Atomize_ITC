@@ -384,7 +384,7 @@ class MainWindow(QMainWindow):
         requested, so toggling it on needs a re-inversion."""
         if self.deer_result is None:
             return
-        if self.deer_result.get('engine') == 'mellin':
+        if self.deer_result.get('engine', '').startswith('mellin'):
             if self.real_xy[0] is not None:
                 self.do_mellin()
             else:
@@ -581,14 +581,18 @@ class MainWindow(QMainWindow):
         grid.addWidget(self._label('Background fit'), r, 0)
         self.deer_engine = QComboBox()
         self.deer_engine.setStyleSheet(COMBO_STYLE)
-        self.deer_engine.addItems(['Sequential', 'Joint (global)'])
+        self.deer_engine.addItems(['Sequential', 'Joint (global)',
+                                   'None (no background)'])
         self.deer_engine.setCurrentIndex(1)            # Joint (global) is the default
         self.deer_engine.setToolTip(
             'Sequential: fit the background on the tail window, divide it out, '
             'then invert (fast).\nJoint (global): fit background + modulation '
             'depth together with P(r) in one pass (DeerLab-style) — more robust '
             'when the background window is short or hard to place, and required '
-            'for a clean Mellin fit. Default.')
+            'for a clean Mellin fit. Default.\nNone (no background): B(t)=1, fit '
+            'only the modulation depth λ. For pre-corrected / simulated / '
+            'full-modulation (λ→1) data that has NO background — fitting a decay '
+            'there would absorb the dipolar decay and badly broaden P(r).')
         self.deer_engine.currentIndexChanged.connect(self._live_update)
         self.deer_engine.currentIndexChanged.connect(self._mellin_live)
         grid.addWidget(self.deer_engine, r, 1); r += 1
@@ -765,6 +769,22 @@ class MainWindow(QMainWindow):
         self.mellin_signed_chk.stateChanged.connect(self._deer_rerender)
         grid.addWidget(self.mellin_signed_chk, r, 0, 1, 2); r += 1
 
+        self.mellin_consensus_chk = QCheckBox('Robust consensus (noisy data)')
+        self.mellin_consensus_chk.setStyleSheet(CHECKBOX_STYLE)
+        self.mellin_consensus_chk.setToolTip(
+            'For NOISY traces where the zero-time and τ_max are not well '
+            'determined by the data. Instead of one fragile fit, it fits its own '
+            'zero-time and marginalises over the data-consistent t0 × τ_max × '
+            'background-start (× noise) set, reporting the ensemble <b>median</b> '
+            'P(r) + a 95% band (subsumes the Validate sweep). '
+            'Self-gating: on clean/low-noise data it reduces to the single '
+            'fit. NOTE it fits the zero-time itself (overrides the manual t0); '
+            'only meaningful when t0 is uncertain. For very high noise the '
+            'Tikhonov (DEER) engine — which adds smoothness + non-negativity that '
+            'the model-free Mellin lacks — is usually more accurate.')
+        self.mellin_consensus_chk.stateChanged.connect(self._mellin_live)
+        grid.addWidget(self.mellin_consensus_chk, r, 0, 1, 2); r += 1
+
         self.mellin_live = QCheckBox('Live update on parameter change')
         self.mellin_live.setStyleSheet(CHECKBOX_STYLE)
         grid.addWidget(self.mellin_live, r, 0, 1, 2); r += 1
@@ -800,7 +820,7 @@ class MainWindow(QMainWindow):
             return
         if (self.mellin_live.isChecked() and self.real_xy[0] is not None
                 and self.deer_result is not None
-                and self.deer_result.get('engine') == 'mellin'):
+                and self.deer_result.get('engine', '').startswith('mellin')):
             self.do_mellin()
 
     # ----------------------------------------------------------- status
@@ -924,8 +944,8 @@ class MainWindow(QMainWindow):
         if u in tmap:
             self.deer_tunit.setCurrentText(tmap[u])
         self._register_datasets(mapping)
-        if res['complex']:
-            self.pair_check.setChecked(True)
+        # leave I/Q pairing OFF by default even for complex data — the user opts in
+        # (many traces are already phased; auto-pairing surprised more than it helped)
         self._set_loaded_file(os.path.basename(file_path))
         self.set_status(f'Loaded {os.path.basename(file_path)} — {res["format"]}, '
                         f'{len(x)} pts, '
@@ -1003,7 +1023,7 @@ class MainWindow(QMainWindow):
                 combo.setCurrentIndex(keys.index(sel))
             combo.blockSignals(False)
         self.pair_check.blockSignals(True)
-        self.pair_check.setChecked(len(keys) > 1)
+        self.pair_check.setChecked(False)              # I/Q pairing is opt-in
         self.pair_check.blockSignals(False)
         self.on_source_changed()                  # populates self.real_xy
         self._reset_bg_window()                    # default bg start (~2/3) + end (last pt)
@@ -1359,7 +1379,7 @@ class MainWindow(QMainWindow):
         r = np.linspace(rmin, rmax, int(self.deer_rn.value()))
         alpha = None if self.deer_alpha_auto.isChecked() else float(self.deer_alpha.value())
         afac = float(self.deer_alpha_factor.value())
-        engine = 'joint' if self.deer_engine.currentIndex() == 1 else 'sequential'
+        engine = ('sequential', 'joint', 'none')[self.deer_engine.currentIndex()]
         dim = float(self.deer_dim.value())
         fit_dim = self.deer_fitdim.isChecked()
         validate = self.deer_validate_chk.isChecked()
@@ -1432,7 +1452,7 @@ class MainWindow(QMainWindow):
         dim = float(self.deer_dim.value())
         fit_dim = self.deer_fitdim.isChecked()
         fit_t0 = self.deer_fit_t0.isChecked()
-        bg_engine = 'joint' if self.deer_engine.currentIndex() == 1 else 'sequential'
+        bg_engine = ('sequential', 'joint', 'none')[self.deer_engine.currentIndex()]
         bgs_disp = float(self.deer_bgstart.value())
         bge_disp = float(self.deer_bgend.value())
         t0_cur = float(self.deer_t0.value())
@@ -1442,11 +1462,14 @@ class MainWindow(QMainWindow):
                    else float(self.mellin_taumax.value()))
         n_tau = int(self.mellin_ntau.value())
         validate = self.deer_validate_chk.isChecked()
+        consensus = self.mellin_consensus_chk.isChecked()
         n_mc = 50 if self.deer_ci_chk.isChecked() else 0
 
         def compute():
             t0_disp = t0_cur
-            if fit_t0:
+            # the consensus engine fits its own zero-time (and marginalises over
+            # it), so skip the separate pre-fit when it is selected
+            if fit_t0 and not consensus:
                 t0u = deer_module.fit_zero_time(
                     x * tf, v, bg_start=bgs_disp * tf,
                     bg_end=(bge_disp * tf if bge_disp > bgs_disp else None),
@@ -1458,7 +1481,36 @@ class MainWindow(QMainWindow):
             delta_us = (delta_disp * tf) if delta_disp > 0 else None
             mk = dict(delta=delta_us, tau_max=tau_max, n_tau=n_tau,
                       bg_engine=bg_engine)
-            if validate:
+            if consensus:
+                # robust mode: pass the RAW recorded axis + bg window (consensus
+                # fits t0 internally); it manages tau_max, so do not forward it
+                res = deer_module.deer_mellin_consensus(
+                    x * tf, v, r=r, bg_start=bgs_disp * tf,
+                    bg_end=(bge_disp * tf if bge_disp > bgs_disp else None),
+                    dim=dim, fit_dim=fit_dim, delta=delta_us, n_tau=n_tau,
+                    bg_engine=bg_engine, n_mc=8)
+                t0_disp = float(res['t0']) / tf
+                if res.get('consensus') and res.get('P_lower') is not None:
+                    _ens = res.get('ensemble')
+                    band = {'r': res['r'], 'P_density': res['P_density'],
+                            'P_lower': res['P_lower'], 'P_upper': res['P_upper'],
+                            'P_mean': (np.mean(_ens, axis=0) if _ens is not None
+                                       else res['P_density']),
+                            'peak': res.get('peak', float(res['r'][int(
+                                np.argmax(res['P_density']))])),
+                            'r_mean': res.get('r_mean', float(np.sum(
+                                res['r'] * res['P_norm']))),
+                            'percentiles': res.get('percentiles', (2.5, 97.5)),
+                            'n_trials': int(res.get('n_trials', 0)),
+                            'consensus_mode': True,
+                            'rel_noise': float(res.get('rel_noise', 0.0)),
+                            't0_consistent': np.atleast_1d(res.get(
+                                't0_consistent', [res['t0']])),
+                            'bg_starts': np.atleast_1d(res.get(
+                                'bg_starts', [bgs_disp * tf]))}
+                else:                          # gated to the single pick on clean data
+                    band = None
+            elif validate:
                 val = deer_module.deer_validate(
                     t_us, v, r=r, bg_start=bg_us, bg_end=bg_end_us, dim=dim,
                     fit_dim=fit_dim, engine='mellin', **mk)
@@ -1502,7 +1554,7 @@ class MainWindow(QMainWindow):
         self.deer_result = res
         self.deer_band = band
         tf = self._deer_tfactor()
-        is_mellin = res.get('engine') == 'mellin'
+        is_mellin = res.get('engine', '').startswith('mellin')
         self.deer_t0.blockSignals(True)
         self.deer_t0.setValue(t0_disp)
         self.deer_t0.blockSignals(False)
@@ -1514,7 +1566,20 @@ class MainWindow(QMainWindow):
         F, Ff = res['form_factor'], res['F_fit']
         ss_tot = float(np.sum((F - F.mean()) ** 2)) or 1.0
         r2 = 1 - float(np.sum((F - Ff) ** 2)) / ss_tot
-        if band is not None:
+        if band is not None and band.get('consensus_mode'):
+            r_peak, r_mean = band['peak'], band['r_mean']
+            lo, hi = band['percentiles']
+            t0c = band['t0_consistent'] / tf
+            bgc = band.get('bg_starts')
+            tu = self.deer_tunit.currentText()
+            bg_txt = (f'<br>bg {bgc.min()/tf:.3g}–{bgc.max()/tf:.3g} {tu}'
+                      if bgc is not None and len(np.atleast_1d(bgc)) > 1 else '')
+            extra = (f'<br><b style="color: rgb(150, 200, 255);">consensus</b><br>'
+                     f'{band["n_trials"]} trials, rel. noise {band["rel_noise"]:.3f}'
+                     f'<br>t0 {t0c.min():.3g}–{t0c.max():.3g} {tu}{bg_txt}'
+                     f'<br>band = {lo:g}–{hi:g}%')
+            consensus = ' (median)'
+        elif band is not None:
             r_peak, r_mean = band['peak'], band['r_mean']
             bgs = band['bg_starts'] / tf
             lo, hi = band['percentiles']
@@ -1611,7 +1676,7 @@ class MainWindow(QMainWindow):
             pr_curves = [('P(r)', res['r'], res['P_density'], C_FIT, 2)]
             # Mellin: optionally overlay the raw signed distribution (short-r
             # ripples = propagated noise), the method's diagnostic output.
-            if (res.get('engine') == 'mellin'
+            if (res.get('engine', '').startswith('mellin')
                     and res.get('P_signed_density') is not None
                     and self.mellin_signed_chk.isChecked()):
                 pr_curves.append(('P(r) signed', res['r'],
@@ -1824,7 +1889,7 @@ class MainWindow(QMainWindow):
         tunit = self.deer_tunit.currentText()
         t_disp = res['t'] / self._deer_tfactor()
         bg = res['background']
-        is_mellin = res.get('engine') == 'mellin'
+        is_mellin = res.get('engine', '').startswith('mellin')
         reg_line = (f'lambda = {res["lambda"]:.6g}, k = {res["k"]:.6g}, '
                     f'dim = {res["dim"]:.6g}, '
                     + (f'delta = {res.get("delta", 0)/self._deer_tfactor():.6g} {tunit}, '

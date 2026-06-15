@@ -98,6 +98,62 @@ def dipolar_kernel(t, r, nu_dd=NU_DD):
 # --------------------------------------------------------------------------- #
 #  Background correction
 # --------------------------------------------------------------------------- #
+def _echo_top(t, V, w=5):
+    """Robust echo-top height for the V(0)=1 normalization.
+
+    The form factor is anchored by dividing V by its value at t=0, but taking that
+    value from the SINGLE nearest sample makes the whole curve hostage to one
+    noisy point: at high noise it forces F(0)=1 onto a noise-perturbed sample and
+    scales every other point relative to it, which biases the recovered echo top
+    too narrow (the t=0-area fit error grows with noise). Instead fit a quadratic
+    in a +-`w`-sample window around the sample nearest t=0 and take its vertex
+    height (the smoothed echo maximum). Falls back to the single sample when the
+    window is too short, the fit is not concave, or the estimate is non-positive."""
+    t = np.asarray(t, float); V = np.asarray(V, float)
+    i0 = int(np.argmin(np.abs(t)))
+    lo, hi = max(0, i0 - w), min(len(V), i0 + w + 1)
+    if hi - lo < 3:
+        return float(V[i0])
+    tt = t[lo:hi] - t[i0]; vv = V[lo:hi]
+    try:
+        a, b, c = np.polyfit(tt, vv, 2)
+    except Exception:
+        return float(V[i0])
+    vtx = float(np.clip(-b/(2*a) if a < 0 else 0.0, tt[0], tt[-1]))
+    val = a*vtx**2 + b*vtx + c
+    return float(val) if val > 0 else float(V[i0])
+
+
+def _no_background(t, V, bg_start=None, bg_end=None):
+    """NO intermolecular background: B(t) = 1 (k = 0). For data that has none --
+    pre-corrected traces, simulations, or full-modulation (lambda -> 1) signals.
+
+    Fitting a decaying background to such a trace is actively harmful: with no flat
+    asymptote the fit mistakes the DIPOLAR decay of the form factor for a background
+    and divides a spurious exp() into F, badly broadening P(r) (e.g. a sigma 0.20
+    Gaussian recovered at sigma 0.7, overlap 0.81 instead of 0.99). Here B is fixed
+    to 1 and only the modulation depth lambda is estimated, from the decayed tail
+    baseline (lambda = 1 - mean(V_norm) over [bg_start, bg_end]); F = (V_norm -
+    (1-lambda))/lambda. Returns the same dict shape as `background_fit`."""
+    t = np.asarray(t, dtype=float)
+    V = np.asarray(V, dtype=float)
+    V = V/_echo_top(t, V)                               # normalize V(0) = 1
+    if bg_start is None:
+        bg_start = t[0] + 0.5*(t[-1] - t[0])
+    mask = t >= bg_start
+    if bg_end is not None:
+        mask = mask & (t <= bg_end)
+    if int(mask.sum()) < 3:
+        mask = t >= (t[0] + 0.5*(t[-1] - t[0]))
+    lam = float(np.clip(1.0 - float(np.mean(V[mask])), 0.02, 1.0))
+    B = np.ones_like(t)
+    F = (V - (1.0 - lam))/lam
+    return {'lambda': lam, 'k': 0.0, 'dim': 3.0, 'A': float(1.0 - lam),
+            'B': B, 'form_factor': F, 'V_norm': V, 't': t,
+            'bg_start': float(bg_start),
+            'bg_end': (None if bg_end is None else float(bg_end)), 'mask': mask}
+
+
 def _bg_model(t, A, k, d):
     return A*np.exp(-(k*np.abs(t))**(d/3.0))
 
@@ -121,7 +177,7 @@ def background_fit(t, V, bg_start, bg_end=None, dim=3.0, fit_dim=False):
     _require_scipy()
     t = np.asarray(t, dtype=float)
     V = np.asarray(V, dtype=float)
-    V = V/V[int(np.argmin(np.abs(t)))]                 # normalize at t = 0
+    V = V/_echo_top(t, V)                              # normalize at t = 0 (robust)
     mask = t >= bg_start
     if bg_end is not None:
         mask = mask & (t <= bg_end)
@@ -349,7 +405,10 @@ def deer_invert(t, V, r=None, bg_start=None, bg_end=None, dim=3.0, fit_dim=False
     r = default_r_axis() if r is None else np.asarray(r, float)
     if bg_start is None:
         bg_start = t[0] + 0.5*(t[-1] - t[0])
-    bg = background_fit(t, V, bg_start, bg_end=bg_end, dim=dim, fit_dim=fit_dim)
+    if engine == 'none':          # no intermolecular background (B=1); fit lambda only
+        bg = _no_background(t, V, bg_start=bg_start, bg_end=bg_end)
+    else:
+        bg = background_fit(t, V, bg_start, bg_end=bg_end, dim=dim, fit_dim=fit_dim)
     F = bg['form_factor']
     K = dipolar_kernel(t, r, nu_dd=nu_dd)
     L = regularization_matrix(len(r), reg_order)
@@ -373,7 +432,8 @@ def deer_invert(t, V, r=None, bg_start=None, bg_end=None, dim=3.0, fit_dim=False
             'P_density': P_density, 'P_lower': P_lower, 'P_upper': P_upper,
             'kernel': K, 'alpha': float(alpha),
             'l_curve': lc, 'background': bg, 'lambda': bg['lambda'],
-            'k': bg['k'], 'dim': bg['dim'], 'engine': 'sequential'}
+            'k': bg['k'], 'dim': bg['dim'],
+            'engine': 'none' if engine == 'none' else 'sequential'}
 
 
 def deer_invert_joint(t, V, r=None, bg_start=None, bg_end=None, dim=3.0,
@@ -407,7 +467,7 @@ def deer_invert_joint(t, V, r=None, bg_start=None, bg_end=None, dim=3.0,
     t = np.asarray(t, float)
     V = np.asarray(V, float)
     r = default_r_axis() if r is None else np.asarray(r, float)
-    V = V/V[int(np.argmin(np.abs(t)))]            # normalize V(0) = 1
+    V = V/_echo_top(t, V)                          # normalize V(0) = 1 (robust)
     K = dipolar_kernel(t, r, nu_dd=nu_dd)
     L = regularization_matrix(len(r), reg_order)
     if alphas is None:
@@ -651,7 +711,7 @@ def joint_background(t, V, bg_start=None, bg_end=None, dim=3.0, fit_dim=False,
     from scipy.optimize import least_squares, minimize_scalar
     t = np.asarray(t, float)
     V = np.asarray(V, float)
-    V = V/V[int(np.argmin(np.abs(t)))]                 # normalize V(0) = 1
+    V = V/_echo_top(t, V)                              # normalize V(0) = 1 (robust)
     Tmax = float(np.max(np.abs(t))) or 1.0
     if bg_start is None:
         bg_start = t[0] + 0.6*(t[-1] - t[0])
@@ -815,6 +875,7 @@ def deer_invert_mellin(t, V, r=None, bg_start=None, bg_end=None, dim=3.0,
                        fit_dim=False, nu_dd=NU_DD, delta=None, tau_max=30.0,
                        n_tau=601, bg_engine='joint', n_mc=0, ci_z=1.96, seed=0,
                        taumax_method='discrepancy', noise_space='V',
+                       wiener=0.0, taumax_extend=True, extend_short_frac=0.18,
                        **_ignored):
     """Model-free DEER inversion by the analytic integral Mellin transform
     (doi 10.1039/C7CP04059H). Background-corrects V(t), then recovers the distance
@@ -849,8 +910,34 @@ def deer_invert_mellin(t, V, r=None, bg_start=None, bg_end=None, dim=3.0,
           is nearly flat in tau_max (a near-vertical L-curve with an ill-defined
           corner), so it tends to pick too large a cutoff on noisy data. Prefer
           'discrepancy'.
-    `sigma_fit` and the tail `sigma_noise` are returned so the fit can be judged
-    (sigma_fit ~ sigma_noise good; >> underfit; << overfit).
+    `taumax_extend` (default on) is a resolution-aware extension of the auto cutoff:
+    the discrepancy stops as soon as the V-space residual reaches the noise floor,
+    but P(r) can keep SHARPENING past that point. After the discrepancy pick the
+    cutoff is pushed UP while the spurious short-r leakage (mass in the bottom
+    `extend_short_frac` of the r grid -- the Mellin noise signature) keeps DROPPING,
+    and stopped at the first increase. Self-adapts to noise: clean/low-noise data
+    extends (sharper echo top, better-resolved bimodals -- e.g. a clean narrow
+    Gaussian 0.92 -> 0.96 overlap), noisy data does not (the leakage rises at once,
+    so it stays at the discrepancy pick). Only active for `taumax_method`
+    'discrepancy' and when `tau_max` is auto (None).
+
+    `wiener` (default 0 = OFF, opt-in) sets the strength of a Wiener-regularized
+    inverse filter on the kernel-image division (see `_build`). The plain Mellin
+    inverse 1/Phi(tau) amplifies noise where Phi is small (high |tau|), which the
+    r-space Jacobian concentrates into a spurious SHORT-r spike that can steal the
+    real peak on noisy bimodal traces; the Wiener filter conj(Phi)/(|Phi|^2 + eps)
+    rolls that off, with eps scaled by the measured tail noise so it is a no-op on
+    clean data and only suppresses noise-dominated (not signal) spectrum, leaving
+    genuine short-r peaks intact. A value of ~0.12 works well at MODERATE noise
+    (sigma ~0.02: it removes the short-r spike and recovers the true peak --
+    benchmark overlap gains of +0.1 to +0.2, e.g. gauss_narrow_broad 0.68 -> 0.88).
+
+    CAVEAT -- left OFF by default because, like the t0 cross-check, it is a net
+    benchmark regression as a blanket default (mean overlap 0.853 -> 0.840). At
+    EXTREME noise (sigma ~0.04) the recovered P(r) is dominated by zero-time and
+    tau_max auto-selection instability, not by the inverse filter, and the Wiener
+    term interacts with that selection to regress several cases. Enable it when the
+    data are moderately noisy and the result shows the tell-tale short-r spike.
 
     With `n_mc` > 0 a Monte-Carlo confidence band is returned (additive-noise
     propagation): the white electrical-noise level `sig_e` is read from the
@@ -872,8 +959,10 @@ def deer_invert_mellin(t, V, r=None, bg_start=None, bg_end=None, dim=3.0,
     NON-NEGATIVE (sum-normalized) density: a negative density propagated through K
     flips the curvature of F_fit at t=0 into a spurious double peak, so the forward
     *model* of the time trace is clipped (this changes only the fit curve, never
-    the reported P_density, so F_fit is not exactly K@P_density). An accurate
-    zero-time (`fit_zero_time` default 'parabola') also keeps F_fit clean. kernel,
+    the reported P_density, so F_fit is not exactly K@P_density). The cost is that
+    the clipping concentrates the noise-driven short-r mass, so the F_fit echo top
+    decays a little too fast (a slightly too-narrow top) at high noise -- a clean
+    no-double-peak fit is preferred over matching that last bit of the top. kernel,
     background, lambda / k / dim. Mellin-specific extras: engine='mellin', delta,
     tau_max, auto_taumax, sigma_fit, sigma_noise, P_signed_density (== P_density,
     kept for back-compat), tau, V_image, kernel_image, n_mc. There is no
@@ -886,7 +975,12 @@ def deer_invert_mellin(t, V, r=None, bg_start=None, bg_end=None, dim=3.0,
     r = default_r_axis() if r is None else np.asarray(r, float)
     if bg_start is None:
         bg_start = t[0] + 0.5*(t[-1] - t[0])
-    if bg_engine == 'joint':
+    if bg_engine == 'none':
+        # no intermolecular background (B=1); only lambda is estimated. Use for
+        # pre-corrected / simulated / full-modulation data where fitting a decay
+        # would absorb the dipolar decay and broaden P(r) (see `_no_background`).
+        bg = _no_background(t, V, bg_start=bg_start, bg_end=bg_end)
+    elif bg_engine == 'joint':
         # robust lambda-pinned background (clean F -> 0); the lightweight helper
         # fits only the background (no full-res NNLS / L-curve) so it is fast
         # enough to also re-run per background-start during validation
@@ -903,6 +997,9 @@ def deer_invert_mellin(t, V, r=None, bg_start=None, bg_end=None, dim=3.0,
     K = dipolar_kernel(t, r, nu_dd=nu_dd)
     Vn, B, lam = bg['V_norm'], bg['B'], bg['lambda']
     pos = t > 0
+    # White electrical-noise level from the decayed tail; also reused for the MC
+    # band below. Sets the Wiener regularization strength (next).
+    sig_e = _tail_noise(t, Vn)
 
     def _masses(fr):
         """Area-normalized signed density/masses -- the honest model-free Mellin
@@ -928,12 +1025,34 @@ def deer_invert_mellin(t, V, r=None, bg_start=None, bg_end=None, dim=3.0,
         return m/s if s > 0 else m
 
     def _build(tm, ntau):
-        """Return a Mellin core inverter (F -> signed f(r)) for cutoff tm."""
+        """Return a Mellin core inverter (F -> signed f(r)) for cutoff tm.
+
+        The inverse divides the signal image by the kernel image, P(tau) =
+        Vimg / Phi(tau). Phi decays toward large |tau| (Gamma-function tails), so
+        plain division amplifies any noise in Vimg exactly where Phi is small --
+        and the r-space Jacobian (~r^-2.5 after the w^-1/2 factor) then dumps that
+        amplified high-tau noise into a spurious spike at SHORT r (the technique's
+        signature; it can dominate P(r) and steal the real peak on noisy bimodal
+        traces). With `wiener` > 0 the plain inverse filter 1/Phi is replaced by
+        the Wiener-regularized inverse conj(Phi)/(|Phi|^2 + eps): identical to
+        1/Phi where |Phi|^2 >> eps (the well-determined low-tau core, so sharp
+        features and genuine short-r peaks are kept) but rolled off smoothly toward
+        zero where |Phi|^2 << eps (the noise-dominated high-tau tail). eps scales
+        with the measured tail-noise level `sig_e`, so the filter self-adapts --
+        ~0 on clean data (a no-op) and stronger as noise grows -- and it only acts
+        where the spectrum is noise- rather than signal-dominated, leaving real
+        peaks (even at short r) untouched."""
         tau_g = np.linspace(-float(tm), float(tm), int(ntau))
         Phi_g = mellin_kernel_spectrum(tau_g)
+        eps = (float(wiener)*sig_e*float(np.max(np.abs(Phi_g)))**2
+               if wiener and sig_e > 0 else 0.0)
         def inv(Fx):
             Vimg = mellin_signal_spectrum(t, Fx, tau_g, delta)
-            return mellin_inverse(np.conj(Vimg/Phi_g), tau_g, w)*(3.0*D/r**4), Vimg
+            if eps > 0:
+                Ptau = Vimg*np.conj(Phi_g)/(np.abs(Phi_g)**2 + eps)
+            else:
+                Ptau = Vimg/Phi_g
+            return mellin_inverse(np.conj(Ptau), tau_g, w)*(3.0*D/r**4), Vimg
         return tau_g, Phi_g, inv
 
     def _ntau_for(tm):
@@ -1005,12 +1124,46 @@ def deer_invert_mellin(t, V, r=None, bg_start=None, bg_end=None, dim=3.0,
             ok = np.where(sig <= thr)[0]
             idx = int(ok[0]) if len(ok) else int(np.argmin(sig))
         tau_max = cands[idx]
+
+        # Resolution-aware extension (discrepancy only). The discrepancy stops as
+        # soon as the V-space residual reaches the noise floor, but P(r) can keep
+        # SHARPENING past that point -- visible as the spurious short-r leakage
+        # (the Mellin noise signature, piled at the bottom of the r grid) still
+        # DROPPING as the cutoff rises. Push tau_max UP while that leakage keeps
+        # decreasing and stop at the first increase. This self-adapts to noise:
+        # on clean/low-noise data the leakage falls (better resolution) so the
+        # cutoff extends and the echo top / bimodal peaks sharpen; on noisy data
+        # the leakage rises immediately (high-tau noise enters) so it stays at the
+        # discrepancy pick. No effect when tau_max is given explicitly.
+        if taumax_extend and taumax_method != 'lcurve':
+            short = r <= (r[0] + float(extend_short_frac)*(r[-1] - r[0]))
+
+            def _short_leak(tm):
+                fr_e, _ = _build(tm, _ntau_for(tm))[2](F)
+                _, dens_e = _masses(fr_e)
+                a = np.maximum(dens_e, 0.0)
+                s = float(_trapz(a, r)) or 1.0
+                return float(_trapz(a[short], r[short])/s)
+
+            best_leak = _short_leak(tau_max)
+            for nt in (tau_max + 3.0, tau_max + 6.0, tau_max + 10.0,
+                       tau_max + 15.0, tau_max + 21.0):
+                if nt > 40.0:
+                    break
+                lk = _short_leak(nt)
+                if lk < best_leak - 1e-4:
+                    best_leak, tau_max = lk, nt
+                else:
+                    break
         n_tau = _ntau_for(tau_max)
 
     tau, Phi, _invert_F = _build(float(tau_max), int(n_tau))
     f_r, Vimg = _invert_F(F)
     masses, P_density = _masses(f_r)                     # signed density (displayed, negatives kept)
     F_fit = K@_phys(f_r)                                # forward fit from physical >=0 density
+                                                        # (clipped: keeps F_fit monotone -- a signed
+                                                        # density flips the t=0 curvature into a
+                                                        # spurious double peak)
 
     # discrepancy diagnostics (V space): sigma_fit over t>0 vs the noise floor
     # from the decayed tail (where the dipolar signal is gone). sigma_fit ~
@@ -1033,7 +1186,6 @@ def deer_invert_mellin(t, V, r=None, bg_start=None, bg_end=None, dim=3.0,
     # is the per-distance STD across the n_mc realizations, +-ci_z*STD about the
     # reported (signed) P_density. ~100 realizations are typical.
     P_lower = P_upper = P_std = None
-    sig_e = _tail_noise(t, Vn)
     if n_mc and int(n_mc) > 0 and sig_e > 0:
         rng = np.random.default_rng(seed)
         vfit = B*((1 - lam) + lam*F_fit)                # smooth model of V(t)
@@ -1058,6 +1210,162 @@ def deer_invert_mellin(t, V, r=None, bg_start=None, bg_end=None, dim=3.0,
             'auto_taumax': bool(auto_taumax), 'sigma_fit': sigma_fit,
             'sigma_noise': sigma_noise, 'n_mc': int(n_mc),
             'tau': tau, 'V_image': Vimg, 'kernel_image': Phi}
+
+
+def deer_mellin_consensus(t, V, r=None, bg_start=None, bg_end=None, dim=3.0,
+                          fit_dim=False, nu_dd=NU_DD, n_t0=9, n_mc=6,
+                          chi_tol=1.05,
+                          taumax_window=(0.8, 0.86, 0.91, 0.97, 1.03, 1.09,
+                                         1.14, 1.19, 1.25),
+                          n_bg=5, bg_span_frac=0.05,
+                          gate_rel_noise=0.06, seed=0, percentiles=(2.5, 97.5),
+                          **kwargs):
+    """Robust ("consensus") Mellin inversion for NOISY traces: marginalize over the
+    data-consistent zero-time and tau_max (and noise) instead of committing to one
+    fragile point estimate.
+
+    Why: at high relative noise (sigma/lambda gtrsim 0.06) a DEER trace does not
+    determine the zero-time t0 OR the Mellin cutoff tau_max -- the V-space forward
+    residual is white (structureless) across a wide range of both, so they are
+    *unidentifiable* and a single auto-pick swings wildly per noise realization
+    (the recovered P(r) overlap can move 0.5->0.85 with t0 changes the residual
+    cannot even see). The honest answer there is not a sharper point estimate but a
+    CONSENSUS over everything the data cannot rule out, plus a band that shows the
+    real uncertainty -- the same logic as `deer_validate` for Tikhonov.
+
+    How: fit a reference t0 (`fit_zero_time`) and run the standard single-pick
+    `deer_invert_mellin` (auto tau_max) as `base`. Estimate the relative noise
+    sigma_e/lambda.
+      * IDENTIFIABLE (rel noise < `gate_rel_noise`): the single pick is reliable,
+        so just return it (with an `n_mc` Monte-Carlo band) -- consensus would only
+        add needless spread and broaden genuinely sharp distributions. consensus=False.
+      * UNIDENTIFIABLE (rel noise >= gate): build an ensemble that marginalizes
+        every uncertain knob, ADDITIVELY (not a full multiplied grid -- that mostly
+        triples the cost and makes the per-distance median jaggeder): the
+        data-consistent `n_t0` zero-times (forward-fit chi within `chi_tol` of the
+        best) x a `taumax_window` of cutoffs *around* the auto-pick (a fraction
+        tuple tracking the data -- high/sharp on cleaner traces, low on noisy ones),
+        PLUS an `n_bg`-point background-start sweep (+-`bg_span_frac` of the trace,
+        subsuming the `deer_validate` axis) and `n_mc` measurement-noise
+        realizations at the centre. The reported P(r) is the ensemble MEDIAN and the
+        band is the `percentiles` spread. consensus=True.
+
+    Returns the same dict shape as `deer_invert_mellin` (P_density = consensus
+    median or single pick; P_lower/P_upper = band), so the GUI/exporters are shared,
+    plus: consensus (bool), rel_noise, n_trials, t0 (reference), t0_consistent (the
+    accepted grid), tau_maxs, ensemble (n_trials x len(r)), base (the central
+    single-pick result, for the time-domain forward-fit display). `**kwargs` pass
+    through to `deer_invert_mellin` (delta, taumax_method, wiener, ...)."""
+    _require_scipy()
+    t = np.asarray(t, float)
+    V = np.asarray(V, float)
+    r = default_r_axis() if r is None else np.asarray(r, float)
+    dr = float(r[1] - r[0]) if len(r) > 1 else 1.0
+
+    # reference zero-time and single-pick inversion (auto tau_max)
+    t0_ref = float(fit_zero_time(t, V, bg_start=bg_start, bg_end=bg_end, dim=dim,
+                                 r=r, nu_dd=nu_dd))
+
+    def _invert(t0, tau_max, bgs=bg_start, Vx=None, n_mc_=0):
+        return deer_invert_mellin(
+            t - t0, (V if Vx is None else Vx), r=r,
+            bg_start=(None if bgs is None else bgs - t0),
+            bg_end=(None if bg_end is None else bg_end - t0), dim=dim,
+            fit_dim=fit_dim, nu_dd=nu_dd, tau_max=tau_max, n_mc=n_mc_, seed=seed,
+            **kwargs)
+
+    base = _invert(t0_ref, None)
+    sig_e = float(base['noise_level'])
+    lam = float(base['lambda']) or 1e-3
+    rel_noise = sig_e/max(lam, 1e-3)
+    pick = float(base['tau_max'])
+
+    # Identifiable regime: trust the single pick; add an MC band for honesty.
+    if rel_noise < gate_rel_noise:
+        res = _invert(t0_ref, None, n_mc_=n_mc) if n_mc else base
+        res = dict(res)
+        res.update({'engine': 'mellin_consensus', 'consensus': False,
+                    'rel_noise': rel_noise, 'n_trials': 1, 't0': t0_ref,
+                    't0_consistent': np.array([t0_ref]),
+                    'tau_maxs': np.array([pick]), 'ensemble': None, 'base': base})
+        return res
+
+    # Unidentifiable regime: marginalize. t0 grid biased slightly early (the
+    # parabola zero-time is biased LATE at high noise), chi-filtered to the
+    # data-consistent set; tau_max window tracks the auto-pick.
+    span = float(t[-1] - t[0]) or 1.0
+    t0_grid = np.linspace(t0_ref - 0.030*span, t0_ref + 0.012*span, int(max(3, n_t0)))
+    t0_grid = t0_grid[t0_grid >= t[0] - 1e-9]
+    if len(t0_grid) == 0:                              # t0 at/before the trace start
+        t0_grid = np.array([max(float(t0_ref), float(t[0]))])   # (e.g. known t0=0)
+    tmg = [round(pick*f, 2) for f in taumax_window]
+
+    def _chi(res):
+        bg = res['background']; lm = res['lambda']
+        Vn = bg['V_norm']; Vfit = bg['B']*((1 - lm) + lm*res['F_fit'])
+        pos = res['t'] > 0
+        rr = (Vn - Vfit)[pos]
+        return float(np.sqrt(np.mean(rr**2))/(res['noise_level'] or 1e-9))
+
+    chis = np.array([_chi(_invert(t0, pick)) for t0 in t0_grid])
+    cmin = float(np.min(chis))
+    ok = t0_grid[chis <= cmin*chi_tol]
+    if len(ok) == 0:
+        ok = np.array([t0_ref])
+
+    # background-start sweep (subsumes deer_validate's axis): the bg window is
+    # itself uncertain on noisy traces, so marginalize it too. The structural
+    # ensemble is the full bg x t0 x tau_max grid; measurement noise is added as a
+    # smaller set of perturbed realizations at the central bg / median-consistent
+    # t0 (so the band reflects both the model ambiguity and the electrical noise
+    # without the cost of noise-perturbing every grid point).
+    if bg_start is not None and n_bg and int(n_bg) > 1:
+        bg_grid = _bg_start_grid(t, bg_start, span_frac=bg_span_frac, n=int(n_bg))
+    else:
+        bg_grid = np.array([bg_start])
+
+    rng = np.random.default_rng(seed)
+    ens = []
+    t0c = float(ok[len(ok)//2])                         # median-consistent t0
+
+    def _add(res):
+        a = np.maximum(res['P_density'], 0.0)
+        s = float(_trapz(a, r))
+        ens.append(a/s if s > 0 else a)
+
+    # The ensemble is ADDITIVE across the uncertainty axes (not a full multiplied
+    # grid): t0 x tau_max core, plus a background-start sweep and a noise set at the
+    # centre. The bg-start contribution is small on these traces -- the joint
+    # background is well determined -- so a full bg x t0 x tau grid mostly triples
+    # the cost (and the per-distance median over many t0/tau-shifted curves only
+    # gets jaggeder), while the additive sweep still injects the bg-window spread.
+    for t0 in ok:                                       # data-consistent t0 x tau
+        for tm in tmg:
+            _add(_invert(t0, tm))
+    if bg_start is not None and n_bg and int(n_bg) > 1:  # background-start sweep
+        for bgs in bg_grid:
+            _add(_invert(t0c, float(pick), bgs=bgs))
+    if n_mc and int(n_mc) > 0 and sig_e > 0:            # measurement-noise set
+        for tm in tmg:
+            for _ in range(int(n_mc)):
+                Vk = V + sig_e*rng.standard_normal(V.shape)
+                _add(_invert(t0c, tm, Vx=Vk))
+    ens = np.vstack(ens)
+    P_density = np.median(ens, axis=0)
+    lo, hi = percentiles
+    P_lower = np.percentile(ens, lo, axis=0)
+    P_upper = np.percentile(ens, hi, axis=0)
+    P_mass = _normalize_masses(P_density*dr)
+    out = dict(base)
+    out.update({'r': r, 'P_density': P_density, 'P_norm': P_mass, 'P': P_mass,
+                'P_lower': P_lower, 'P_upper': P_upper, 'P_signed_density': P_density,
+                'engine': 'mellin_consensus', 'consensus': True,
+                'rel_noise': rel_noise, 'n_trials': int(ens.shape[0]),
+                't0': t0_ref, 't0_consistent': ok, 'tau_maxs': np.array(tmg),
+                'bg_starts': np.atleast_1d(bg_grid), 'ensemble': ens, 'base': base,
+                'peak': float(r[int(np.argmax(P_density))]),
+                'r_mean': float(np.sum(r*P_mass))})
+    return out
 
 
 # --------------------------------------------------------------------------- #
@@ -1106,7 +1414,7 @@ def _parabolic_zero_time(t, V, drop=0.15, smooth_w=5, search_frac=0.30):
 
 def fit_zero_time(t, V, bg_start=None, bg_end=None, n_grid=16, search_frac=0.15,
                   refine=True, method='parabola', drop=0.15, smooth_w=5,
-                  **kwargs):
+                  xcheck=False, xcheck_tol_frac=0.004, **kwargs):
     """Find the zero-time t0 (the dipolar reference time).
 
     `method='parabola'` (default) fits a quadratic to the echo maximum and takes
@@ -1114,6 +1422,24 @@ def fit_zero_time(t, V, bg_start=None, bg_end=None, n_grid=16, search_frac=0.15,
     than the residual search at high noise on traces with a clear echo maximum
     (the usual case). It falls back to `method='residual'` when no concave echo
     peak is found (e.g. the trace already starts at the zero-time).
+
+    `xcheck` (default OFF -- opt-in) targets the parabola's one failure mode: a
+    FLAT, SHALLOW echo top at high noise. There the maximum is ill-defined and an
+    upward noise excursion late in the top drags the vertex tens of ns LATE
+    (a systematic late bias that grows with noise -- e.g. +27 ns at sigma 0.04 on
+    the synthetic benchmark, vs ~1 ns at low noise). With `xcheck` the
+    residual-based t0 is also computed and, when the two disagree by more than
+    `xcheck_tol_frac` of the trace span (~0.4 %), the more robust residual is used.
+
+    CAVEAT -- this lowers the MEAN |t0| error (5.1 -> 4.0 ns on the benchmark) but
+    does NOT improve end-to-end accuracy, and is left off by default for two
+    measured reasons: (1) at extreme noise (sigma 0.04) the residual fallback is
+    itself high-variance and can overshoot tens of ns EARLY, raising the WORST-case
+    t0 error (29.6 -> 45.9 ns); (2) the Mellin forward model has a small residual
+    bias that a slightly-late t0 happens to compensate, so making t0 more accurate
+    can REDUCE the distance overlap (benchmark mean 0.853 -> 0.838). It helps
+    moderate-noise traces (sigma ~0.02) but hurts the cleanest and noisiest -- a
+    net wash-to-regression. Enable only when an accurate t0 per se is the goal.
 
     `method='residual'` aligns the kernel by minimizing the V-space reconstruction
     residual (the original method; needs r/dim/bg_start, robust when the echo
@@ -1139,11 +1465,13 @@ def fit_zero_time(t, V, bg_start=None, bg_end=None, n_grid=16, search_frac=0.15,
     """
     t = np.asarray(t, float)
     V = np.asarray(V, float)
+    t0_para = None
     if method == 'parabola':
-        t0 = _parabolic_zero_time(t, V, drop=drop, smooth_w=smooth_w,
-                                  search_frac=max(search_frac, 0.30))
-        if t0 is not None:
-            return t0                                  # else fall back to residual
+        t0_para = _parabolic_zero_time(t, V, drop=drop, smooth_w=smooth_w,
+                                       search_frac=max(search_frac, 0.30))
+        # parabola succeeded and no cross-check requested: original fast path
+        if t0_para is not None and not xcheck:
+            return t0_para
     span = float(t[-1] - t[0]) or 1.0
     grid = np.linspace(float(t[0]), float(t[0]) + search_frac*span,
                        int(max(3, n_grid)))
@@ -1184,14 +1512,23 @@ def fit_zero_time(t, V, bg_start=None, bg_end=None, n_grid=16, search_frac=0.15,
 
     rs = np.array([resid_at(s) for s in grid])
     i = int(np.argmin(rs))
-    t0 = float(grid[i])
+    t0_resid = float(grid[i])
     # parabolic refine through the grid minimum and its two neighbours
     if refine and 0 < i < len(grid) - 1 and np.all(np.isfinite(rs[i-1:i+2])):
         y0, y1, y2 = rs[i-1], rs[i], rs[i+1]
         denom = y0 - 2*y1 + y2
         if denom > 0:
-            t0 = float(grid[i] + 0.5*(y0 - y2)/denom*(grid[1] - grid[0]))
-    return t0
+            t0_resid = float(grid[i] + 0.5*(y0 - y2)/denom*(grid[1] - grid[0]))
+    # Reconcile the parabola with the residual cross-check: keep the (more
+    # accurate) parabola when they agree; defer to the robust residual when they
+    # diverge -- the flat-shallow-top high-noise failure (see the docstring). When
+    # the parabola found no concave echo (t0_para is None) the residual is the
+    # only estimate.
+    if t0_para is None:
+        return t0_resid
+    if abs(t0_para - t0_resid) > xcheck_tol_frac*span:
+        return t0_resid
+    return t0_para
 
 
 # --------------------------------------------------------------------------- #
@@ -1370,5 +1707,17 @@ if __name__ == '__main__':
     print(f'mellin: delta {mel["delta"]:.4g} us, peak {r_peak_m:.3f} nm, '
           f'forward R^2 {r2m:.4f}, mellin_ok {mellin_ok}')
 
+    # consensus engine: clean trace gates to the single pick; a noisy copy engages
+    # the marginalized median + band. Just exercise both branches and the peak.
+    con_c = deer_mellin_consensus(t, V, r=r, bg_start=1.0)
+    Vn2 = simulate(t, r, P_true, lam=0.35, k=0.10, dim=3.0, noise=0.08, seed=3)
+    con_n = deer_mellin_consensus(t, Vn2, r=r, bg_start=1.0, n_t0=7, n_mc=4)
+    consensus_ok = ((con_c['consensus'] is False) and (con_n['consensus'] is True)
+                    and con_n['ensemble'] is not None
+                    and abs(r[int(np.argmax(con_n['P_density']))] - r0) < 0.6)
+    print(f'consensus: clean gated={not con_c["consensus"]}, '
+          f'noisy n_trials {con_n["n_trials"]} peak '
+          f'{r[int(np.argmax(con_n["P_density"]))]:.3f} nm, ok {consensus_ok}')
+
     print('SELF-TEST:', 'PASS' if (ok and smoother and band_ok and mellin_ok and
-          abs(val['peak'] - r0) < 0.3) else 'FAIL')
+          consensus_ok and abs(val['peak'] - r0) < 0.3) else 'FAIL')
