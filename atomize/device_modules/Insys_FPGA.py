@@ -56,6 +56,13 @@ class Insys_FPGA:
         else:
             self.test_flag = 'None'
 
+        # Tracks whether the FPGA board is currently opened by this object.
+        # Used to make pulser_close() idempotent and safe to call even when
+        # pulser_open() never ran (e.g. an early Stop / an exception before the
+        # board was opened). The board can only be released by the process that
+        # opened it, so every exit path must reach pulser_close().
+        self._brd_open = False
+
         ####################GIM################################################################################
         # Channel assignments
         self.ch0 = self.specific_parameters_pulser['ch0'] # DETECTION
@@ -1914,6 +1921,8 @@ class Insys_FPGA:
             file_to_read.write('Status:  On' + '\n')
             file_to_read.close()
 
+            self._brd_open = True
+
         elif self.test_flag == 'test':
 
             text = open( self.path_status_file, encoding='utf-8' ).read()
@@ -1947,19 +1956,44 @@ class Insys_FPGA:
             #file_to_read.close()
 
     def pulser_close(self):
-        if self.test_flag != 'test':
-            
-            #self.setEnable_GIM(0)
-            closeRet = self.closeBrd()
-            #general.message(f'CLOSE BOARD: {closeRet}')
+        """
+        Bring the FPGA card to a safe idle state and release it.
 
-            file_to_read = open(self.path_status_file, 'w', encoding='utf-8')
-            file_to_read.write('Status:  Off' + '\n')
-            file_to_read.close()
-            #general.message(self.count_nip[-4:])
+        This is the ONLY way to release the board: a process that opened the
+        card and dies without calling this leaves the card stuck (the handle is
+        not reclaimable by another process). It is therefore made defensive and
+        idempotent so every worker exit path (normal, Stop, or exception) can
+        call it safely:
+          * each board call is guarded, so a partially-opened board still closes;
+          * it is a no-op on the hardware if the board was never opened;
+          * the 'status' file (the cross-process "card busy" lock) is ALWAYS
+            cleared, even if a board call failed.
+        """
+        if self.test_flag != 'test':
+
+            if getattr(self, '_brd_open', False):
+                # reverse of start_brd(): stop GIM sequencing, DAC output and the
+                # input switch, then release the board. Order matches the firmware
+                # power-up sequence run in reverse.
+                for step in (lambda: self.setEnable_GIM(0),
+                             lambda: self.setDACEnable_GIM(0),
+                             lambda: self.setSwitchEn_GIM(0),
+                             self.closeBrd):
+                    try:
+                        step()
+                    except Exception:
+                        pass
+                self._brd_open = False
+
+            # always clear the cross-process lock
+            try:
+                with open(self.path_status_file, 'w', encoding='utf-8') as f:
+                    f.write('Status:  Off' + '\n')
+            except Exception:
+                pass
 
         elif self.test_flag == 'test':
-            
+
             pass
             #file_to_read = open(self.path_status_file, 'w')
             #file_to_read.write('Status:  Off' + '\n')
@@ -2027,6 +2061,20 @@ class Insys_FPGA:
             lo, hi = None, None
             any_processed = False
 
+            # Stall watchdog. The drain below must never block forever: if it
+            # did (no trigger, wrong sequence, rep rate too low), the worker
+            # could never reach pulser_close(), and the FPGA card can only be
+            # released by this process. We bound the *inactivity* time (not the
+            # total acquisition time), so a slow-but-progressing acquisition is
+            # never aborted -- only a genuinely stalled one is, by raising so the
+            # worker's teardown can release the card.
+            try:
+                _per_point_s = max(1e-3, self.gimSum_brd * self._rep_time_ns() / 1e9)
+                _stall_timeout_s = max(30.0, 10.0 * _per_point_s)
+            except Exception:
+                _stall_timeout_s = 60.0
+            _last_progress_t = time.monotonic()
+
             while True:
                 BufCnt = self.AdcStreamGetBufState()
                 new_bufs = BufCnt - self.nStrmBufTotalCnt_brd
@@ -2035,6 +2083,7 @@ class Insys_FPGA:
                                                self.nStrmBufTotalCnt_brd)
 
                 if new_bufs > 0:
+                    _last_progress_t = time.monotonic()
                     for _ in range(new_bufs):
                         self.AdcStreamGetBuf_buf(self.brdDataBuf_brd)
                         if self.flag_sum_brd == 1:
@@ -2057,6 +2106,17 @@ class Insys_FPGA:
                 if (self.count_nip[-1] >= 1
                         and self.N_IP == total_points - 1):
                     break
+
+                # No new buffers this pass: enforce the inactivity watchdog and
+                # yield instead of busy-spinning on AdcStreamGetBufState().
+                if new_bufs <= 0:
+                    if time.monotonic() - _last_progress_t > _stall_timeout_s:
+                        raise TimeoutError(
+                            'Digitizer acquisition stalled: no new data for '
+                            f'{_stall_timeout_s:.0f} s. Aborting so the FPGA card '
+                            'can be released (check trigger / rep rate / pulse sequence).'
+                        )
+                    time.sleep(_GIM_SWCOMP_POLL_S)
 
             if not any_processed:
                 return None, None

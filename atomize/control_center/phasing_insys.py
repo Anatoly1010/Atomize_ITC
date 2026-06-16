@@ -2295,12 +2295,14 @@ class MainWindow(QMainWindow):
         if self.opened == 0:
             try:
                 self.parent_conn_dig.send('exit')
-                if self.is_experiment == False:
-                    self.digitizer_process.join()
-                    self.check_process_status()
-                else:
-                    self.monitor_timer.start(200)
-                    
+                # Non-blocking stop: poll the worker via monitor_timer instead of
+                # a blocking join(), so the GUI never freezes waiting for the
+                # worker to release the FPGA card. The worker always exits -- the
+                # digitizer stall-watchdog bounds the wait and the worker's
+                # finally runs pulser_close(); check_process_status() then tears
+                # down once it has exited.
+                self.monitor_timer.start(200)
+
             except AttributeError:
                 if self.exit_clicked == 1:
                     sys.exit()
@@ -3088,6 +3090,14 @@ class Worker():
         except BaseException as e:
             exc_info = f"{type(e)} \n{str(e)} \n{traceback.format_exc()}"
             conn.send( ('Error', exc_info) )
+        finally:
+            # Always release the FPGA card, on every exit path (normal, Stop, or
+            # exception). The card can only be freed by this process, so this is
+            # the last line of defence against leaving it in an open state.
+            try:
+                pb.pulser_close()
+            except Exception:
+                pass
 
     def round_to_closest(self, x, y):
         """
@@ -3366,6 +3376,14 @@ class Worker():
         except BaseException as e:
             exc_info = f"{type(e)} \n{str(e)} \n{traceback.format_exc()}"
             conn.send( ('Error', exc_info) )
+        finally:
+            # Always release the FPGA card, on every exit path (normal, Stop, or
+            # exception). The card can only be freed by this process, so this is
+            # the last line of defence against leaving it in an open state.
+            try:
+                pb.pulser_close()
+            except Exception:
+                pass
 
     def exp_field(self, conn, decimation, num_ave, scans, start_field,
             end_field, step_field, win_left, exp_name, curve_name,
@@ -3620,6 +3638,14 @@ class Worker():
         except BaseException as e:
             exc_info = f"{type(e)} \n{str(e)} \n{traceback.format_exc()}"
             conn.send( ('Error', exc_info) )
+        finally:
+            # Always release the FPGA card, on every exit path (normal, Stop, or
+            # exception). The card can only be freed by this process, so this is
+            # the last line of defence against leaving it in an open state.
+            try:
+                pb.pulser_close()
+            except Exception:
+                pass
 
     def exp_log(self, conn, decimation, num_ave, scans, points,
             log_start, log_end, win_left, exp_name, curve_name,
@@ -3903,6 +3929,14 @@ class Worker():
         except BaseException as e:
             exc_info = f"{type(e)} \n{str(e)} \n{traceback.format_exc()}"
             conn.send( ('Error', exc_info) )
+        finally:
+            # Always release the FPGA card, on every exit path (normal, Stop, or
+            # exception). The card can only be freed by this process, so this is
+            # the last line of defence against leaving it in an open state.
+            try:
+                pb.pulser_close()
+            except Exception:
+                pass
 
 def main():
     """
