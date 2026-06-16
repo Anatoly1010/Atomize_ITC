@@ -2070,7 +2070,7 @@ class Insys_FPGA:
             # worker's teardown can release the card.
             try:
                 _per_point_s = max(1e-3, self.gimSum_brd * self._rep_time_ns() / 1e9)
-                _stall_timeout_s = max(30.0, 10.0 * _per_point_s)
+                _stall_timeout_s = max(60.0, 10.0 * _per_point_s)
             except Exception:
                 _stall_timeout_s = 60.0
             _last_progress_t = time.monotonic()
