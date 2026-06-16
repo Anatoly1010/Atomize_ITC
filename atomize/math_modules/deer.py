@@ -1386,6 +1386,13 @@ def deer_mellin_consensus(t, V, r=None, bg_start=None, bg_end=None, dim=3.0,
     data-consistent zero-time and tau_max (and noise) instead of committing to one
     fragile point estimate.
 
+    SUPERSEDED (kept for explicit/diagnostic use; no longer in the GUI). The
+    noise-adaptive delta + short-r taper in `deer_invert_mellin` (both default-on)
+    make the single pick more accurate than this marginalization on the benchmark
+    (no-bg mean overlap 0.884 vs 0.861 -- the ensemble median over t0/tau-shifted
+    curves over-broadens), so prefer the plain single pick; use this only to inspect
+    the t0 x tau_max ambiguity explicitly.
+
     Why: at high relative noise (sigma/lambda gtrsim 0.06) a DEER trace does not
     determine the zero-time t0 OR the Mellin cutoff tau_max -- the V-space forward
     residual is white (structureless) across a wide range of both, so they are
