@@ -783,22 +783,6 @@ class MainWindow(QMainWindow):
         self.mellin_signed_fit_chk.stateChanged.connect(self._deer_rerender)
         grid.addWidget(self.mellin_signed_fit_chk, r, 0, 1, 2); r += 1
 
-        self.mellin_consensus_chk = QCheckBox('Robust consensus (noisy data)')
-        self.mellin_consensus_chk.setStyleSheet(CHECKBOX_STYLE)
-        self.mellin_consensus_chk.setToolTip(
-            'For NOISY traces where the zero-time and τ_max are not well '
-            'determined by the data. Instead of one fragile fit, it fits its own '
-            'zero-time and marginalises over the data-consistent t0 × τ_max × '
-            'background-start (× noise) set, reporting the ensemble <b>median</b> '
-            'P(r) + a 95% band (subsumes the Validate sweep). '
-            'Self-gating: on clean/low-noise data it reduces to the single '
-            'fit. NOTE it fits the zero-time itself (overrides the manual t0); '
-            'only meaningful when t0 is uncertain. For very high noise the '
-            'Tikhonov (DEER) engine — which adds smoothness + non-negativity that '
-            'the model-free Mellin lacks — is usually more accurate.')
-        self.mellin_consensus_chk.stateChanged.connect(self._mellin_live)
-        grid.addWidget(self.mellin_consensus_chk, r, 0, 1, 2); r += 1
-
         self.mellin_live = QCheckBox('Live update on parameter change')
         self.mellin_live.setStyleSheet(CHECKBOX_STYLE)
         grid.addWidget(self.mellin_live, r, 0, 1, 2); r += 1
@@ -1476,14 +1460,11 @@ class MainWindow(QMainWindow):
                    else float(self.mellin_taumax.value()))
         n_tau = int(self.mellin_ntau.value())
         validate = self.deer_validate_chk.isChecked()
-        consensus = self.mellin_consensus_chk.isChecked()
         n_mc = 50 if self.deer_ci_chk.isChecked() else 0
 
         def compute():
             t0_disp = t0_cur
-            # the consensus engine fits its own zero-time (and marginalises over
-            # it), so skip the separate pre-fit when it is selected
-            if fit_t0 and not consensus:
+            if fit_t0:
                 t0u = deer_module.fit_zero_time(
                     x * tf, v, bg_start=bgs_disp * tf,
                     bg_end=(bge_disp * tf if bge_disp > bgs_disp else None),
@@ -1496,37 +1477,7 @@ class MainWindow(QMainWindow):
             mk = dict(delta=delta_us, tau_max=tau_max, n_tau=n_tau,
                       bg_engine=bg_engine,
                       signed_fit=self.mellin_signed_fit_chk.isChecked())
-            if consensus:
-                # robust mode: pass the RAW recorded axis + bg window (consensus
-                # fits t0 internally); it manages tau_max, so do not forward it
-                res = deer_module.deer_mellin_consensus(
-                    x * tf, v, r=r, bg_start=bgs_disp * tf,
-                    bg_end=(bge_disp * tf if bge_disp > bgs_disp else None),
-                    dim=dim, fit_dim=fit_dim, delta=delta_us, n_tau=n_tau,
-                    bg_engine=bg_engine, n_mc=8,
-                    signed_fit=self.mellin_signed_fit_chk.isChecked())
-                t0_disp = float(res['t0']) / tf
-                if res.get('consensus') and res.get('P_lower') is not None:
-                    _ens = res.get('ensemble')
-                    band = {'r': res['r'], 'P_density': res['P_density'],
-                            'P_lower': res['P_lower'], 'P_upper': res['P_upper'],
-                            'P_mean': (np.mean(_ens, axis=0) if _ens is not None
-                                       else res['P_density']),
-                            'peak': res.get('peak', float(res['r'][int(
-                                np.argmax(res['P_density']))])),
-                            'r_mean': res.get('r_mean', float(np.sum(
-                                res['r'] * res['P_norm']))),
-                            'percentiles': res.get('percentiles', (2.5, 97.5)),
-                            'n_trials': int(res.get('n_trials', 0)),
-                            'consensus_mode': True,
-                            'rel_noise': float(res.get('rel_noise', 0.0)),
-                            't0_consistent': np.atleast_1d(res.get(
-                                't0_consistent', [res['t0']])),
-                            'bg_starts': np.atleast_1d(res.get(
-                                'bg_starts', [bgs_disp * tf]))}
-                else:                          # gated to the single pick on clean data
-                    band = None
-            elif validate:
+            if validate:
                 val = deer_module.deer_validate(
                     t_us, v, r=r, bg_start=bg_us, bg_end=bg_end_us, dim=dim,
                     fit_dim=fit_dim, engine='mellin', **mk)
@@ -1585,7 +1536,7 @@ class MainWindow(QMainWindow):
         # residual-whiteness goodness of fit (Durbin-Watson + lag-1 autocorrelation):
         # a structured/oscillating residual flags an over-smoothed P(r) that has not
         # captured all the dipolar modulation. Computed engine-agnostically from the
-        # V-space residual so it works for Tikhonov / joint / Mellin / consensus.
+        # V-space residual so it works for Tikhonov / joint / Mellin.
         wht = self._whiteness_of(res)
         if wht is not None and np.isfinite(wht['durbin_watson']):
             wv = ('white' if wht['white'] else 'structured')
@@ -1593,31 +1544,18 @@ class MainWindow(QMainWindow):
                        f'r₁ = {wht["acf1"]:+.2f} <i>({wv})</i>')
         else:
             wht_txt = ''
-        if band is not None and band.get('consensus_mode'):
-            r_peak, r_mean = band['peak'], band['r_mean']
-            lo, hi = band['percentiles']
-            t0c = band['t0_consistent'] / tf
-            bgc = band.get('bg_starts')
-            tu = self.deer_tunit.currentText()
-            bg_txt = (f'<br>bg {bgc.min()/tf:.3g}–{bgc.max()/tf:.3g} {tu}'
-                      if bgc is not None and len(np.atleast_1d(bgc)) > 1 else '')
-            extra = (f'<br><b style="color: rgb(150, 200, 255);">consensus</b><br>'
-                     f'{band["n_trials"]} trials, rel. noise {band["rel_noise"]:.3f}'
-                     f'<br>t0 {t0c.min():.3g}–{t0c.max():.3g} {tu}{bg_txt}'
-                     f'<br>band = {lo:g}–{hi:g}%')
-            consensus = ' (median)'
-        elif band is not None:
+        if band is not None:
             r_peak, r_mean = band['peak'], band['r_mean']
             bgs = band['bg_starts'] / tf
             lo, hi = band['percentiles']
             extra = (f'<br><b style="color: rgb(150, 200, 255);">validation</b><br>'
                      f'{band["n_trials"]} trials, bg start {bgs[0]:.3g}–{bgs[-1]:.3g} '
                      f'{self.deer_tunit.currentText()}<br>band = {lo:g}–{hi:g}%')
-            consensus = ' (median)'
+            med_tag = ' (median)'
         else:
             r_peak = float(res['r'][int(np.argmax(res['P_density']))])
             r_mean = float(np.sum(res['r'] * res['P_norm']))
-            extra, consensus = '', ''
+            extra, med_tag = '', ''
 
         if is_mellin:
             tunit = self.deer_tunit.currentText()
@@ -1646,7 +1584,7 @@ class MainWindow(QMainWindow):
             reg = f'α = {res["alpha"]:.4g}'
         info_html = (
             '<div style="line-height: 165%;">'
-            f'<b style="color: rgb(211, 194, 78);">P(r)</b>{consensus}'
+            f'<b style="color: rgb(211, 194, 78);">P(r)</b>{med_tag}'
             f' &nbsp;<i>({res.get("engine", "—")})</i><br>'
             f'mod. depth λ = {res["lambda"]:.3f}<br>'
             f'bg decay k = {res["k"]:.4g}, dim = {res["dim"]:.2f}<br>'
