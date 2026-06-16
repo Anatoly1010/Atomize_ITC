@@ -1015,8 +1015,19 @@ class Insys_FPGA:
         the length of all phase lists specified for different MW pulses has to be the same
         
         the function also immediately sends intructions to pulse blaster as
-        a function pulser_update() does. 
+        a function pulser_update() does.
         """
+        # Defend against pulse sequences without any MW pulses: phase
+        # cycling only makes sense for MW pulses. With none, phase_array_length_pulser
+        # is empty and every self.phase_array_length_pulser[0] look-up below
+        # (and the later one in digitizer_get_curve) would raise
+        # "list index out of range". We test the pulse array itself rather than
+        # phase_array_length_pulser, because in test mode the DETECTION pulse
+        # also appends to that list (so it is not a reliable "has MW pulses" flag).
+        if not any( p['channel'] == 'MW' for p in self.pulse_array_pulser ):
+            raise ValueError('No MW pulses are defined; nothing to phase cycle. '
+                'Please add at least one MW pulse with a non-zero length.')
+
         if self.test_flag != 'test':
             # deleting old phase switch pulses from self.pulse_array_pulser
             # before adding new ones
@@ -2666,8 +2677,20 @@ class Insys_FPGA:
         the length of all phase lists specified for different pulses has to be the same
         
         the function also immediately sends a new buffer to awg card as
-        a function awg_update() does. 
+        a function awg_update() does.
         """
+        # Defend against pulse sequences without any AWG MW pulses: phase
+        # cycling needs at least one such pulse, otherwise phase_array_length_0_awg
+        # is empty and every self.phase_array_length_0_awg[0] look-up below
+        # (and the later one in digitizer_get_curve) would raise
+        # "list index out of range". We test the AWG pulse array itself rather
+        # than phase_array_length_0_awg, because in test mode the DETECTION pulse
+        # also appends to that list (so it is not a reliable "has AWG pulses"
+        # flag) -- this is the no-AWG-pulse case seen in the awg-phasing tune.
+        if len(self.pulse_array_awg) == 0:
+            raise ValueError('No AWG MW pulses are defined; nothing to phase cycle. '
+                'Please add at least one AWG MW pulse with a non-zero length.')
+
         if self.test_flag != 'test':
             for index, element in enumerate(self.pulse_array_awg):
                 if len(list(element['phase_list'])) != 0:
