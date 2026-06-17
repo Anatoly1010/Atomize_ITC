@@ -2968,13 +2968,20 @@ class MainWindow(QMainWindow):
         if self.opened == 0:
             try:
                 self.parent_conn_dig.send('exit')
-                # Non-blocking stop: poll the worker via monitor_timer instead of
-                # a blocking join(), so the GUI never freezes waiting for the
-                # worker to release the FPGA card. The worker always exits -- the
-                # digitizer stall-watchdog bounds the wait and the worker's
-                # finally runs pulser_close(); check_process_status() then tears
-                # down once it has exited.
-                self.monitor_timer.start(200)
+                # Pulse mode (Run Pulses): tear down synchronously so update() /
+                # start_exp() can restart immediately on the *next* line -- by the
+                # time dig_start()/dig_start_exp() runs, the old worker is dead, so
+                # its is_alive() guard passes and the intermediate button style is
+                # overwritten in the same callback (no visible flash). The
+                # digitizer stall-watchdog bounds this join, and the worker's
+                # finally runs pulser_close(), so the GUI can't freeze and strand
+                # the card. Experiment mode (long acquisitions) stays non-blocking
+                # via monitor_timer.
+                if self.is_experiment == False:
+                    self.digitizer_process.join()
+                    self.check_process_status()
+                else:
+                    self.monitor_timer.start(200)
             except AttributeError:
                 if self.exit_clicked == 1:
                     sys.exit()
