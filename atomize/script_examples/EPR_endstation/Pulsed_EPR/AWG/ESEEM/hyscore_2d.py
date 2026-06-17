@@ -199,7 +199,6 @@ header = (
 
 file_data = file_handler.create_file_dialog()
 
-st_time = time.time()
 # Data acquisition
 for k in general.scans(SCANS):
 
@@ -257,8 +256,6 @@ for k in general.scans(SCANS):
 
 pb.pulser_close()
 
-general.message( f'FULL TIME: {round(1000*(time.time() - st_time), 1)} ms' )
-
 # Final view of the real 2D HYSCORE map (t1 x t2)
 general.plot_2d(
     EXP_NAME_2D,
@@ -272,7 +269,3 @@ general.plot_2d(
 
 # Save the real 2D HYSCORE array (t1 x t2)
 file_handler.save_data(file_data, hyscore, header = header, mode = 'w')
-
-cip = pb.count_ip(PHASES)
-general.message( f"Counts: {cip}" )
-general.message( f"TC: {np.sum(cip)}" )

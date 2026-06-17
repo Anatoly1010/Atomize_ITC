@@ -187,7 +187,6 @@ header = (
 
 file_data = file_handler.create_file_dialog()
 
-st_time = time.time()
 # Data acquisition
 for k in general.scans(SCANS):
 
@@ -219,7 +218,7 @@ for k in general.scans(SCANS):
             # plot the live decay (real part)
             process = general.plot_1d(
                 EXP_NAME,
-                echo_time, echo[0],
+                echo_time, (echo[0], echo[1]),
                 label = 'CPMG',
                 xname = 'Time', xscale = 's',
                 yname = 'Intensity', yscale = 'mV',
@@ -235,12 +234,10 @@ for k in general.scans(SCANS):
 
 pb.pulser_close()
 
-general.message( f'FULL TIME: {round(1000*(time.time() - st_time), 1)} ms' )
-
 # Final view of the CPMG decay
 general.plot_1d(
     EXP_NAME,
-    echo_time, echo[0],
+    echo_time, (echo[0], echo[1]),
     label = 'CPMG',
     xname = 'Time', xscale = 's',
     yname = 'Intensity', yscale = 'mV',
@@ -250,6 +247,3 @@ general.plot_1d(
 # Save the integrated CPMG decay (I, Q) vs echo time
 file_handler.save_data(file_data, echo, header = header, mode = 'w')
 
-cip = pb.count_ip(PHASES)
-general.message( f"Counts: {cip}" )
-general.message( f"TC: {np.sum(cip)}" )

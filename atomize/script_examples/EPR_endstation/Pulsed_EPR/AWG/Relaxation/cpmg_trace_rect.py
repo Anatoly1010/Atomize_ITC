@@ -176,7 +176,6 @@ header = (
 
 file_data = file_handler.create_file_dialog()
 
-st_time = time.time()
 # Data acquisition: one sequence, phase-cycled and averaged. No integration.
 for k in general.scans(SCANS):
 
@@ -198,7 +197,7 @@ for k in general.scans(SCANS):
         # plot the whole 1D trace (baseband real part)
         process = general.plot_1d(
             EXP_NAME,
-            time_axis, disp[0],
+            time_axis, (disp[0], disp[1]),
             label = 'CPMG',
             xname = 'Time', xscale = 's',
             yname = 'Intensity', yscale = 'mV',
@@ -212,8 +211,6 @@ for k in general.scans(SCANS):
     pb.pulser_pulse_reset()
 
 pb.pulser_close()
-
-general.message( f'FULL TIME: {round(1000*(time.time() - st_time), 1)} ms' )
 
 # Save the raw, un-integrated echo-train transient (I, Q) over the whole window
 file_handler.save_data(file_data, data[:, :, 0], header = header, mode = 'w')
@@ -239,7 +236,7 @@ for n in range(1, NPI + 1):
 
 general.plot_1d(
     EXP_NAME_DECAY,
-    echo_time, decay[0],
+    echo_time, (decay[0], decay[1]),
     label = 'CPMG decay',
     xname = 'Time', xscale = 's',
     yname = 'Intensity', yscale = 'mV',
@@ -250,7 +247,3 @@ general.plot_1d(
 if file_data not in ('None', '', None):
     decay_path = file_data.rsplit('.', 1)[0] + '_decay.csv'
     file_handler.save_data(decay_path, decay, header = header, mode = 'w')
-
-cip = pb.count_ip(PHASES)
-general.message( f"Counts: {cip}" )
-general.message( f"TC: {np.sum(cip)}" )
