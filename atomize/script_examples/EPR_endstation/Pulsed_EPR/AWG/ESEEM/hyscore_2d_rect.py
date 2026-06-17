@@ -55,7 +55,10 @@ REP_RATE = '1000 Hz'
 # (no amplitude control on the MW channel, so the area is doubled via length).
 PULSE_90_LENGTH = '16 ns'           # pi/2 pulses (P0, P1, P3)
 PULSE_180_LENGTH = '32 ns'          # pi pulse  (P2), length-doubled
-PULSE_DETECTION_LENGTH = '128 ns'
+# long enough that the captured window (points_window = LEN / (0.4*dec)) covers
+# the integration window read from digitizer_insys.param (win_right); 512 ns ->
+# 1280 samples >= win_right.
+PULSE_DETECTION_LENGTH = '512 ns'
 
 # Fixed timing (ns). All values are multiples of the 3.2 ns timebase so nothing
 # is silently re-rounded. t1/t2 start just past the pulse length + ring-down so
@@ -69,9 +72,12 @@ P0_START = 0.0                                          # pi/2,  fixed
 P1_START = TAU                                          # pi/2,  fixed at tau
 P2_START = TAU + T1_START                               # pi,    moves with t1
 P3_START = TAU + T1_START + T2_START                    # pi/2,  moves with t1 + t2
-# echo at 2*tau + t1 + t2; open the detection window so the echo sits centered
+# echo at 2*tau + t1 + t2. Open the detection window right after the last pi/2
+# (not centered on the echo) so the long 512 ns window never opens during the
+# refocusing pulse; the GUI integration window (win_left/win_right) brackets the
+# echo inside the captured trace.
 ECHO = 2 * TAU + T1_START + T2_START
-DETECTION_START = ECHO - float(PULSE_DETECTION_LENGTH.split(' ')[0]) / 2   # moves with t1 + t2
+DETECTION_START = P3_START + float(PULSE_90_LENGTH.split(' ')[0])   # after last pi/2; moves with t1 + t2
 
 # NAMES
 EXP_NAME_2D = 'hyscore'            # real (t1, t2) HYSCORE map (the only live view)

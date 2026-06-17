@@ -589,7 +589,7 @@ class MainWindow(QMainWindow):
             'Sequential: fit the background on the tail window, divide it out, '
             'then invert (fast).\nJoint (global): fit background + modulation '
             'depth together with P(r) in one pass (DeerLab-style) — more robust '
-            'when the background window is short or hard to place, and required '
+            'when the background window is short, shallow, or hard to place, and required '
             'for a clean Mellin fit. Default.\nNone (no background): B(t)=1, fit '
             'only the modulation depth λ. For pre-corrected / simulated / '
             'full-modulation (λ→1) data that has NO background — fitting a decay '

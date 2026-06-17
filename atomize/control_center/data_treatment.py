@@ -44,7 +44,6 @@ import atomize.general_modules.bruker_opener as bruker
 import atomize.math_modules.least_square_fitting_modules as fitting
 import atomize.math_modules.signal_processing as sigproc
 import atomize.math_modules.fft as fft_module
-import atomize.math_modules.deer as deer_module
 # Reuse the main-window plot stack so the embedded preview behaves identically
 # to the main UI (crosshair, Shift-drag ruler, FFT/log right-click toggles).
 from atomize.main.widgets import CrosshairPlotWidget, CloseableDock
@@ -106,7 +105,7 @@ def _split_unit(label):
     return s, ''
 
 
-# Solid-accent "busy" variant for the Run-DEER button while an inversion is in
+# Solid-accent "busy" variant for a button while a long operation is in
 # progress (explicit colours so it stays yellow even while disabled).
 BUTTON_BUSY_STYLE = (
     f"QPushButton {{border-radius: 4px; background-color: {ACCENT}; "
@@ -150,24 +149,9 @@ class MainWindow(QMainWindow):
         # identity of what is currently plotted (curve labels + x-axis name); a
         # change means a new result / view / unit, which re-fits the axes once.
         self._plot_key = None
-        # one-shot override: force the next redraw to auto-range even if the curve
-        # set / x-name is unchanged. Set by DEER (where a parameter tweak can move
-        # the data extent — e.g. distance range — or its magnitude a lot, so the
-        # stale view would clip the curve), cleared after it fires.
-        self._force_autorange = False
         # set while promoting a result so selecting the new input does not
         # immediately re-apply the operation to it
         self._suppress_live = False
-
-        # DEER/PDS analysis state: last full result dict, the draggable
-        # background-start cursor, and a guard against cursor<->spinbox echo.
-        self.deer_result = None
-        self.deer_band = None          # validation ensemble (median P(r) + band)
-        self._band_lo = self._band_hi = self._band_fill = None
-        self._bg_cursor = None
-        self._bg_cursor_end = None     # draggable background-end cursor
-        self._suppress_cursor = False
-        self._lcurve_marker = None     # highlighted point on the L-curve view
         self.last_dir = _load_last_dir()   # start file dialogs in the last folder
 
         self.design()
@@ -205,9 +189,6 @@ class MainWindow(QMainWindow):
         self.plot_dock = CloseableDock(name='Preview', widget=self.plot_widget)
         self.plot_dock.close_button.hide()
         self.plot_area.addDock(self.plot_dock)
-        # click-to-pick alpha on the DEER L-curve view (single-click; the
-        # crosshair toggle uses double-click, so the two don't conflict)
-        self.plot_widget.scene().sigMouseClicked.connect(self._on_plot_click)
         root.addWidget(self.plot_area, stretch=3)
 
         # ---- Vertical separator between graph and controls ----
@@ -293,8 +274,6 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self._build_phase_tab(), 'Phase')
         self.tabs.addTab(self._build_smooth_tab(), 'Smooth / Baseline')
         self.tabs.addTab(self._build_filter_tab(), 'Filter')
-        self.tabs.addTab(self._build_deer_tab(), 'DEER / PDS')
-        self.tabs.currentChanged.connect(self._on_tab_changed)
         # Note: tab changes deliberately do NOT trigger _live_update. Re-running
         # the new tab's op on switch is redundant and, after a "Result → input"
         # chain, would re-transform an already-transformed input (e.g. FFT of an
@@ -718,228 +697,6 @@ class MainWindow(QMainWindow):
         grid.setRowStretch(7, 1)
         return w
 
-    # time-unit -> factor that converts the X axis into microseconds (kernel unit)
-    DEER_TUNITS = {'µs': 1.0, 'ns': 1e-3, 'ms': 1e3}
-
-    def _build_deer_tab(self):
-        w = QWidget()
-        grid = QGridLayout(w)
-        r = 0
-        grid.addWidget(self._note('Background-correct V(t) and invert the dipolar '
-                                  'kernel to a distance distribution P(r) by Tikhonov '
-                                  '+ NNLS. Uses the I/primary channel as the real '
-                                  'V(t) (phase to real first). Needs scipy.'),
-                       r, 0, 1, 2); r += 1
-
-        grid.addWidget(self._label('Time unit'), r, 0)
-        self.deer_tunit = QComboBox()
-        self.deer_tunit.setStyleSheet(COMBO_STYLE)
-        self.deer_tunit.addItems(list(self.DEER_TUNITS.keys()))
-        self.deer_tunit.currentIndexChanged.connect(self._live_update)
-        grid.addWidget(self.deer_tunit, r, 1); r += 1
-
-        grid.addWidget(self._label('Zero time (t0)'), r, 0)
-        t0_row = QHBoxLayout()
-        self.deer_t0 = QDoubleSpinBox()
-        self.deer_t0.setStyleSheet(DSPIN_STYLE)
-        self.deer_t0.setRange(-1e9, 1e9)
-        self.deer_t0.setDecimals(4)
-        self.deer_t0.setSingleStep(0.05)
-        self.deer_t0.setValue(0.0)
-        self.deer_t0.valueChanged.connect(self._live_update)
-        btn_t0 = QPushButton('Max')
-        btn_t0.setStyleSheet(BUTTON_STYLE)
-        btn_t0.clicked.connect(self._deer_t0_max)
-        t0_row.addWidget(self.deer_t0); t0_row.addWidget(btn_t0)
-        grid.addLayout(t0_row, r, 1); r += 1
-
-        grid.addWidget(self._label('Background start'), r, 0)
-        bg_row = QHBoxLayout()
-        self.deer_bgstart = QDoubleSpinBox()
-        self.deer_bgstart.setStyleSheet(DSPIN_STYLE)
-        self.deer_bgstart.setRange(-1e9, 1e9)
-        self.deer_bgstart.setDecimals(4)
-        self.deer_bgstart.setSingleStep(0.05)
-        self.deer_bgstart.valueChanged.connect(self._live_update)
-        btn_mid = QPushButton('Mid')
-        btn_mid.setStyleSheet(BUTTON_STYLE)
-        btn_mid.clicked.connect(self._deer_bgstart_mid)
-        bg_row.addWidget(self.deer_bgstart); bg_row.addWidget(btn_mid)
-        grid.addLayout(bg_row, r, 1); r += 1
-
-        grid.addWidget(self._label('Background end'), r, 0)
-        bge_row = QHBoxLayout()
-        self.deer_bgend = QDoubleSpinBox()
-        self.deer_bgend.setStyleSheet(DSPIN_STYLE)
-        self.deer_bgend.setRange(-1e9, 1e9)
-        self.deer_bgend.setDecimals(4)
-        self.deer_bgend.setSingleStep(0.05)
-        self.deer_bgend.setValue(0.0)            # 0 / ≤ start ⇒ no upper limit
-        self.deer_bgend.valueChanged.connect(self._live_update)
-        btn_end = QPushButton('End')
-        btn_end.setStyleSheet(BUTTON_STYLE)
-        btn_end.clicked.connect(self._deer_bgend_max)
-        bge_row.addWidget(self.deer_bgend); bge_row.addWidget(btn_end)
-        grid.addLayout(bge_row, r, 1); r += 1
-
-        grid.addWidget(self._label('Background dim.'), r, 0)
-        dim_row = QHBoxLayout()
-        self.deer_dim = QDoubleSpinBox()
-        self.deer_dim.setStyleSheet(DSPIN_STYLE)
-        self.deer_dim.setRange(1.0, 6.0)
-        self.deer_dim.setDecimals(2)
-        self.deer_dim.setSingleStep(0.1)
-        self.deer_dim.setValue(3.0)
-        self.deer_dim.valueChanged.connect(self._live_update)
-        self.deer_fitdim = QCheckBox('fit')
-        self.deer_fitdim.setStyleSheet(CHECKBOX_STYLE)
-        self.deer_fitdim.stateChanged.connect(self._live_update)
-        dim_row.addWidget(self.deer_dim); dim_row.addWidget(self.deer_fitdim)
-        grid.addLayout(dim_row, r, 1); r += 1
-
-        grid.addWidget(self._label('Background fit'), r, 0)
-        self.deer_engine = QComboBox()
-        self.deer_engine.setStyleSheet(COMBO_STYLE)
-        self.deer_engine.addItems(['Sequential', 'Joint (global)'])
-        self.deer_engine.setToolTip(
-            'Sequential: fit the background on the tail window, divide it out, '
-            'then invert (fast).\nJoint (global): fit background + modulation '
-            'depth together with P(r) in one pass (DeerLab-style) — more robust '
-            'when the background window is short or hard to place.')
-        self.deer_engine.currentIndexChanged.connect(self._live_update)
-        grid.addWidget(self.deer_engine, r, 1); r += 1
-
-        grid.addWidget(self._label('Distance min/max (nm)'), r, 0)
-        rr_row = QHBoxLayout()
-        self.deer_rmin = QDoubleSpinBox()
-        self.deer_rmin.setStyleSheet(DSPIN_STYLE)
-        self.deer_rmin.setRange(0.5, 50.0); self.deer_rmin.setDecimals(2)
-        self.deer_rmin.setSingleStep(0.1); self.deer_rmin.setValue(1.5)
-        self.deer_rmin.valueChanged.connect(self._live_update)
-        self.deer_rmax = QDoubleSpinBox()
-        self.deer_rmax.setStyleSheet(DSPIN_STYLE)
-        self.deer_rmax.setRange(0.5, 50.0); self.deer_rmax.setDecimals(2)
-        self.deer_rmax.setSingleStep(0.1); self.deer_rmax.setValue(8.0)
-        self.deer_rmax.valueChanged.connect(self._live_update)
-        rr_row.addWidget(self.deer_rmin); rr_row.addWidget(self.deer_rmax)
-        grid.addLayout(rr_row, r, 1); r += 1
-
-        grid.addWidget(self._label('Distance points'), r, 0)
-        self.deer_rn = QSpinBox()
-        self.deer_rn.setStyleSheet(SPIN_STYLE)
-        self.deer_rn.setRange(20, 2000); self.deer_rn.setValue(200)
-        self.deer_rn.valueChanged.connect(self._live_update)
-        grid.addWidget(self.deer_rn, r, 1); r += 1
-
-        grid.addWidget(self._label('Regularization α'), r, 0)
-        al_row = QHBoxLayout()
-        self.deer_alpha_auto = QCheckBox('Auto (GCV)')
-        self.deer_alpha_auto.setStyleSheet(CHECKBOX_STYLE)
-        self.deer_alpha_auto.setToolTip(
-            'Choose the regularization weight automatically by generalized '
-            'cross-validation (robust against the spiky P(r) the L-curve corner '
-            'gives on DEER data). Uncheck to set α manually, or pick it on the '
-            'L-curve view.')
-        self.deer_alpha_auto.setChecked(True)
-        self.deer_alpha_auto.stateChanged.connect(self._deer_alpha_toggle)
-        self.deer_alpha_auto.stateChanged.connect(self._live_update)
-        self.deer_alpha = QDoubleSpinBox()
-        self.deer_alpha.setStyleSheet(DSPIN_STYLE)
-        self.deer_alpha.setRange(1e-4, 1e4); self.deer_alpha.setDecimals(4)
-        self.deer_alpha.setSingleStep(0.1); self.deer_alpha.setValue(1.0)
-        self.deer_alpha.setEnabled(False)
-        self.deer_alpha.valueChanged.connect(self._live_update)
-        al_row.addWidget(self.deer_alpha_auto); al_row.addWidget(self.deer_alpha)
-        grid.addLayout(al_row, r, 1); r += 1
-
-        grid.addWidget(self._label('α strength ×'), r, 0)
-        self.deer_alpha_factor = QDoubleSpinBox()
-        self.deer_alpha_factor.setStyleSheet(DSPIN_STYLE)
-        self.deer_alpha_factor.setRange(0.1, 50.0)
-        self.deer_alpha_factor.setDecimals(2)
-        self.deer_alpha_factor.setSingleStep(0.5)
-        self.deer_alpha_factor.setValue(1.0)
-        self.deer_alpha_factor.setToolTip(
-            'Multiply the auto-selected (GCV) α by this factor. GCV under-'
-            'regularizes the near-vertical DEER L-curve, leaving spiky P(r); '
-            '2–4× reproduces the heavier hand-picked L-corner the DeerAnalysis '
-            'ring-test labs used for smooth distributions (JACS 2021). Ignored '
-            'when α is set manually.')
-        self.deer_alpha_factor.valueChanged.connect(self._live_update)
-        grid.addWidget(self.deer_alpha_factor, r, 1); r += 1
-
-        grid.addWidget(self._label('Show'), r, 0)
-        self.deer_show = QComboBox()
-        self.deer_show.setStyleSheet(COMBO_STYLE)
-        self.deer_show.addItems(['Distance P(r)', 'Form factor + fit',
-                                 'Background fit', 'L-curve'])
-        self.deer_show.currentIndexChanged.connect(self._deer_rerender)
-        grid.addWidget(self.deer_show, r, 1); r += 1
-
-        self.deer_validate_chk = QCheckBox('Validate (background sweep → P(r) band)')
-        self.deer_validate_chk.setStyleSheet(CHECKBOX_STYLE)
-        self.deer_validate_chk.setToolTip(
-            'Re-run the inversion over a sweep of background-start times at fixed '
-            'α and show the median P(r) with a 5–95% uncertainty band. This is '
-            'the DeerAnalysis validation step that turns a single spiky GCV '
-            'solution into the smooth, banded distribution of JACS 2021 Fig. 4.')
-        self.deer_validate_chk.stateChanged.connect(self._live_update)
-        grid.addWidget(self.deer_validate_chk, r, 0, 1, 2); r += 1
-
-        run_row = QHBoxLayout()
-        btn = QPushButton('Run DEER')
-        btn.setStyleSheet(BUTTON_STYLE)
-        btn.clicked.connect(self.do_deer)
-        self.deer_run_btn = btn               # kept for the busy-highlight toggle
-        btn_exp = QPushButton('Export all…')
-        btn_exp.setStyleSheet(BUTTON_STYLE)
-        btn_exp.clicked.connect(self.save_deer_all)
-        run_row.addWidget(btn); run_row.addWidget(btn_exp)
-        grid.addLayout(run_row, r, 0, 1, 2); r += 1
-
-        self.deer_info = QLabel('')
-        self.deer_info.setStyleSheet(LABEL_STYLE)
-        self.deer_info.setWordWrap(True)
-        self.deer_info.setTextFormat(Qt.TextFormat.RichText)
-        self.deer_info.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
-        info_scroll = QScrollArea()
-        info_scroll.setStyleSheet(SCROLL_STYLE)
-        info_scroll.setWidgetResizable(True)
-        info_scroll.setWidget(self.deer_info)
-        grid.addWidget(info_scroll, r, 0, 1, 2)
-        grid.setRowStretch(r, 1)
-        return w
-
-    def _deer_alpha_toggle(self, *args):
-        self.deer_alpha.setEnabled(not self.deer_alpha_auto.isChecked())
-
-    def _deer_bgstart_mid(self):
-        """Set the background start to the middle of the current X axis."""
-        x, _ = self.i_xy()
-        if x is None or not len(x):
-            self.set_status('Load a V(t) trace first.')
-            return
-        x = np.asarray(x, dtype=float)
-        self.deer_bgstart.setValue(float(x[0] + 0.5*(x[-1] - x[0])))
-
-    def _deer_t0_max(self):
-        """Set t0 to the position of the |V(t)| maximum (echo centre)."""
-        x, v = self.i_xy()
-        if x is None or not len(x):
-            self.set_status('Load a V(t) trace first.')
-            return
-        x = np.asarray(x, dtype=float)
-        v = np.asarray(v, dtype=float)
-        self.deer_t0.setValue(float(x[int(np.argmax(np.abs(v)))]))
-
-    def _deer_bgend_max(self):
-        """Set the background end to the last point of the current X axis."""
-        x, _ = self.i_xy()
-        if x is None or not len(x):
-            self.set_status('Load a V(t) trace first.')
-            return
-        self.deer_bgend.setValue(float(np.asarray(x, dtype=float)[-1]))
-
     # ------------------------------------------------------------- loading
     def _register_datasets(self, mapping):
         # Opening new data resets the workflow: turn off live update so the freshly
@@ -985,16 +742,6 @@ class MainWindow(QMainWindow):
         except Exception:
             return []                             # header is best-effort: never
         return labels if any(labels) else []      # block a load over a bad header
-
-    def _preset_deer_unit(self, label):
-        """If an X label carries a time unit like 'Time (ns)', preset the DEER
-        time-unit selector to match (mirrors the Bruker loader)."""
-        u = ''
-        if label and label.endswith(')') and '(' in label:
-            u = label[label.rfind('(') + 1:-1].strip().lower()
-        tmap = {'ns': 'ns', 'us': 'µs', 'µs': 'µs', 'μs': 'µs', 'ms': 'ms'}
-        if u in tmap:
-            self.deer_tunit.setCurrentText(tmap[u])
 
     def _remember_dir(self, path):
         """Record the folder of `path` as the next dialog's starting directory."""
@@ -1047,7 +794,6 @@ class MainWindow(QMainWindow):
             # axis name + unit from the X-column header (col 0), like the Bruker path
             if labels and labels[0]:
                 self.xname_edit.setText(labels[0])
-                self._preset_deer_unit(labels[0])
             self._register_datasets(mapping)
             self._set_loaded_file(os.path.basename(file_path))
             self.set_status(f'Loaded {os.path.basename(file_path)} '
@@ -1057,8 +803,7 @@ class MainWindow(QMainWindow):
 
     def open_bruker(self):
         """Load a Bruker native dataset (BES3T .DSC/.DTA or ESP/WinEPR .par/.spc).
-        Complex traces register as a real+imag I/Q pair; a time axis in ns/µs/ms
-        also presets the DEER time-unit selector."""
+        Complex traces register as a real+imag I/Q pair."""
         nf = ['Bruker (*.DSC *.dsc *.DTA *.dta *.par *.spc *.PAR *.SPC)',
               'BES3T (*.DSC *.dsc *.DTA *.dta)',
               'ESP/WinEPR (*.par *.spc *.PAR *.SPC)', 'All files (*)']
@@ -1082,10 +827,6 @@ class MainWindow(QMainWindow):
             self.pair_check.setChecked(True)
         unit = f' ({res["x_unit"]})' if res['x_unit'] else ''
         self.xname_edit.setText(f'{res["x_name"]}{unit}')
-        u = (res['x_unit'] or '').strip().lower()
-        tmap = {'ns': 'ns', 'us': 'µs', 'µs': 'µs', 'μs': 'µs', 'ms': 'ms'}
-        if u in tmap:                              # preset the DEER time unit
-            self.deer_tunit.setCurrentText(tmap[u])
         self._set_loaded_file(os.path.basename(file_path))
         self.set_status(f'Loaded {os.path.basename(file_path)} — {res["format"]}, '
                         f'{len(x)} pts, '
@@ -1153,8 +894,6 @@ class MainWindow(QMainWindow):
     def on_source_changed(self, *args):
         """Source selection / pair-mode change: drop the result and recompute."""
         self._reset_result()
-        self.deer_result = None
-        self._clear_bg_cursor()
         self._plot_key = None        # new/changed source data => re-fit the axes
         self.redraw()
         self._live_update()
@@ -1169,8 +908,7 @@ class MainWindow(QMainWindow):
         The Fit tab (index 0) is intentionally excluded — fitting is an explicit
         button action, not something to recompute on every keystroke.
         """
-        ops = {1: self.do_fft, 2: self.do_phase, 3: self.do_smooth, 4: self.do_filter,
-               5: self.do_deer}
+        ops = {1: self.do_fft, 2: self.do_phase, 3: self.do_smooth, 4: self.do_filter}
         fn = ops.get(self.tabs.currentIndex())
         if fn is not None:
             fn()
@@ -1179,7 +917,7 @@ class MainWindow(QMainWindow):
         """Run the current tab's operation NOW (Fit included), so the result
         reflects the current tab and parameters regardless of live-update."""
         ops = {0: self.do_fit, 1: self.do_fft, 2: self.do_phase, 3: self.do_smooth,
-               4: self.do_filter, 5: self.do_deer}
+               4: self.do_filter}
         ops[self.tabs.currentIndex()]()
 
     def _live_update(self, *args):
@@ -1311,10 +1049,6 @@ class MainWindow(QMainWindow):
         """Reset the window: forget all loaded data, result and selectors."""
         self.datasets = {}
         self._reset_result()
-        self.deer_result = None
-        self.deer_band = None
-        self._show_deer_band(False)
-        self._clear_bg_cursor()
         self.step_counter = 0
         for combo in (self.i_combo, self.q_combo):
             combo.blockSignals(True)
@@ -1387,16 +1121,14 @@ class MainWindow(QMainWindow):
                 _si_autoprefix(xunit))
         except Exception:
             pass
-        # only the DEER L-curve view uses a left-axis label; clear it otherwise
         self.plot_widget.setLabel('left', '')
 
         # Auto-scale the view when the plotted *content* changes (new result,
-        # DEER 'Show' view, time unit, load/clear) — but not on same-view live
-        # tweaks, so a manual zoom survives while dragging parameters.
+        # time unit, load/clear) — but not on same-view live tweaks, so a manual
+        # zoom survives while dragging parameters.
         key = (frozenset(wanted), xname)
-        if key != self._plot_key or self._force_autorange:
+        if key != self._plot_key:
             self._plot_key = key
-            self._force_autorange = False
             try:
                 self.plot_widget.autoRange()
             except Exception:
@@ -1738,381 +1470,6 @@ class MainWindow(QMainWindow):
         self._set_result(x, channels, meta, show_source=True, xname=self._xname())
         self.set_status(f'{ftype} filter applied ({used} ×f_max)'
                         + (' to I & Q.' if pair else '.'))
-
-    # ------------------------------------------------------------- DEER / PDS
-    def _deer_tfactor(self):
-        """Factor converting the X axis (chosen time unit) into microseconds."""
-        return self.DEER_TUNITS.get(self.deer_tunit.currentText(), 1.0)
-
-    def do_deer(self):
-        """Background-correct V(t) and invert to P(r) (Tikhonov + NNLS)."""
-        x, v = self.i_xy()
-        if x is None or len(x) < 8:
-            self.set_status('Load a V(t) trace first (I/primary channel).')
-            return
-        x = np.asarray(x, dtype=float)
-        v = np.asarray(v, dtype=float)
-        tf = self._deer_tfactor()
-        t0 = float(self.deer_t0.value())   # zero-time, shifts the kernel axis
-        t_us = (x - t0)*tf               # kernel works in microseconds
-        bg_us = (float(self.deer_bgstart.value()) - t0)*tf
-        # background end: 0 or ≤ start ⇒ no upper limit (fit to the trace end)
-        end_disp = float(self.deer_bgend.value())
-        bg_end_us = (end_disp - t0)*tf if end_disp > float(self.deer_bgstart.value()) else None
-        rmin, rmax = self.deer_rmin.value(), self.deer_rmax.value()
-        if rmax <= rmin:
-            self.set_status('Distance max must exceed min.')
-            return
-        r = np.linspace(rmin, rmax, int(self.deer_rn.value()))
-        alpha = None if self.deer_alpha_auto.isChecked() else float(self.deer_alpha.value())
-        afac = float(self.deer_alpha_factor.value())
-        engine = 'joint' if self.deer_engine.currentIndex() == 1 else 'sequential'
-        validate = self.deer_validate_chk.isChecked()
-        # highlight the button yellow while the (blocking) inversion runs
-        self.deer_run_btn.setEnabled(False)
-        self.deer_run_btn.setStyleSheet(BUTTON_BUSY_STYLE)
-        if validate:
-            self.set_status('DEER validation: sweeping background start…')
-        QApplication.processEvents()
-        try:
-            if validate:
-                val = deer_module.deer_validate(
-                    t_us, v, r=r, bg_start=bg_us, bg_end=bg_end_us,
-                    dim=float(self.deer_dim.value()),
-                    fit_dim=self.deer_fitdim.isChecked(), alpha=alpha,
-                    alpha_factor=afac, engine=engine)
-                res = val['base']
-                self.deer_band = val
-            else:
-                res = deer_module.deer_invert(
-                    t_us, v, r=r, bg_start=bg_us, bg_end=bg_end_us,
-                    dim=float(self.deer_dim.value()),
-                    fit_dim=self.deer_fitdim.isChecked(), alpha=alpha,
-                    alpha_factor=afac, engine=engine)
-                self.deer_band = None
-        except Exception as e:
-            self.set_status(f'DEER failed: {e}')
-            return
-        finally:
-            self.deer_run_btn.setStyleSheet(BUTTON_STYLE)
-            self.deer_run_btn.setEnabled(True)
-        self.deer_result = res
-        # display/cursors stay in the original acquisition time; only the
-        # kernel used the t0-shifted axis internally.
-        res['t'] = x*tf
-        if bg_end_us is not None:
-            res['background']['bg_end'] = end_disp*tf
-        if self.deer_alpha_auto.isChecked():
-            self.deer_alpha.blockSignals(True)
-            self.deer_alpha.setValue(float(res['alpha']))
-            self.deer_alpha.blockSignals(False)
-
-        F, Ff = res['form_factor'], res['F_fit']
-        ss_tot = float(np.sum((F - F.mean())**2)) or 1.0
-        r2 = 1 - float(np.sum((F - Ff)**2))/ss_tot
-        if self.deer_band is not None:
-            b = self.deer_band
-            r_peak, r_mean = b['peak'], b['r_mean']
-            bgs = b['bg_starts']/tf
-            lo, hi = b['percentiles']
-            extra = (f'<br><b style="color: rgb(150, 200, 255);">validation</b><br>'
-                     f'{b["n_trials"]} trials, bg start {bgs[0]:.3g}–{bgs[-1]:.3g} '
-                     f'{self.deer_tunit.currentText()}<br>band = {lo:g}–{hi:g}%')
-            consensus = ' (median)'
-        else:
-            r_peak = float(res['r'][int(np.argmax(res['P_density']))])
-            r_mean = float(np.sum(res['r']*res['P_norm']))
-            extra, consensus = '', ''
-        self.deer_info.setText(
-            '<div style="line-height: 165%;">'
-            f'<b style="color: rgb(211, 194, 78);">P(r)</b>{consensus}<br>'
-            f'mod. depth λ = {res["lambda"]:.3f}<br>'
-            f'bg decay k = {res["k"]:.4g}, dim = {res["dim"]:.2f}<br>'
-            f'α = {res["alpha"]:.4g}<br>'
-            f'peak r = {r_peak:.3f} nm<br>'
-            f'mean r = {r_mean:.3f} nm<br>'
-            f'form-factor R² = {r2:.4f}{extra}</div>')
-        self._deer_render()
-        tag = f' ({self.deer_band["n_trials"]}-trial band)' if self.deer_band else ''
-        self.set_status(f'DEER: λ={res["lambda"]:.3f}, α={res["alpha"]:.3g}, '
-                        f'peak r={r_peak:.2f} nm, R²={r2:.3f}{tag}.')
-
-    def _deer_rerender(self, *args):
-        """Re-show the stored DEER result under the current 'Show' selection."""
-        if self.deer_result is not None:
-            self._deer_render()
-
-    def _deer_render(self):
-        """Push the chosen DEER view (distance / form factor / background) to the
-        single-axis preview, and place the draggable background cursor on the
-        time-domain views."""
-        res = self.deer_result
-        if res is None:
-            return
-        # DEER recompute/view-switch: always refit. A parameter change (α, distance
-        # range, background window, time unit) can move the data extent or rescale
-        # it well beyond the current view, so a key-only check would clip the curve.
-        self._force_autorange = True
-        view = self.deer_show.currentText()
-        tf = self._deer_tfactor()
-        tunit = self.deer_tunit.currentText()
-        t_disp = res['t']/tf
-        bge = res['background'].get('bg_end')
-        bg_win = (f'bg start {self.deer_bgstart.value():.4g} {tunit}'
-                  + (f', bg end {bge/tf:.4g} {tunit}' if bge is not None
-                     else ' (to end)'))
-        common = [f'DEER/PDS — λ={res["lambda"]:.4g}, k={res["k"]:.4g}, '
-                  f'dim={res["dim"]:.3g}, α={res["alpha"]:.4g}',
-                  f'time unit {tunit}, r {res["r"][0]:.3g}–{res["r"][-1]:.3g} nm '
-                  f'({len(res["r"])} pts), {bg_win}']
-        if view == 'Distance P(r)':
-            if self.deer_band is not None:
-                b = self.deer_band
-                lo, hi = b['percentiles']
-                self._show_deer_band(True, b['r'], b['P_lower'], b['P_upper'])
-                meta = common + [f'columns: median P(r) density (integral = 1), '
-                                 f'{lo:g}% band, {hi:g}% band ({b["n_trials"]} trials)']
-                self._set_result(b['r'], [('P(r) median', b['P_density'])], meta,
-                                 show_source=False, xname='Distance (nm)')
-            else:
-                self._show_deer_band(False)
-                meta = common + ['column: P(r) density (integral = 1)']
-                self._set_result(res['r'], [('P(r)', res['P_density'])], meta,
-                                 show_source=False, xname='Distance (nm)')
-            self._show_bg_cursor(False)
-            self._show_lcurve_marker(False)
-        elif view == 'Form factor + fit':
-            self._show_deer_band(False)
-            meta = common + ['columns: form factor F(t), K·P fit']
-            self._set_result(t_disp, [('F(t)', res['form_factor']),
-                                      ('K·P fit', res['F_fit'])], meta,
-                             show_source=False, xname=f'Time ({tunit})')
-            self._show_bg_cursor(True)
-            self._show_lcurve_marker(False)
-        elif view == 'Background fit':
-            self._show_deer_band(False)
-            bg = res['background']
-            level = (1 - res['lambda'])*bg['B']
-            meta = common + ['columns: V(t) normalized, fitted background (1-λ)·B(t)']
-            self._set_result(t_disp, [('V(t)', bg['V_norm']),
-                                      ('(1-λ)·B', level)], meta,
-                             show_source=False, xname=f'Time ({tunit})')
-            self._show_bg_cursor(True)
-            self._show_lcurve_marker(False)
-        else:  # L-curve
-            self._show_deer_band(False)
-            self._show_bg_cursor(False)
-            lc = res.get('l_curve')
-            if lc is None:
-                self.set_status('No L-curve available for this result.')
-                return
-            x, y = self._lcurve_xy(lc)
-            meta = common + ['L-curve: log₁₀ residual ‖KP−F‖ vs log₁₀ ‖LP‖ over α',
-                             'click a point to pick α (switches to manual)']
-            self._set_result(x, [('L-curve', y)], meta, show_source=False,
-                             xname='log₁₀ residual  ‖KP−F‖')
-            self.plot_widget.setLabel('left', 'log₁₀ roughness  ‖LP‖')
-            idx = self._lcurve_index(lc, res['alpha'])
-            self._show_lcurve_marker(True, x[idx], y[idx])
-
-    @staticmethod
-    def _lcurve_xy(lc):
-        x = np.log10(np.asarray(lc['rho'], float) + 1e-300)
-        y = np.log10(np.asarray(lc['eta'], float) + 1e-300)
-        return x, y
-
-    @staticmethod
-    def _lcurve_index(lc, alpha):
-        """Index of the L-curve grid point nearest the chosen alpha (log space)."""
-        a = np.asarray(lc['alphas'], float)
-        return int(np.argmin(np.abs(np.log(a) - np.log(max(alpha, 1e-300)))))
-
-    def _show_lcurve_marker(self, visible, x=None, y=None):
-        if self._lcurve_marker is None:
-            self._lcurve_marker = pg.ScatterPlotItem(
-                size=14, symbol='o', pen=pg.mkPen((20, 20, 30), width=1.5),
-                brush=pg.mkBrush(211, 194, 78))
-            self._lcurve_marker.setZValue(20)
-            self.plot_widget.addItem(self._lcurve_marker)
-        if not visible:
-            self._lcurve_marker.setVisible(False)
-            return
-        self._lcurve_marker.setData([x], [y])
-        self._lcurve_marker.setVisible(True)
-
-    def _show_deer_band(self, visible, x=None, lo=None, hi=None):
-        """Show/hide the validation P(r) uncertainty band (shaded area between the
-        lower and upper percentile curves) on the distance view."""
-        if self._band_fill is None:
-            self._band_lo = pg.PlotDataItem(pen=None)
-            self._band_hi = pg.PlotDataItem(pen=None)
-            self._band_fill = pg.FillBetweenItem(
-                self._band_lo, self._band_hi, brush=pg.mkBrush(211, 194, 78, 60))
-            self._band_fill.setZValue(-10)        # behind the median curve
-            for it in (self._band_lo, self._band_hi, self._band_fill):
-                self.plot_widget.addItem(it)
-        if not visible:
-            for it in (self._band_lo, self._band_hi, self._band_fill):
-                it.setVisible(False)
-            return
-        self._band_lo.setData(np.asarray(x, float), np.asarray(lo, float))
-        self._band_hi.setData(np.asarray(x, float), np.asarray(hi, float))
-        for it in (self._band_lo, self._band_hi, self._band_fill):
-            it.setVisible(True)
-
-    def _on_plot_click(self, event):
-        """On the DEER L-curve view, pick the α of the nearest L-curve point."""
-        if (self.tabs.currentIndex() != 5 or self.deer_result is None
-                or self.deer_show.currentText() != 'L-curve'):
-            return
-        lc = self.deer_result.get('l_curve')
-        if lc is None:
-            return
-        vb = self.plot_widget.plotItem.vb
-        pt = vb.mapSceneToView(event.scenePos())
-        x, y = self._lcurve_xy(lc)
-        # nearest point in the (normalized) log-log plane
-        rx = (x.max() - x.min()) or 1.0
-        ry = (y.max() - y.min()) or 1.0
-        d = ((x - pt.x())/rx)**2 + ((y - pt.y())/ry)**2
-        idx = int(np.argmin(d))
-        alpha = float(lc['alphas'][idx])
-        self.deer_alpha_auto.blockSignals(True)
-        self.deer_alpha_auto.setChecked(False)
-        self.deer_alpha_auto.blockSignals(False)
-        self.deer_alpha.setEnabled(True)
-        self.deer_alpha.blockSignals(True)
-        self.deer_alpha.setValue(alpha)
-        self.deer_alpha.blockSignals(False)
-        self.do_deer()
-
-    def _show_bg_cursor(self, visible):
-        """Show/position (or hide) the draggable background-start cursor on the
-        preview. The cursor lives in display time units and drives deer_bgstart."""
-        if self._bg_cursor is None:
-            self._bg_cursor = pg.InfiniteLine(
-                angle=90, movable=True,
-                pen=pg.mkPen((211, 194, 78), width=2, style=Qt.PenStyle.DashLine),
-                hoverPen=pg.mkPen((255, 230, 120), width=3),
-                label='bg start', labelOpts={'color': (211, 194, 78),
-                                             'position': 0.92})
-            # ignoreBounds: keep the cursor out of autoRange, else a view switch
-            # autoranges while it's still visible at its (time) position and the
-            # P(r)/distance view stretches to include it instead of refitting.
-            self.plot_widget.addItem(self._bg_cursor, ignoreBounds=True)
-            self._bg_cursor.sigPositionChangeFinished.connect(self._on_bg_cursor)
-        if not visible:
-            self._bg_cursor.setVisible(False)
-            self._show_bg_cursor_end(False)
-            return
-        self._suppress_cursor = True
-        self._bg_cursor.setValue(float(self.deer_bgstart.value()))
-        self._bg_cursor.setVisible(True)
-        self._suppress_cursor = False
-        self._show_bg_cursor_end(True)      # mirror visibility on time-domain views
-
-    def _on_bg_cursor(self, *args):
-        """User dragged the background cursor: update the spin box and re-run."""
-        if self._suppress_cursor or self._bg_cursor is None:
-            return
-        self.deer_bgstart.blockSignals(True)
-        self.deer_bgstart.setValue(float(self._bg_cursor.value()))
-        self.deer_bgstart.blockSignals(False)
-        self.do_deer()
-
-    def _show_bg_cursor_end(self, visible):
-        """Show/position (or hide) the draggable background-end cursor. It only
-        appears when an end limit is active (deer_bgend > deer_bgstart); dragging
-        it drives deer_bgend, in display time units."""
-        if self._bg_cursor_end is None:
-            self._bg_cursor_end = pg.InfiniteLine(
-                angle=90, movable=True,
-                pen=pg.mkPen((120, 200, 255), width=2, style=Qt.PenStyle.DashLine),
-                hoverPen=pg.mkPen((180, 225, 255), width=3),
-                label='bg end', labelOpts={'color': (120, 200, 255),
-                                           'position': 0.84})
-            self.plot_widget.addItem(self._bg_cursor_end, ignoreBounds=True)
-            self._bg_cursor_end.sigPositionChangeFinished.connect(self._on_bg_cursor_end)
-        active = float(self.deer_bgend.value()) > float(self.deer_bgstart.value())
-        if not (visible and active):
-            self._bg_cursor_end.setVisible(False)
-            return
-        self._suppress_cursor = True
-        self._bg_cursor_end.setValue(float(self.deer_bgend.value()))
-        self._bg_cursor_end.setVisible(True)
-        self._suppress_cursor = False
-
-    def _on_bg_cursor_end(self, *args):
-        """User dragged the background-end cursor: update the spin box and re-run."""
-        if self._suppress_cursor or self._bg_cursor_end is None:
-            return
-        self.deer_bgend.blockSignals(True)
-        self.deer_bgend.setValue(float(self._bg_cursor_end.value()))
-        self.deer_bgend.blockSignals(False)
-        self.do_deer()
-
-    def _clear_bg_cursor(self):
-        """Hide all DEER overlays (background start/end cursors + L-curve marker)."""
-        if self._bg_cursor is not None:
-            self._bg_cursor.setVisible(False)
-        if self._bg_cursor_end is not None:
-            self._bg_cursor_end.setVisible(False)
-        if self._lcurve_marker is not None:
-            self._lcurve_marker.setVisible(False)
-
-    def _on_tab_changed(self, *args):
-        """Hide the DEER overlays whenever the DEER tab is not active."""
-        if self.tabs.currentIndex() != 5:
-            self._clear_bg_cursor()
-
-    def save_deer_all(self):
-        """Write every DEER stage to a set of sibling CSVs derived from one
-        chosen path: <base>_distance / _formfactor / _background / _lcurve.csv."""
-        res = self.deer_result
-        if res is None:
-            self.set_status('Run DEER first — nothing to export.')
-            return
-        file_path = self._save_dialog()
-        if not file_path or file_path == 'None':
-            return
-        base = file_path[:-4] if file_path.lower().endswith('.csv') else file_path
-        tunit = self.deer_tunit.currentText()
-        t_disp = res['t']/self._deer_tfactor()
-        bg = res['background']
-        hdr = ['DEER/PDS analysis (Tikhonov + NNLS)',
-               f'lambda = {res["lambda"]:.6g}, k = {res["k"]:.6g}, '
-               f'dim = {res["dim"]:.6g}, alpha = {res["alpha"]:.6g}',
-               f'r {res["r"][0]:.4g}-{res["r"][-1]:.4g} nm ({len(res["r"])} pts), '
-               f'time unit {tunit}, bg start {self.deer_bgstart.value():.6g} {tunit}'
-               + (f', bg end {res["background"]["bg_end"]/self._deer_tfactor():.6g} {tunit}'
-                  if res['background'].get('bg_end') is not None else ', bg end: trace end')]
-        written = []
-
-        def _save(suffix, cols, col_header):
-            fn = f'{base}_{suffix}.csv'
-            self.opener.save_data(fn, np.column_stack(cols),
-                                  header='\n'.join(hdr + [col_header]), mode='w')
-            written.append(os.path.basename(fn))
-
-        if self.deer_band is not None:
-            b = self.deer_band
-            lo, hi = b['percentiles']
-            _save('distance', [b['r'], b['P_density'], b['P_lower'], b['P_upper'],
-                               b['P_mean']],
-                  f'r (nm), P(r) median density, {lo:g}% band, {hi:g}% band, '
-                  f'mean ({b["n_trials"]} trials)')
-        else:
-            _save('distance', [res['r'], res['P_density'], res['P_norm']],
-                  'r (nm), P(r) density, P (masses)')
-        _save('formfactor', [t_disp, res['form_factor'], res['F_fit'], res['residuals']],
-              f'time ({tunit}), F(t), K*P fit, residuals')
-        _save('background', [t_disp, bg['V_norm'], bg['B'], (1 - res['lambda'])*bg['B']],
-              f'time ({tunit}), V(t) norm, B(t), (1-lambda)*B(t)')
-        lc = res.get('l_curve')
-        if lc is not None:
-            _save('lcurve', [lc['alphas'], lc['rho'], lc['eta'], lc['curvature']],
-                  'alpha, residual norm, solution norm, curvature')
-        self.set_status('Exported DEER stages: ' + ', '.join(written))
 
     # -------------------------------------------------------------- output
     def plot_result(self):
