@@ -1217,10 +1217,17 @@ class MainWindow(QMainWindow):
         self.deer_alpha.setEnabled(not self.deer_alpha_auto.isChecked())
 
     # Default background-start position as a fraction of the post-echo span. The
-    # joint fit pins the modulation depth to the baseline of V/B over the window,
-    # so it must sit well into the decayed tail: ~2/3 in works (on the YopO set
+    # SEQUENTIAL fit divides out a fitted decay, so its window must sit well into
+    # the decayed tail or it absorbs dipolar modulation: ~2/3 in (on the YopO set
     # >=65% recovers the correct ~12% background; <=55% collapses it).
-    BG_START_FRAC = 0.66
+    # The JOINT fit (capped-grid, lambda pinned to the V/B baseline) is robust to
+    # an EARLY window -- verified to recover k unchanged at 0.35 vs 0.66 even on
+    # strong backgrounds (B->0.6) -- so it uses a lower floor. A high floor there
+    # forces a late window that, on fast-dephasing (broad/multi-modal) P(r), lands
+    # in a regime where the joint k over-fits the residual decay tail and degrades
+    # P(r) (e.g. gauss_broad easy s0.0025: overlap 0.99 at 0.35 -> 0.94 at 0.66).
+    BG_START_FRAC = 0.66                  # sequential (and 'none'-engine fallback)
+    BG_START_FRAC_JOINT = 0.35            # joint / none: robust to an early window
     BG_START_FRAC_MAX = 0.85
 
     # info-panel tooltip for the moment descriptors (shared by the Tikhonov and
@@ -1234,20 +1241,27 @@ class MainWindow(QMainWindow):
         'P(r) plot marks mean r ± ME₁. width δr = rms width √(M₂−M₁²); '
         'skew = third standardized moment of P(r).')
 
+    def _bg_start_floor(self):
+        """Engine-aware background-start floor (see BG_START_FRAC notes)."""
+        eng = ('sequential', 'joint', 'none')[self.deer_engine.currentIndex()]
+        return self.BG_START_FRAC_JOINT if eng in ('joint', 'none') else self.BG_START_FRAC
+
     def _auto_bg_start_value(self):
-        """Place the background start in the decayed tail: ~2/3 of the post-echo
-        span by default, pushed later if the modulation envelope is still
-        significant past that point (never earlier). Time in display units."""
+        """Place the background start in the decayed tail: at the engine-aware floor
+        of the post-echo span by default (0.35 joint/none, 0.66 sequential), pushed
+        later if the modulation envelope is still significant past that point (never
+        earlier). Time in display units."""
         x, v = self.real_xy
         if x is None or len(x) < 16:
             return None
         x = np.asarray(x, dtype=float)
         v = np.asarray(v, dtype=float)
+        floor = self._bg_start_floor()
         i0 = int(np.argmax(np.abs(v)))            # echo centre
         xs, vs = x[i0:], v[i0:]
         n = len(xs)
         if n < 16 or vs[0] == 0:
-            return float(xs[0] + self.BG_START_FRAC * (x[-1] - xs[0]))
+            return float(xs[0] + floor * (x[-1] - xs[0]))
         vn = vs / vs[0]
         # rolling RMS of the oscillation (signal minus a heavy moving average)
         win = max(5, n // 6)
@@ -1257,7 +1271,7 @@ class MainWindow(QMainWindow):
         a0 = amp[:max(3, n // 10)].max() or float(amp.max()) or 1.0
         sig = np.where(amp[:max(1, n - win)] > 0.15 * a0)[0]   # still-modulated
         env_frac = (int(sig[-1]) / n) if len(sig) else 0.0
-        frac = min(max(env_frac, self.BG_START_FRAC), self.BG_START_FRAC_MAX)
+        frac = min(max(env_frac, floor), self.BG_START_FRAC_MAX)
         return float(xs[0] + frac * (xs[-1] - xs[0]))
 
     def _auto_bg_start(self):
