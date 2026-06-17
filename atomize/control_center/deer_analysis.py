@@ -155,6 +155,10 @@ class MainWindow(QMainWindow):
         self.deer_band = None
         # P(r) validation band items (on the bottom plot)
         self._band_lo = self._band_hi = self._band_fill = None
+        # a priori mean-distance (M1 ± ME1) error-bar items on the bottom plot
+        self._me1_bar = self._me1_pt = None
+        self._me1 = float('nan')          # a priori ME1 (nm) of the current fit
+        self._r0_disp = float('nan')      # displayed mean distance (nm)
         # draggable background start/end cursors + L-curve marker (top plot)
         self._bg_cursor = None
         self._bg_cursor_end = None
@@ -669,6 +673,7 @@ class MainWindow(QMainWindow):
         self.deer_info.setWordWrap(True)
         self.deer_info.setTextFormat(Qt.TextFormat.RichText)
         self.deer_info.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+        self.deer_info.setToolTip(self.MOMENTS_TOOLTIP)
         panel.addWidget(self.deer_info)
         panel.addStretch(1)
         return w
@@ -803,6 +808,7 @@ class MainWindow(QMainWindow):
         self.mellin_info.setWordWrap(True)
         self.mellin_info.setTextFormat(Qt.TextFormat.RichText)
         self.mellin_info.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+        self.mellin_info.setToolTip(self.MOMENTS_TOOLTIP)
         panel.addWidget(self.mellin_info)
         panel.addStretch(1)
         return w
@@ -1217,6 +1223,17 @@ class MainWindow(QMainWindow):
     BG_START_FRAC = 0.66
     BG_START_FRAC_MAX = 0.85
 
+    # info-panel tooltip for the moment descriptors (shared by the Tikhonov and
+    # Mellin info labels)
+    MOMENTS_TOOLTIP = (
+        'mean r ± ME₁: the a priori rms error of the mean distance from random '
+        'noise alone (Nekrasov, Matveeva & Bowman, PCCP 2026). It is set by the '
+        'form-factor noise, the time step and the trace length — not by the '
+        'distribution — and needs no ground truth. The actual scatter of a '
+        'regularized fit sits at or below this bound. The grey error bar on the '
+        'P(r) plot marks mean r ± ME₁. width δr = rms width √(M₂−M₁²); '
+        'skew = third standardized moment of P(r).')
+
     def _auto_bg_start_value(self):
         """Place the background start in the decayed tail: ~2/3 of the post-echo
         span by default, pushed later if the modulation envelope is still
@@ -1557,6 +1574,24 @@ class MainWindow(QMainWindow):
             r_mean = float(np.sum(res['r'] * res['P_norm']))
             extra, med_tag = '', ''
 
+        # shape descriptors (rms width δr, skew) + a priori mean-distance error
+        # ME1 (Nekrasov/Matveeva/Bowman, PCCP 2026, DOI 10.1039/D5CP04144A): the
+        # noise-only error bar the acquisition itself allows on the mean distance,
+        # from the form-factor noise + step + length -- no ground truth needed.
+        dsc = deer_module.distribution_moments(res['r'], res['P_density'])
+        try:
+            t_arr = np.asarray(res['t'], float)
+            eps_F = float(deer_module._tail_noise(t_arr, res['form_factor']))
+            dpos = np.diff(t_arr[t_arr > 0])
+            dt_ns = float(np.median(dpos)) * 1e3 if len(dpos) else 0.0
+            me1 = deer_module.moment_error_apriori(
+                eps_F, dt_ns, int(np.count_nonzero(t_arr > 0)), n=1)
+        except Exception:
+            me1 = float('nan')
+        me1_txt = f' ± {me1:.3f}' if np.isfinite(me1) else ''
+        # remember for the P(r)-plot error bar (drawn in _render)
+        self._me1, self._r0_disp = me1, r_mean
+
         if is_mellin:
             tunit = self.deer_tunit.currentText()
             delta_disp = float(res.get('delta', 0.0)) / tf
@@ -1590,7 +1625,8 @@ class MainWindow(QMainWindow):
             f'bg decay k = {res["k"]:.4g}, dim = {res["dim"]:.2f}<br>'
             f'{reg}<br>'
             f'peak r = {r_peak:.3f} nm<br>'
-            f'mean r = {r_mean:.3f} nm<br>'
+            f'mean r = {r_mean:.3f}{me1_txt} nm<br>'
+            f'width δr = {dsc["width"]:.3f} nm, skew = {dsc["skew"]:+.2f}<br>'
             f'form-factor R² = {r2:.4f}{wht_txt}{extra}</div>')
         self.deer_info.setText(info_html)
         if is_mellin:
@@ -1632,6 +1668,7 @@ class MainWindow(QMainWindow):
                           [('P(r) median', b['r'], b['P_density'], C_FIT, 2)],
                           'Distance (nm)', '_pr_key', left_label='P(r) (nm⁻¹)',
                           force=True)
+            self._show_me1_bar(True, self._r0_disp, self._me1, b['P_density'])
         else:
             # covariance-based 95% confidence band (DeerLab-style), if available
             if (self.deer_ci_chk.isChecked() and res.get('P_lower') is not None):
@@ -1649,6 +1686,7 @@ class MainWindow(QMainWindow):
             self._repaint(self.p_pr, self.pr_legend, self._pr_items, pr_curves,
                           'Distance (nm)', '_pr_key', left_label='P(r) (nm⁻¹)',
                           force=True)
+            self._show_me1_bar(True, self._r0_disp, self._me1, res['P_density'])
 
         # ---- top plot: chosen time-domain / L-curve view ----
         view = self.deer_show.currentText()
@@ -1816,6 +1854,36 @@ class MainWindow(QMainWindow):
         self._band_hi.setData(np.asarray(x, float), np.asarray(hi, float))
         for it in (self._band_lo, self._band_hi, self._band_fill):
             it.setVisible(True)
+
+    def _show_me1_bar(self, visible, r0=None, me1=None, density=None):
+        """Draw the a priori mean-distance error bar (mean r ± ME1) on the P(r)
+        plot: a grey horizontal bar at ~90% of the peak height, centred on the
+        mean distance, half-width = ME1 (Nekrasov/Matveeva/Bowman, PCCP 2026).
+        Hidden when ME1 is unavailable."""
+        if self._me1_bar is None:
+            pen = pg.mkPen(170, 170, 170, 230, width=1.6)
+            self._me1_bar = pg.ErrorBarItem(pen=pen)
+            self._me1_pt = pg.ScatterPlotItem(pen=None,
+                                              brush=pg.mkBrush(170, 170, 170, 230),
+                                              size=6)
+            self._me1_bar.setZValue(20)
+            self._me1_pt.setZValue(21)
+            self.p_pr.addItem(self._me1_bar)
+            self.p_pr.addItem(self._me1_pt)
+        ok = (visible and r0 is not None and me1 is not None
+              and np.isfinite(r0) and np.isfinite(me1) and me1 > 0)
+        if not ok:
+            self._me1_bar.setVisible(False)
+            self._me1_pt.setVisible(False)
+            return
+        ymax = float(np.max(np.clip(np.asarray(density, float), 0.0, None))) or 1.0
+        y = 0.9*ymax
+        self._me1_bar.setData(x=np.array([float(r0)]), y=np.array([y]),
+                              left=np.array([float(me1)]),
+                              right=np.array([float(me1)]), beam=0.04*ymax)
+        self._me1_pt.setData([float(r0)], [y])
+        self._me1_bar.setVisible(True)
+        self._me1_pt.setVisible(True)
 
     def _on_lcurve_click(self, event):
         """On the L-curve view, pick the α of the nearest L-curve point."""
