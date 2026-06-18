@@ -593,7 +593,7 @@ class MainWindow(QMainWindow):
         self.deer_engine.setStyleSheet(COMBO_STYLE)
         self.deer_engine.addItems(['Sequential', 'Joint (global)',
                                    'None (no background)',
-                                   'General (a + b·t + c·dˣ)'])
+                                   'General (a·exp[b(t+c·dˣ)])'])
         self.deer_engine.setCurrentIndex(1)            # Joint (global) is the default
         self.deer_engine.setToolTip(
             'Sequential: fit the background on the tail window, divide it out, '
@@ -604,29 +604,29 @@ class MainWindow(QMainWindow):
             'only the modulation depth λ. For pre-corrected / simulated / '
             'full-modulation (λ→1) data that has NO background — fitting a decay '
             'there would absorb the dipolar decay and badly broaden P(r).\n'
-            'General (a + b·t + c·dˣ): flexible empirical background — offset + '
-            'linear drift + exponential (base d), all four free — fit on the tail '
-            'window like Sequential. Use when the intermolecular decay is not a '
-            'stretched exponential; needs a clean (well-decayed) tail, since its '
-            'extra freedom will otherwise chase residual modulation.')
+            'General (a·exp[b(t+c·dˣ)]): flexible empirical background — the four '
+            'parameters a, b, c, d are free — fit on the tail window like '
+            'Sequential. Use when the intermolecular decay is not a stretched '
+            'exponential; needs a clean (well-decayed) tail, since its extra '
+            'freedom will otherwise chase residual modulation.')
         self.deer_engine.currentIndexChanged.connect(self._live_update)
         self.deer_engine.currentIndexChanged.connect(self._mellin_live)
         self.deer_engine.currentIndexChanged.connect(self._gauss_live)
         self.deer_engine.currentIndexChanged.connect(self._general_params_update)
         grid.addWidget(self.deer_engine, r, 1); r += 1
 
-        # General-background coefficients g(t) = a + b·t + c·dˣ, one per row. Auto
-        # (default) fits all four and writes the fitted values back here; uncheck
-        # Auto to set them by hand (used directly as the background, no fitting).
-        # Only active for the General background model.
-        grid.addWidget(self._label('General bg (a + b·t + c·dˣ)'), r, 0)
+        # General-background coefficients g(t) = a·exp(b·(t + c·dˣ)), one per row.
+        # Auto (default) fits all four and writes the fitted values back here;
+        # uncheck Auto to set them by hand (used directly as the background, no
+        # fitting). Only active for the General background model.
+        grid.addWidget(self._label('General bg (a·exp[b(t+c·dˣ)])'), r, 0)
         self.gbg_auto = QCheckBox('Auto (fit)')
         self.gbg_auto.setStyleSheet(CHECKBOX_STYLE)
         self.gbg_auto.setChecked(True)
         self.gbg_auto.setToolTip(
             'Auto: fit a, b, c, d on the tail window and show the result below. '
             'Uncheck to set the four coefficients by hand — they are then used '
-            'directly as the background g(t) = a + b·t + c·dˣ (no fitting). '
+            'directly as the background g(t) = a·exp(b·(t + c·dˣ)) (no fitting). '
             'Only used by the General background model.')
         self.gbg_auto.stateChanged.connect(self._general_params_update)
         self.gbg_auto.stateChanged.connect(self._live_update)
@@ -634,21 +634,22 @@ class MainWindow(QMainWindow):
         self.gbg_auto.stateChanged.connect(self._gauss_live)
         grid.addWidget(self.gbg_auto, r, 1); r += 1
 
-        # ranges are wide: a + b·t + c·dˣ is over-parametrized for a gentle decay,
-        # so the auto-fit can land on a degenerate branch with large a / c (e.g. a
-        # near-constant exponential, d→1, trading against the offset). The boxes
-        # must hold whatever the fit returns so the auto→manual hand-off is exact.
+        # ranges are wide so the boxes hold whatever the fit returns (the model can
+        # be over-parametrized for a gentle decay), keeping the auto→manual hand-off
+        # exact. In g = a·exp(b·(t + c·dˣ)): a is the amplitude (sets λ), b the
+        # decay rate in the exponent, c the weight of the dˣ term, d its base.
         self.gbg_a = QDoubleSpinBox(); self.gbg_b = QDoubleSpinBox()
         self.gbg_c = QDoubleSpinBox(); self.gbg_d = QDoubleSpinBox()
         for sp, label, lo, hi, dec, val, tip in (
-                (self.gbg_a, '   a (offset)',  -1e4, 1e4, 4, 0.5,
-                    'a — constant offset'),
-                (self.gbg_b, '   b (slope)',   -1e3, 1e3, 5, 0.0,
-                    'b — linear-drift slope (per µs)'),
-                (self.gbg_c, '   c (exp amp)', -1e4, 1e4, 4, 0.0,
-                    'c — exponential amplitude'),
-                (self.gbg_d, '   d (exp base)', 1e-4, 1.0, 4, 0.8,
-                    'd — exponential base, 0<d≤1 (decaying)')):
+                (self.gbg_a, '   a (amplitude)', 1e-4, 1e4, 4, 0.6,
+                    'a — amplitude; sets the t=0 background level g(0)=a·exp(b·c) '
+                    'and hence λ. Cancels in the background SHAPE B=g/g(0).'),
+                (self.gbg_b, '   b (rate)',     -1e3, 1e3, 5, -0.05,
+                    'b — decay rate in the exponent (per µs); negative = decaying'),
+                (self.gbg_c, '   c (dˣ weight)', -1e4, 1e4, 4, 0.0,
+                    'c — weight of the dˣ term inside the exponent'),
+                (self.gbg_d, '   d (dˣ base)',   1e-4, 1.0, 4, 0.8,
+                    'd — base of the dˣ term, 0<d≤1 (decaying)')):
             sp.setStyleSheet(DSPIN_STYLE)
             sp.setRange(lo, hi); sp.setDecimals(dec); sp.setValue(val)
             sp.setSingleStep(0.01); sp.setToolTip(tip)
@@ -1958,7 +1959,7 @@ class MainWindow(QMainWindow):
         # (k / dim are not defined for it), the others their decay rate / dimension
         bgp = res.get('background', {}).get('params')
         if res.get('background', {}).get('model') == 'general' and bgp:
-            bg_line = (f'bg: a + b·t + c·dˣ &nbsp;(a={bgp["a"]:.3g}, b={bgp["b"]:.3g}, '
+            bg_line = (f'bg: a·exp[b(t+c·dᵗ)] &nbsp;(a={bgp["a"]:.3g}, b={bgp["b"]:.3g}, '
                        f'c={bgp["c"]:.3g}, d={bgp["d"]:.3g})')
         else:
             bg_line = f'bg decay k = {res["k"]:.4g}, dim = {res["dim"]:.2f}'
@@ -2352,7 +2353,7 @@ class MainWindow(QMainWindow):
             reg = f'alpha = {res["alpha"]:.6g}'
         bgp = res.get('background', {}).get('params')
         if res.get('background', {}).get('model') == 'general' and bgp:
-            bg_terms = (f'background a + b*t + c*d^t (a={bgp["a"]:.6g}, b={bgp["b"]:.6g}, '
+            bg_terms = (f'background a*exp(b*(t+c*d^t)) (a={bgp["a"]:.6g}, b={bgp["b"]:.6g}, '
                         f'c={bgp["c"]:.6g}, d={bgp["d"]:.6g})')
         else:
             bg_terms = f'k = {res["k"]:.6g}, dim = {res["dim"]:.6g}'
