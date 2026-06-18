@@ -956,6 +956,26 @@ class MainWindow(QMainWindow):
         self.gauss_ic.currentIndexChanged.connect(self._gauss_live)
         grid.addWidget(self.gauss_ic, r, 1); r += 1
 
+        grid.addWidget(self._label('Fit method'), r, 0)
+        self.gauss_method = QComboBox()
+        self.gauss_method.setStyleSheet(COMBO_STYLE)
+        self.gauss_method.addItems(['Least-squares', 'Monte-Carlo (Pake)'])
+        self.gauss_method.setToolTip(
+            'How the Gaussian parameters are found. <b>Least-squares</b> (default): '
+            'fast gradient fit in the time domain. <b>Monte-Carlo (Pake)</b> '
+            '(Dzuba, JMR 275 (2016); Matveeva et al., Z. Phys. Chem. 231 (2017)): '
+            'a random multi-start search in the dipolar frequency (Pake) domain — '
+            'the random starts cannot be trapped in the spurious floor-width-spike '
+            'solution the gradient fit can fall into, and the frequency domain is '
+            'intrinsically immune to ESEEM (fixed frequencies) and background error '
+            '(zero frequency). The data-consistent trials give a non-linearized '
+            'confidence band + per-component error bars. On clean data it matches '
+            'least-squares; its value is robustness on real, artifact-laden traces. '
+            'Slower (~seconds).')
+        self.gauss_method.currentIndexChanged.connect(self._gauss_method_toggle)
+        self.gauss_method.currentIndexChanged.connect(self._gauss_live)
+        grid.addWidget(self.gauss_method, r, 1); r += 1
+
         self.gauss_comp_chk = QCheckBox('Overlay individual components')
         self.gauss_comp_chk.setStyleSheet(CHECKBOX_STYLE)
         self.gauss_comp_chk.setToolTip(
@@ -1005,6 +1025,14 @@ class MainWindow(QMainWindow):
 
     def _gauss_n_toggle(self, *args):
         self.gauss_n.setEnabled(not self.gauss_n_auto.isChecked())
+
+    def _gauss_method_toggle(self, *args):
+        """Monte-Carlo mode supplies its own ensemble confidence band, so the
+        support-plane CI option (a least-squares-only re-fit) does not apply."""
+        is_mc = self.gauss_method.currentIndex() == 1
+        self.gauss_support_chk.setEnabled(not is_mc)
+        if is_mc:
+            self.gauss_support_chk.setChecked(False)
 
     def _gauss_live(self, *args):
         if self._suppress_live:
@@ -1772,8 +1800,12 @@ class MainWindow(QMainWindow):
                    else int(self.gauss_n.value()))
         max_gauss = int(self.gauss_nmax.value())
         ic = self.gauss_ic.currentText().lower()
-        n_mc = 200 if self.deer_ci_chk.isChecked() else 0
-        ci_mode = 'support' if self.gauss_support_chk.isChecked() else 'linear'
+        gmethod = 'mc' if self.gauss_method.currentIndex() == 1 else 'lsq'
+        # Monte-Carlo supplies its own ensemble band; covariance MC / support-plane
+        # CIs do not apply there.
+        n_mc = 0 if gmethod == 'mc' else (200 if self.deer_ci_chk.isChecked() else 0)
+        ci_mode = ('linear' if gmethod == 'mc'
+                   else ('support' if self.gauss_support_chk.isChecked() else 'linear'))
         validate_flag = self.deer_validate_chk.isChecked()
         bgp = self._general_bg_params()
 
@@ -1789,9 +1821,12 @@ class MainWindow(QMainWindow):
             bg_us = (bgs_disp - t0_disp) * tf
             bg_end_us = ((bge_disp - t0_disp) * tf if bge_disp > bgs_disp else None)
             gk = dict(n_gauss=n_gauss, max_gauss=max_gauss, ic=ic,
-                      bg_engine=bg_engine, ci_mode=ci_mode, bg_params=bgp)
-            if validate_flag:
-                # band comes from the background-start ensemble; no per-trial MC
+                      bg_engine=bg_engine, ci_mode=ci_mode, bg_params=bgp,
+                      method=gmethod)
+            if validate_flag and gmethod != 'mc':
+                # band comes from the background-start ensemble; no per-trial MC.
+                # (Skipped for Monte-Carlo, which supplies its own ensemble band and
+                # would make the per-bg-start sweep prohibitively slow.)
                 val = deer_module.deer_validate(
                     t_us, v, r=r, bg_start=bg_us, bg_end=bg_end_us, dim=dim,
                     fit_dim=fit_dim, engine='gauss', **gk)
@@ -1814,8 +1849,10 @@ class MainWindow(QMainWindow):
                         else ('Multi-Gaussian validation: sweeping background '
                               'start…' if validate_flag
                               else ('Running Multi-Gaussian fit '
-                                    '(support-plane CIs)…' if ci_mode == 'support'
-                                    else 'Running Multi-Gaussian fit…')))
+                                    '(Monte-Carlo, Pake domain)…' if gmethod == 'mc'
+                                    else ('Running Multi-Gaussian fit '
+                                          '(support-plane CIs)…' if ci_mode == 'support'
+                                          else 'Running Multi-Gaussian fit…'))))
         self._deer_worker = _DeerWorker(compute)
         self._deer_worker.done.connect(self._deer_finished)
         self._deer_worker.start()
@@ -2022,8 +2059,12 @@ class MainWindow(QMainWindow):
                           'Distance (nm)', '_pr_key', left_label='P(r) (nm⁻¹)',
                           force=True)
         else:
-            # covariance-based 95% confidence band (DeerLab-style), if available
-            if (self.deer_ci_chk.isChecked() and res.get('P_lower') is not None):
+            # covariance-based 95% confidence band (DeerLab-style), if available;
+            # the Monte-Carlo engine's ensemble band always shows (it is the mode's
+            # native uncertainty estimate, not the optional covariance band).
+            if (res.get('P_lower') is not None
+                    and (self.deer_ci_chk.isChecked()
+                         or res.get('ci_mode') == 'mc_ensemble')):
                 self._show_deer_band(True, res['r'], res['P_lower'], res['P_upper'])
             else:
                 self._show_deer_band(False)
