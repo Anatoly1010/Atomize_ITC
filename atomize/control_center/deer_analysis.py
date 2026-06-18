@@ -287,11 +287,12 @@ class MainWindow(QMainWindow):
         tabs.addTab(self._scroll(self._build_background_tab()), 'Background')
         tabs.addTab(self._scroll(self._build_deer_tab()), 'Tikhonov')
         tabs.addTab(self._scroll(self._build_mellin_tab()), 'Mellin')
+        tabs.addTab(self._scroll(self._build_gauss_tab()), 'Multi-Gaussian')
         outer.addWidget(tabs, stretch=1)
 
-        # Shared inversion controls (distance grid + top-plot view) used by BOTH
-        # the DEER and Mellin engines, kept always visible below the tabs so
-        # neither tab has to be left to set them.
+        # Shared inversion controls (distance grid + top-plot view) used by ALL
+        # inversion engines (Tikhonov / Mellin / Multi-Gaussian), kept always
+        # visible below the tabs so no tab has to be left to set them.
         outer.addWidget(self._hline())
         outer.addWidget(self._build_shared_controls())
 
@@ -320,12 +321,14 @@ class MainWindow(QMainWindow):
         self.deer_rmin.setSingleStep(0.1); self.deer_rmin.setValue(1.5)
         self.deer_rmin.valueChanged.connect(self._live_update)
         self.deer_rmin.valueChanged.connect(self._mellin_live)
+        self.deer_rmin.valueChanged.connect(self._gauss_live)
         self.deer_rmax = QDoubleSpinBox()
         self.deer_rmax.setStyleSheet(DSPIN_STYLE)
         self.deer_rmax.setRange(0.5, 50.0); self.deer_rmax.setDecimals(2)
         self.deer_rmax.setSingleStep(0.1); self.deer_rmax.setValue(8.0)
         self.deer_rmax.valueChanged.connect(self._live_update)
         self.deer_rmax.valueChanged.connect(self._mellin_live)
+        self.deer_rmax.valueChanged.connect(self._gauss_live)
         btn_autorange = QPushButton('Auto')
         btn_autorange.setStyleSheet(BUTTON_STYLE)
         btn_autorange.setToolTip(
@@ -347,6 +350,7 @@ class MainWindow(QMainWindow):
         self.deer_rn.setRange(20, 2000); self.deer_rn.setValue(200)
         self.deer_rn.valueChanged.connect(self._live_update)
         self.deer_rn.valueChanged.connect(self._mellin_live)
+        self.deer_rn.valueChanged.connect(self._gauss_live)
         grid.addWidget(self.deer_rn, r, 1); r += 1
 
         grid.addWidget(self._label('Show (top plot)'), r, 0)
@@ -368,7 +372,8 @@ class MainWindow(QMainWindow):
             'Shade the 95% confidence interval on P(r). Tikhonov: covariance / '
             'curvature CI (as DeerLab shows by default). Mellin: Monte-Carlo band '
             'from re-inverting the form factor with the fit-residual noise. '
-            'Superseded by the Validate band when that is on.')
+            'Multi-Gaussian: parametric band from the fit-covariance of the '
+            'component parameters. Superseded by the Validate band when that is on.')
         self.deer_ci_chk.stateChanged.connect(self._ci_toggled)
         grid.addWidget(self.deer_ci_chk, r, 0, 1, 2); r += 1
 
@@ -377,9 +382,10 @@ class MainWindow(QMainWindow):
         self.deer_validate_chk.setToolTip(
             'Re-run the inversion over a sweep of background-start times and show '
             'the median P(r) with a 5–95% uncertainty band (DeerAnalysis-style). '
-            'Works for both the Tikhonov and Mellin engines.')
+            'Works for the Tikhonov, Mellin and Multi-Gaussian engines.')
         self.deer_validate_chk.stateChanged.connect(self._live_update)
         self.deer_validate_chk.stateChanged.connect(self._mellin_live)
+        self.deer_validate_chk.stateChanged.connect(self._gauss_live)
         grid.addWidget(self.deer_validate_chk, r, 0, 1, 2); r += 1
         return w
 
@@ -389,11 +395,11 @@ class MainWindow(QMainWindow):
         requested, so toggling it on needs a re-inversion."""
         if self.deer_result is None:
             return
-        if self.deer_result.get('engine', '').startswith('mellin'):
-            if self.real_xy[0] is not None:
-                self.do_mellin()
-            else:
-                self._render()
+        eng = self.deer_result.get('engine', '')
+        if eng.startswith('mellin') and self.real_xy[0] is not None:
+            self.do_mellin()                     # MC band: needs a re-inversion
+        elif eng == 'gauss' and self.real_xy[0] is not None:
+            self.do_gauss()                       # parametric band: re-inversion
         else:
             self._render()
 
@@ -600,6 +606,7 @@ class MainWindow(QMainWindow):
             'there would absorb the dipolar decay and badly broaden P(r).')
         self.deer_engine.currentIndexChanged.connect(self._live_update)
         self.deer_engine.currentIndexChanged.connect(self._mellin_live)
+        self.deer_engine.currentIndexChanged.connect(self._gauss_live)
         grid.addWidget(self.deer_engine, r, 1); r += 1
         panel.addLayout(grid)
         panel.addStretch(1)
@@ -812,6 +819,116 @@ class MainWindow(QMainWindow):
         panel.addWidget(self.mellin_info)
         panel.addStretch(1)
         return w
+
+    # ---- Tab 6: Multi-Gaussian (parametric sum-of-Gaussians fit) ----
+    def _build_gauss_tab(self):
+        w = QWidget()
+        panel = QVBoxLayout(w)
+        panel.addWidget(self._note(
+            'Parametric inversion: model P(r) as a <b>sum of Gaussians</b> and fit '
+            'their centres, widths and weights directly to the form factor '
+            '(DeerAnalysis "Gaussian" mode / DeerLab <i>dd_gaussN</i>). When the '
+            'distribution really is a few discrete modes this is the most robust '
+            'choice and gives genuine <b>parametric error bars</b> on each peak '
+            'position and width — which the regularized and model-free engines '
+            'cannot. A poor fit (low R²) is itself diagnostic: it means the data '
+            'are not well described by a few Gaussians.'))
+        panel.addWidget(self._note(
+            'Uses the <b>Background</b> tab\'s zero-time / window / dimension / fit '
+            'engine and the shared distance grid below the tabs.'))
+        grid = QGridLayout()
+        r = 0
+
+        grid.addWidget(self._label('Components N'), r, 0)
+        n_row = QHBoxLayout()
+        self.gauss_n = QSpinBox()
+        self.gauss_n.setStyleSheet(SPIN_STYLE)
+        self.gauss_n.setRange(1, 6)
+        self.gauss_n.setValue(2)
+        self.gauss_n.setEnabled(False)
+        self.gauss_n.setToolTip(
+            'Number of Gaussian components to fit. Enabled only when Auto is off; '
+            'with Auto on, N is chosen automatically (see below) and this box '
+            'shows the chosen value after the fit.')
+        self.gauss_n.valueChanged.connect(self._gauss_live)
+        self.gauss_n_auto = QCheckBox('Auto')
+        self.gauss_n_auto.setStyleSheet(CHECKBOX_STYLE)
+        self.gauss_n_auto.setChecked(True)
+        self.gauss_n_auto.setToolTip(
+            'Choose the number of components automatically: fit N = 1…N max and '
+            'keep the N that minimizes the corrected Akaike criterion (AICc), so '
+            'extra Gaussians are not fit into noise. Uncheck to force a fixed N.')
+        self.gauss_n_auto.stateChanged.connect(self._gauss_n_toggle)
+        self.gauss_n_auto.stateChanged.connect(self._gauss_live)
+        n_row.addWidget(self.gauss_n); n_row.addWidget(self.gauss_n_auto)
+        grid.addLayout(n_row, r, 1); r += 1
+
+        grid.addWidget(self._label('N max (auto)'), r, 0)
+        self.gauss_nmax = QSpinBox()
+        self.gauss_nmax.setStyleSheet(SPIN_STYLE)
+        self.gauss_nmax.setRange(1, 6)
+        self.gauss_nmax.setValue(4)
+        self.gauss_nmax.setToolTip(
+            'Largest component count tried during automatic AICc model selection. '
+            '3–4 is usually enough; more components rarely survive the criterion '
+            'and slow the fit.')
+        self.gauss_nmax.valueChanged.connect(self._gauss_live)
+        grid.addWidget(self.gauss_nmax, r, 1); r += 1
+
+        grid.addWidget(self._label('Selection by'), r, 0)
+        self.gauss_ic = QComboBox()
+        self.gauss_ic.setStyleSheet(COMBO_STYLE)
+        self.gauss_ic.addItems(['AICc', 'AIC', 'BIC'])
+        self.gauss_ic.setToolTip(
+            'Information criterion for the automatic component count. AICc '
+            '(corrected Akaike, default) is the usual choice; BIC penalizes extra '
+            'components more strongly (favours fewer Gaussians).')
+        self.gauss_ic.currentIndexChanged.connect(self._gauss_live)
+        grid.addWidget(self.gauss_ic, r, 1); r += 1
+
+        self.gauss_comp_chk = QCheckBox('Overlay individual components')
+        self.gauss_comp_chk.setStyleSheet(CHECKBOX_STYLE)
+        self.gauss_comp_chk.setToolTip(
+            'Also draw each fitted Gaussian component separately (dashed), under '
+            'the total P(r).')
+        self.gauss_comp_chk.stateChanged.connect(self._deer_rerender)
+        grid.addWidget(self.gauss_comp_chk, r, 0, 1, 2); r += 1
+
+        self.gauss_live = QCheckBox('Live update on parameter change')
+        self.gauss_live.setStyleSheet(CHECKBOX_STYLE)
+        grid.addWidget(self.gauss_live, r, 0, 1, 2); r += 1
+
+        run_row = QHBoxLayout()
+        self.gauss_run_btn = QPushButton('Run Multi-Gaussian')
+        self.gauss_run_btn.setStyleSheet(BUTTON_STYLE)
+        self.gauss_run_btn.clicked.connect(self.do_gauss)
+        btn_exp = QPushButton('Export all…')
+        btn_exp.setStyleSheet(BUTTON_STYLE)
+        btn_exp.clicked.connect(self.save_deer_all)
+        run_row.addWidget(self.gauss_run_btn); run_row.addWidget(btn_exp)
+        grid.addLayout(run_row, r, 0, 1, 2); r += 1
+        panel.addLayout(grid)
+
+        self.gauss_info = QLabel('')
+        self.gauss_info.setStyleSheet(LABEL_STYLE)
+        self.gauss_info.setWordWrap(True)
+        self.gauss_info.setTextFormat(Qt.TextFormat.RichText)
+        self.gauss_info.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+        self.gauss_info.setToolTip(self.MOMENTS_TOOLTIP)
+        panel.addWidget(self.gauss_info)
+        panel.addStretch(1)
+        return w
+
+    def _gauss_n_toggle(self, *args):
+        self.gauss_n.setEnabled(not self.gauss_n_auto.isChecked())
+
+    def _gauss_live(self, *args):
+        if self._suppress_live:
+            return
+        if (self.gauss_live.isChecked() and self.real_xy[0] is not None
+                and self.deer_result is not None
+                and self.deer_result.get('engine', '') == 'gauss'):
+            self.do_gauss()
 
     def _mellin_delta_toggle(self, *args):
         self.mellin_delta.setEnabled(not self.mellin_delta_auto.isChecked())
@@ -1535,11 +1652,89 @@ class MainWindow(QMainWindow):
         self._deer_worker.done.connect(self._deer_finished)
         self._deer_worker.start()
 
+    def do_gauss(self):
+        """Invert V(t) to P(r) by a parametric sum-of-Gaussians fit (model
+        selection on N by AICc, or a fixed N). Reuses the Background tab's
+        zero-time / window / dimension and the shared distance grid; the
+        Multi-Gaussian tab supplies N / N max / criterion. Runs on the same
+        worker thread + finisher as `do_deer` / `do_mellin`."""
+        x, v = self.real_xy
+        if x is None or len(x) < 8:
+            self.set_status('Load a V(t) trace first (≥ 8 points).')
+            return
+        if self._deer_busy:
+            self.set_status('Busy — wait for the running inversion to finish.')
+            return
+        tf = self._deer_tfactor()
+        rmin, rmax = self.deer_rmin.value(), self.deer_rmax.value()
+        if rmax <= rmin:
+            self.set_status('Distance max must exceed min.')
+            return
+        # snapshot plain values for the worker (no Qt access inside compute)
+        x = np.asarray(x, dtype=float)
+        v = np.asarray(v, dtype=float)
+        r = np.linspace(rmin, rmax, int(self.deer_rn.value()))
+        dim = float(self.deer_dim.value())
+        fit_dim = self.deer_fitdim.isChecked()
+        fit_t0 = self.deer_fit_t0.isChecked()
+        bg_engine = ('sequential', 'joint', 'none')[self.deer_engine.currentIndex()]
+        bgs_disp = float(self.deer_bgstart.value())
+        bge_disp = float(self.deer_bgend.value())
+        t0_cur = float(self.deer_t0.value())
+        n_gauss = (None if self.gauss_n_auto.isChecked()
+                   else int(self.gauss_n.value()))
+        max_gauss = int(self.gauss_nmax.value())
+        ic = self.gauss_ic.currentText().lower()
+        n_mc = 200 if self.deer_ci_chk.isChecked() else 0
+        validate_flag = self.deer_validate_chk.isChecked()
+
+        def compute():
+            t0_disp = t0_cur
+            if fit_t0:
+                t0u = deer_module.fit_zero_time(
+                    x * tf, v, bg_start=bgs_disp * tf,
+                    bg_end=(bge_disp * tf if bge_disp > bgs_disp else None),
+                    r=r, dim=dim, fit_dim=fit_dim)
+                t0_disp = t0u / tf
+            t_us = (x - t0_disp) * tf
+            bg_us = (bgs_disp - t0_disp) * tf
+            bg_end_us = ((bge_disp - t0_disp) * tf if bge_disp > bgs_disp else None)
+            gk = dict(n_gauss=n_gauss, max_gauss=max_gauss, ic=ic,
+                      bg_engine=bg_engine)
+            if validate_flag:
+                # band comes from the background-start ensemble; no per-trial MC
+                val = deer_module.deer_validate(
+                    t_us, v, r=r, bg_start=bg_us, bg_end=bg_end_us, dim=dim,
+                    fit_dim=fit_dim, engine='gauss', **gk)
+                res, band = val['base'], val
+            else:
+                res = deer_module.deer_invert_gauss(
+                    t_us, v, r=r, bg_start=bg_us, bg_end=bg_end_us, dim=dim,
+                    fit_dim=fit_dim, n_mc=n_mc, **gk)
+                band = None
+            res['t'] = x * tf
+            if bg_end_us is not None:
+                res['background']['bg_end'] = bge_disp * tf
+            return {'t0_disp': t0_disp, 'res': res, 'band': band}
+
+        self._deer_busy = True
+        self._deer_pending = False
+        self.gauss_run_btn.setEnabled(False)
+        self.gauss_run_btn.setStyleSheet(BUTTON_BUSY_STYLE)
+        self.set_status('Fitting zero-time t0…' if fit_t0
+                        else ('Multi-Gaussian validation: sweeping background '
+                              'start…' if validate_flag
+                              else 'Running Multi-Gaussian fit…'))
+        self._deer_worker = _DeerWorker(compute)
+        self._deer_worker.done.connect(self._deer_finished)
+        self._deer_worker.start()
+
     def _deer_finished(self, payload):
         """Apply a finished inversion (runs on the main thread via the signal).
-        Shared by the Tikhonov (`do_deer`) and Mellin (`do_mellin`) engines."""
+        Shared by the Tikhonov (`do_deer`), Mellin (`do_mellin`) and
+        Multi-Gaussian (`do_gauss`) engines."""
         self._deer_busy = False
-        for btn in (self.deer_run_btn, self.mellin_run_btn):
+        for btn in (self.deer_run_btn, self.mellin_run_btn, self.gauss_run_btn):
             btn.setStyleSheet(BUTTON_STYLE)
             btn.setEnabled(True)
         if isinstance(payload, Exception):
@@ -1553,13 +1748,19 @@ class MainWindow(QMainWindow):
         self.deer_band = band
         tf = self._deer_tfactor()
         is_mellin = res.get('engine', '').startswith('mellin')
+        is_gauss = res.get('engine', '') == 'gauss'
         self.deer_t0.blockSignals(True)
         self.deer_t0.setValue(t0_disp)
         self.deer_t0.blockSignals(False)
-        if not is_mellin and self.deer_alpha_auto.isChecked():
+        if not is_mellin and not is_gauss and self.deer_alpha_auto.isChecked():
             self.deer_alpha.blockSignals(True)
             self.deer_alpha.setValue(float(res['alpha']))
             self.deer_alpha.blockSignals(False)
+        # reflect the auto-chosen component count back into the (disabled) N box
+        if is_gauss and self.gauss_n_auto.isChecked():
+            self.gauss_n.blockSignals(True)
+            self.gauss_n.setValue(int(res.get('n_gauss', self.gauss_n.value())))
+            self.gauss_n.blockSignals(False)
 
         F, Ff = res['form_factor'], self._fit_curve(res)
         ss_tot = float(np.sum((F - F.mean()) ** 2)) or 1.0
@@ -1629,6 +1830,17 @@ class MainWindow(QMainWindow):
             tag_auto = ' (auto)' if res.get('auto_taumax') else ''
             reg = (f'split δ = {delta_disp:.4g} {tunit}<br>'
                    f'τ max = {res.get("tau_max", 0):.0f}{tag_auto}{disc}')
+        elif is_gauss:
+            n_auto = ' (auto, AICc)' if self.gauss_n_auto.isChecked() else ''
+            comp_lines = '<br>'.join(
+                f'&nbsp;&nbsp;{i+1}: r = {c["center"]:.3f} ± {c["center_err"]:.3f}, '
+                f'σ = {c["sigma"]:.3f} ± {c["sigma_err"]:.3f} nm, '
+                f'w = {c["weight"]:.2f}'
+                for i, c in enumerate(res.get('components', [])))
+            ic_name = str(res.get('ic', 'aicc')).upper()
+            ic_val = res.get(res.get('ic', 'aicc'), float('nan'))
+            reg = (f'{res.get("n_gauss", "?")} Gaussian(s){n_auto}, '
+                   f'{ic_name} = {ic_val:.1f}<br>{comp_lines}')
         else:
             reg = f'α = {res["alpha"]:.4g}'
         info_html = (
@@ -1645,11 +1857,18 @@ class MainWindow(QMainWindow):
         self.deer_info.setText(info_html)
         if is_mellin:
             self.mellin_info.setText(info_html)
+        if is_gauss:
+            self.gauss_info.setText(info_html)
         self._render()
         if is_mellin:
             self.set_status(f'Mellin: λ={res["lambda"]:.3f}, δ={delta_disp:.3g} '
                             f'{self.deer_tunit.currentText()}, peak r={r_peak:.2f} nm, '
                             f'R²={r2:.3f}.')
+        elif is_gauss:
+            tag = f' ({band["n_trials"]}-trial band)' if band else ''
+            self.set_status(f'Multi-Gaussian: {res.get("n_gauss", "?")} comp., '
+                            f'λ={res["lambda"]:.3f}, peak r={r_peak:.2f} nm, '
+                            f'R²={r2:.3f}{tag}.')
         else:
             tag = f' ({band["n_trials"]}-trial band)' if band else ''
             self.set_status(f'Tikhonov: λ={res["lambda"]:.3f}, α={res["alpha"]:.3g}, '
@@ -1697,6 +1916,18 @@ class MainWindow(QMainWindow):
                     and self.mellin_signed_chk.isChecked()):
                 pr_curves.append(('P(r) signed', res['r'],
                                   res['P_signed_density'], C_IM, 1))
+            # Multi-Gaussian: optionally overlay each fitted component (each
+            # area-normalized Gaussian scaled by its weight, so the components
+            # sum to the displayed total P(r)).
+            if (res.get('engine', '') == 'gauss'
+                    and self.gauss_comp_chk.isChecked()):
+                rr = np.asarray(res['r'], float)
+                for i, c in enumerate(res.get('components', [])):
+                    s = max(float(c['sigma']), 1e-6)
+                    comp = (float(c['weight'])
+                            * np.exp(-0.5*((rr - float(c['center']))/s)**2)
+                            / (s*np.sqrt(2.0*np.pi)))
+                    pr_curves.append((f'comp {i+1}', rr, comp, C_IM, 1))
             self._repaint(self.p_pr, self.pr_legend, self._pr_items, pr_curves,
                           'Distance (nm)', '_pr_key', left_label='P(r) (nm⁻¹)',
                           force=True)
@@ -2011,14 +2242,26 @@ class MainWindow(QMainWindow):
         t_disp = res['t'] / self._deer_tfactor()
         bg = res['background']
         is_mellin = res.get('engine', '').startswith('mellin')
+        is_gauss = res.get('engine', '') == 'gauss'
+        if is_mellin:
+            reg = (f'delta = {res.get("delta", 0)/self._deer_tfactor():.6g} {tunit}, '
+                   f'tau_max = {res.get("tau_max", 0):.6g}')
+        elif is_gauss:
+            comps = '; '.join(f'r{i+1}={c["center"]:.4g}+/-{c["center_err"]:.2g} '
+                              f'sigma={c["sigma"]:.4g}+/-{c["sigma_err"]:.2g} '
+                              f'w={c["weight"]:.3g}'
+                              for i, c in enumerate(res.get('components', [])))
+            ick = str(res.get('ic', 'aicc'))
+            reg = (f'N = {res.get("n_gauss", "?")}, {ick.upper()} = '
+                   f'{res.get(ick, float("nan")):.6g}, [{comps}]')
+        else:
+            reg = f'alpha = {res["alpha"]:.6g}'
         reg_line = (f'lambda = {res["lambda"]:.6g}, k = {res["k"]:.6g}, '
-                    f'dim = {res["dim"]:.6g}, '
-                    + (f'delta = {res.get("delta", 0)/self._deer_tfactor():.6g} {tunit}, '
-                       f'tau_max = {res.get("tau_max", 0):.6g}' if is_mellin
-                       else f'alpha = {res["alpha"]:.6g}'))
+                    f'dim = {res["dim"]:.6g}, ' + reg)
         hdr = ['DEER/PDS analysis ('
-               + ('analytic Mellin transform, doi 10.1039/C7CP04059H)'
-                  if is_mellin else 'Tikhonov + NNLS)'),
+               + ('analytic Mellin transform, doi 10.1039/C7CP04059H)' if is_mellin
+                  else 'sum-of-Gaussians fit)' if is_gauss
+                  else 'Tikhonov + NNLS)'),
                reg_line,
                f'r {res["r"][0]:.4g}-{res["r"][-1]:.4g} nm ({len(res["r"])} pts), '
                f'time unit {tunit}, bg start {self.deer_bgstart.value():.6g} {tunit}'
