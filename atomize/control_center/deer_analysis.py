@@ -189,8 +189,8 @@ class MainWindow(QMainWindow):
                                  'gui', 'icon_temp.png')
         self.setWindowIcon(QIcon(icon_path))
         self.setMinimumHeight(740)
-        self.setMinimumWidth(1000)
-        self.resize(1180, 820)
+        self.setMinimumWidth(1090)
+        self.resize(1270, 820)
         # background on the QMainWindow (not the central widget) so spinboxes
         # keep their full native frame
         self.setStyleSheet(f"background-color: {BG};")
@@ -301,7 +301,10 @@ class MainWindow(QMainWindow):
         self.status.setStyleSheet(LABEL_STYLE)
         self.status.setWordWrap(True)
         outer.addWidget(self.status)
-        container.setFixedWidth(430)
+        # Wide enough for all six tab labels to sit on one row (Source / Phase /
+        # Background / Tikhonov / Mellin / Multi-Gaussian); narrower than this and
+        # the tab bar overflows into left/right scroll buttons.
+        container.setFixedWidth(520)
         return container
 
     def _build_shared_controls(self):
