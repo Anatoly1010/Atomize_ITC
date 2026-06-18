@@ -894,6 +894,20 @@ class MainWindow(QMainWindow):
         self.gauss_comp_chk.stateChanged.connect(self._deer_rerender)
         grid.addWidget(self.gauss_comp_chk, r, 0, 1, 2); r += 1
 
+        self.gauss_support_chk = QCheckBox('Rigorous CIs (support-plane, 95%)')
+        self.gauss_support_chk.setStyleSheet(CHECKBOX_STYLE)
+        self.gauss_support_chk.setToolTip(
+            'Compute per-component confidence intervals by the rigorous support-'
+            'plane / profile-likelihood method (Stein, Beth & Hustedt, Methods '
+            'Enzymol. 2015): each centre / σ is scanned and all other parameters '
+            're-fit, the interval taken where the residual sum of squares rises '
+            'above its minimum by the 95% F-test threshold. Accounts for parameter '
+            'correlations and gives ASYMMETRIC intervals — the magnitudes the fast '
+            'linearized ±σ (default, shown when this is off) can mis-state. Slower '
+            '(many re-fits: ~1–5 s).')
+        self.gauss_support_chk.stateChanged.connect(self._gauss_live)
+        grid.addWidget(self.gauss_support_chk, r, 0, 1, 2); r += 1
+
         self.gauss_live = QCheckBox('Live update on parameter change')
         self.gauss_live.setStyleSheet(CHECKBOX_STYLE)
         grid.addWidget(self.gauss_live, r, 0, 1, 2); r += 1
@@ -1686,6 +1700,7 @@ class MainWindow(QMainWindow):
         max_gauss = int(self.gauss_nmax.value())
         ic = self.gauss_ic.currentText().lower()
         n_mc = 200 if self.deer_ci_chk.isChecked() else 0
+        ci_mode = 'support' if self.gauss_support_chk.isChecked() else 'linear'
         validate_flag = self.deer_validate_chk.isChecked()
 
         def compute():
@@ -1700,7 +1715,7 @@ class MainWindow(QMainWindow):
             bg_us = (bgs_disp - t0_disp) * tf
             bg_end_us = ((bge_disp - t0_disp) * tf if bge_disp > bgs_disp else None)
             gk = dict(n_gauss=n_gauss, max_gauss=max_gauss, ic=ic,
-                      bg_engine=bg_engine)
+                      bg_engine=bg_engine, ci_mode=ci_mode)
             if validate_flag:
                 # band comes from the background-start ensemble; no per-trial MC
                 val = deer_module.deer_validate(
@@ -1724,7 +1739,9 @@ class MainWindow(QMainWindow):
         self.set_status('Fitting zero-time t0…' if fit_t0
                         else ('Multi-Gaussian validation: sweeping background '
                               'start…' if validate_flag
-                              else 'Running Multi-Gaussian fit…'))
+                              else ('Running Multi-Gaussian fit '
+                                    '(support-plane CIs)…' if ci_mode == 'support'
+                                    else 'Running Multi-Gaussian fit…')))
         self._deer_worker = _DeerWorker(compute)
         self._deer_worker.done.connect(self._deer_finished)
         self._deer_worker.start()
@@ -1832,15 +1849,26 @@ class MainWindow(QMainWindow):
                    f'τ max = {res.get("tau_max", 0):.0f}{tag_auto}{disc}')
         elif is_gauss:
             n_auto = ' (auto, AICc)' if self.gauss_n_auto.isChecked() else ''
+            support = res.get('ci_mode') == 'support'
+
+            def _ci(c, key):
+                """Asymmetric -lo/+hi (support-plane) or symmetric ±err (linear)."""
+                lo = c.get(f'{key}_ci_lo'); hi = c.get(f'{key}_ci_hi')
+                v = c[key]
+                if support and lo is not None and hi is not None:
+                    return f'(−{v-lo:.3f}/+{hi-v:.3f})'
+                return f'± {c[key+"_err"]:.3f}'
             comp_lines = '<br>'.join(
-                f'&nbsp;&nbsp;{i+1}: r = {c["center"]:.3f} ± {c["center_err"]:.3f}, '
-                f'σ = {c["sigma"]:.3f} ± {c["sigma_err"]:.3f} nm, '
+                f'&nbsp;&nbsp;{i+1}: r = {c["center"]:.3f} {_ci(c, "center")}, '
+                f'σ = {c["sigma"]:.3f} {_ci(c, "sigma")} nm, '
                 f'w = {c["weight"]:.2f}'
                 for i, c in enumerate(res.get('components', [])))
             ic_name = str(res.get('ic', 'aicc')).upper()
             ic_val = res.get(res.get('ic', 'aicc'), float('nan'))
+            ci_tag = (f', 95% support-plane CI' if support
+                      else ', 1σ linearized')
             reg = (f'{res.get("n_gauss", "?")} Gaussian(s){n_auto}, '
-                   f'{ic_name} = {ic_val:.1f}<br>{comp_lines}')
+                   f'{ic_name} = {ic_val:.1f}{ci_tag}<br>{comp_lines}')
         else:
             reg = f'α = {res["alpha"]:.4g}'
         info_html = (
@@ -2247,13 +2275,20 @@ class MainWindow(QMainWindow):
             reg = (f'delta = {res.get("delta", 0)/self._deer_tfactor():.6g} {tunit}, '
                    f'tau_max = {res.get("tau_max", 0):.6g}')
         elif is_gauss:
-            comps = '; '.join(f'r{i+1}={c["center"]:.4g}+/-{c["center_err"]:.2g} '
-                              f'sigma={c["sigma"]:.4g}+/-{c["sigma_err"]:.2g} '
+            support = res.get('ci_mode') == 'support'
+
+            def _gci(c, key):
+                lo, hi = c.get(f'{key}_ci_lo'), c.get(f'{key}_ci_hi')
+                if support and lo is not None and hi is not None:
+                    return f'{c[key]:.4g}[{lo:.4g},{hi:.4g}]'
+                return f'{c[key]:.4g}+/-{c[key+"_err"]:.2g}'
+            comps = '; '.join(f'r{i+1}={_gci(c, "center")} sigma={_gci(c, "sigma")} '
                               f'w={c["weight"]:.3g}'
                               for i, c in enumerate(res.get('components', [])))
             ick = str(res.get('ic', 'aicc'))
+            ci_tag = ('95% support-plane CI' if support else '1sigma linearized')
             reg = (f'N = {res.get("n_gauss", "?")}, {ick.upper()} = '
-                   f'{res.get(ick, float("nan")):.6g}, [{comps}]')
+                   f'{res.get(ick, float("nan")):.6g}, {ci_tag}, [{comps}]')
         else:
             reg = f'alpha = {res["alpha"]:.6g}'
         reg_line = (f'lambda = {res["lambda"]:.6g}, k = {res["k"]:.6g}, '
