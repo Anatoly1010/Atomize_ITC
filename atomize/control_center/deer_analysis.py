@@ -1864,7 +1864,10 @@ class MainWindow(QMainWindow):
             ic_val = res.get(res.get('ic', 'aicc'), float('nan'))
             ci_tag = (f', 95% support-plane CI' if support
                       else ', 1σ linearized')
-            reg = (f'{res.get("n_gauss", "?")} Gaussian(s){n_auto}, '
+            # note when parsimony pruning dropped a spurious (floor-width) component
+            prune_tag = (f' [pruned from {res.get("n_gauss_ic")}]'
+                         if res.get('pruned') else '')
+            reg = (f'{res.get("n_gauss", "?")} Gaussian(s){n_auto}{prune_tag}, '
                    f'{ic_name} = {ic_val:.1f}{ci_tag}<br>{comp_lines}')
         else:
             reg = f'α = {res["alpha"]:.4g}'
