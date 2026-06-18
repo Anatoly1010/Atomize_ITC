@@ -612,10 +612,74 @@ class MainWindow(QMainWindow):
         self.deer_engine.currentIndexChanged.connect(self._live_update)
         self.deer_engine.currentIndexChanged.connect(self._mellin_live)
         self.deer_engine.currentIndexChanged.connect(self._gauss_live)
+        self.deer_engine.currentIndexChanged.connect(self._general_params_update)
         grid.addWidget(self.deer_engine, r, 1); r += 1
+
+        # General-background coefficients g(t) = a + b·t + c·dˣ, one per row. Auto
+        # (default) fits all four and writes the fitted values back here; uncheck
+        # Auto to set them by hand (used directly as the background, no fitting).
+        # Only active for the General background model.
+        grid.addWidget(self._label('General bg (a + b·t + c·dˣ)'), r, 0)
+        self.gbg_auto = QCheckBox('Auto (fit)')
+        self.gbg_auto.setStyleSheet(CHECKBOX_STYLE)
+        self.gbg_auto.setChecked(True)
+        self.gbg_auto.setToolTip(
+            'Auto: fit a, b, c, d on the tail window and show the result below. '
+            'Uncheck to set the four coefficients by hand — they are then used '
+            'directly as the background g(t) = a + b·t + c·dˣ (no fitting). '
+            'Only used by the General background model.')
+        self.gbg_auto.stateChanged.connect(self._general_params_update)
+        self.gbg_auto.stateChanged.connect(self._live_update)
+        self.gbg_auto.stateChanged.connect(self._mellin_live)
+        self.gbg_auto.stateChanged.connect(self._gauss_live)
+        grid.addWidget(self.gbg_auto, r, 1); r += 1
+
+        # ranges are wide: a + b·t + c·dˣ is over-parametrized for a gentle decay,
+        # so the auto-fit can land on a degenerate branch with large a / c (e.g. a
+        # near-constant exponential, d→1, trading against the offset). The boxes
+        # must hold whatever the fit returns so the auto→manual hand-off is exact.
+        self.gbg_a = QDoubleSpinBox(); self.gbg_b = QDoubleSpinBox()
+        self.gbg_c = QDoubleSpinBox(); self.gbg_d = QDoubleSpinBox()
+        for sp, label, lo, hi, dec, val, tip in (
+                (self.gbg_a, '   a (offset)',  -1e4, 1e4, 4, 0.5,
+                    'a — constant offset'),
+                (self.gbg_b, '   b (slope)',   -1e3, 1e3, 5, 0.0,
+                    'b — linear-drift slope (per µs)'),
+                (self.gbg_c, '   c (exp amp)', -1e4, 1e4, 4, 0.0,
+                    'c — exponential amplitude'),
+                (self.gbg_d, '   d (exp base)', 1e-4, 1.0, 4, 0.8,
+                    'd — exponential base, 0<d≤1 (decaying)')):
+            sp.setStyleSheet(DSPIN_STYLE)
+            sp.setRange(lo, hi); sp.setDecimals(dec); sp.setValue(val)
+            sp.setSingleStep(0.01); sp.setToolTip(tip)
+            sp.valueChanged.connect(self._live_update)
+            sp.valueChanged.connect(self._mellin_live)
+            sp.valueChanged.connect(self._gauss_live)
+            grid.addWidget(self._label(label), r, 0)
+            grid.addWidget(sp, r, 1); r += 1
+
         panel.addLayout(grid)
         panel.addStretch(1)
+        self._general_params_update()
         return w
+
+    def _general_params_update(self, *args):
+        """Enable the General-background coefficient boxes only when that model is
+        selected, and only let them be edited when Auto (fit) is off."""
+        is_general = self.deer_engine.currentIndex() == 3
+        auto = self.gbg_auto.isChecked()
+        self.gbg_auto.setEnabled(is_general)
+        for sp in (self.gbg_a, self.gbg_b, self.gbg_c, self.gbg_d):
+            sp.setEnabled(is_general and not auto)
+
+    def _general_bg_params(self):
+        """bg_params dict for the General background: None when auto-fitting,
+        else the hand-set {a, b, c, d, fit=False} used directly."""
+        if self.deer_engine.currentIndex() != 3 or self.gbg_auto.isChecked():
+            return None
+        return {'a': float(self.gbg_a.value()), 'b': float(self.gbg_b.value()),
+                'c': float(self.gbg_c.value()), 'd': float(self.gbg_d.value()),
+                'fit': False}
 
     # ---- Tab 4: Tikhonov inversion ----
     def _build_deer_tab(self):
@@ -1551,6 +1615,7 @@ class MainWindow(QMainWindow):
         bgs_disp = float(self.deer_bgstart.value())
         bge_disp = float(self.deer_bgend.value())
         t0_cur = float(self.deer_t0.value())
+        bgp = self._general_bg_params()
 
         def compute():
             t0_disp = t0_cur
@@ -1567,12 +1632,14 @@ class MainWindow(QMainWindow):
             if validate:
                 val = deer_module.deer_validate(
                     t_us, v, r=r, bg_start=bg_us, bg_end=bg_end_us, dim=dim,
-                    fit_dim=fit_dim, alpha=alpha, alpha_factor=afac, engine=engine)
+                    fit_dim=fit_dim, alpha=alpha, alpha_factor=afac, engine=engine,
+                    bg_params=bgp)
                 res, band = val['base'], val
             else:
                 res = deer_module.deer_invert(
                     t_us, v, r=r, bg_start=bg_us, bg_end=bg_end_us, dim=dim,
-                    fit_dim=fit_dim, alpha=alpha, alpha_factor=afac, engine=engine)
+                    fit_dim=fit_dim, alpha=alpha, alpha_factor=afac, engine=engine,
+                    bg_params=bgp)
                 band = None
             # display/cursors stay in the original acquisition time; only the
             # kernel used the t0-shifted axis internally
@@ -1627,6 +1694,7 @@ class MainWindow(QMainWindow):
         n_tau = int(self.mellin_ntau.value())
         validate = self.deer_validate_chk.isChecked()
         n_mc = 50 if self.deer_ci_chk.isChecked() else 0
+        bgp = self._general_bg_params()
 
         def compute():
             t0_disp = t0_cur
@@ -1641,7 +1709,7 @@ class MainWindow(QMainWindow):
             bg_end_us = ((bge_disp - t0_disp) * tf if bge_disp > bgs_disp else None)
             delta_us = (delta_disp * tf) if delta_disp > 0 else None
             mk = dict(delta=delta_us, tau_max=tau_max, n_tau=n_tau,
-                      bg_engine=bg_engine,
+                      bg_engine=bg_engine, bg_params=bgp,
                       signed_fit=self.mellin_signed_fit_chk.isChecked())
             if validate:
                 val = deer_module.deer_validate(
@@ -1706,6 +1774,7 @@ class MainWindow(QMainWindow):
         n_mc = 200 if self.deer_ci_chk.isChecked() else 0
         ci_mode = 'support' if self.gauss_support_chk.isChecked() else 'linear'
         validate_flag = self.deer_validate_chk.isChecked()
+        bgp = self._general_bg_params()
 
         def compute():
             t0_disp = t0_cur
@@ -1719,7 +1788,7 @@ class MainWindow(QMainWindow):
             bg_us = (bgs_disp - t0_disp) * tf
             bg_end_us = ((bge_disp - t0_disp) * tf if bge_disp > bgs_disp else None)
             gk = dict(n_gauss=n_gauss, max_gauss=max_gauss, ic=ic,
-                      bg_engine=bg_engine, ci_mode=ci_mode)
+                      bg_engine=bg_engine, ci_mode=ci_mode, bg_params=bgp)
             if validate_flag:
                 # band comes from the background-start ensemble; no per-trial MC
                 val = deer_module.deer_validate(
@@ -1777,6 +1846,15 @@ class MainWindow(QMainWindow):
             self.deer_alpha.blockSignals(True)
             self.deer_alpha.setValue(float(res['alpha']))
             self.deer_alpha.blockSignals(False)
+        # reflect the auto-fitted general-background coefficients into their boxes
+        gbgp = res.get('background', {}).get('params')
+        if (res.get('background', {}).get('model') == 'general' and gbgp
+                and self.gbg_auto.isChecked()):
+            for sp, key in ((self.gbg_a, 'a'), (self.gbg_b, 'b'),
+                            (self.gbg_c, 'c'), (self.gbg_d, 'd')):
+                sp.blockSignals(True)
+                sp.setValue(float(np.clip(gbgp[key], sp.minimum(), sp.maximum())))
+                sp.blockSignals(False)
         # reflect the auto-chosen component count back into the (disabled) N box
         if is_gauss and self.gauss_n_auto.isChecked():
             self.gauss_n.blockSignals(True)
