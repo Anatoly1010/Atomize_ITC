@@ -592,7 +592,8 @@ class MainWindow(QMainWindow):
         self.deer_engine = QComboBox()
         self.deer_engine.setStyleSheet(COMBO_STYLE)
         self.deer_engine.addItems(['Sequential', 'Joint (global)',
-                                   'None (no background)'])
+                                   'None (no background)',
+                                   'General (a + b·t + c·dˣ)'])
         self.deer_engine.setCurrentIndex(1)            # Joint (global) is the default
         self.deer_engine.setToolTip(
             'Sequential: fit the background on the tail window, divide it out, '
@@ -602,7 +603,12 @@ class MainWindow(QMainWindow):
             'for a clean Mellin fit. Default.\nNone (no background): B(t)=1, fit '
             'only the modulation depth λ. For pre-corrected / simulated / '
             'full-modulation (λ→1) data that has NO background — fitting a decay '
-            'there would absorb the dipolar decay and badly broaden P(r).')
+            'there would absorb the dipolar decay and badly broaden P(r).\n'
+            'General (a + b·t + c·dˣ): flexible empirical background — offset + '
+            'linear drift + exponential (base d), all four free — fit on the tail '
+            'window like Sequential. Use when the intermolecular decay is not a '
+            'stretched exponential; needs a clean (well-decayed) tail, since its '
+            'extra freedom will otherwise chase residual modulation.')
         self.deer_engine.currentIndexChanged.connect(self._live_update)
         self.deer_engine.currentIndexChanged.connect(self._mellin_live)
         self.deer_engine.currentIndexChanged.connect(self._gauss_live)
@@ -1367,13 +1373,12 @@ class MainWindow(QMainWindow):
         'noise alone (Nekrasov, Matveeva & Bowman, PCCP 2026). It is set by the '
         'form-factor noise, the time step and the trace length — not by the '
         'distribution — and needs no ground truth. The actual scatter of a '
-        'regularized fit sits at or below this bound. The grey error bar on the '
-        'P(r) plot marks mean r ± ME₁. width δr = rms width √(M₂−M₁²); '
-        'skew = third standardized moment of P(r).')
+        'regularized fit sits at or below this bound. width δr = rms width '
+        '√(M₂−M₁²); skew = third standardized moment of P(r).')
 
     def _bg_start_floor(self):
         """Engine-aware background-start floor (see BG_START_FRAC notes)."""
-        eng = ('sequential', 'joint', 'none')[self.deer_engine.currentIndex()]
+        eng = ('sequential', 'joint', 'none', 'general')[self.deer_engine.currentIndex()]
         return self.BG_START_FRAC_JOINT if eng in ('joint', 'none') else self.BG_START_FRAC
 
     def _auto_bg_start_value(self):
@@ -1538,7 +1543,7 @@ class MainWindow(QMainWindow):
         r = np.linspace(rmin, rmax, int(self.deer_rn.value()))
         alpha = None if self.deer_alpha_auto.isChecked() else float(self.deer_alpha.value())
         afac = float(self.deer_alpha_factor.value())
-        engine = ('sequential', 'joint', 'none')[self.deer_engine.currentIndex()]
+        engine = ('sequential', 'joint', 'none', 'general')[self.deer_engine.currentIndex()]
         dim = float(self.deer_dim.value())
         fit_dim = self.deer_fitdim.isChecked()
         validate = self.deer_validate_chk.isChecked()
@@ -1611,7 +1616,7 @@ class MainWindow(QMainWindow):
         dim = float(self.deer_dim.value())
         fit_dim = self.deer_fitdim.isChecked()
         fit_t0 = self.deer_fit_t0.isChecked()
-        bg_engine = ('sequential', 'joint', 'none')[self.deer_engine.currentIndex()]
+        bg_engine = ('sequential', 'joint', 'none', 'general')[self.deer_engine.currentIndex()]
         bgs_disp = float(self.deer_bgstart.value())
         bge_disp = float(self.deer_bgend.value())
         t0_cur = float(self.deer_t0.value())
@@ -1690,7 +1695,7 @@ class MainWindow(QMainWindow):
         dim = float(self.deer_dim.value())
         fit_dim = self.deer_fitdim.isChecked()
         fit_t0 = self.deer_fit_t0.isChecked()
-        bg_engine = ('sequential', 'joint', 'none')[self.deer_engine.currentIndex()]
+        bg_engine = ('sequential', 'joint', 'none', 'general')[self.deer_engine.currentIndex()]
         bgs_disp = float(self.deer_bgstart.value())
         bge_disp = float(self.deer_bgend.value())
         t0_cur = float(self.deer_t0.value())
@@ -1871,12 +1876,20 @@ class MainWindow(QMainWindow):
                    f'{ic_name} = {ic_val:.1f}{ci_tag}<br>{comp_lines}')
         else:
             reg = f'α = {res["alpha"]:.4g}'
+        # background line: the general model reports its a/b/c/d coefficients
+        # (k / dim are not defined for it), the others their decay rate / dimension
+        bgp = res.get('background', {}).get('params')
+        if res.get('background', {}).get('model') == 'general' and bgp:
+            bg_line = (f'bg: a + b·t + c·dˣ &nbsp;(a={bgp["a"]:.3g}, b={bgp["b"]:.3g}, '
+                       f'c={bgp["c"]:.3g}, d={bgp["d"]:.3g})')
+        else:
+            bg_line = f'bg decay k = {res["k"]:.4g}, dim = {res["dim"]:.2f}'
         info_html = (
             '<div style="line-height: 165%;">'
             f'<b style="color: rgb(211, 194, 78);">P(r)</b>{med_tag}'
             f' &nbsp;<i>({res.get("engine", "—")})</i><br>'
             f'mod. depth λ = {res["lambda"]:.3f}<br>'
-            f'bg decay k = {res["k"]:.4g}, dim = {res["dim"]:.2f}<br>'
+            f'{bg_line}<br>'
             f'{reg}<br>'
             f'peak r = {r_peak:.3f} nm<br>'
             f'mean r = {r_mean:.3f}{me1_txt} nm<br>'
@@ -2259,8 +2272,13 @@ class MainWindow(QMainWindow):
                    f'{res.get(ick, float("nan")):.6g}, {ci_tag}, [{comps}]')
         else:
             reg = f'alpha = {res["alpha"]:.6g}'
-        reg_line = (f'lambda = {res["lambda"]:.6g}, k = {res["k"]:.6g}, '
-                    f'dim = {res["dim"]:.6g}, ' + reg)
+        bgp = res.get('background', {}).get('params')
+        if res.get('background', {}).get('model') == 'general' and bgp:
+            bg_terms = (f'background a + b*t + c*d^t (a={bgp["a"]:.6g}, b={bgp["b"]:.6g}, '
+                        f'c={bgp["c"]:.6g}, d={bgp["d"]:.6g})')
+        else:
+            bg_terms = f'k = {res["k"]:.6g}, dim = {res["dim"]:.6g}'
+        reg_line = f'lambda = {res["lambda"]:.6g}, {bg_terms}, ' + reg
         hdr = ['DEER/PDS analysis ('
                + ('analytic Mellin transform, doi 10.1039/C7CP04059H)' if is_mellin
                   else 'sum-of-Gaussians fit)' if is_gauss
