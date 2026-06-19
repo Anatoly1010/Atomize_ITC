@@ -175,14 +175,14 @@ class Saver_Opener():
         if self.test_flag != 'test':
 
             header_array = []
-            file_to_read = open(file_path, 'r')
+            file_to_read = open(file_path, 'r', errors = 'ignore')
             for i, line in enumerate(file_to_read):
                 if i is header: break
                 temp = line.split(":")
                 header_array.append(temp)
             file_to_read.close()
 
-            temp = np.genfromtxt(file_path, dtype = float, delimiter = ',') 
+            temp = np.genfromtxt(file_path, dtype = float, delimiter = ',', encoding = 'latin1')
             data = np.transpose(temp)
             return header_array, data
 
@@ -193,14 +193,14 @@ class Saver_Opener():
         if self.test_flag != 'test':
 
             header_array = []
-            file_to_read = open(file_path, 'r')
+            file_to_read = open(file_path, 'r', errors = 'ignore')
             for i, line in enumerate(file_to_read):
                 if i is header: break
                 temp=line.split(":")
                 header_array.append(temp)
             file_to_read.close()
 
-            temp = np.genfromtxt(file_path, dtype = float, delimiter = ',') 
+            temp = np.genfromtxt(file_path, dtype = float, delimiter = ',', encoding = 'latin1')
             data = temp
             return header_array, data
 
@@ -211,14 +211,14 @@ class Saver_Opener():
         if self.test_flag != 'test':
 
             header_array = []
-            file_to_read = open(file_path, 'r')
+            file_to_read = open(file_path, 'r', errors = 'ignore')
             for i, line in enumerate(file_to_read):
                 if i is header: break
                 temp=line.split(":")
                 header_array.append(temp)
             file_to_read.close()
 
-            temp = np.genfromtxt(file_path, dtype = float, delimiter = ',') 
+            temp = np.genfromtxt(file_path, dtype = float, delimiter = ',', encoding = 'latin1')
             data = np.array_split(temp, chunk_size)
             return header_array, data
 
