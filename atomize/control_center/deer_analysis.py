@@ -141,7 +141,10 @@ class MainWindow(QMainWindow):
         self.bruker = bruker.Bruker_Opener()
         self.fft = fft_module.Fast_Fourier()
 
-        # label -> (x, y) of every loaded source curve
+        # name -> {channel label: (x, y)} for every loaded file/trace; the trace
+        # selector picks one as active and copies it into self.datasets
+        self.traces = {}
+        # channel label -> (x, y) of the *active* trace's source curves
         self.datasets = {}
         # phased real trace (x, V) fed to the inversion — the DEER input
         self.real_xy = (None, None)
@@ -153,8 +156,14 @@ class MainWindow(QMainWindow):
         # DEER/PDS state: last full result dict + validation ensemble
         self.deer_result = None
         self.deer_band = None
+        self.batch_results = None          # last 'Process all' per-trace results
+        self._batch_mode = False           # True while the per-trace overlay is shown
+        self._batch_band_items = {}        # name -> (lo, hi, fill) per-trace CI bands
+        self.batch_table = None            # last 'Process all' summary table
         # P(r) validation band items (on the bottom plot)
         self._band_lo = self._band_hi = self._band_fill = None
+        # green/yellow/red distance-reliability zones (on the bottom plot)
+        self._reliab_regions = None
         # draggable background start/end cursors + L-curve marker (top plot)
         self._bg_cursor = None
         self._bg_cursor_end = None
@@ -277,6 +286,7 @@ class MainWindow(QMainWindow):
         outer = QVBoxLayout(container)
         outer.setContentsMargins(0, 0, 0, 0)
         tabs = QTabWidget()
+        self.deer_tabs = tabs                  # queried by "Process all" for the engine
         tabs.setStyleSheet(TAB_STYLE)
         tabs.addTab(self._scroll(self._build_source_tab()), 'Source')
         tabs.addTab(self._scroll(self._build_phase_tab()), 'Phase')
@@ -376,6 +386,19 @@ class MainWindow(QMainWindow):
         self.deer_ci_chk.stateChanged.connect(self._ci_toggled)
         grid.addWidget(self.deer_ci_chk, r, 0, 1, 2); r += 1
 
+        self.deer_reliab_chk = QCheckBox('Reliability shading on P(r)')
+        self.deer_reliab_chk.setStyleSheet(CHECKBOX_STYLE)
+        self.deer_reliab_chk.setChecked(True)
+        self.deer_reliab_chk.setToolTip(
+            'Shade the P(r) distance axis by the DeerAnalysis reliability ranges '
+            'set by the dipolar evolution time t_max (DeerLab/DeerAnalysis '
+            'convention, r in nm, t_max in µs):\n'
+            '  green  — shape reliable, r ≤ 3·(t_max/2)^⅓\n'
+            '  yellow — mean & width reliable, r ≤ 5·(t_max/2)^⅓\n'
+            '  red    — beyond the trace-supported range (unreliable).')
+        self.deer_reliab_chk.stateChanged.connect(self._deer_rerender)
+        grid.addWidget(self.deer_reliab_chk, r, 0, 1, 2); r += 1
+
         self.deer_validate_chk = QCheckBox('Validate (background sweep → P(r) band)')
         self.deer_validate_chk.setStyleSheet(CHECKBOX_STYLE)
         self.deer_validate_chk.setToolTip(
@@ -386,12 +409,46 @@ class MainWindow(QMainWindow):
         self.deer_validate_chk.stateChanged.connect(self._mellin_live)
         self.deer_validate_chk.stateChanged.connect(self._gauss_live)
         grid.addWidget(self.deer_validate_chk, r, 0, 1, 2); r += 1
+
+        # Batch: run one engine over every loaded trace and overlay the results.
+        # Kept here (always visible) with its own engine picker so it does not
+        # depend on which tab is open.
+        grid.addWidget(self._label('Process all (engine)'), r, 0)
+        pa_row = QHBoxLayout()
+        self.batch_engine = QComboBox()
+        self.batch_engine.setStyleSheet(COMBO_STYLE)
+        self.batch_engine.addItems(['Tikhonov', 'Mellin', 'Multi-Gaussian'])
+        self.batch_engine.setToolTip('Inversion engine used by "Process all traces".')
+        self.process_all_btn = QPushButton('Process all traces')
+        self.process_all_btn.setStyleSheet(BUTTON_STYLE)
+        self.process_all_btn.setToolTip(
+            'Run the chosen engine on every loaded trace with the current '
+            'parameters and overlay the results: P(r) on the bottom plot, the '
+            'top-plot quantity (Show) on top, one colour per trace.')
+        self.process_all_btn.clicked.connect(self.process_all)
+        self.batch_save_btn = QPushButton('Save batch…')
+        self.batch_save_btn.setStyleSheet(BUTTON_STYLE)
+        self.batch_save_btn.setToolTip('Save the per-trace summary table and all '
+                                       'P(r) curves as CSV.')
+        self.batch_save_btn.clicked.connect(self.save_batch)
+        self.batch_save_btn.setEnabled(False)
+        pa_row.addWidget(self.batch_engine); pa_row.addWidget(self.process_all_btn)
+        pa_row.addWidget(self.batch_save_btn)
+        grid.addLayout(pa_row, r, 1); r += 1
         return w
 
     def _ci_toggled(self, *args):
         """Confidence-band checkbox: Tikhonov keeps its CI in the result so a
         re-render suffices; the Mellin CI is a Monte-Carlo pass computed only when
         requested, so toggling it on needs a re-inversion."""
+        if self._batch_mode and self.batch_results:
+            # in batch mode: turning CI on needs a recompute (MC bands); turning
+            # it off just drops the bands from the overlay
+            if self.deer_ci_chk.isChecked():
+                self.process_all()
+            else:
+                self._render_batch(self.batch_results)
+            return
         if self.deer_result is None:
             return
         eng = self.deer_result.get('engine', '')
@@ -425,6 +482,23 @@ class MainWindow(QMainWindow):
             btn.clicked.connect(slot)
             src_row.addWidget(btn)
         panel.addLayout(src_row)
+
+        # trace selector: each opened file (or plot load) is one trace; the combo
+        # picks which one is active and feeds the phase -> inversion pipeline.
+        trace_row = QHBoxLayout()
+        trace_row.addWidget(self._label('Trace'))
+        self.trace_combo = QComboBox()
+        self.trace_combo.setStyleSheet(COMBO_STYLE)
+        self.trace_combo.setToolTip('Active trace. Open several files to compare; '
+                                    'each becomes a selectable trace here.')
+        self.trace_combo.currentIndexChanged.connect(self._activate_trace)
+        trace_row.addWidget(self.trace_combo, 1)
+        self.trace_remove_btn = QPushButton('Remove')
+        self.trace_remove_btn.setStyleSheet(BUTTON_STYLE)
+        self.trace_remove_btn.setToolTip('Remove the active trace from the list.')
+        self.trace_remove_btn.clicked.connect(self._remove_trace)
+        trace_row.addWidget(self.trace_remove_btn)
+        panel.addLayout(trace_row)
 
         self.loaded_label = QLabel('File: —')
         self.loaded_label.setStyleSheet(LABEL_STYLE)
@@ -1069,12 +1143,18 @@ class MainWindow(QMainWindow):
         self.last_dir = os.path.dirname(path) or self.last_dir
         _save_last_dir(self.last_dir)
 
-    def _open_dialog(self, **kw):
-        path = self.opener.open_file_dialog(multiprocessing=True,
-                                            directory=self.last_dir, **kw)
-        if path and path != 'None':
-            self._remember_dir(path)
-        return path
+    def _open_dialog(self, multiple=False, **kw):
+        result = self.opener.open_file_dialog(multiprocessing=True,
+                                              directory=self.last_dir,
+                                              multiple=multiple, **kw)
+        if multiple:
+            paths = [p for p in (result or []) if p and p != 'None']
+            if paths:
+                self._remember_dir(paths[0])
+            return paths
+        if result and result != 'None':
+            self._remember_dir(result)
+        return result
 
     def _save_dialog(self, **kw):
         path = self.opener.create_file_dialog(multiprocessing=True,
@@ -1114,39 +1194,51 @@ class MainWindow(QMainWindow):
         if u in tmap:
             self.deer_tunit.setCurrentText(tmap[u])
 
+    def _csv_to_mapping(self, file_path):
+        """Read a CSV into a {channel label: (x, y)} mapping plus its header
+        labels. Raises ValueError on a structurally unusable file."""
+        _, data = self.opener.open_1d(file_path)
+        data = np.atleast_2d(data)
+        if data.shape[0] < 2:
+            raise ValueError('needs at least two columns (X and Y)')
+        if data.shape[0] > 6:
+            raise ValueError(f'looks like a 2D dataset ({data.shape[0]} columns)')
+        x = data[0]
+        labels = self._csv_header_labels(file_path)
+        mapping = {}
+        for i in range(1, data.shape[0]):
+            y = data[i]
+            mask = ~(np.isnan(x) | np.isnan(y))
+            name = labels[i] if (i < len(labels) and labels[i]) else f'Y{i}'
+            while name in mapping:
+                name += "'"
+            mapping[name] = (x[mask], y[mask])
+        return mapping, labels
+
     def open_csv(self):
-        file_path = self._open_dialog()
-        if not file_path or file_path == 'None':
+        paths = self._open_dialog(multiple=True)
+        if not paths:
             return
-        try:
-            _, data = self.opener.open_1d(file_path)
-            data = np.atleast_2d(data)
-            if data.shape[0] < 2:
-                self.set_status('CSV needs at least two columns (X and Y).')
-                return
-            if data.shape[0] > 6:
-                self.set_status(f'This looks like a 2D dataset ({data.shape[0]} '
-                                f'columns). Load a single V(t) trace (X + 1–2 '
-                                f'channels) here.')
-                return
-            x = data[0]
-            labels = self._csv_header_labels(file_path)
-            mapping = {}
-            for i in range(1, data.shape[0]):
-                y = data[i]
-                mask = ~(np.isnan(x) | np.isnan(y))
-                name = labels[i] if (i < len(labels) and labels[i]) else f'Y{i}'
-                while name in mapping:
-                    name += "'"
-                mapping[name] = (x[mask], y[mask])
-            if labels and labels[0]:
-                self._preset_deer_unit(labels[0])
-            self._register_datasets(mapping)
-            self._set_loaded_file(os.path.basename(file_path))
-            self.set_status(f'Loaded {os.path.basename(file_path)} '
-                            f'({data.shape[0] - 1} curve(s)).')
-        except Exception as e:
-            self.set_status(f'Could not read CSV: {e}')
+        items, failed, unit_label = [], [], None
+        for file_path in paths:
+            try:
+                mapping, labels = self._csv_to_mapping(file_path)
+            except Exception as e:
+                failed.append(f'{os.path.basename(file_path)} ({e})')
+                continue
+            if unit_label is None and labels and labels[0]:
+                unit_label = labels[0]
+            items.append((os.path.splitext(os.path.basename(file_path))[0], mapping))
+        # preset the time unit BEFORE registering (the auto distance range scales
+        # with _deer_tfactor(), which depends on the unit)
+        if unit_label:
+            self._preset_deer_unit(unit_label)
+        if items:
+            self._add_traces(items)
+        msg = f'Loaded {len(items)} trace(s)' if items else 'No traces loaded'
+        if failed:
+            msg += '. Skipped: ' + '; '.join(failed)
+        self.set_status(msg + '.')
 
     def open_bruker(self):
         """Load a Bruker dataset (BES3T .DSC/.DTA or ESP/WinEPR .par/.spc). A
@@ -1169,17 +1261,16 @@ class MainWindow(QMainWindow):
             return
         x = np.asarray(res['x'], dtype=float)
         mapping = {lbl: (x, np.asarray(y, dtype=float)) for lbl, y in res['channels']}
-        # Preset the time unit BEFORE registering: _register_datasets runs the
+        # Preset the time unit BEFORE registering: activating a trace runs the
         # auto distance range, which scales with _deer_tfactor(). Setting the
         # unit afterwards leaves the auto min/max one load behind.
         u = (res['x_unit'] or '').strip().lower()
         tmap = {'ns': 'ns', 'us': 'µs', 'µs': 'µs', 'μs': 'µs', 'ms': 'ms'}
         if u in tmap:
             self.deer_tunit.setCurrentText(tmap[u])
-        self._register_datasets(mapping)
         # leave I/Q pairing OFF by default even for complex data — the user opts in
         # (many traces are already phased; auto-pairing surprised more than it helped)
-        self._set_loaded_file(os.path.basename(file_path))
+        self._add_traces([(os.path.splitext(os.path.basename(file_path))[0], mapping)])
         self.set_status(f'Loaded {os.path.basename(file_path)} — {res["format"]}, '
                         f'{len(x)} pts, '
                         + ('complex (I/Q pair).' if res['complex'] else 'real.'))
@@ -1222,8 +1313,7 @@ class MainWindow(QMainWindow):
                 return
             if buf_xname:
                 self._preset_deer_unit(buf_xname)
-            self._register_datasets(mapping)
-            self._set_loaded_file('Loaded from plot')
+            self._add_traces([('Loaded from plot', mapping)])
             self.set_status(f'Loaded {len(mapping)} curve(s) from the current plot.')
         except Exception as e:
             self._consume_buffer()
@@ -1237,10 +1327,42 @@ class MainWindow(QMainWindow):
         except OSError:
             pass
 
-    def _register_datasets(self, mapping):
-        # A fresh load turns off live update so the raw trace is shown as-is.
+    def _unique_trace_name(self, name):
+        """A trace name not already in use (append (2), (3), … on collision)."""
+        name = name or 'trace'
+        if name not in self.traces:
+            return name
+        i = 2
+        while f'{name} ({i})' in self.traces:
+            i += 1
+        return f'{name} ({i})'
+
+    def _add_traces(self, items):
+        """Register one or more (name, channel-mapping) traces and make the last
+        one active. `items` is a list of (name, {label: (x, y)})."""
+        added = []
+        for name, mapping in items:
+            if not mapping:
+                continue
+            uname = self._unique_trace_name(name)
+            self.traces[uname] = dict(mapping)
+            added.append(uname)
+        if not added:
+            return
+        self.trace_combo.blockSignals(True)
+        self.trace_combo.addItems(added)
+        self.trace_combo.setCurrentIndex(self.trace_combo.count() - 1)
+        self.trace_combo.blockSignals(False)
+        self._activate_trace()                     # show the newly added trace
+
+    def _activate_trace(self, *args):
+        """Copy the selected trace's channels into self.datasets and rebuild the
+        channel selectors + downstream state (the per-load reset)."""
+        name = self.trace_combo.currentText()
+        mapping = self.traces.get(name, {})
+        # A fresh activation turns off live update so the raw trace is shown as-is.
         self.live_check.setChecked(False)
-        for sb in (self.trim_start, self.trim_end):   # new data: no trim carried over
+        for sb in (self.trim_start, self.trim_end):   # new trace: no trim carried over
             sb.blockSignals(True)
             sb.setValue(0)
             sb.blockSignals(False)
@@ -1261,12 +1383,33 @@ class MainWindow(QMainWindow):
         self.on_source_changed()                  # populates self.real_xy
         self._reset_bg_window()                    # default bg start (~2/3) + end (last pt)
         self._show_input()                         # reposition cursors at the new window
+        if name:
+            self._set_loaded_file(f'{name}  ({self.trace_combo.currentIndex() + 1} '
+                                  f'of {self.trace_combo.count()})')
+
+    def _remove_trace(self):
+        """Drop the active trace; activate the next one, or clear if none remain."""
+        name = self.trace_combo.currentText()
+        if not name:
+            return
+        self.traces.pop(name, None)
+        idx = self.trace_combo.currentIndex()
+        self.trace_combo.blockSignals(True)
+        self.trace_combo.removeItem(idx)
+        self.trace_combo.blockSignals(False)
+        if self.trace_combo.count():
+            self.trace_combo.setCurrentIndex(min(idx, self.trace_combo.count() - 1))
+            self._activate_trace()
+            self.set_status(f'Removed trace "{name}".')
+        else:
+            self.clear_all()
 
     # --------------------------------------------------------- channels
     def on_source_changed(self, *args):
         """I/Q selection or pair-mode change: drop the result, re-phase, re-show."""
         self.deer_result = None
         self.deer_band = None
+        self._batch_mode = False           # switching source leaves the batch overlay
         self._clear_overlays()
         self._apply_phase()
         self._show_input()
@@ -1359,9 +1502,12 @@ class MainWindow(QMainWindow):
         """Repaint one plot: reuse curve items via setData, drop stale labels,
         set the axis labels, and auto-range when the plotted content changes."""
         wanted = set()
-        for lbl, x, y, color, width in curves:
+        for spec in curves:
+            lbl, x, y, color, width = spec[:5]
+            style = spec[5] if len(spec) > 5 else None    # optional pen style (dashed fits)
             wanted.add(lbl)
-            pen = pg.mkPen(color, width=width)
+            pen = (pg.mkPen(color, width=width, style=style) if style is not None
+                   else pg.mkPen(color, width=width))
             xd, yd = np.asarray(x, dtype=float), np.asarray(y, dtype=float)
             item = items.get(lbl)
             if item is None:
@@ -1399,6 +1545,7 @@ class MainWindow(QMainWindow):
         can be placed before running the inversion."""
         x, v = self.real_xy
         self._show_deer_band(False)
+        self._show_reliab_bands(False)
         self._show_lcurve_marker(False)
         if x is None or not len(x):
             self._show_bg_cursor(False)
@@ -1608,6 +1755,19 @@ class MainWindow(QMainWindow):
         self.deer_bgend.setValue(float(np.asarray(x, dtype=float)[-1]))
 
     # --------------------------------------------------------- inversion
+    def _start_inversion(self, compute, status, btn):
+        """Run `compute` on the worker thread, marking `btn` busy; the result is
+        applied in `_deer_finished`. Shared by the three engine wrappers."""
+        self._batch_mode = False           # a single fit replaces the batch overlay
+        self._deer_busy = True
+        self._deer_pending = False
+        btn.setEnabled(False)
+        btn.setStyleSheet(BUTTON_BUSY_STYLE)
+        self.set_status(status)
+        self._deer_worker = _DeerWorker(compute)
+        self._deer_worker.done.connect(self._deer_finished)
+        self._deer_worker.start()
+
     def do_deer(self):
         """Background-correct V(t) and invert to P(r) (Tikhonov + NNLS).
 
@@ -1615,20 +1775,30 @@ class MainWindow(QMainWindow):
         thread so the window stays responsive; results are applied back on the
         main thread in `_deer_finished`.
         """
-        x, v = self.real_xy
-        if x is None or len(x) < 8:
-            self.set_status('Load a V(t) trace first (≥ 8 points).')
-            return
         if self._deer_busy:
             # a fit is already running; remember to refit once it returns so the
             # latest parameters / cursor positions are not lost
             self._deer_pending = True
             return
+        compute, status = self._tikhonov_compute()
+        if compute is None:
+            self.set_status(status)
+            return
+        self._start_inversion(compute, status, self.deer_run_btn)
+
+    def _tikhonov_compute(self):
+        """Snapshot the Tikhonov parameters from the widgets and return
+        (compute, status). `compute` is a Qt-free callable that runs the
+        zero-time + background + inversion and returns the `_deer_finished`
+        payload; returns (None, message) when the inputs are unusable. Shared by
+        `do_deer` and the batch `process_all`."""
+        x, v = self.real_xy
+        if x is None or len(x) < 8:
+            return None, 'Load a V(t) trace first (≥ 8 points).'
         tf = self._deer_tfactor()
         rmin, rmax = self.deer_rmin.value(), self.deer_rmax.value()
         if rmax <= rmin:
-            self.set_status('Distance max must exceed min.')
-            return
+            return None, 'Distance max must exceed min.'
         # snapshot everything the computation needs as plain values (the worker
         # must not touch Qt widgets)
         x = np.asarray(x, dtype=float)
@@ -1677,34 +1847,35 @@ class MainWindow(QMainWindow):
                 res['background']['bg_end'] = bge_disp * tf
             return {'t0_disp': t0_disp, 'res': res, 'band': band}
 
-        self._deer_busy = True
-        self._deer_pending = False
-        self.deer_run_btn.setEnabled(False)
-        self.deer_run_btn.setStyleSheet(BUTTON_BUSY_STYLE)
-        self.set_status('Fitting zero-time t0…' if fit_t0
-                        else ('Tikhonov validation: sweeping background start…'
-                              if validate else 'Running Tikhonov…'))
-        self._deer_worker = _DeerWorker(compute)
-        self._deer_worker.done.connect(self._deer_finished)
-        self._deer_worker.start()
+        status = ('Fitting zero-time t0…' if fit_t0
+                  else ('Tikhonov validation: sweeping background start…'
+                        if validate else 'Running Tikhonov…'))
+        return compute, status
 
     def do_mellin(self):
         """Invert V(t) to P(r) by the analytic Mellin transform (model-free, no
         Tikhonov). Reuses the Background tab's zero-time / window / dimension and
         the shared distance grid; the Mellin tab supplies δ, τmax, τ points.
         Runs on the same worker thread + finisher as `do_deer`."""
-        x, v = self.real_xy
-        if x is None or len(x) < 8:
-            self.set_status('Load a V(t) trace first (≥ 8 points).')
-            return
         if self._deer_busy:
             self.set_status('Busy — wait for the running inversion to finish.')
             return
+        compute, status = self._mellin_compute()
+        if compute is None:
+            self.set_status(status)
+            return
+        self._start_inversion(compute, status, self.mellin_run_btn)
+
+    def _mellin_compute(self):
+        """Snapshot the Mellin parameters and return (compute, status) — see
+        `_tikhonov_compute`. Shared by `do_mellin` and `process_all`."""
+        x, v = self.real_xy
+        if x is None or len(x) < 8:
+            return None, 'Load a V(t) trace first (≥ 8 points).'
         tf = self._deer_tfactor()
         rmin, rmax = self.deer_rmin.value(), self.deer_rmax.value()
         if rmax <= rmin:
-            self.set_status('Distance max must exceed min.')
-            return
+            return None, 'Distance max must exceed min.'
         # snapshot plain values for the worker (no Qt access inside compute)
         x = np.asarray(x, dtype=float)
         v = np.asarray(v, dtype=float)
@@ -1755,17 +1926,11 @@ class MainWindow(QMainWindow):
                 res['background']['bg_end'] = bge_disp * tf
             return {'t0_disp': t0_disp, 'res': res, 'band': band}
 
-        self._deer_busy = True
-        self._deer_pending = False
-        self.mellin_run_btn.setEnabled(False)
-        self.mellin_run_btn.setStyleSheet(BUTTON_BUSY_STYLE)
-        self.set_status('Fitting zero-time t0…' if fit_t0
-                        else ('Mellin validation: sweeping background start…'
-                              if validate else ('Running Mellin transform '
-                              '(+ CI)…' if n_mc else 'Running Mellin transform…')))
-        self._deer_worker = _DeerWorker(compute)
-        self._deer_worker.done.connect(self._deer_finished)
-        self._deer_worker.start()
+        status = ('Fitting zero-time t0…' if fit_t0
+                  else ('Mellin validation: sweeping background start…'
+                        if validate else ('Running Mellin transform '
+                        '(+ CI)…' if n_mc else 'Running Mellin transform…')))
+        return compute, status
 
     def do_gauss(self):
         """Invert V(t) to P(r) by a parametric sum-of-Gaussians fit (model
@@ -1773,18 +1938,25 @@ class MainWindow(QMainWindow):
         zero-time / window / dimension and the shared distance grid; the
         Multi-Gaussian tab supplies N / N max / criterion. Runs on the same
         worker thread + finisher as `do_deer` / `do_mellin`."""
-        x, v = self.real_xy
-        if x is None or len(x) < 8:
-            self.set_status('Load a V(t) trace first (≥ 8 points).')
-            return
         if self._deer_busy:
             self.set_status('Busy — wait for the running inversion to finish.')
             return
+        compute, status = self._gauss_compute()
+        if compute is None:
+            self.set_status(status)
+            return
+        self._start_inversion(compute, status, self.gauss_run_btn)
+
+    def _gauss_compute(self):
+        """Snapshot the Multi-Gaussian parameters and return (compute, status) —
+        see `_tikhonov_compute`. Shared by `do_gauss` and `process_all`."""
+        x, v = self.real_xy
+        if x is None or len(x) < 8:
+            return None, 'Load a V(t) trace first (≥ 8 points).'
         tf = self._deer_tfactor()
         rmin, rmax = self.deer_rmin.value(), self.deer_rmax.value()
         if rmax <= rmin:
-            self.set_status('Distance max must exceed min.')
-            return
+            return None, 'Distance max must exceed min.'
         # snapshot plain values for the worker (no Qt access inside compute)
         x = np.asarray(x, dtype=float)
         v = np.asarray(v, dtype=float)
@@ -1841,21 +2013,281 @@ class MainWindow(QMainWindow):
                 res['background']['bg_end'] = bge_disp * tf
             return {'t0_disp': t0_disp, 'res': res, 'band': band}
 
-        self._deer_busy = True
-        self._deer_pending = False
-        self.gauss_run_btn.setEnabled(False)
-        self.gauss_run_btn.setStyleSheet(BUTTON_BUSY_STYLE)
-        self.set_status('Fitting zero-time t0…' if fit_t0
-                        else ('Multi-Gaussian validation: sweeping background '
-                              'start…' if validate_flag
+        status = ('Fitting zero-time t0…' if fit_t0
+                  else ('Multi-Gaussian validation: sweeping background '
+                        'start…' if validate_flag
+                        else ('Running Multi-Gaussian fit '
+                              '(Monte-Carlo, Pake domain)…' if gmethod == 'mc'
                               else ('Running Multi-Gaussian fit '
-                                    '(Monte-Carlo, Pake domain)…' if gmethod == 'mc'
-                                    else ('Running Multi-Gaussian fit '
-                                          '(support-plane CIs)…' if ci_mode == 'support'
-                                          else 'Running Multi-Gaussian fit…'))))
-        self._deer_worker = _DeerWorker(compute)
-        self._deer_worker.done.connect(self._deer_finished)
-        self._deer_worker.start()
+                                    '(support-plane CIs)…' if ci_mode == 'support'
+                                    else 'Running Multi-Gaussian fit…'))))
+        return compute, status
+
+    # ---------------------------------------------------------- batch: all traces
+    # distinct curve colours for the per-trace overlay (cycled if more traces)
+    BATCH_COLORS = [(211, 194, 78), (120, 170, 255), (120, 220, 150),
+                    (230, 140, 90), (200, 120, 220), (90, 200, 200),
+                    (240, 120, 150), (170, 200, 90)]
+
+    def _current_engine(self):
+        """Inversion engine for 'Process all', from its own engine picker
+        (independent of which tab is open)."""
+        return ('tikhonov', 'mellin', 'gauss')[self.batch_engine.currentIndex()]
+
+    def process_all(self):
+        """Run the current engine on every loaded trace and overlay the results
+        (P(r) on the bottom plot, form factors on top). The inversions run
+        synchronously here — the per-trace cost is small and a sequential loop
+        keeps the overlay/labelling simple — with a busy button + status."""
+        if self._deer_busy:
+            self.set_status('Busy — wait for the running inversion to finish.')
+            return
+        n = self.trace_combo.count()
+        if n == 0:
+            self.set_status('No traces loaded.')
+            return
+        engine = self._current_engine()
+        builder = {'tikhonov': self._tikhonov_compute,
+                   'mellin': self._mellin_compute,
+                   'gauss': self._gauss_compute}[engine]
+        names = [self.trace_combo.itemText(i) for i in range(n)]
+        self.process_all_btn.setEnabled(False)
+        self.process_all_btn.setStyleSheet(BUTTON_BUSY_STYLE)
+        results, failed = [], []
+        try:
+            for i, name in enumerate(names):
+                self.trace_combo.setCurrentIndex(i)     # activate -> self.real_xy
+                compute, status = builder()
+                if compute is None:
+                    failed.append(name)
+                    continue
+                self.set_status(f'Process all ({engine}): {i + 1}/{n} — {name}…')
+                QApplication.processEvents()
+                try:
+                    payload = compute()
+                except Exception as e:
+                    failed.append(f'{name} ({e})')
+                    continue
+                results.append((name, payload['res']))
+        finally:
+            self.process_all_btn.setEnabled(True)
+            self.process_all_btn.setStyleSheet(BUTTON_STYLE)
+        if not results:
+            self.set_status('Process all: no trace produced a result.')
+            return
+        # keep the single-trace state consistent (last processed trace) so a later
+        # parameter tweak re-renders sensibly
+        self.batch_results = results
+        self.deer_result = results[-1][1]
+        self.deer_band = None
+        self._batch_mode = True            # keep the overlay across re-renders
+        self._render_batch(results)
+        self.batch_table = {'engine': engine,
+                            'rows': [(nm, self._trace_stats(res)) for nm, res in results]}
+        self._show_batch_summary()
+        self.batch_save_btn.setEnabled(True)
+        msg = f'Processed {len(results)}/{n} trace(s) — {engine} engine.'
+        if failed:
+            msg += ' Failed: ' + '; '.join(failed)
+        self.set_status(msg)
+
+    def _render_batch(self, results):
+        """Overlay every processed trace: P(r) on the bottom plot, and on top the
+        quantity chosen by the Show selector — each trace's data (thin solid) plus
+        its actual fit (dashed, same colour), or the fit residual. One colour per
+        trace. Hides the single-trace bands/cursors."""
+        tf = self._deer_tfactor()
+        tunit = self.deer_tunit.currentText()
+        self._show_deer_band(False)
+        self._show_reliab_bands(False)
+        self._show_lcurve_marker(False)
+        self._show_bg_cursor(False)
+        dash = Qt.PenStyle.DashLine
+        # The Show selector picks the TOP overlay in batch mode. Per-trace-only
+        # views (Residual ACF / L-curve) fall back to the residual / form factor.
+        view = self.deer_show.currentText()
+        residual = view in ('Residual', 'Residual ACF')
+        use_vt = view.startswith('V(t)') or view == 'Background fit'
+        top_label = ('residual' if residual else ('V(t)' if use_vt else 'form factor'))
+        # Mellin: optionally overlay each trace's raw signed P(r) (noise ripples),
+        # matching the single-result view's 'Overlay signed P(r)' option.
+        signed = self.mellin_signed_chk.isChecked()
+        pr_curves, top_curves = [], []
+        for i, (name, res) in enumerate(results):
+            col = self.BATCH_COLORS[i % len(self.BATCH_COLORS)]
+            r_arr = np.asarray(res['r'], float)
+            pr_curves.append((name, r_arr,
+                              np.asarray(res['P_density'], float), col, 2))
+            if (signed and res.get('engine', '').startswith('mellin')
+                    and res.get('P_signed_density') is not None):
+                pr_curves.append((f'{name} signed', r_arr,
+                                  np.asarray(res['P_signed_density'], float),
+                                  col, 1, dash))
+            t_disp = np.asarray(res['t'], float) / tf
+            bg = res['background']
+            lam = float(res['lambda'])
+            ff = self._fit_curve(res)                         # F_fit (form factor)
+            v_norm = np.asarray(bg['V_norm'], float)
+            v_fit = np.asarray(bg['B'], float) * ((1 - lam) + lam * ff)
+            if residual:
+                top_curves.append((name, t_disp, v_norm - v_fit, col, 1))
+            elif use_vt:
+                level = ((1 - lam) * np.asarray(bg['B'], float)
+                         if view == 'Background fit' else v_fit)
+                top_curves.append((name, t_disp, v_norm, col, 1))
+                top_curves.append((f'{name} fit', t_disp, level, col, 2, dash))
+            else:                                             # form factor + fit
+                top_curves.append((name, t_disp,
+                                   np.asarray(res['form_factor'], float), col, 1))
+                top_curves.append((f'{name} fit', t_disp, ff, col, 2, dash))
+        self._show_batch_bands(results)
+        self._repaint(self.p_pr, self.pr_legend, self._pr_items, pr_curves,
+                      'Distance (nm)', '_pr_key', left_label='P(r) (nm⁻¹)', force=True)
+        self._repaint(self.p_time, self.time_legend, self._time_items, top_curves,
+                      f'Time ({tunit})', '_time_key', left_label=top_label, force=True)
+
+    def _clear_batch_bands(self):
+        """Remove all per-trace CI bands from the P(r) plot."""
+        for items in self._batch_band_items.values():
+            for it in items:
+                self.p_pr.removeItem(it)
+        self._batch_band_items = {}
+
+    def _show_batch_bands(self, results):
+        """Per-trace 95% CI bands on the overlaid P(r), each a translucent fill in
+        the trace's colour. Gated by the 'Show 95% confidence band' checkbox; only
+        traces whose result carries P_lower/P_upper get a band."""
+        self._clear_batch_bands()
+        if not self.deer_ci_chk.isChecked():
+            return
+        for i, (name, res) in enumerate(results):
+            lo, hi = res.get('P_lower'), res.get('P_upper')
+            if lo is None or hi is None:
+                continue
+            col = self.BATCH_COLORS[i % len(self.BATCH_COLORS)]
+            r = np.asarray(res['r'], float)
+            lo_item = pg.PlotDataItem(r, np.asarray(lo, float), pen=pg.mkPen(None))
+            hi_item = pg.PlotDataItem(r, np.asarray(hi, float), pen=pg.mkPen(None))
+            fill = pg.FillBetweenItem(lo_item, hi_item, brush=pg.mkBrush(*col, 50))
+            fill.setZValue(-5)                 # behind the P(r) curves
+            for it in (lo_item, hi_item, fill):
+                self.p_pr.addItem(it)
+            self._batch_band_items[name] = (lo_item, hi_item, fill)
+
+    def _trace_stats(self, res):
+        """Per-trace scalar summary (peak/mean/width/skew r, λ, k, dim, R², DW, r₁,
+        ME₁) reusing the same formulas as the single-result info panel."""
+        r = np.asarray(res['r'], float)
+        P = np.asarray(res['P_density'], float)
+        Pn = np.asarray(res['P_norm'], float)
+        peak = float(r[int(np.argmax(P))]) if len(r) else float('nan')
+        mean = float(np.sum(r * Pn))
+        dsc = deer_module.distribution_moments(r, P)
+        F = np.asarray(res['form_factor'], float)
+        Ff = self._fit_curve(res)
+        ss = float(np.sum((F - F.mean()) ** 2)) or 1.0
+        r2 = 1.0 - float(np.sum((F - Ff) ** 2)) / ss
+        wht = self._whiteness_of(res) or {}
+        try:
+            t_arr = np.asarray(res['t'], float)
+            eps_F = float(deer_module._tail_noise(t_arr, res['form_factor']))
+            dpos = np.diff(t_arr[t_arr > 0])
+            dt_ns = float(np.median(dpos)) * 1e3 if len(dpos) else 0.0
+            me1 = float(deer_module.moment_error_apriori(
+                eps_F, dt_ns, int(np.count_nonzero(t_arr > 0)), n=1))
+        except Exception:
+            me1 = float('nan')
+        return {'peak': peak, 'mean': mean, 'width': float(dsc['width']),
+                'skew': float(dsc['skew']),
+                'lambda': float(res.get('lambda', float('nan'))),
+                'k': res.get('k'), 'dim': res.get('dim'), 'r2': r2,
+                'dw': float(wht.get('durbin_watson', float('nan'))),
+                'acf1': float(wht.get('acf1', float('nan'))), 'me1': me1,
+                'n_gauss': res.get('n_gauss')}
+
+    def _summary_table_html(self, rows, engine):
+        """A compact HTML stats table from a list of (name, stats-dict) rows. Used
+        for both the single-result panel (one row) and the batch overlay."""
+        gauss = (engine == 'gauss')
+        hdr = (['', 'N', 'peak r', 'mean±ME₁', 'δr', 'λ', 'R²', 'DW'] if gauss
+               else ['', 'peak r', 'mean±ME₁', 'δr', 'λ', 'R²', 'DW'])
+        head = ''.join(f'<th style="padding:1px 7px;">{h}</th>' for h in hdr)
+        body = ''
+        for name, s in rows:
+            me = (f'{s["mean"]:.2f}±{s["me1"]:.2f}' if np.isfinite(s.get('me1', np.nan))
+                  else f'{s["mean"]:.2f}')
+            vals = [f'<b>{name}</b>']
+            if gauss:
+                vals.append(str(s['n_gauss']) if s.get('n_gauss') is not None else '—')
+            vals += [f'{s["peak"]:.2f}', me, f'{s["width"]:.2f}',
+                     f'{s["lambda"]:.3f}', f'{s["r2"]:.3f}', f'{s["dw"]:.2f}']
+            body += ('<tr>' + ''.join(f'<td style="padding:1px 7px;">{v}</td>'
+                                      for v in vals) + '</tr>')
+        return f'<table style="border-collapse:collapse;"><tr>{head}</tr>{body}</table>'
+
+    def _show_batch_summary(self):
+        """Render the per-trace summary table into the engine's info panel."""
+        tbl = self.batch_table
+        if not tbl:
+            return
+        html = (f'<div style="line-height:150%;"><b style="color: rgb(211,194,78);">'
+                f'Process all — {len(tbl["rows"])} trace(s), {tbl["engine"]}</b><br>'
+                + self._summary_table_html(tbl['rows'], tbl['engine'])
+                + '<br><i>r in nm; DW ≈ 2 ⇒ white residual.</i></div>')
+        panel = {'tikhonov': self.deer_info, 'mellin': self.mellin_info,
+                 'gauss': self.gauss_info}.get(tbl['engine'], self.deer_info)
+        panel.setText(html)
+
+    def save_batch(self):
+        """Save the per-trace summary table and all P(r) curves as two CSVs."""
+        tbl = self.batch_table
+        if not tbl or not self.batch_results:
+            self.set_status('No batch to save — run "Process all" first.')
+            return
+        path = self._save_dialog()
+        if not path or path == 'None':
+            return
+        base = path[:-4] if path.lower().endswith('.csv') else path
+
+        def f(x):
+            return (f'{x:.6g}' if x is not None and np.isfinite(x) else 'nan')
+
+        gauss = (tbl['engine'] == 'gauss')
+        cols = ['trace'] + (['N_gauss'] if gauss else []) + \
+               ['peak_r_nm', 'mean_r_nm', 'ME1_nm', 'width_nm', 'skew',
+                'lambda', 'k', 'dim', 'R2', 'DW', 'acf1']
+        lines = [','.join(cols)]
+        for name, s in tbl['rows']:
+            row = [str(name).replace(',', ';')]
+            if gauss:
+                row.append(str(s['n_gauss']) if s['n_gauss'] is not None else 'nan')
+            row += [f(s['peak']), f(s['mean']), f(s['me1']), f(s['width']),
+                    f(s['skew']), f(s['lambda']), f(s['k']), f(s['dim']),
+                    f(s['r2']), f(s['dw']), f(s['acf1'])]
+            lines.append(','.join(row))
+        summ = base + '_summary.csv'
+        # all P(r) curves side by side (r, P density per trace)
+        header2, cols2 = [], []
+        for name, res in self.batch_results:
+            header2 += [f'{name}:r_nm', f'{name}:P']
+            cols2.append(np.asarray(res['r'], float))
+            cols2.append(np.asarray(res['P_density'], float))
+        pr = base + '_Pr.csv'
+        try:
+            with open(summ, 'w') as fh:
+                fh.write(f'# DEER process-all summary, engine: {tbl["engine"]}\n')
+                fh.write('\n'.join(lines) + '\n')
+            maxlen = max((len(c) for c in cols2), default=0)
+            with open(pr, 'w') as fh:
+                fh.write(','.join(header2) + '\n')
+                for i in range(maxlen):
+                    fh.write(','.join((f'{c[i]:.6g}' if i < len(c) else '')
+                                      for c in cols2) + '\n')
+        except OSError as e:
+            self.set_status(f'Could not save batch: {e}')
+            return
+        self.set_status(f'Saved {os.path.basename(summ)} + {os.path.basename(pr)} '
+                        f'({len(tbl["rows"])} traces).')
 
     def _deer_finished(self, payload):
         """Apply a finished inversion (runs on the main thread via the signal).
@@ -2000,17 +2432,28 @@ class MainWindow(QMainWindow):
                        f'c={bgp["c"]:.3g}, d={bgp["d"]:.3g})')
         else:
             bg_line = f'bg decay k = {res["k"]:.4g}, dim = {res["dim"]:.2f}'
+        # headline scalars as a one-row table (same layout as 'Process all'), with
+        # the engine-specific detail (background, α / δ / components, skew) below.
+        row_stats = {'peak': r_peak, 'mean': r_mean, 'me1': me1,
+                     'width': float(dsc['width']), 'lambda': float(res['lambda']),
+                     'r2': r2, 'dw': (float(wht['durbin_watson'])
+                                      if wht is not None else float('nan')),
+                     'n_gauss': res.get('n_gauss')}
+        name = self.trace_combo.currentText() or 'P(r)'
+        verdict = ''
+        if wht is not None and np.isfinite(wht['durbin_watson']):
+            verdict = (' &nbsp;<i>(' + ('white' if wht['white'] else 'structured')
+                       + f', r₁={wht["acf1"]:+.2f})</i>')
         info_html = (
-            '<div style="line-height: 165%;">'
+            '<div style="line-height: 150%;">'
             f'<b style="color: rgb(211, 194, 78);">P(r)</b>{med_tag}'
             f' &nbsp;<i>({res.get("engine", "—")})</i><br>'
-            f'mod. depth λ = {res["lambda"]:.3f}<br>'
-            f'{bg_line}<br>'
-            f'{reg}<br>'
-            f'peak r = {r_peak:.3f} nm<br>'
-            f'mean r = {r_mean:.3f}{me1_txt} nm<br>'
-            f'width δr = {dsc["width"]:.3f} nm, skew = {dsc["skew"]:+.2f}<br>'
-            f'form-factor R² = {r2:.4f}{wht_txt}{extra}</div>')
+            + self._summary_table_html([(name, row_stats)],
+                                       'gauss' if is_gauss else 'tikhonov')
+            + verdict
+            + '<div style="line-height: 160%; margin-top: 3px;">'
+            f'{bg_line}<br>{reg}<br>'
+            f'skew = {dsc["skew"]:+.2f}{extra}</div></div>')
         self.deer_info.setText(info_html)
         if is_mellin:
             self.mellin_info.setText(info_html)
@@ -2036,12 +2479,17 @@ class MainWindow(QMainWindow):
             self.do_deer()
 
     def _deer_rerender(self, *args):
-        """Re-show the stored result under the current top-plot view."""
-        if self.deer_result is not None:
+        """Re-show the stored result under the current top-plot view. In batch
+        ('Process all') mode, re-render the per-trace overlay instead so the
+        Show selector / toggles never wipe it."""
+        if self._batch_mode and self.batch_results:
+            self._render_batch(self.batch_results)
+        elif self.deer_result is not None:
             self._render()
 
     def _render(self):
         """Draw P(r) on the bottom plot and the chosen view on the top plot."""
+        self._clear_batch_bands()              # leaving the batch overlay
         res = self.deer_result
         if res is None:
             return
@@ -2051,6 +2499,11 @@ class MainWindow(QMainWindow):
         bg = res['background']
 
         # ---- bottom plot: distance distribution ----
+        rr = np.asarray(res['r'], float)
+        t_max_us = float(np.ptp(np.asarray(res['t'], float))) if len(res['t']) else 0.0
+        self._show_reliab_bands(self.deer_reliab_chk.isChecked(), t_max_us,
+                                rr[0] if len(rr) else None,
+                                rr[-1] if len(rr) else None)
         if self.deer_band is not None:
             b = self.deer_band
             self._show_deer_band(True, b['r'], b['P_lower'], b['P_upper'])
@@ -2259,6 +2712,45 @@ class MainWindow(QMainWindow):
         for it in (self._band_lo, self._band_hi, self._band_fill):
             it.setVisible(True)
 
+    # DeerAnalysis distance-reliability factors (r in nm, t_max in µs): the shape
+    # of P(r) is reliable to 3·(t_max/2)^⅓, the mean and width to 5·(t_max/2)^⅓
+    # (the 4·(t_max/2)^⅓ width-only tier is folded into the yellow band). The
+    # 5·factor matches R_MAX_FACTOR used for the auto distance-max.
+    RELIAB_FACTORS = (3.0, 5.0)
+
+    def _show_reliab_bands(self, visible, t_max_us=None, r_lo=None, r_hi=None):
+        """Shade the P(r) distance axis green/yellow/red by the DeerAnalysis
+        reliability ranges set by the dipolar evolution time t_max."""
+        if self._reliab_regions is None:
+            self._reliab_regions = []
+            # translucent, behind data and the uncertainty band (z below -10).
+            # Per-zone RGBA: yellow needs a higher alpha / punchier gold than
+            # green and red to read at all against the near-black background.
+            for rgba in ((60, 200, 90, 45), (240, 190, 30, 75), (230, 70, 70, 55)):
+                reg = pg.LinearRegionItem(values=(0.0, 0.0), movable=False,
+                                          brush=pg.mkBrush(*rgba),
+                                          pen=pg.mkPen(None))
+                reg.setZValue(-20)
+                self.p_pr.addItem(reg)
+                self._reliab_regions.append(reg)
+        if not visible or not t_max_us or t_max_us <= 0:
+            for reg in self._reliab_regions:
+                reg.setVisible(False)
+            return
+        f = (t_max_us / 2.0) ** (1.0 / 3.0)
+        g_hi, y_hi = (k * f for k in self.RELIAB_FACTORS)
+        r_lo = 0.0 if r_lo is None else float(r_lo)
+        r_hi = max(r_lo, float(r_hi)) if r_hi is not None else y_hi * 1.5
+        zones = ((r_lo, g_hi), (g_hi, y_hi), (y_hi, r_hi))
+        for reg, (a, b) in zip(self._reliab_regions, zones):
+            a = min(max(a, r_lo), r_hi)
+            b = min(max(b, r_lo), r_hi)
+            if b - a > 1e-9:
+                reg.setRegion((a, b))
+                reg.setVisible(True)
+            else:
+                reg.setVisible(False)
+
     def _on_lcurve_click(self, event):
         """On the L-curve view, pick the α of the nearest L-curve point."""
         if (self.deer_result is None
@@ -2446,13 +2938,19 @@ class MainWindow(QMainWindow):
     def clear_all(self):
         """Reset the window: forget all loaded data, result and selectors."""
         self.datasets = {}
+        self.traces = {}
         self.real_xy = (None, None)
         self.imag_y = None
         self.deer_result = None
         self.deer_band = None
+        self.batch_results = None
+        self.batch_table = None
+        self._batch_mode = False
+        self._clear_batch_bands()
+        self.batch_save_btn.setEnabled(False)
         self._deer_pending = False        # cancel any queued refit
         self._clear_overlays()
-        for combo in (self.i_combo, self.q_combo):
+        for combo in (self.trace_combo, self.i_combo, self.q_combo):
             combo.blockSignals(True)
             combo.clear()
             combo.blockSignals(False)

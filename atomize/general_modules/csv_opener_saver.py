@@ -48,26 +48,33 @@ class Saver_Opener():
             self.test_file_param_path = os.path.join(self.path_to_main, 'test.param')
     
     def open_file_dialog(self, directory = '', fmt = '', multiprocessing = False,
-                         name_filters = None):
+                         name_filters = None, multiple = False):
+        # multiple = True returns a list of selected paths (possibly empty);
+        # the default single-file behaviour is unchanged (returns a path or None).
         if self.test_flag != 'test':
             if not multiprocessing:
                 print("open_file_dialog", flush = True)
                 file_path = sys.stdin.readline().strip()
 
+                if multiple:
+                    return [file_path] if file_path else []
                 if file_path:
                     return file_path
                 return None
 
             else:
-                file_path = self.FileDialog(directory = directory, mode = 'Open',
-                                            fmt = 'csv', name_filters = name_filters)
-                
-                if file_path:
-                    return file_path
+                result = self.FileDialog(directory = directory, mode = 'Open',
+                                         fmt = 'csv', name_filters = name_filters,
+                                         multiple = multiple)
+
+                if multiple:
+                    return result or []
+                if result:
+                    return result
                 return None
-        
+
         elif self.test_flag == 'test':
-            return self.test_file_path
+            return [self.test_file_path] if multiple else self.test_file_path
 
     def create_file_dialog(self, directory = '', multiprocessing = False):
         if self.test_flag != 'test':
@@ -225,13 +232,17 @@ class Saver_Opener():
         elif self.test_flag == 'test':
             return self.test_header_array, self.test_data_2d
 
-    def FileDialog(self, directory = '', mode = 'Open', fmt = '', name_filters = None):
+    def FileDialog(self, directory = '', mode = 'Open', fmt = '', name_filters = None,
+                   multiple = False):
 
         self.dialog = QFileDialog( options = QFileDialog.Option.DontUseNativeDialog )
         self.dialog.setIconProvider(QFileIconProvider())
-        
+
         self.dialog.resize(800, 450)
         self.dialog.setFileMode(QFileDialog.FileMode.AnyFile)
+        # multi-select open: a list of existing files instead of a single one
+        if multiple and mode == 'Open':
+            self.dialog.setFileMode(QFileDialog.FileMode.ExistingFiles)
         # both open and save dialog
         self.dialog.setAcceptMode(QFileDialog.AcceptMode.AcceptOpen)\
          if mode == 'Open' else self.dialog.setAcceptMode(QFileDialog.AcceptMode.AcceptSave)
@@ -468,10 +479,12 @@ class Saver_Opener():
             self.dialog.setDirectory(str(self.open_dir))
 
         if self.dialog.exec() == QDialog.DialogCode.Accepted:
-            path = self.dialog.selectedFiles()[0]
-            return path 
+            files = self.dialog.selectedFiles()
+            if multiple:
+                return files
+            return files[0]
         else:
-            return ''
+            return [] if multiple else ''
 
 if __name__ == '__main__':
     main()

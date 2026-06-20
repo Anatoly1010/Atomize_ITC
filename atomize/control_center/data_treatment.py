@@ -24,6 +24,7 @@ imaginary) feed straight back in via "Result -> input".
 """
 
 import os
+import re
 import sys
 import shutil
 import tempfile
@@ -113,6 +114,15 @@ BUTTON_BUSY_STYLE = (
     f"QPushButton:disabled {{background-color: {ACCENT}; color: {BG}; }}")
 
 
+def _html_table(headers, rows):
+    """Compact HTML table (Qt rich-text) from a header list and a list of cell-
+    string rows; used for the info / fit-result panels."""
+    head = ''.join(f'<th style="padding:1px 8px;">{h}</th>' for h in headers)
+    body = ''.join('<tr>' + ''.join(f'<td style="padding:1px 8px;">{c}</td>'
+                                    for c in r) + '</tr>' for r in rows)
+    return f'<table style="border-collapse:collapse;"><tr>{head}</tr>{body}</table>'
+
+
 class MainWindow(QMainWindow):
 
     def __init__(self, *args, **kwargs):
@@ -129,7 +139,11 @@ class MainWindow(QMainWindow):
         self.sp = sigproc.Signal_Processing()
         self.fft = fft_module.Fast_Fourier()
 
-        # label -> (x, y) of every loaded source curve
+        # name -> {channel label: (x, y)} for every loaded file/trace; the trace
+        # selector picks one as active and self.datasets references its channels
+        # (so derived/promoted channels persist per trace)
+        self.traces = {}
+        # label -> (x, y) of the *active* trace's source curves
         self.datasets = {}
 
         # Current result. A result has a shared x-axis and one or two channels
@@ -143,6 +157,7 @@ class MainWindow(QMainWindow):
 
         # counter for naming chained "Result -> input" steps uniquely
         self.step_counter = 0
+        self.fit_table = None              # last 'Fit all traces' parameter table
         # persistent preview curves: label -> pyqtgraph PlotDataItem, reused via
         # setData so live updates never tear down / rebuild plot items
         self._curve_items = {}
@@ -223,6 +238,24 @@ class MainWindow(QMainWindow):
         src_row.addWidget(btn_clear)
         panel.addLayout(src_row)
 
+        # trace selector: each opened file (or plot load) is one trace; the combo
+        # picks which one is active and feeds the channel selectors / operations.
+        trace_row = QHBoxLayout()
+        trace_row.addWidget(self._label('Trace'))
+        self.trace_combo = QComboBox()
+        self.trace_combo.setStyleSheet(COMBO_STYLE)
+        self.trace_combo.setToolTip('Active trace. Open several files to compare; '
+                                    'each becomes a selectable trace here. Promoted '
+                                    'result channels stay with their trace.')
+        self.trace_combo.currentIndexChanged.connect(self._activate_trace)
+        trace_row.addWidget(self.trace_combo, 1)
+        self.trace_remove_btn = QPushButton('Remove')
+        self.trace_remove_btn.setStyleSheet(BUTTON_STYLE)
+        self.trace_remove_btn.setToolTip('Remove the active trace from the list.')
+        self.trace_remove_btn.clicked.connect(self._remove_trace)
+        trace_row.addWidget(self.trace_remove_btn)
+        panel.addLayout(trace_row)
+
         # Name of the dataset currently loaded (file basename, or 'Loaded from
         # plot' for the in-memory buffer). Kept on its own line so a long path
         # wraps instead of stretching the panel.
@@ -247,7 +280,11 @@ class MainWindow(QMainWindow):
         self.pair_check = QCheckBox('I/Q pair (run FFT / smoothing on both channels)')
         self.pair_check.setStyleSheet(CHECKBOX_STYLE)
         self.pair_check.stateChanged.connect(self.on_source_changed)
+        # block the signal for the initial state: the rest of the UI (xname_edit,
+        # plot) is not built yet, so an on_source_changed -> redraw here would fail
+        self.pair_check.blockSignals(True)
         self.pair_check.setChecked(True)
+        self.pair_check.blockSignals(False)
         panel.addWidget(self.pair_check)
 
         # X axis name (preview label / plot xname / CSV header for time-domain results)
@@ -301,12 +338,19 @@ class MainWindow(QMainWindow):
         btn_chain = QPushButton('Result → input')
         btn_chain.setStyleSheet(BUTTON_STYLE)
         btn_chain.clicked.connect(self.promote_result)
+        btn_undo = QPushButton('Undo step')
+        btn_undo.setStyleSheet(BUTTON_STYLE)
+        btn_undo.setToolTip('Remove the most recently promoted step channel(s) '
+                            '(undo the last "Result → input") and reselect the '
+                            'previous input.')
+        btn_undo.clicked.connect(self.undo_step)
         btn_clear_res = QPushButton('Clear result')
         btn_clear_res.setStyleSheet(BUTTON_STYLE)
         btn_clear_res.clicked.connect(self.clear_result)
         out_row.addWidget(btn_plot)
         out_row.addWidget(btn_save)
         out_row.addWidget(btn_chain)
+        out_row.addWidget(btn_undo)
         out_row.addWidget(btn_clear_res)
         panel.addLayout(out_row)
 
@@ -385,10 +429,25 @@ class MainWindow(QMainWindow):
         self.fit_no_offset = QCheckBox('Fix offset = 0 (drop the b / c baseline term)')
         self.fit_no_offset.setStyleSheet(CHECKBOX_STYLE)
         grid.addWidget(self.fit_no_offset, 1, 0, 1, 2)
+        fit_btn_row = QHBoxLayout()
         btn = QPushButton('Fit')
         btn.setStyleSheet(BUTTON_STYLE)
         btn.clicked.connect(self.do_fit)
-        grid.addWidget(btn, 2, 0, 1, 2)
+        self.fit_all_btn = QPushButton('Fit all traces')
+        self.fit_all_btn.setStyleSheet(BUTTON_STYLE)
+        self.fit_all_btn.setToolTip(
+            'Fit the selected model to the I channel of every loaded trace, overlay '
+            'the data + fits, and build a per-trace parameter table (Save table…).')
+        self.fit_all_btn.clicked.connect(self.fit_all_traces)
+        self.fit_save_table_btn = QPushButton('Save table…')
+        self.fit_save_table_btn.setStyleSheet(BUTTON_STYLE)
+        self.fit_save_table_btn.setToolTip('Save the per-trace fit parameters as CSV.')
+        self.fit_save_table_btn.clicked.connect(self.save_fit_table)
+        self.fit_save_table_btn.setEnabled(False)
+        fit_btn_row.addWidget(btn)
+        fit_btn_row.addWidget(self.fit_all_btn)
+        fit_btn_row.addWidget(self.fit_save_table_btn)
+        grid.addLayout(fit_btn_row, 2, 0, 1, 2)
         self.fit_result = QLabel('')
         self.fit_result.setStyleSheet(LABEL_STYLE)
         self.fit_result.setWordWrap(True)
@@ -632,6 +691,9 @@ class MainWindow(QMainWindow):
         self.phase_out = QComboBox()
         self.phase_out.setStyleSheet(COMBO_STYLE)
         self.phase_out.addItems(['Real', 'Imaginary', 'Magnitude', 'Real + Imaginary'])
+        # default to the full complex result so phasing an I/Q pair keeps the pair:
+        # both channels are shown and carried forward by Result -> Input
+        self.phase_out.setCurrentText('Real + Imaginary')
         self.phase_out.currentIndexChanged.connect(self._live_update)
         grid.addWidget(self.phase_out, 6, 1)
 
@@ -698,14 +760,68 @@ class MainWindow(QMainWindow):
         return w
 
     # ------------------------------------------------------------- loading
-    def _register_datasets(self, mapping):
-        # Opening new data resets the workflow: turn off live update so the freshly
-        # loaded raw trace is shown as-is, not immediately reprocessed by whatever
-        # tab/parameters were left over from the previous dataset.
+    def _unique_trace_name(self, name):
+        """A trace name not already in use (append (2), (3), … on collision)."""
+        name = name or 'trace'
+        if name not in self.traces:
+            return name
+        i = 2
+        while f'{name} ({i})' in self.traces:
+            i += 1
+        return f'{name} ({i})'
+
+    def _add_traces(self, items):
+        """Register one or more (name, channel-mapping) traces and make the last
+        one active. `items` is a list of (name, {label: (x, y)})."""
+        added = []
+        for name, mapping in items:
+            if not mapping:
+                continue
+            uname = self._unique_trace_name(name)
+            self.traces[uname] = dict(mapping)
+            added.append(uname)
+        if not added:
+            return
+        self.trace_combo.blockSignals(True)
+        self.trace_combo.addItems(added)
+        self.trace_combo.setCurrentIndex(self.trace_combo.count() - 1)
+        self.trace_combo.blockSignals(False)
+        self._activate_trace()                     # show the newly added trace
+
+    def _activate_trace(self, *args):
+        """Make the selected trace active: point self.datasets at its channels and
+        rebuild the I/Q selectors (the per-load workflow reset).
+
+        self.datasets references the stored trace dict (not a copy) so promoted
+        result channels stay with their trace when switching back and forth."""
+        name = self.trace_combo.currentText()
+        # Opening/switching data resets the workflow: turn off live update so the
+        # trace is shown as-is, not reprocessed by leftover tab parameters.
         self.live_check.setChecked(False)
-        self.datasets = dict(mapping)
-        self._refresh_combos(select_i=next(iter(mapping), None),
-                             select_q=(list(mapping)[1] if len(mapping) > 1 else None))
+        self.datasets = self.traces.get(name, {})
+        keys = list(self.datasets)
+        self._refresh_combos(select_i=keys[0] if keys else None,
+                             select_q=keys[1] if len(keys) > 1 else None)
+        if name:
+            self._set_loaded_file(f'{name}  ({self.trace_combo.currentIndex() + 1} '
+                                  f'of {self.trace_combo.count()})')
+
+    def _remove_trace(self):
+        """Drop the active trace; activate the next one, or clear if none remain."""
+        name = self.trace_combo.currentText()
+        if not name:
+            return
+        self.traces.pop(name, None)
+        idx = self.trace_combo.currentIndex()
+        self.trace_combo.blockSignals(True)
+        self.trace_combo.removeItem(idx)
+        self.trace_combo.blockSignals(False)
+        if self.trace_combo.count():
+            self.trace_combo.setCurrentIndex(min(idx, self.trace_combo.count() - 1))
+            self._activate_trace()
+            self.set_status(f'Removed trace "{name}".')
+        else:
+            self.clear_all()
 
     def _refresh_combos(self, select_i=None, select_q=None):
         """Repopulate the I/Q selectors from self.datasets without discarding it."""
@@ -748,12 +864,18 @@ class MainWindow(QMainWindow):
         self.last_dir = os.path.dirname(path) or self.last_dir
         _save_last_dir(self.last_dir)
 
-    def _open_dialog(self, **kw):
-        path = self.opener.open_file_dialog(multiprocessing=True,
-                                            directory=self.last_dir, **kw)
-        if path and path != 'None':
-            self._remember_dir(path)
-        return path
+    def _open_dialog(self, multiple=False, **kw):
+        result = self.opener.open_file_dialog(multiprocessing=True,
+                                              directory=self.last_dir,
+                                              multiple=multiple, **kw)
+        if multiple:
+            paths = [p for p in (result or []) if p and p != 'None']
+            if paths:
+                self._remember_dir(paths[0])
+            return paths
+        if result and result != 'None':
+            self._remember_dir(result)
+        return result
 
     def _save_dialog(self, **kw):
         path = self.opener.create_file_dialog(multiprocessing=True,
@@ -762,44 +884,56 @@ class MainWindow(QMainWindow):
             self._remember_dir(path)
         return path
 
+    def _csv_to_mapping(self, file_path):
+        """Read a CSV into a {channel label: (x, y)} mapping plus its header
+        labels. Raises ValueError on a structurally unusable file.
+
+        Guards against accidentally loading a 2D matrix: open_1d gives one row per
+        CSV column, so a [trace × point] dataset arrives as hundreds/thousands of
+        "curves". The 1D tool is for a handful of columns (X + a few channels);
+        wide files belong in the 2D tool."""
+        _, data = self.opener.open_1d(file_path)
+        data = np.atleast_2d(data)
+        if data.shape[0] < 2:
+            raise ValueError('needs at least two columns (X and Y)')
+        if data.shape[0] > 6:
+            raise ValueError(f'looks like a 2D dataset ({data.shape[0]} columns); '
+                             f'use the 2D tool')
+        x = data[0]
+        labels = self._csv_header_labels(file_path)
+        mapping = {}
+        for i in range(1, data.shape[0]):
+            y = data[i]
+            mask = ~(np.isnan(x) | np.isnan(y))
+            name = labels[i] if (i < len(labels) and labels[i]) else f'Y{i}'
+            while name in mapping:                 # keep the dataset keys unique
+                name += "'"
+            mapping[name] = (x[mask], y[mask])
+        return mapping, labels
+
     def open_csv(self):
-        file_path = self._open_dialog()
-        if not file_path or file_path == 'None':
+        paths = self._open_dialog(multiple=True)
+        if not paths:
             return
-        try:
-            _, data = self.opener.open_1d(file_path)
-            data = np.atleast_2d(data)
-            if data.shape[0] < 2:
-                self.set_status('CSV needs at least two columns (X and Y).')
-                return
-            # Guard against accidentally loading a 2D matrix here: open_1d gives
-            # one row per CSV column, so a [trace × point] dataset arrives as
-            # hundreds/thousands of "curves". The 1D tool is for a handful of
-            # columns (X + a few channels); send wide files to the 2D tool.
-            if data.shape[0] > 6:
-                self.set_status(f'This looks like a 2D dataset ({data.shape[0]} '
-                                f'columns). The 1D tool takes at most 6 columns — '
-                                f'open it in the 2D Data Treatment window instead.')
-                return
-            x = data[0]
-            labels = self._csv_header_labels(file_path)
-            mapping = {}
-            for i in range(1, data.shape[0]):
-                y = data[i]
-                mask = ~(np.isnan(x) | np.isnan(y))
-                name = labels[i] if (i < len(labels) and labels[i]) else f'Y{i}'
-                while name in mapping:            # keep the dataset keys unique
-                    name += "'"
-                mapping[name] = (x[mask], y[mask])
-            # axis name + unit from the X-column header (col 0), like the Bruker path
-            if labels and labels[0]:
-                self.xname_edit.setText(labels[0])
-            self._register_datasets(mapping)
-            self._set_loaded_file(os.path.basename(file_path))
-            self.set_status(f'Loaded {os.path.basename(file_path)} '
-                            f'({data.shape[0] - 1} curve(s)).')
-        except Exception as e:
-            self.set_status(f'Could not read CSV: {e}')
+        items, failed, xname = [], [], None
+        for file_path in paths:
+            try:
+                mapping, labels = self._csv_to_mapping(file_path)
+            except Exception as e:
+                failed.append(f'{os.path.basename(file_path)} ({e})')
+                continue
+            # axis name + unit from the first file's X-column header (col 0)
+            if xname is None and labels and labels[0]:
+                xname = labels[0]
+            items.append((os.path.splitext(os.path.basename(file_path))[0], mapping))
+        if xname:
+            self.xname_edit.setText(xname)
+        if items:
+            self._add_traces(items)
+        msg = f'Loaded {len(items)} trace(s)' if items else 'No traces loaded'
+        if failed:
+            msg += '. Skipped: ' + '; '.join(failed)
+        self.set_status(msg + '.')
 
     def open_bruker(self):
         """Load a Bruker native dataset (BES3T .DSC/.DTA or ESP/WinEPR .par/.spc).
@@ -822,12 +956,11 @@ class MainWindow(QMainWindow):
             return
         x = np.asarray(res['x'], dtype=float)
         mapping = {lbl: (x, np.asarray(y, dtype=float)) for lbl, y in res['channels']}
-        self._register_datasets(mapping)          # selects first two as I / Q
-        if res['complex']:
-            self.pair_check.setChecked(True)
         unit = f' ({res["x_unit"]})' if res['x_unit'] else ''
         self.xname_edit.setText(f'{res["x_name"]}{unit}')
-        self._set_loaded_file(os.path.basename(file_path))
+        self._add_traces([(os.path.splitext(os.path.basename(file_path))[0], mapping)])
+        if res['complex']:                        # selects first two as I / Q
+            self.pair_check.setChecked(True)
         self.set_status(f'Loaded {os.path.basename(file_path)} — {res["format"]}, '
                         f'{len(x)} pts, '
                         + ('complex (I/Q pair).' if res['complex'] else 'real.'))
@@ -875,8 +1008,7 @@ class MainWindow(QMainWindow):
             # first redraw already uses it.
             if buf_xname:
                 self.xname_edit.setText(buf_xname)
-            self._register_datasets(mapping)
-            self._set_loaded_file('Loaded from plot')
+            self._add_traces([('Loaded from plot', mapping)])
             self.set_status(f'Loaded {len(mapping)} curve(s) from the current plot.')
         except Exception as e:
             self._consume_buffer()   # drop a malformed buffer so it doesn't recur
@@ -1039,6 +1171,43 @@ class MainWindow(QMainWindow):
         self.set_status(f'Result registered as {promoted}; shown as the new '
                         f'input. Choose an operation and apply it.')
 
+    def undo_step(self):
+        """Undo the last 'Result → input': remove the most recent stepN_ channel(s)
+        from the active trace and reselect the previous input (the prior step group,
+        or the original channels). Scoped to the active trace; the global step
+        counter is left alone so future step names stay unique."""
+        steps = {}
+        for k in self.datasets:
+            m = re.match(r'step(\d+)_', k)
+            if m:
+                steps.setdefault(int(m.group(1)), []).append(k)
+        if not steps:
+            self.set_status('No promoted step to undo.')
+            return
+        top = max(steps)
+        removed = steps[top]
+        for k in removed:
+            self.datasets.pop(k, None)
+        # any pending overlay may have been computed from the removed channels
+        self._reset_result()
+        # reselect the previous step group, else the original (non-step) channels
+        lower = [n for n in steps if n < top]
+        if lower:
+            sel = steps[max(lower)]
+        else:
+            sel = [k for k in self.datasets if not re.match(r'step\d+_', k)]
+        new_i = sel[0] if sel else next(iter(self.datasets), None)
+        new_q = sel[1] if len(sel) > 1 else None
+        self._suppress_live = True
+        try:
+            self.pair_check.setChecked(new_q is not None)
+            self._refresh_combos(select_i=new_i, select_q=new_q)
+        finally:
+            self._suppress_live = False
+        self.redraw()
+        self.set_status(f'Removed {" & ".join(removed)}; '
+                        f'input back to {new_i or "—"}.')
+
     def clear_result(self):
         """Drop the computed-result overlay, keep the loaded source data."""
         self._reset_result()
@@ -1048,9 +1217,10 @@ class MainWindow(QMainWindow):
     def clear_all(self):
         """Reset the window: forget all loaded data, result and selectors."""
         self.datasets = {}
+        self.traces = {}
         self._reset_result()
         self.step_counter = 0
-        for combo in (self.i_combo, self.q_combo):
+        for combo in (self.trace_combo, self.i_combo, self.q_combo):
             combo.blockSignals(True)
             combo.clear()
             combo.blockSignals(False)
@@ -1066,6 +1236,10 @@ class MainWindow(QMainWindow):
     # ----------------------------------------------------- preview (in-process)
     SOURCE_PENS = [(120, 170, 255), (220, 120, 220)]   # I = blue, Q = magenta
     RESULT_PENS = [(211, 194, 78), (120, 220, 150), (230, 140, 90)]
+    # one colour per trace for the "Fit all traces" overlay (cycled if more)
+    BATCH_COLORS = [(211, 194, 78), (120, 170, 255), (120, 220, 150),
+                    (230, 140, 90), (200, 120, 220), (90, 200, 200),
+                    (240, 120, 150), (170, 200, 90)]
 
     def redraw(self):
         """Repaint the embedded preview with the source channel(s) and the
@@ -1161,14 +1335,138 @@ class MainWindow(QMainWindow):
         meta.append(f'R^2 = {res["r_squared"]:.6f}')
         self._set_result(x, [('fit', res['y_fit'])], meta, show_source=True,
                          xname=self._xname())
-        rows = ''.join(f'{n} = {v:.4g} &plusmn; {e:.2g}<br>'
-                       for n, v, e in zip(res['param_names'], res['popt'], res['perr']))
-        html = (f'<div style="line-height: 165%;">'
-                f'<b style="color: rgb(211, 194, 78);">{model}</b><br>'
-                f'{rows}'
-                f'R&sup2; = {res["r_squared"]:.5f}</div>')
+        trows = [(f'<b>{n}</b>', f'{v:.5g}', f'{e:.3g}')
+                 for n, v, e in zip(res['param_names'], res['popt'], res['perr'])]
+        table = _html_table(['param', 'value', '± err'], trows)
+        off = ' (offset = 0)' if no_offset else ''
+        html = (f'<div style="line-height: 150%;">'
+                f'<b style="color: rgb(211, 194, 78);">{model}</b>{off}<br>'
+                f'{table}<br>R² = {res["r_squared"]:.5f}</div>')
         self.fit_result.setText(html)
         self.set_status(f'Fit done. R² = {res["r_squared"]:.5f}')
+
+    def fit_all_traces(self):
+        """Fit the current model to the I channel of every loaded trace, overlay
+        the data + fits, and collect a per-trace parameter table (saveable as CSV).
+        Useful for batch lsq fits, e.g. T₂ across a series of traces."""
+        n = self.trace_combo.count()
+        if n == 0:
+            self.set_status('No traces loaded.')
+            return
+        model = self.model_combo.currentText()
+        no_offset = self.fit_no_offset.isChecked()
+        names = [self.trace_combo.itemText(i) for i in range(n)]
+        rows, overlays, failed = [], [], []
+        self.fit_all_btn.setEnabled(False)
+        self.fit_all_btn.setStyleSheet(BUTTON_BUSY_STYLE)
+        try:
+            for i, name in enumerate(names):
+                self.trace_combo.setCurrentIndex(i)        # activate -> i_xy()
+                x, y = self.i_xy()
+                if x is None or not len(x):
+                    failed.append(name)
+                    continue
+                try:
+                    res = self.fitter.fit(model, np.asarray(x, float),
+                                          np.asarray(y, float), no_offset=no_offset)
+                except Exception as e:
+                    failed.append(f'{name} ({e})')
+                    continue
+                rows.append((name, res))
+                overlays.append((name, np.asarray(x, float), np.asarray(y, float),
+                                 np.asarray(res['y_fit'], float)))
+                self.set_status(f'Fit all: {i + 1}/{n} — {name}…')
+                QApplication.processEvents()
+        finally:
+            self.fit_all_btn.setEnabled(True)
+            self.fit_all_btn.setStyleSheet(BUTTON_STYLE)
+        if not rows:
+            self.set_status('Fit all: no trace could be fit.')
+            return
+        self._reset_result()                  # drop any single-trace result overlay
+        self._render_fit_batch(overlays)
+        # parameter table (kept per-row so models with different param sets are ok)
+        self.fit_table = {'model': model, 'rows': []}
+        pnames = []                            # union of param names, first-seen order
+        for _, res in rows:
+            for p in res['param_names']:
+                if p not in pnames:
+                    pnames.append(p)
+        trows = []
+        for name, res in rows:
+            self.fit_table['rows'].append(
+                (name, list(res['param_names']), list(map(float, res['popt'])),
+                 list(map(float, res['perr'])), float(res['r_squared'])))
+            d = dict(zip(res['param_names'], res['popt']))
+            cells = [f'<b>{name}</b>'] + [f'{d[p]:.4g}' if p in d else '—'
+                                          for p in pnames] + [f'{res["r_squared"]:.4f}']
+            trows.append(cells)
+        table = _html_table(['trace'] + pnames + ['R²'], trows)
+        self.fit_result.setText('<div style="line-height: 150%;">'
+                                f'<b style="color: rgb(211, 194, 78);">{model}</b> — '
+                                f'{len(rows)} trace(s)<br>{table}</div>')
+        self.fit_save_table_btn.setEnabled(True)
+        msg = f'Fit all: {len(rows)}/{n} trace(s) with {model}.'
+        if failed:
+            msg += ' Failed: ' + '; '.join(failed)
+        self.set_status(msg)
+
+    def _render_fit_batch(self, overlays):
+        """Overlay each trace's data (thin) + fit (dashed) on the preview, one
+        colour per trace. A later single-trace redraw drops these automatically."""
+        for lbl in list(self._curve_items):
+            self.plot_widget.removeItem(self._curve_items.pop(lbl))
+            try:
+                self.legend.removeItem(lbl)
+            except Exception:
+                pass
+        for i, (name, x, y, yfit) in enumerate(overlays):
+            col = self.BATCH_COLORS[i % len(self.BATCH_COLORS)]
+            self._curve_items[name] = self.plot_widget.plot(
+                x, y, pen=pg.mkPen(col, width=1), name=name)
+            self._curve_items[f'{name} fit'] = self.plot_widget.plot(
+                x, yfit, pen=pg.mkPen(col, width=2, style=Qt.PenStyle.DashLine),
+                name=f'{name} fit')
+        self._plot_key = None                 # force the next single redraw to refit
+        try:
+            self.plot_widget.autoRange()
+        except Exception:
+            pass
+
+    def save_fit_table(self):
+        """Save the 'Fit all traces' parameter table as CSV (one row per trace)."""
+        tbl = getattr(self, 'fit_table', None)
+        if not tbl or not tbl['rows']:
+            self.set_status('No fit table — run "Fit all traces" first.')
+            return
+        path = self._save_dialog()
+        if not path or path == 'None':
+            return
+        # union of parameter names across rows, in first-seen order
+        pnames = []
+        for _, pn, *_ in tbl['rows']:
+            for p in pn:
+                if p not in pnames:
+                    pnames.append(p)
+        header = ['trace'] + [c for p in pnames for c in (p, f'{p}_err')] + ['R2']
+        lines = [','.join(header)]
+        for name, pn, vals, errs, r2 in tbl['rows']:
+            d = {p: (v, e) for p, v, e in zip(pn, vals, errs)}
+            cells = [str(name).replace(',', ';')]
+            for p in pnames:
+                v, e = d.get(p, (float('nan'), float('nan')))
+                cells += [f'{v:.6g}', f'{e:.6g}']
+            cells.append(f'{r2:.6f}')
+            lines.append(','.join(cells))
+        try:
+            with open(path, 'w') as fh:
+                fh.write(f'# Fit-all parameter table, model: {tbl["model"]}\n')
+                fh.write('\n'.join(lines) + '\n')
+        except OSError as e:
+            self.set_status(f'Could not save table: {e}')
+            return
+        self.set_status(f'Saved fit table ({len(tbl["rows"])} rows) to '
+                        f'{os.path.basename(path)}.')
 
     def _spectrum_channels(self, sp, mode):
         """Map a complex spectrum to a list of (label, y) per the output mode."""

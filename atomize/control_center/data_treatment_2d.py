@@ -66,6 +66,15 @@ BUTTON_BUSY_STYLE = ("QPushButton {border-radius: 4px; background-color: rgb(211
 
 LABEL_STYLE = "QLabel { color : rgb(193, 202, 227); font-weight: bold; }"
 
+
+def _html_table(headers, rows):
+    """Compact HTML table (Qt rich-text) from a header list and a list of cell-
+    string rows; used for the fit-info panel."""
+    head = ''.join(f'<th style="padding:1px 8px;">{h}</th>' for h in headers)
+    body = ''.join('<tr>' + ''.join(f'<td style="padding:1px 8px;">{c}</td>'
+                                    for c in r) + '</tr>' for r in rows)
+    return f'<table style="border-collapse:collapse;"><tr>{head}</tr>{body}</table>'
+
 DSPIN_STYLE = ("QDoubleSpinBox { color : rgb(193, 202, 227); "
     "selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97); }")
 SPIN_STYLE = ("QSpinBox { color : rgb(193, 202, 227); "
@@ -1378,13 +1387,18 @@ class MainWindow(QMainWindow):
         pv = params[valid]
         rv = r2[valid]
         scope = f"{done}/{n} traces" if cancelled else f"{n} traces"
+        table = _html_table(
+            ['', 'min', 'median', 'max'],
+            [[f'<b>{pname}</b> ({punit})', f'{np.nanmin(pv):.4g}',
+              f'{np.nanmedian(pv):.4g}', f'{np.nanmax(pv):.4g}'],
+             ['R²', f'{np.nanmin(rv):.3f}', f'{np.nanmedian(rv):.3f}',
+              f'{np.nanmax(rv):.3f}']])
         self.fit_info.setText(
-            f"<b>{model}</b>{tag} · {self.fit_channel.currentText()} · "
-            f"{ngood} valid of {scope}"
-            + (f", {fails} failed" if fails else '')
-            + f"<br>{pname}: {np.nanmin(pv):.4g} … {np.nanmax(pv):.4g} {punit}"
-            + f"<br>median {np.nanmedian(pv):.4g} {punit}, "
-            + f"R² {np.nanmin(rv):.3f}–{np.nanmax(rv):.3f}")
+            f'<div style="line-height: 150%;"><b style="color: rgb(211, 194, 78);">'
+            f'{model}</b>{tag} · {self.fit_channel.currentText()} · '
+            f'{ngood} valid of {scope}'
+            + (f', {fails} failed' if fails else '')
+            + f'<br>{table}</div>')
         self.set_status(f'Per-trace fit{tag}: {ngood} valid of {scope}; '
                         f'{pname} map plotted.')
 
