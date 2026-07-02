@@ -553,18 +553,25 @@ class MainWindow(QMainWindow):
         self.fit_model.currentIndexChanged.connect(self._update_fit_params)
         grid.addWidget(self.fit_model, 3, 1)
 
+        # live equation of the selected model, so the user sees what is fitted
+        self.fit_formula = QLabel('')
+        self.fit_formula.setStyleSheet(LABEL_STYLE)
+        self.fit_formula.setWordWrap(True)
+        self.fit_formula.setTextFormat(Qt.TextFormat.RichText)
+        grid.addWidget(self.fit_formula, 4, 0, 1, 2)
+
         self.fit_no_offset = QCheckBox('Fix offset = 0 (drop the b baseline term)')
         self.fit_no_offset.setStyleSheet(CHECKBOX_STYLE)
         self.fit_no_offset.stateChanged.connect(self._update_fit_params)
-        grid.addWidget(self.fit_no_offset, 4, 0, 1, 2)
+        grid.addWidget(self.fit_no_offset, 5, 0, 1, 2)
 
-        grid.addWidget(self._label('Map parameter'), 5, 0)
+        grid.addWidget(self._label('Map parameter'), 6, 0)
         self.fit_param = self._combo([])
-        grid.addWidget(self.fit_param, 5, 1)
+        grid.addWidget(self.fit_param, 6, 1)
 
-        grid.addWidget(self._label('Min R² (drop worse)'), 6, 0)
+        grid.addWidget(self._label('Min R² (drop worse)'), 7, 0)
         self.fit_minr2 = self._dspin(0.0, 1.0, 3, 0.0, step=0.05)
-        grid.addWidget(self.fit_minr2, 6, 1)
+        grid.addWidget(self.fit_minr2, 7, 1)
 
         out_row = QHBoxLayout()
         self.fit_run_btn = QPushButton('Run fit')
@@ -579,13 +586,13 @@ class MainWindow(QMainWindow):
         btn_savemap.clicked.connect(self.save_fit_map)
         out_row.addWidget(self.fit_run_btn); out_row.addWidget(self.fit_cancel_btn)
         out_row.addWidget(btn_savemap)
-        grid.addLayout(out_row, 7, 0, 1, 2)
+        grid.addLayout(out_row, 8, 0, 1, 2)
 
         self.fit_info = QLabel('')
         self.fit_info.setStyleSheet(LABEL_STYLE); self.fit_info.setWordWrap(True)
         self.fit_info.setTextFormat(Qt.TextFormat.RichText)
-        grid.addWidget(self.fit_info, 8, 0, 1, 2)
-        grid.setRowStretch(9, 1)
+        grid.addWidget(self.fit_info, 9, 0, 1, 2)
+        grid.setRowStretch(10, 1)
 
         self._update_fit_params()
         return w
@@ -646,6 +653,10 @@ class MainWindow(QMainWindow):
         """Repopulate the map-parameter combo from the current model, honouring
         the fix-offset checkbox (which drops the b/c baseline term)."""
         model = self.fit_model.currentText()
+        formula = self.fitter.model_formula(model)
+        self.fit_formula.setText(
+            f'<span style="color: rgb(160, 160, 190);">{formula}</span>'
+            if formula else '')
         names = list(self.fitter.param_names(model))
         if self.fit_no_offset.isChecked():
             names = [n for n in names if n not in ('b', 'c')]

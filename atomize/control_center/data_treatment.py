@@ -426,9 +426,17 @@ class MainWindow(QMainWindow):
         self.model_combo.addItems(self.fitter.model_names())
         self.model_combo.setCurrentText('Exponential')
         grid.addWidget(self.model_combo, 0, 1)
+        # live equation of the selected model, so the user sees what is fitted
+        self.fit_formula = QLabel('')
+        self.fit_formula.setStyleSheet(LABEL_STYLE)
+        self.fit_formula.setWordWrap(True)
+        self.fit_formula.setTextFormat(Qt.TextFormat.RichText)
+        self.model_combo.currentTextChanged.connect(self._update_fit_formula)
+        grid.addWidget(self.fit_formula, 1, 0, 1, 2)
+        self._update_fit_formula(self.model_combo.currentText())
         self.fit_no_offset = QCheckBox('Fix offset = 0 (drop the b / c baseline term)')
         self.fit_no_offset.setStyleSheet(CHECKBOX_STYLE)
-        grid.addWidget(self.fit_no_offset, 1, 0, 1, 2)
+        grid.addWidget(self.fit_no_offset, 2, 0, 1, 2)
         fit_btn_row = QHBoxLayout()
         btn = QPushButton('Fit')
         btn.setStyleSheet(BUTTON_STYLE)
@@ -447,7 +455,7 @@ class MainWindow(QMainWindow):
         fit_btn_row.addWidget(btn)
         fit_btn_row.addWidget(self.fit_all_btn)
         fit_btn_row.addWidget(self.fit_save_table_btn)
-        grid.addLayout(fit_btn_row, 2, 0, 1, 2)
+        grid.addLayout(fit_btn_row, 3, 0, 1, 2)
         self.fit_result = QLabel('')
         self.fit_result.setStyleSheet(LABEL_STYLE)
         self.fit_result.setWordWrap(True)
@@ -458,8 +466,8 @@ class MainWindow(QMainWindow):
         fit_scroll.setStyleSheet(SCROLL_STYLE)
         fit_scroll.setWidgetResizable(True)
         fit_scroll.setWidget(self.fit_result)
-        grid.addWidget(fit_scroll, 3, 0, 1, 2)
-        grid.setRowStretch(3, 1)
+        grid.addWidget(fit_scroll, 4, 0, 1, 2)
+        grid.setRowStretch(4, 1)
         return w
 
     WINDOWS = ['None', 'Hann', 'Hamming', 'Blackman', 'Bartlett', 'Flat-top',
@@ -1317,6 +1325,13 @@ class MainWindow(QMainWindow):
         self.loaded_label.setText(f'File: {name}' if name else 'File: —')
 
     # ---------------------------------------------------------- operations
+    def _update_fit_formula(self, model):
+        """Refresh the equation shown under the model selector."""
+        formula = self.fitter.model_formula(model)
+        self.fit_formula.setText(
+            f'<span style="color: rgb(160, 160, 190);">{formula}</span>'
+            if formula else '')
+
     def do_fit(self):
         x, y = self.i_xy()
         if x is None or not len(x):
@@ -1339,9 +1354,12 @@ class MainWindow(QMainWindow):
                  for n, v, e in zip(res['param_names'], res['popt'], res['perr'])]
         table = _html_table(['param', 'value', '± err'], trows)
         off = ' (offset = 0)' if no_offset else ''
+        formula = self.fitter.model_formula(model)
+        formula_row = (f'<span style="color: rgb(160, 160, 190);">{formula}</span><br>'
+                       if formula else '')
         html = (f'<div style="line-height: 150%;">'
                 f'<b style="color: rgb(211, 194, 78);">{model}</b>{off}<br>'
-                f'{table}<br>R² = {res["r_squared"]:.5f}</div>')
+                f'{formula_row}{table}<br>R² = {res["r_squared"]:.5f}</div>')
         self.fit_result.setText(html)
         self.set_status(f'Fit done. R² = {res["r_squared"]:.5f}')
 
@@ -1402,9 +1420,12 @@ class MainWindow(QMainWindow):
                                           for p in pnames] + [f'{res["r_squared"]:.4f}']
             trows.append(cells)
         table = _html_table(['trace'] + pnames + ['R²'], trows)
+        formula = self.fitter.model_formula(model)
+        formula_row = (f'<span style="color: rgb(160, 160, 190);">{formula}</span><br>'
+                       if formula else '')
         self.fit_result.setText('<div style="line-height: 150%;">'
                                 f'<b style="color: rgb(211, 194, 78);">{model}</b> — '
-                                f'{len(rows)} trace(s)<br>{table}</div>')
+                                f'{len(rows)} trace(s)<br>{formula_row}{table}</div>')
         self.fit_save_table_btn.setEnabled(True)
         msg = f'Fit all: {len(rows)}/{n} trace(s) with {model}.'
         if failed:
