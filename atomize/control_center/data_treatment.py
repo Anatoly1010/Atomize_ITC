@@ -1000,14 +1000,34 @@ class MainWindow(QMainWindow):
             self._consume_buffer()
             # buffer columns are interleaved x0, y0, x1, y1, ...
             ncurves = data.shape[1]//2
-            mapping = {}
+            curves = []
             for i in range(ncurves):
                 x = data[:, 2*i]
                 y = data[:, 2*i + 1]
                 mask = ~(np.isnan(x) | np.isnan(y))
                 label = labels[i] if i < len(labels) else f'curve {i}'
-                mapping[label] = (x[mask], y[mask])
-            if not mapping:
+                curves.append((label, (x[mask], y[mask])))
+
+            # Group the curves into traces so BOTH workflows work from one plot:
+            #   * a bunch of independent I-channels  -> one trace each ("Fit all")
+            #   * an I/Q pair                         -> one trace, two channels
+            # The main window names companion channels of a multi-curve plot
+            # "<base>_1", "<base>_2", ... (see widgets.py). So "<base>_k" is an
+            # extra channel of "<base>" ONLY when a curve named exactly "<base>"
+            # is also present; otherwise (e.g. a "field_100"/"field_200" series)
+            # it stays its own trace.
+            present = {lbl for lbl, _ in curves}
+            items = []            # (trace name, {channel label: (x, y)})
+            index = {}            # base trace name -> position in items
+            for label, xy in curves:
+                m = re.match(r'^(.+)_(\d+)$', label)
+                base = m.group(1) if (m and m.group(1) in present) else None
+                if base is not None and base in index:
+                    items[index[base]][1][label] = xy      # companion channel
+                else:
+                    index[label] = len(items)
+                    items.append((label, {label: xy}))
+            if not items:
                 if not silent:
                     self.set_status('Plot buffer is empty.')
                 return
@@ -1016,8 +1036,14 @@ class MainWindow(QMainWindow):
             # first redraw already uses it.
             if buf_xname:
                 self.xname_edit.setText(buf_xname)
-            self._add_traces([('Loaded from plot', mapping)])
-            self.set_status(f'Loaded {len(mapping)} curve(s) from the current plot.')
+            self._add_traces(items)
+            # if the active (last) trace came in as an I/Q pair, treat both
+            # channels together for FFT / smoothing, as the Bruker-complex load does
+            if len(items[-1][1]) > 1:
+                self.pair_check.setChecked(True)
+            nchan = sum(len(m) for _, m in items)
+            extra = '' if nchan == len(items) else f' ({nchan} channels)'
+            self.set_status(f'Loaded {len(items)} trace(s){extra} from the current plot.')
         except Exception as e:
             self._consume_buffer()   # drop a malformed buffer so it doesn't recur
             if not silent:
