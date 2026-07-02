@@ -66,7 +66,7 @@ class MyExtendedNameList(NameList):
         columns = []
         maxlen = 0
         for label in dock.curves:
-            x, y = dock.get_data(label)
+            x, y = dock.get_raw_data(label)
             x = np.asarray(x, dtype=float)
             y = np.asarray(y, dtype=float)
             if x.size == 0:
