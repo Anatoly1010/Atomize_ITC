@@ -499,7 +499,8 @@ class MainWindow(QMainWindow):
                     self.last_error = False
 
     def open_dialog(self):
-        file_data = self.file_handler.create_file_dialog(multiprocessing = True)        
+        file_data = self.file_handler.create_file_dialog(multiprocessing = True,
+            directory = ldir.load('tune', self.path))
 
         if file_data:
             if file_data != 'None':

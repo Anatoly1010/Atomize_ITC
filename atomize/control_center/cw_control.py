@@ -571,7 +571,8 @@ class MainWindow(QMainWindow):
             print(f'{text}', flush=True)
 
     def open_dialog(self):
-        file_data = self.file_handler.create_file_dialog(multiprocessing = True)        
+        file_data = self.file_handler.create_file_dialog(multiprocessing = True,
+            directory = ldir.load('cw', self.path))
         #print(file_data == 'None')
         if file_data:
             if file_data != 'None':

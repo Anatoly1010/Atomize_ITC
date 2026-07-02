@@ -601,7 +601,8 @@ class MainWindow(QMainWindow):
                 self.button_start.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; } QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; } ")
 
     def open_dialog(self):
-        file_data = self.file_handler.create_file_dialog(multiprocessing = True)
+        file_data = self.file_handler.create_file_dialog(multiprocessing = True,
+            directory = ldir.load('tr', self.path))
 
         if file_data:
             if file_data != 'None':
