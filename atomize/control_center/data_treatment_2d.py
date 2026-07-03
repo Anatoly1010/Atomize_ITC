@@ -135,8 +135,7 @@ def _si_autoprefix(unit):
 
 # relaxation models exposed in the per-trace Fit tab (a curated subset of the
 # shared fitter; for T1/T2 decays k / k1 / k2 are the time constants).
-RELAX_MODELS = ['Exponential', 'Bi-exponential', 'Stretched exponential',
-                'Damped sine']
+RELAX_MODELS = ['Exponential', 'Bi-exponential', 'Stretched exponential']
 
 # one-shot mailbox the 1D Data Treatment window reads on "Load from plot";
 # same path the main window writes on right-click → "Send to Data Treatment".

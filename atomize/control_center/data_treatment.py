@@ -47,7 +47,7 @@ import atomize.math_modules.signal_processing as sigproc
 import atomize.math_modules.fft as fft_module
 # Reuse the main-window plot stack so the embedded preview behaves identically
 # to the main UI (crosshair, Shift-drag ruler, FFT/log right-click toggles).
-from atomize.main.widgets import CrosshairPlotWidget, CloseableDock
+from atomize.main.widgets import CrosshairPlotWidget, CloseableDock, CrosshairDock
 
 # Shared dark-theme palette / widget styles (single source of truth across all
 # control-center tools). apply_app_style() pins this process to the Fusion style
@@ -143,6 +143,12 @@ class MainWindow(QMainWindow):
         # selector picks one as active and self.datasets references its channels
         # (so derived/promoted channels persist per trace)
         self.traces = {}
+        # uname -> {channel label: (r,g,b)} preserved from "Load from plot" so a
+        # loaded curve keeps its exact on-screen colour (empty for file loads,
+        # which fall back to SOURCE_PENS / BATCH_COLORS)
+        self.trace_colors = {}
+        # channel-colour map of the *active* trace (set in _activate_trace)
+        self.active_colors = {}
         # label -> (x, y) of the *active* trace's source curves
         self.datasets = {}
 
@@ -778,15 +784,21 @@ class MainWindow(QMainWindow):
             i += 1
         return f'{name} ({i})'
 
-    def _add_traces(self, items):
+    def _add_traces(self, items, colors=None):
         """Register one or more (name, channel-mapping) traces and make the last
-        one active. `items` is a list of (name, {label: (x, y)})."""
+        one active. `items` is a list of (name, {label: (x, y)}). `colors`, when
+        given, is a {channel label: (r,g,b)} map (from "Load from plot") whose
+        entries are kept per trace so each channel draws in its original colour."""
         added = []
         for name, mapping in items:
             if not mapping:
                 continue
             uname = self._unique_trace_name(name)
             self.traces[uname] = dict(mapping)
+            if colors:
+                tc = {lbl: colors[lbl] for lbl in mapping if lbl in colors}
+                if tc:
+                    self.trace_colors[uname] = tc
             added.append(uname)
         if not added:
             return
@@ -807,6 +819,7 @@ class MainWindow(QMainWindow):
         # trace is shown as-is, not reprocessed by leftover tab parameters.
         self.live_check.setChecked(False)
         self.datasets = self.traces.get(name, {})
+        self.active_colors = self.trace_colors.get(name, {})
         keys = list(self.datasets)
         self._refresh_combos(select_i=keys[0] if keys else None,
                              select_q=keys[1] if len(keys) > 1 else None)
@@ -820,6 +833,7 @@ class MainWindow(QMainWindow):
         if not name:
             return
         self.traces.pop(name, None)
+        self.trace_colors.pop(name, None)
         idx = self.trace_combo.currentIndex()
         self.trace_combo.blockSignals(True)
         self.trace_combo.removeItem(idx)
@@ -973,6 +987,15 @@ class MainWindow(QMainWindow):
                         f'{len(x)} pts, '
                         + ('complex (I/Q pair).' if res['complex'] else 'real.'))
 
+    @staticmethod
+    def _parse_rgb(token):
+        """'r,g,b' -> (int, int, int), or None if blank/malformed."""
+        try:
+            r, g, b = (int(v) for v in token.split(','))
+            return (r, g, b)
+        except Exception:
+            return None
+
     def load_from_buffer(self, silent=False):
         if not os.path.isfile(BUFFER_PATH):
             if not silent:
@@ -981,6 +1004,7 @@ class MainWindow(QMainWindow):
             return
         try:
             labels = []
+            color_tokens = []
             buf_xname = ''
             header_count = 0
             with open(BUFFER_PATH, 'r') as fh:
@@ -990,6 +1014,8 @@ class MainWindow(QMainWindow):
                     header_count += 1
                     if 'labels:' in line:
                         labels = line.split('labels:', 1)[1].strip().split('|')
+                    elif 'colors:' in line:
+                        color_tokens = line.split('colors:', 1)[1].strip().split('|')
                     elif 'xname:' in line:
                         buf_xname = line.split('xname:', 1)[1].strip()
             data = np.genfromtxt(BUFFER_PATH, delimiter=',', skip_header=header_count)
@@ -1001,12 +1027,17 @@ class MainWindow(QMainWindow):
             # buffer columns are interleaved x0, y0, x1, y1, ...
             ncurves = data.shape[1]//2
             curves = []
+            curve_colors = {}
             for i in range(ncurves):
                 x = data[:, 2*i]
                 y = data[:, 2*i + 1]
                 mask = ~(np.isnan(x) | np.isnan(y))
                 label = labels[i] if i < len(labels) else f'curve {i}'
                 curves.append((label, (x[mask], y[mask])))
+                if i < len(color_tokens):
+                    rgb = self._parse_rgb(color_tokens[i])
+                    if rgb is not None:
+                        curve_colors[label] = rgb
 
             # Group the curves into traces so BOTH workflows work from one plot:
             #   * a bunch of independent I-channels  -> one trace each ("Fit all")
@@ -1036,7 +1067,7 @@ class MainWindow(QMainWindow):
             # first redraw already uses it.
             if buf_xname:
                 self.xname_edit.setText(buf_xname)
-            self._add_traces(items)
+            self._add_traces(items, colors=curve_colors)
             # if the active (last) trace came in as an I/Q pair, treat both
             # channels together for FFT / smoothing, as the Bruker-complex load does
             if len(items[-1][1]) > 1:
@@ -1252,6 +1283,8 @@ class MainWindow(QMainWindow):
         """Reset the window: forget all loaded data, result and selectors."""
         self.datasets = {}
         self.traces = {}
+        self.trace_colors = {}
+        self.active_colors = {}
         self._reset_result()
         self.step_counter = 0
         for combo in (self.trace_combo, self.i_combo, self.q_combo):
@@ -1268,12 +1301,14 @@ class MainWindow(QMainWindow):
         self.set_status('Cleared. Load a dataset to begin.')
 
     # ----------------------------------------------------- preview (in-process)
-    SOURCE_PENS = [(120, 170, 255), (220, 120, 220)]   # I = blue, Q = magenta
-    RESULT_PENS = [(211, 194, 78), (120, 220, 150), (230, 140, 90)]
-    # one colour per trace for the "Fit all traces" overlay (cycled if more)
-    BATCH_COLORS = [(211, 194, 78), (120, 170, 255), (120, 220, 150),
-                    (230, 140, 90), (200, 120, 220), (90, 200, 200),
-                    (240, 120, 150), (170, 200, 90)]
+    # Colours drawn from the shared main-window curve palette (CrosshairDock.
+    # CURVE_PALETTE) so this preview matches the LivePlot docks. Source stays cool
+    # (blue/magenta), results warm, to keep the two layers apart on one trace.
+    SOURCE_PENS = [(50, 146, 230), (228, 56, 255)]     # I = blue, Q = magenta
+    RESULT_PENS = [(255, 255, 0), (50, 230, 146), (255, 83, 56)]   # yellow, green, red-orange
+    # one colour per trace for the "Fit all traces" overlay (cycled if more) — the
+    # full shared palette, single source of truth so the two never drift.
+    BATCH_COLORS = list(CrosshairDock.CURVE_PALETTE)
 
     def redraw(self):
         """Repaint the embedded preview with the source channel(s) and the
@@ -1285,19 +1320,24 @@ class MainWindow(QMainWindow):
         show_q = (self.is_pair() and xq is not None and len(xq)
                   and self.q_combo.currentText() != self.i_combo.currentText())
 
+        # keep each source channel in its original plot colour when it was loaded
+        # from the plot; otherwise fall back to the fixed I/Q role pens
+        src_i = self.active_colors.get(self.i_combo.currentText(), self.SOURCE_PENS[0])
+        src_q = self.active_colors.get(self.q_combo.currentText(), self.SOURCE_PENS[1])
+
         if self.has_result():
             if self.result_show_source and xi is not None and len(xi):
-                curves.append(('source I', xi, yi, self.SOURCE_PENS[0]))
+                curves.append(('source I', xi, yi, src_i))
                 if show_q:
-                    curves.append(('source Q', xq, yq, self.SOURCE_PENS[1]))
+                    curves.append(('source Q', xq, yq, src_q))
             for idx, (lbl, y) in enumerate(self.result_channels):
                 curves.append((lbl, self.result_x, y, self.RESULT_PENS[idx % len(self.RESULT_PENS)]))
             xname = self.result_xname
         else:
             if xi is not None and len(xi):
-                curves.append(('source I', xi, yi, self.SOURCE_PENS[0]))
+                curves.append(('source I', xi, yi, src_i))
             if show_q:
-                curves.append(('source Q', xq, yq, self.SOURCE_PENS[1]))
+                curves.append(('source Q', xq, yq, src_q))
             xname = self._xname()
 
         wanted = set()
@@ -1468,7 +1508,12 @@ class MainWindow(QMainWindow):
             except Exception:
                 pass
         for i, (name, x, y, yfit) in enumerate(overlays):
-            col = self.BATCH_COLORS[i % len(self.BATCH_COLORS)]
+            # the fit used the trace's I (first) channel — reuse its preserved
+            # plot colour so the overlay matches the source plot; else cycle
+            chans = self.traces.get(name, {})
+            i_key = next(iter(chans), None)
+            col = (self.trace_colors.get(name, {}).get(i_key)
+                   or self.BATCH_COLORS[i % len(self.BATCH_COLORS)])
             self._curve_items[name] = self.plot_widget.plot(
                 x, y, pen=pg.mkPen(col, width=1), name=name)
             self._curve_items[f'{name} fit'] = self.plot_widget.plot(

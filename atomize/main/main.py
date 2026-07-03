@@ -64,7 +64,9 @@ class MyExtendedNameList(NameList):
         '# labels:' header line names the curves."""
         labels = []
         columns = []
+        colors = []
         maxlen = 0
+        used_colors = getattr(dock, 'used_colors', {})
         for label in dock.curves:
             x, y = dock.get_raw_data(label)
             x = np.asarray(x, dtype=float)
@@ -73,6 +75,14 @@ class MyExtendedNameList(NameList):
                 continue
             labels.append(str(label).replace('|', '/'))
             columns.append((x, y))
+            # carry the on-screen colour so Data Treatment can show each curve in
+            # exactly the colour the plot used, regardless of load order
+            pen = used_colors.get(label)
+            try:
+                c = pen.color()
+                colors.append('%d,%d,%d' % (c.red(), c.green(), c.blue()))
+            except Exception:
+                colors.append('')
             maxlen = max(maxlen, x.size, y.size)
 
         if not columns:
@@ -97,6 +107,8 @@ class MyExtendedNameList(NameList):
 
         buffer_path = os.path.join(self.window.path_to_main, 'treatment_buffer.csv')
         header = 'Atomize data treatment buffer\nlabels: ' + '|'.join(labels)
+        if any(colors):
+            header += '\ncolors: ' + '|'.join(colors)
         if xname:
             header += '\nxname: ' + xname.replace('\n', ' ')
         np.savetxt(buffer_path, buf, delimiter=',', fmt='%.6e', header=header, comments='# ')
