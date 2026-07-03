@@ -16,6 +16,7 @@ import atomize.general_modules.general_functions as general
 import atomize.general_modules.csv_opener_saver as openfile
 import atomize.general_modules.last_dir as ldir
 import atomize.control_center.field_param as field_param
+import atomize.control_center.temp_param as temp_param
 from atomize.control_center.time_log_spinbox import TimeLogSpinBox
 # Shared dark-theme styling; apply_app_style() pins this process to the Fusion
 # style so QComboBox / QSpinBox / QLineEdit render identically on Linux/Windows.
@@ -3141,6 +3142,7 @@ class MainWindow(QMainWindow):
         self.is_testing = True
         self.is_experiment = True
         field_param.set_lock('awg_phasing_insys')
+        temp_param.set_lock('awg_phasing_insys')
         self.timer.start(200)
 
     def dig_start(self):
@@ -3362,8 +3364,10 @@ class MainWindow(QMainWindow):
                         self.is_experiment = False
                     self.last_error = False
                     field_param.clear_lock()
+                    temp_param.clear_lock()
             else:
                 field_param.clear_lock()
+                temp_param.clear_lock()
 
     def check_process_status(self):
         if self.digitizer_process.is_alive():
@@ -3382,6 +3386,7 @@ class MainWindow(QMainWindow):
         #self.timer.stop()
         self.is_experiment = False
         field_param.clear_lock()
+        temp_param.clear_lock()
 
         if self.exit_clicked == 1:
             sys.exit()
@@ -4301,6 +4306,9 @@ class Worker():
                     sp = ls335.tc_setpoint()
                     ct = ls335.tc_temperature('B')
 
+                    if not script_test:
+                        temp_param.write_status(setpoint=sp, temp_b=ct)
+
                     if np.abs(sp - ct) > 0.8:
                         general.wait('8000 ms')
 
@@ -4869,6 +4877,9 @@ class Worker():
                     sp = ls335.tc_setpoint()
                     ct = ls335.tc_temperature('B')
 
+                    if not script_test:
+                        temp_param.write_status(setpoint=sp, temp_b=ct)
+
                     if np.abs(sp - ct) > 0.8:
                         general.wait('8000 ms')
 
@@ -5397,6 +5408,9 @@ class Worker():
                     sp = ls335.tc_setpoint()
                     ct = ls335.tc_temperature('B')
 
+                    if not script_test:
+                        temp_param.write_status(setpoint=sp, temp_b=ct)
+
                     if np.abs(sp - ct) > 0.8:
                         general.wait('8000 ms')
 
@@ -5900,6 +5914,9 @@ class Worker():
                     sp = ls335.tc_setpoint()
                     ct = ls335.tc_temperature('B')
 
+                    if not script_test:
+                        temp_param.write_status(setpoint=sp, temp_b=ct)
+
                     if np.abs(sp - ct) > 0.8:
                         general.wait('8000 ms')
 
@@ -6354,6 +6371,9 @@ class Worker():
 
                     sp = ls335.tc_setpoint()
                     ct = ls335.tc_temperature('B')
+
+                    if not script_test:
+                        temp_param.write_status(setpoint=sp, temp_b=ct)
 
                     if np.abs(sp - ct) > 0.8:
                         general.wait('8000 ms')

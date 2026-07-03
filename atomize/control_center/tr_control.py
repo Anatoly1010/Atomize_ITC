@@ -12,6 +12,7 @@ from PyQt6.QtCore import Qt, QTimer
 import atomize.general_modules.csv_opener_saver as openfile
 import atomize.general_modules.last_dir as ldir
 import atomize.control_center.field_param as field_param
+import atomize.control_center.temp_param as temp_param
 
 class MainWindow(QMainWindow):
     """
@@ -450,7 +451,8 @@ class MainWindow(QMainWindow):
         self.progress_bar.setValue(0)
         self.button_start.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; } QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; } ")
         field_param.clear_lock()
-        
+        temp_param.clear_lock()
+
         if self.exit_clicked == 1:
             sys.exit()
 
@@ -501,6 +503,7 @@ class MainWindow(QMainWindow):
         # send a command in a different thread about the current state
         self.parent_conn.send('start')
         field_param.set_lock('tr_control')
+        temp_param.set_lock('tr_control')
 
         self.is_testing = True 
         self.timer.start(300)
@@ -596,8 +599,10 @@ class MainWindow(QMainWindow):
                 else:
                     self.last_error = False
                     field_param.clear_lock()
+                    temp_param.clear_lock()
             else:
                 field_param.clear_lock()
+                temp_param.clear_lock()
                 self.button_start.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; } QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; } ")
 
     def open_dialog(self):
