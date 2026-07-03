@@ -878,7 +878,7 @@ class MainWindow(QMainWindow):
                 else:
                     setattr(self, par_name, float(spin_box.value()))
 
-        self.X0.setToolTip('X<sub style="font-size: 12pt;">0</sub> value for the custom X-axis.')
+        self.X0.setToolTip('X<sub style="font-size: 12pt;">0</sub> value for the custom X-axis.<br>In a Log Time experiment a non-zero X<sub style="font-size: 12pt;">0</sub> sets the X-axis start point; if left at 0 the start is taken from the detection pulse timing (or the first pulse with a non-zero Start Increment).')
         self.XDelta.setToolTip('ΔX value for the custom X-axis. Applied if not equal to 0.')
 
         # ---- Log Time spinboxes ----
@@ -896,8 +896,8 @@ class MainWindow(QMainWindow):
             setattr(self, attr_name, tspin)
             setattr(self, par_name, float(tspin.value()))
 
-        self.Log_start.setToolTip('Pulses with a log-step can be specified using the Start Increment parameter in the Pulses tab. Only relative increments of the pulses are important.')
-        self.Log_end.setToolTip('Pulses with a log-step can be specified using the Start Increment parameter in the Pulses tab. Only relative increments of the pulses are important.')
+        self.Log_start.setToolTip('Pulses with a log-step can be specified using the Start Increment parameter in the Pulses tab. Only relative increments of the pulses are important.\nA non-zero X0 sets the X-axis start point; otherwise the detection pulse timing (or the first pulse with a non-zero Start Increment) is used.')
+        self.Log_end.setToolTip('Pulses with a log-step can be specified using the Start Increment parameter in the Pulses tab. Only relative increments of the pulses are important.\nA non-zero X0 sets the X-axis start point; otherwise the detection pulse timing (or the first pulse with a non-zero Start Increment) is used.')
 
         # ---- Text Edits ----
         text_edit = [("EXP", "text_edit_exp_name", "cur_exp_name", self.exp_name),
@@ -3360,7 +3360,7 @@ class Worker():
                     f"{'-'*50}\n"
                     f"Pulse List:\n{pb.pulser_pulse_list()}"
                     f"{'-'*50}\n"
-                    f"Time (ns), I (A.U.), Q (A.U.)"
+                    f"Time (s), I (A.U.), Q (A.U.)"
                 )
 
                 if script_test:
@@ -3377,7 +3377,7 @@ class Worker():
                         general.wait('200 ms')
 
 
-                    file_handler.save_data(file_data, np.c_[x_axis, data[0], data[1]], header = header, mode = 'w')
+                    file_handler.save_data(file_data, np.c_[x_axis_plot, data[0], data[1]], header = header, mode = 'w')
 
                     conn.send( ('', f'Experiment {EXP_NAME} finished') )
 
@@ -3743,11 +3743,17 @@ class Worker():
             rel_shift = ( (rel_shift ) / next_after_min).astype(int)
 
             if rel_shift[0] != 0.0:
-                x_axis = x_axis * rel_shift[0] + self.round_to_closest( float(rect1[1].split(" ")[0]) , 3.2)
+                if x0 == 0:
+                    x_axis = x_axis * rel_shift[0] + self.round_to_closest( float(rect1[1].split(" ")[0]) , 3.2)
+                else:
+                    x_axis = x_axis * rel_shift[0] + x0
             else:
                 indices = np.where(rel_shift[1:] != 0)[0] + 1
                 if indices.size > 0:
-                    x_axis = x_axis * rel_shift[indices[0]] + self.round_to_closest( float(pulses[indices[0]][1].split(" ")[0]) , 3.2)
+                    if x0 == 0:
+                        x_axis = x_axis * rel_shift[indices[0]] + self.round_to_closest( float(pulses[indices[0]][1].split(" ")[0]) , 3.2)
+                    else:
+                        x_axis = x_axis * rel_shift[indices[0]] + x0
                 else:
                     ## this is for start increments: [3.2 3.2 3.2]
                     raise ValueError(f"Pulses do not have Start Increments")
@@ -3914,7 +3920,7 @@ class Worker():
                     f"{'-'*50}\n"
                     f"Pulse List:\n{pb.pulser_pulse_list()}"
                     f"{'-'*50}\n"
-                    f"Time (ns), I (A.U.), Q (A.U.)"
+                    f"Time (s), I (A.U.), Q (A.U.)"
                 )
 
                 if script_test:
@@ -3930,7 +3936,7 @@ class Worker():
                                 break
                         general.wait('200 ms')
 
-                    file_handler.save_data(file_data, np.c_[x_axis, data[0], data[1]], header = header, mode = 'w')
+                    file_handler.save_data(file_data, np.c_[x_axis_plot, data[0], data[1]], header = header, mode = 'w')
 
                     conn.send( ('', f'Experiment {EXP_NAME} finished') )
 

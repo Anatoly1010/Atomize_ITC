@@ -310,7 +310,7 @@ class MainWindow(QMainWindow):
         # Wide enough for all six tab labels to sit on one row (Source / Phase /
         # Background / Tikhonov / Mellin / Multi-Gaussian); narrower than this and
         # the tab bar overflows into left/right scroll buttons.
-        container.setFixedWidth(520)
+        container.setFixedWidth(570)
         return container
 
     def _build_shared_controls(self):
