@@ -3622,6 +3622,9 @@ class Worker():
             import atomize.general_modules.general_functions as general
             if script_test:
                 general.test_flag = 'test'
+            # Route this scan's plot_1d / plot_2d through the non-blocking
+            # coalescing worker so the acquisition loop isn't paced by the GUI.
+            general.set_plotting_async(True)
             import atomize.device_modules.Insys_FPGA as pb_pro
             import atomize.math_modules.fft as fft_module
             import atomize.device_modules.BH_15 as itc
@@ -4012,6 +4015,9 @@ class Worker():
             import atomize.general_modules.general_functions as general
             if script_test:
                 general.test_flag = 'test'
+            # Route this scan's plot_1d / plot_2d through the non-blocking
+            # coalescing worker so the acquisition loop isn't paced by the GUI.
+            general.set_plotting_async(True)
             import atomize.device_modules.Insys_FPGA as pb_pro
             import atomize.device_modules.Lakeshore_335 as ls
             import atomize.device_modules.BH_15 as bh
@@ -4541,6 +4547,9 @@ class Worker():
             import atomize.general_modules.general_functions as general
             if script_test:
                 general.test_flag = 'test'
+            # Route this scan's plot_1d / plot_2d through the non-blocking
+            # coalescing worker so the acquisition loop isn't paced by the GUI.
+            general.set_plotting_async(True)
             import atomize.device_modules.Insys_FPGA as pb_pro
             import atomize.device_modules.Lakeshore_335 as ls
             import atomize.device_modules.BH_15 as bh
@@ -5156,6 +5165,9 @@ class Worker():
             import atomize.general_modules.general_functions as general
             if script_test:
                 general.test_flag = 'test'
+            # Route this scan's plot_1d / plot_2d through the non-blocking
+            # coalescing worker so the acquisition loop isn't paced by the GUI.
+            general.set_plotting_async(True)
             import atomize.device_modules.Insys_FPGA as pb_pro
             import atomize.device_modules.Lakeshore_335 as ls
             import atomize.device_modules.BH_15 as bh
@@ -5584,6 +5596,9 @@ class Worker():
             import atomize.general_modules.general_functions as general
             if script_test:
                 general.test_flag = 'test'
+            # Route this scan's plot_1d / plot_2d through the non-blocking
+            # coalescing worker so the acquisition loop isn't paced by the GUI.
+            general.set_plotting_async(True)
             import atomize.device_modules.Insys_FPGA as pb_pro
             import atomize.device_modules.Lakeshore_335 as ls
             import atomize.device_modules.BH_15 as bh
@@ -6101,6 +6116,9 @@ class Worker():
             import atomize.general_modules.general_functions as general
             if script_test:
                 general.test_flag = 'test'
+            # Route this scan's plot_1d / plot_2d through the non-blocking
+            # coalescing worker so the acquisition loop isn't paced by the GUI.
+            general.set_plotting_async(True)
             import atomize.device_modules.Insys_FPGA as pb_pro
             import atomize.device_modules.Lakeshore_335 as ls
             import atomize.device_modules.BH_15 as bh
