@@ -223,6 +223,7 @@ class MainWindow(QMainWindow):
         self.resid_zero = self.resid_widget.addLine(
             y=0, pen=pg.mkPen((150, 150, 175), width=1, style=Qt.PenStyle.DashLine))
         self._resid_item = None
+        self._batch_resid_items = {}       # per-trace residual curves ('Fit all')
         self.resid_dock = CloseableDock(name='Residuals', widget=self.resid_widget)
         self.resid_dock.close_button.hide()
         self.plot_area.addDock(self.resid_dock, 'bottom', self.plot_dock)
@@ -1474,6 +1475,8 @@ class MainWindow(QMainWindow):
         """Show/update the residuals dock when the current result carries a
         residuals array (a fit); hide it otherwise. X stays linked to the
         preview, so panning/zooming the fit pans the residuals with it."""
+        # a single-trace redraw supersedes any 'Fit all traces' residual overlay
+        self._clear_batch_residuals()
         res = self.result_residuals
         if res is None or self.result_x is None or not len(res):
             if self.resid_dock.isVisible():
@@ -1685,22 +1688,48 @@ class MainWindow(QMainWindow):
             for p in res['param_names']:
                 if p not in pnames:
                     pnames.append(p)
+
+        def _dw_cell(dw):
+            """Durbin–Watson cell, coloured green (random) / amber (structured)."""
+            if dw != dw:                       # NaN
+                return '—'
+            ok = 1.5 <= dw <= 2.5
+            colour = 'rgb(120, 200, 120)' if ok else 'rgb(214, 160, 78)'
+            return f'<span style="color:{colour};">{dw:.2f}</span>'
+
         trows = []
         for name, res in rows:
+            st = res.get('stats', {})
+            # per-row: params + errs + the full goodness-of-fit dict (CSV keeps all)
             self.fit_table['rows'].append(
                 (name, list(res['param_names']), list(map(float, res['popt'])),
-                 list(map(float, res['perr'])), float(res['r_squared'])))
+                 list(map(float, res['perr'])), float(res['r_squared']), dict(st)))
             d = dict(zip(res['param_names'], res['popt']))
-            cells = [f'<b>{name}</b>'] + [f'{d[p]:.4g}' if p in d else '—'
-                                          for p in pnames] + [f'{res["r_squared"]:.4f}']
+            adj = st.get('adj_r_squared', float('nan'))
+            rmse = st.get('rmse', float('nan'))
+            aicc = st.get('aicc', float('nan'))
+            dw = st.get('durbin_watson', float('nan'))
+            cells = ([f'<b>{name}</b>']
+                     + [f'{d[p]:.4g}' if p in d else '—' for p in pnames]
+                     + [f'{res["r_squared"]:.4f}',
+                        ('—' if adj != adj else f'{adj:.4f}'),
+                        ('—' if rmse != rmse else f'{rmse:.4g}'),
+                        ('—' if aicc != aicc else f'{aicc:.1f}'),
+                        _dw_cell(dw)])
             trows.append(cells)
-        table = _html_table(['trace'] + pnames + ['R²'], trows)
+        table = _html_table(
+            ['trace'] + pnames + ['R²', 'adj.R²', 'RMSE', 'AICc', 'DW'], trows)
         formula = self.fitter.model_formula(model)
         formula_row = (f'<span style="color: rgb(160, 160, 190);">{formula}</span><br>'
                        if formula else '')
+        note = ('<span style="color: rgb(150, 150, 175); font-size: 11px;">'
+                'DW ≈ 2 ⇒ unstructured residuals (green); off-2 (amber) ⇒ wrong '
+                'model shape. Lower AICc ⇒ better model (compare across fits); '
+                'red.χ²/AIC/BIC in the saved CSV.</span>')
         self.fit_result.setText('<div style="line-height: 150%;">'
                                 f'<b style="color: rgb(211, 194, 78);">{model}</b> — '
-                                f'{len(rows)} trace(s)<br>{formula_row}{table}</div>')
+                                f'{len(rows)} trace(s)<br>{formula_row}{table}'
+                                f'<br>{note}</div>')
         self.fit_save_table_btn.setEnabled(True)
         msg = f'Fit all: {len(rows)}/{n} trace(s) with {model}.'
         if failed:
@@ -1709,13 +1738,15 @@ class MainWindow(QMainWindow):
 
     def _render_fit_batch(self, overlays):
         """Overlay each trace's data (thin) + fit (dashed) on the preview, one
-        colour per trace. A later single-trace redraw drops these automatically."""
+        colour per trace, and overlay the matching residuals in the Residuals
+        dock. A later single-trace redraw drops both automatically."""
         for lbl in list(self._curve_items):
             self.plot_widget.removeItem(self._curve_items.pop(lbl))
             try:
                 self.legend.removeItem(lbl)
             except Exception:
                 pass
+        resid_overlays = []
         for i, (name, x, y, yfit) in enumerate(overlays):
             # the fit used the trace's I (first) channel — reuse its preserved
             # plot colour so the overlay matches the source plot; else cycle
@@ -1728,10 +1759,48 @@ class MainWindow(QMainWindow):
             self._curve_items[f'{name} fit'] = self.plot_widget.plot(
                 x, yfit, pen=pg.mkPen(col, width=2, style=Qt.PenStyle.DashLine),
                 name=f'{name} fit')
+            resid_overlays.append((name, x, y - yfit, col))
         self._plot_key = None                 # force the next single redraw to refit
-        self.resid_dock.hide()                # batch overlay has no single residual
+        self._render_batch_residuals(resid_overlays)
         try:
             self.plot_widget.autoRange()
+        except Exception:
+            pass
+
+    def _clear_batch_residuals(self):
+        """Remove any 'Fit all traces' residual overlay curves from the dock."""
+        for it in self._batch_resid_items.values():
+            try:
+                self.resid_widget.removeItem(it)
+            except Exception:
+                pass
+        self._batch_resid_items = {}
+
+    def _render_batch_residuals(self, resid_overlays):
+        """Overlay each trace's residual (data − fit) in the Residuals dock, one
+        colour per trace matching the batch overlay. The shared X-link and
+        _sync_resid_transforms keep Log X / FFT display consistent with the
+        preview, exactly as for a single-trace residual."""
+        self._clear_batch_residuals()
+        if self._resid_item is not None:      # drop any single-trace residual
+            try:
+                self.resid_widget.removeItem(self._resid_item)
+            except Exception:
+                pass
+            self._resid_item = None
+        if not resid_overlays:
+            self.resid_dock.hide()
+            return
+        for name, x, resid, col in resid_overlays:
+            self._batch_resid_items[name] = self.resid_widget.plot(
+                np.asarray(x, float), np.asarray(resid, float),
+                pen=pg.mkPen(col, width=1), name=name)
+        self.resid_widget.setLabel('left', 'residual')
+        self._sync_resid_transforms()
+        if not self.resid_dock.isVisible():
+            self.resid_dock.show()
+        try:
+            self.resid_widget.getPlotItem().getViewBox().autoRange()
         except Exception:
             pass
 
@@ -1746,19 +1815,25 @@ class MainWindow(QMainWindow):
             return
         # union of parameter names across rows, in first-seen order
         pnames = []
-        for _, pn, *_ in tbl['rows']:
-            for p in pn:
+        for row in tbl['rows']:
+            for p in row[1]:
                 if p not in pnames:
                     pnames.append(p)
-        header = ['trace'] + [c for p in pnames for c in (p, f'{p}_err')] + ['R2']
+        # goodness-of-fit columns appended after the parameters (full set, unlike
+        # the on-screen table which shows only R²/adj.R²/RMSE/DW to stay readable)
+        stat_keys = ['adj_r_squared', 'rmse', 'red_chi2', 'aic', 'aicc', 'bic',
+                     'durbin_watson']
+        header = (['trace'] + [c for p in pnames for c in (p, f'{p}_err')]
+                  + ['R2'] + stat_keys)
         lines = [','.join(header)]
-        for name, pn, vals, errs, r2 in tbl['rows']:
+        for name, pn, vals, errs, r2, st in tbl['rows']:
             d = {p: (v, e) for p, v, e in zip(pn, vals, errs)}
             cells = [str(name).replace(',', ';')]
             for p in pnames:
                 v, e = d.get(p, (float('nan'), float('nan')))
                 cells += [f'{v:.6g}', f'{e:.6g}']
             cells.append(f'{r2:.6f}')
+            cells += [f'{st.get(k, float("nan")):.6g}' for k in stat_keys]
             lines.append(','.join(cells))
         try:
             with open(path, 'w') as fh:
