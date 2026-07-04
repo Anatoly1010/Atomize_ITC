@@ -160,6 +160,8 @@ class MainWindow(QMainWindow):
         self.result_show_source = True # overlay the source (same x-domain)?
         # description lines written into the CSV header on save
         self.result_meta = []
+        # residuals (data - fit) for the residuals dock; None hides that dock
+        self.result_residuals = None
 
         # counter for naming chained "Result -> input" steps uniquely
         self.step_counter = 0
@@ -210,6 +212,29 @@ class MainWindow(QMainWindow):
         self.plot_dock = CloseableDock(name='Preview', widget=self.plot_widget)
         self.plot_dock.close_button.hide()
         self.plot_area.addDock(self.plot_dock)
+
+        # Residuals dock (data - fit), stacked below the preview and X-linked to
+        # it, à la deer_analysis. Hidden until a fit produces residuals; the zero
+        # line makes any structure (a curving/oscillating residual = wrong model
+        # shape) obvious at a glance, complementing the Durbin-Watson number.
+        self.resid_widget = CrosshairPlotWidget()
+        self.resid_widget.showGrid(x=True, y=True, alpha=0.2)
+        self.resid_widget.setXLink(self.plot_widget)
+        self.resid_zero = self.resid_widget.addLine(
+            y=0, pen=pg.mkPen((150, 150, 175), width=1, style=Qt.PenStyle.DashLine))
+        self._resid_item = None
+        self.resid_dock = CloseableDock(name='Residuals', widget=self.resid_widget)
+        self.resid_dock.close_button.hide()
+        self.plot_area.addDock(self.resid_dock, 'bottom', self.plot_dock)
+        self.resid_dock.hide()
+        # The X-link only works while both plots share the same X coordinate
+        # space, so the residuals must follow the preview's X-affecting display
+        # transforms (right-click ▸ Transforms). Log X and FFT remap X; mirror
+        # them onto the residuals plot. Log Y / derivative / subtract-mean touch
+        # only Y (which is NOT linked), so they need no mirroring.
+        main_ctrl = self.plot_widget.getPlotItem().ctrl
+        main_ctrl.logXCheck.toggled.connect(self._sync_resid_transforms)
+        main_ctrl.fftCheck.toggled.connect(self._sync_resid_transforms)
         root.addWidget(self.plot_area, stretch=3)
 
         # ---- Vertical separator between graph and controls ----
@@ -446,6 +471,7 @@ class MainWindow(QMainWindow):
         fit_btn_row = QHBoxLayout()
         btn = QPushButton('Fit')
         btn.setStyleSheet(BUTTON_STYLE)
+        btn.setToolTip(self._FIT_STATS_TOOLTIP)
         btn.clicked.connect(self.do_fit)
         self.fit_all_btn = QPushButton('Fit all traces')
         self.fit_all_btn.setStyleSheet(BUTTON_STYLE)
@@ -1188,16 +1214,23 @@ class MainWindow(QMainWindow):
         self.result_xname = 'X'
         self.result_show_source = True
         self.result_meta = []
+        self.result_residuals = None
         if hasattr(self, 'fit_result'):
             self.fit_result.setText('')
 
-    def _set_result(self, x, channels, meta, show_source=True, xname='X'):
-        """Store a result of one or more (label, y) channels and repaint."""
+    def _set_result(self, x, channels, meta, show_source=True, xname='X',
+                    residuals=None):
+        """Store a result of one or more (label, y) channels and repaint.
+
+        residuals: optional (data - fit) array; when given, the Residuals dock
+        is shown below the preview, otherwise it is hidden."""
         self.result_x = np.asarray(x, dtype=float)
         self.result_channels = [(lbl, np.asarray(y, dtype=float)) for lbl, y in channels]
         self.result_meta = list(meta)
         self.result_show_source = show_source
         self.result_xname = xname
+        self.result_residuals = (None if residuals is None
+                                 else np.asarray(residuals, dtype=float))
         self.redraw()
 
     def has_result(self):
@@ -1302,10 +1335,12 @@ class MainWindow(QMainWindow):
 
     # ----------------------------------------------------- preview (in-process)
     # Colours drawn from the shared main-window curve palette (CrosshairDock.
-    # CURVE_PALETTE) so this preview matches the LivePlot docks. Source stays cool
-    # (blue/magenta), results warm, to keep the two layers apart on one trace.
-    SOURCE_PENS = [(50, 146, 230), (228, 56, 255)]     # I = blue, Q = magenta
-    RESULT_PENS = [(255, 255, 0), (50, 230, 146), (255, 83, 56)]   # yellow, green, red-orange
+    # CURVE_PALETTE) so this preview matches the LivePlot docks: sources take the
+    # first two palette entries (white I, yellow Q) exactly as the main window
+    # draws the first two curves; results use distinct warm/cool hues so a fit or
+    # derived curve stands out over the source it overlays.
+    SOURCE_PENS = [(255, 255, 255), (255, 255, 0)]     # I = white, Q = yellow
+    RESULT_PENS = [(255, 83, 56), (50, 230, 146), (50, 146, 230)]  # red-orange, green, blue
     # one colour per trace for the "Fit all traces" overlay (cycled if more) — the
     # full shared palette, single source of truth so the two never drift.
     BATCH_COLORS = list(CrosshairDock.CURVE_PALETTE)
@@ -1377,8 +1412,113 @@ class MainWindow(QMainWindow):
         key = (frozenset(wanted), xname)
         if key != self._plot_key:
             self._plot_key = key
+            self._autoscale(curves)
+
+        self._redraw_residuals(xlabel, xunit)
+
+    def _autoscale(self, curves):
+        """Fit the view to the full data extent.
+
+        autoRange() reads the item's dataBounds, which — with the peak
+        auto-downsampling enabled for render speed — are taken from the
+        *decimated* series. On log-spaced, multi-decade data the sparse
+        high-x samples get dropped from the decimation, so autoRange stops
+        short of the true extent. We therefore compute the range from the raw
+        arrays we already hold (falling back to autoRange for FFT display,
+        where the shown data is transformed)."""
+        vb = self.plot_widget.getPlotItem().getViewBox()
+        try:
+            logx, logy = vb.state['logMode']
+            fft = self.plot_widget.getPlotItem().ctrl.fftCheck.isChecked()
+        except Exception:
+            logx = logy = fft = False
+        xs, ys = [], []
+        if not fft:
+            for _lbl, x, y, _c in curves:
+                x = np.asarray(x, dtype=float)
+                y = np.asarray(y, dtype=float)
+                m = np.isfinite(x) & np.isfinite(y)
+                if m.any():
+                    xs.append(x[m]); ys.append(y[m])
+        if not xs:
             try:
-                self.plot_widget.autoRange()
+                vb.autoRange()
+            except Exception:
+                pass
+            return
+        xall = np.concatenate(xs); yall = np.concatenate(ys)
+
+        def bounds(vals, log):
+            if log:
+                vals = vals[vals > 0]
+                if not vals.size:
+                    return None
+                vals = np.log10(vals)
+            return float(vals.min()), float(vals.max())
+
+        xb = bounds(xall, logx); yb = bounds(yall, logy)
+        try:
+            if xb:
+                vb.setRange(xRange=xb, update=False)
+            if yb:
+                vb.setRange(yRange=yb)
+            if not xb and not yb:
+                vb.autoRange()
+        except Exception:
+            try:
+                vb.autoRange()
+            except Exception:
+                pass
+
+    def _redraw_residuals(self, xlabel, xunit):
+        """Show/update the residuals dock when the current result carries a
+        residuals array (a fit); hide it otherwise. X stays linked to the
+        preview, so panning/zooming the fit pans the residuals with it."""
+        res = self.result_residuals
+        if res is None or self.result_x is None or not len(res):
+            if self.resid_dock.isVisible():
+                self.resid_dock.hide()
+            return
+        xd = np.asarray(self.result_x, dtype=float)
+        yd = np.asarray(res, dtype=float)
+        pen = pg.mkPen((211, 194, 78), width=1)
+        if self._resid_item is None:
+            self._resid_item = self.resid_widget.plot(xd, yd, pen=pen,
+                                                      name='residual')
+        else:
+            self._resid_item.setData(xd, yd)
+        self.resid_widget.setLabel('bottom', xlabel, units=xunit)
+        self.resid_widget.setLabel('left', 'residual')
+        try:
+            self.resid_widget.getPlotItem().getAxis('bottom').enableAutoSIPrefix(
+                _si_autoprefix(xunit))
+        except Exception:
+            pass
+        self._sync_resid_transforms()
+        if not self.resid_dock.isVisible():
+            self.resid_dock.show()
+        try:
+            self.resid_widget.getPlotItem().getViewBox().autoRange()
+        except Exception:
+            pass
+
+    def _sync_resid_transforms(self, *args):
+        """Mirror the preview's X-remapping display transforms (Log X, FFT) onto
+        the residuals plot so the shared X axis stays in one coordinate space.
+        Residual Y is kept linear (residuals cross zero, so Log Y is invalid)."""
+        if not hasattr(self, 'resid_widget'):
+            return
+        main = self.plot_widget.getPlotItem().ctrl
+        resid = self.resid_widget.getPlotItem()
+        logx = main.logXCheck.isChecked()
+        fft = main.fftCheck.isChecked()
+        # setLogMode drives resid's own logX/logY checkboxes + axes + items
+        resid.setLogMode(logx, False)
+        if resid.ctrl.fftCheck.isChecked() != fft:
+            resid.ctrl.fftCheck.setChecked(fft)   # triggers resid's FFT update
+        if self.resid_dock.isVisible():
+            try:
+                resid.getViewBox().autoRange()
             except Exception:
                 pass
 
@@ -1410,12 +1550,16 @@ class MainWindow(QMainWindow):
         except Exception as e:
             self.set_status(f'Fit failed: {e}')
             return
+        st = res.get('stats', {})
         meta = ['Fit model: ' + model + (' (offset fixed = 0)' if no_offset else '')]
         meta += [f'{n} = {v:.6g} +/- {e:.3g}'
                  for n, v, e in zip(res['param_names'], res['popt'], res['perr'])]
         meta.append(f'R^2 = {res["r_squared"]:.6f}')
+        meta += [f'{k} = {st[k]:.6g}' for k in
+                 ('adj_r_squared', 'rmse', 'red_chi2', 'aicc', 'bic', 'durbin_watson')
+                 if k in st]
         self._set_result(x, [('fit', res['y_fit'])], meta, show_source=True,
-                         xname=self._xname())
+                         xname=self._xname(), residuals=res['residuals'])
         trows = [(f'<b>{n}</b>', f'{v:.5g}', f'{e:.3g}')
                  for n, v, e in zip(res['param_names'], res['popt'], res['perr'])]
         table = _html_table(['param', 'value', '± err'], trows)
@@ -1425,9 +1569,74 @@ class MainWindow(QMainWindow):
                        if formula else '')
         html = (f'<div style="line-height: 150%;">'
                 f'<b style="color: rgb(211, 194, 78);">{model}</b>{off}<br>'
-                f'{formula_row}{table}<br>R² = {res["r_squared"]:.5f}</div>')
+                f'{formula_row}{table}{self._fit_stats_html(res)}</div>')
         self.fit_result.setText(html)
         self.set_status(f'Fit done. R² = {res["r_squared"]:.5f}')
+
+    _FIT_STATS_TOOLTIP = (
+        '<div style="max-width: 380px;">'
+        '<b>Goodness of fit</b><br>'
+        'Diagnostics beyond R², to judge whether a model is right and to '
+        'compare models on the same data.'
+        '<ul style="margin: 4px 0 0 -22px;">'
+        '<li><b>R²</b> — fraction of variance explained (1 = perfect). Always '
+        'rises when parameters are added, so it cannot, on its own, tell you a '
+        'model is over-fitted or the wrong shape.</li>'
+        '<li><b>adj. R²</b> — R² penalized for the number of parameters. A '
+        'bigger model only improves it if the extra terms genuinely help.</li>'
+        '<li><b>RMSE</b> — root-mean-square residual, in the signal\'s own '
+        'units. The typical distance between data and fit.</li>'
+        '<li><b>red. χ²</b> — reduced chi-square. With no measured error bars '
+        'the noise is estimated from the residuals, so this is ≈1 by '
+        'construction; shown for completeness.</li>'
+        '<li><b>AICc / BIC</b> — information criteria for model selection. '
+        'Absolute values are meaningless; the <i>difference</i> between two '
+        'fits of the same trace is what counts — <b>lower is better</b>. A '
+        'drop &gt; ~10 is decisive evidence for the lower model. BIC penalizes '
+        'extra parameters more strongly than AICc.</li>'
+        '<li><b>Durbin–Watson</b> — tests whether residuals are serially '
+        'correlated. <b>≈ 2</b> means random, unstructured residuals (good); '
+        'much less than 2 (positive correlation) or much more than 2 means the '
+        'residuals drift systematically — the model is the wrong shape even if '
+        'R² looks excellent. Shown green for 1.5–2.5, amber otherwise.</li>'
+        '</ul></div>')
+
+    @staticmethod
+    def _fit_stats_html(res):
+        """Goodness-of-fit / model-selection block for the fit panel."""
+        st = res.get('stats', {})
+        r2 = res.get('r_squared', float('nan'))
+
+        def cell(v, fmt='.5g'):
+            try:
+                return '-' if v != v else format(v, fmt)   # v!=v => NaN
+            except (TypeError, ValueError):
+                return '-'
+
+        # Durbin-Watson colouring: ~2 is ideal (white residuals); flag drift.
+        dw = st.get('durbin_watson', float('nan'))
+        dw_ok = dw == dw and 1.5 <= dw <= 2.5
+        dw_txt = cell(dw, '.3f')
+        if dw == dw:
+            colour = 'rgb(120, 200, 120)' if dw_ok else 'rgb(214, 160, 78)'
+            hint = 'random' if dw_ok else 'structured'
+            dw_txt = f'<span style="color:{colour};">{dw_txt} ({hint})</span>'
+
+        rows = [
+            ('R²', cell(r2, '.5f')),
+            ('adj. R²', cell(st.get('adj_r_squared'), '.5f')),
+            ('RMSE', cell(st.get('rmse'))),
+            ('red. χ²', cell(st.get('red_chi2'))),
+            ('AICc', cell(st.get('aicc'), '.1f')),
+            ('BIC', cell(st.get('bic'), '.1f')),
+            ('Durbin–Watson', dw_txt),
+        ]
+        table = _html_table(['statistic', 'value'], rows)
+        note = ('<span style="color: rgb(150, 150, 175); font-size: 11px;">'
+                'lower AICc/BIC ⇒ better model (compare across fits); '
+                'Durbin–Watson ≈ 2 ⇒ unstructured residuals</span>')
+        return (f'<br><br><b style="color: rgb(160, 160, 190);">Goodness of fit</b>'
+                f'<br>{table}<br>{note}')
 
     def fit_all_traces(self):
         """Fit the current model to the I channel of every loaded trace, overlay
@@ -1520,6 +1729,7 @@ class MainWindow(QMainWindow):
                 x, yfit, pen=pg.mkPen(col, width=2, style=Qt.PenStyle.DashLine),
                 name=f'{name} fit')
         self._plot_key = None                 # force the next single redraw to refit
+        self.resid_dock.hide()                # batch overlay has no single residual
         try:
             self.plot_widget.autoRange()
         except Exception:

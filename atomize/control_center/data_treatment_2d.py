@@ -566,6 +566,7 @@ class MainWindow(QMainWindow):
         out_row = QHBoxLayout()
         self.fit_run_btn = QPushButton('Run fit')
         self.fit_run_btn.setStyleSheet(BUTTON_STYLE)
+        self.fit_run_btn.setToolTip(self._FIT_STATS_TOOLTIP)
         self.fit_run_btn.clicked.connect(self.do_fit_2d)
         self.fit_cancel_btn = QPushButton('Cancel')
         self.fit_cancel_btn.setStyleSheet(BUTTON_STYLE)
@@ -1306,6 +1307,25 @@ class MainWindow(QMainWindow):
         other = col['start'] + col['step']*np.arange(chan.shape[1])
         return traces, xaxis, other, col, row
 
+    _FIT_STATS_TOOLTIP = (
+        '<div style="max-width: 380px;">'
+        '<b>Per-trace fit quality</b><br>'
+        'Every trace along the decay axis is fit independently; the summary '
+        'reports the spread (min / median / max) of two diagnostics across the '
+        'series:'
+        '<ul style="margin: 4px 0 0 -22px;">'
+        '<li><b>R²</b> — fraction of variance explained per trace (1 = '
+        'perfect). A low <i>median</i> means the model does not suit the data; '
+        'a wide min–max spread means some traces (often the noisy late/early '
+        'ones) fit far worse than others.</li>'
+        '<li><b>Durbin–Watson</b> — residual-autocorrelation test. <b>≈ 2</b> '
+        'means random residuals; well below 2 means the residuals drift '
+        'systematically — the model is the wrong shape even where R² looks '
+        'high. A median far from 2 is a red flag for the whole series.</li>'
+        '</ul>'
+        'Traces below <b>Min R²</b> are dropped from the parameter map.'
+        '</div>')
+
     def do_fit_2d(self):
         if self._fitting:                          # don't stack a second fit
             return
@@ -1320,6 +1340,7 @@ class MainWindow(QMainWindow):
         n = traces.shape[0]
         params = np.full(n, np.nan)
         r2 = np.full(n, np.nan)
+        dw = np.full(n, np.nan)
         fails = 0
         # The fit loop is CPU-bound and would freeze the window ("not responding")
         # for many traces, so we pump the Qt event loop every few traces and show
@@ -1344,6 +1365,7 @@ class MainWindow(QMainWindow):
                     if pname in names:
                         params[k] = res['popt'][names.index(pname)]
                     r2[k] = res['r_squared']
+                    dw[k] = res.get('stats', {}).get('durbin_watson', np.nan)
                     if not np.isfinite(r2[k]) or r2[k] < minr2:
                         params[k] = np.nan
                 except Exception:
@@ -1387,13 +1409,20 @@ class MainWindow(QMainWindow):
             self.set_status(f'Fit done but could not plot map: {e}')
         pv = params[valid]
         rv = r2[valid]
+        dwv = dw[valid]
         scope = f"{done}/{n} traces" if cancelled else f"{n} traces"
-        table = _html_table(
-            ['', 'min', 'median', 'max'],
-            [[f'<b>{pname}</b> ({punit})', f'{np.nanmin(pv):.4g}',
-              f'{np.nanmedian(pv):.4g}', f'{np.nanmax(pv):.4g}'],
-             ['R²', f'{np.nanmin(rv):.3f}', f'{np.nanmedian(rv):.3f}',
-              f'{np.nanmax(rv):.3f}']])
+        rows = [[f'<b>{pname}</b> ({punit})', f'{np.nanmin(pv):.4g}',
+                 f'{np.nanmedian(pv):.4g}', f'{np.nanmax(pv):.4g}'],
+                ['R²', f'{np.nanmin(rv):.3f}', f'{np.nanmedian(rv):.3f}',
+                 f'{np.nanmax(rv):.3f}']]
+        if np.any(np.isfinite(dwv)):
+            dw_med = np.nanmedian(dwv)
+            colour = ('rgb(120, 200, 120)' if 1.5 <= dw_med <= 2.5
+                      else 'rgb(214, 160, 78)')
+            rows.append([f'<span style="color:{colour};">Durbin–Watson</span>',
+                         f'{np.nanmin(dwv):.2f}', f'{dw_med:.2f}',
+                         f'{np.nanmax(dwv):.2f}'])
+        table = _html_table(['', 'min', 'median', 'max'], rows)
         self.fit_info.setText(
             f'<div style="line-height: 150%;"><b style="color: rgb(211, 194, 78);">'
             f'{model}</b>{tag} · {self.fit_channel.currentText()} · '
