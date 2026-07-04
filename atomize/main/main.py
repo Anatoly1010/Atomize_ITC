@@ -12,7 +12,7 @@ from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import QWidget, QGridLayout, QLabel, QPushButton, QComboBox, QCheckBox, QVBoxLayout, QApplication
 from PyQt6.QtGui import QColor
 from atomize.main.main_window import MainWindow, NameList
-from atomize.general_modules.gui_style import apply_app_style
+from atomize.general_modules.gui_style import apply_app_style, CHECKBOX_STYLE
 import atomize.general_modules.last_dir as ldir
 os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "1"
 
@@ -356,35 +356,7 @@ class MainExtended(MainWindow):
 
         self.checkTests = QCheckBox("")
         gridlayout.addWidget(self.checkTests, 0, 5)
-        self.checkTests.setStyleSheet("""
-                QCheckBox { 
-                    color: rgb(193, 202, 227); 
-                    background-color: transparent; 
-                    font-weight: bold;
-                    spacing: 8px; 
-                }
-
-                QCheckBox::indicator {
-                    width: 14px;
-                    height: 14px;
-                    background-color: rgb(63, 63, 97);
-                    border: 1px solid rgb(83, 83, 117);
-                    border-radius: 3px;
-                }
-
-                QCheckBox::indicator:hover {
-                    border: 1px solid rgb(211, 194, 78);
-                }
-
-                QCheckBox::indicator:pressed {
-                    background-color: rgb(83, 83, 117);
-                }
-
-                QCheckBox::indicator:checked {
-                    background-color: rgb(211, 194, 78);
-                    border: 3px solid rgb(63, 63, 97); 
-                }
-            """)
+        self.checkTests.setStyleSheet(CHECKBOX_STYLE)
 
         self.checkTests.setFixedSize(140, 40)
         self.checkTests.setChecked(True)

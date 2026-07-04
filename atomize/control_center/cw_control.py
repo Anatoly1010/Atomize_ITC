@@ -13,6 +13,7 @@ import atomize.general_modules.csv_opener_saver as openfile
 import atomize.general_modules.last_dir as ldir
 import atomize.control_center.field_param as field_param
 import atomize.control_center.temp_param as temp_param
+from atomize.general_modules.gui_style import CHECKBOX_STYLE
 
 
 class MainWindow(QMainWindow):
@@ -162,35 +163,7 @@ class MainWindow(QMainWindow):
             check = QCheckBox("")
             setattr(self, attr_name, check)
             check.stateChanged.connect(func)
-            check.setStyleSheet("""
-                QCheckBox { 
-                    color: rgb(193, 202, 227); 
-                    background-color: transparent; 
-                    font-weight: bold;
-                    spacing: 8px; 
-                }
-
-                QCheckBox::indicator {
-                    width: 14px;
-                    height: 14px;
-                    background-color: rgb(63, 63, 97);
-                    border: 1px solid rgb(83, 83, 117);
-                    border-radius: 3px;
-                }
-
-                QCheckBox::indicator:hover {
-                    border: 1px solid rgb(211, 194, 78);
-                }
-
-                QCheckBox::indicator:pressed {
-                    background-color: rgb(83, 83, 117);
-                }
-
-                QCheckBox::indicator:checked {
-                    background-color: rgb(211, 194, 78);
-                    border: 3px solid rgb(63, 63, 97); 
-                }
-            """)
+            check.setStyleSheet(CHECKBOX_STYLE)
 
         # ---- Buttons ----
         buttons = [("Start", "button_start", self.start),

@@ -20,7 +20,7 @@ import atomize.control_center.temp_param as temp_param
 from atomize.control_center.time_log_spinbox import TimeLogSpinBox
 # Shared dark-theme styling; apply_app_style() pins this process to the Fusion
 # style so QComboBox / QSpinBox / QLineEdit render identically on Linux/Windows.
-from atomize.general_modules.gui_style import apply_app_style
+from atomize.general_modules.gui_style import apply_app_style, CHECKBOX_STYLE
 
 # Reload-signal file written by the Sequence Calculator (sequence_calculator.py).
 # While this window is open we poll it and reload the named preset when the
@@ -1051,35 +1051,7 @@ class MainWindow(QMainWindow):
         self.save_each_cycle = 0
         self.Save_each = QCheckBox("")
         self.Save_each.stateChanged.connect(self.save_each_func)
-        self.Save_each.setStyleSheet("""
-            QCheckBox {
-                color: rgb(193, 202, 227);
-                background-color: transparent;
-                font-weight: bold;
-                spacing: 8px;
-            }
-
-            QCheckBox::indicator {
-                width: 14px;
-                height: 14px;
-                background-color: rgb(63, 63, 97);
-                border: 1px solid rgb(83, 83, 117);
-                border-radius: 3px;
-            }
-
-            QCheckBox::indicator:hover {
-                border: 1px solid rgb(211, 194, 78);
-            }
-
-            QCheckBox::indicator:pressed {
-                background-color: rgb(83, 83, 117);
-            }
-
-            QCheckBox::indicator:checked {
-                background-color: rgb(211, 194, 78);
-                border: 3px solid rgb(63, 63, 97);
-            }
-        """)
+        self.Save_each.setStyleSheet(CHECKBOX_STYLE)
         self.Save_each.setFixedSize(170, 26)
         self.Save_each.setToolTip('ESEEM Avg only: when checked, additionally save each cycle’s raw trace to its own file (suffixed by the cycle index), alongside the averaged result.')
 
@@ -1268,35 +1240,7 @@ class MainWindow(QMainWindow):
             check = QCheckBox("")
             setattr(self, attr_name, check)
             check.stateChanged.connect(func)
-            check.setStyleSheet("""
-                QCheckBox { 
-                    color: rgb(193, 202, 227); 
-                    background-color: transparent; 
-                    font-weight: bold;
-                    spacing: 8px; 
-                }
-
-                QCheckBox::indicator {
-                    width: 14px;
-                    height: 14px;
-                    background-color: rgb(63, 63, 97);
-                    border: 1px solid rgb(83, 83, 117);
-                    border-radius: 3px;
-                }
-
-                QCheckBox::indicator:hover {
-                    border: 1px solid rgb(211, 194, 78);
-                }
-
-                QCheckBox::indicator:pressed {
-                    background-color: rgb(83, 83, 117);
-                }
-
-                QCheckBox::indicator:checked {
-                    background-color: rgb(211, 194, 78);
-                    border: 3px solid rgb(63, 63, 97); 
-                }
-            """)
+            check.setStyleSheet(CHECKBOX_STYLE)
             check.setFixedSize(170, 26)
             if attr_name == 'IQ_corr':
                 check.setChecked(True)

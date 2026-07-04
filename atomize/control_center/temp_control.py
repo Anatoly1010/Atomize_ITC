@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QLabel, QDouble
 import atomize.device_modules.Lakeshore_335 as ls
 import atomize.general_modules.general_functions as general
 import atomize.control_center.temp_param as temp_param
+from atomize.general_modules.gui_style import CHECKBOX_STYLE
 
 # Styling constants reused from the other control-center windows
 _FG = "rgb(193, 202, 227)"
@@ -108,7 +109,7 @@ class MainWindow(QMainWindow):
         def check(text, checked):
             cb = QCheckBox(text)
             cb.setChecked(checked)
-            cb.setStyleSheet("QCheckBox { color : %s; font-weight: bold; }" % _FG)
+            cb.setStyleSheet(CHECKBOX_STYLE)
             cb.setFixedSize(90, 26)
             return cb
 

@@ -49,6 +49,8 @@ import atomize.math_modules.fft as fft_module
 # embedded preview matches the main UI; fed in-process, no LivePlot IPC.
 from pyqtgraph.dockarea import DockArea
 from atomize.main.widgets import CrossSectionDock
+# Shared checkbox look (hollow outline + gold tick) — one source of truth.
+from atomize.general_modules.gui_style import CHECKBOX_STYLE
 
 BG = 'rgb(42, 42, 64)'
 FG = 'rgb(193, 202, 227)'
@@ -94,17 +96,6 @@ COMBO_STYLE = ("QComboBox { color: rgb(193, 202, 227); "
 
 LINEEDIT_STYLE = ("QLineEdit { color: rgb(211, 194, 78); "
     "selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97); }")
-
-CHECKBOX_STYLE = """
-    QCheckBox { color: rgb(193, 202, 227); background-color: transparent;
-        font-weight: bold; spacing: 8px; }
-    QCheckBox::indicator { width: 14px; height: 14px;
-        background-color: rgb(63, 63, 97); border: 1px solid rgb(83, 83, 117);
-        border-radius: 3px; }
-    QCheckBox::indicator:hover { border: 1px solid rgb(211, 194, 78); }
-    QCheckBox::indicator:checked { background-color: rgb(211, 194, 78);
-        border: 3px solid rgb(63, 63, 97); }
-"""
 
 TAB_STYLE = """
     QTabWidget::pane { border: 1px solid rgb(43, 43, 77); top: -1px;
