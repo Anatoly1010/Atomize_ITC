@@ -20,9 +20,13 @@ class MainWindow(QMainWindow):
         A function for connecting actions and creating a main window
         """
         super(MainWindow, self).__init__(*args, **kwargs)
-        
-        #self.itc_fc = itc.ITC_FC()
-        self.itc_fc = itc.BH_15()
+
+        # The window must open even when the magnet PSU / BH-15 is powered off or
+        # the GPIB bus is down. Connecting is deferred to _try_connect(), which
+        # swallows the SystemExit / exception the module raises on a dead bus and
+        # leaves us in an "offline" mode with a Reconnect button.
+        self.itc_fc = None
+        self.device_ok = False
 
         self.cur_field = 0
         self.cur_field_2 = 0
@@ -31,13 +35,15 @@ class MainWindow(QMainWindow):
 
         self.design()
 
+        self._try_connect()
+
         self.status_timer = QTimer(self)
         self.status_timer.timeout.connect(self.refresh_field_status)
         self.status_timer.start(300)
 
         self.read_no_set_field()
         self.cur_field = self.cur_field_2
-        self.apply_field_lock_state()
+        self._set_online_ui(self.device_ok)
 
     def design(self):
 
@@ -106,7 +112,8 @@ class MainWindow(QMainWindow):
 
         # ---- Buttons ----
         buttons = [("Exit", "button_off", self.turn_off),
-                   ("Set Zero Field", "button_stop", self.update_stop) ]
+                   ("Set Zero Field", "button_stop", self.update_stop),
+                   ("Reconnect", "button_reconnect", self.reconnect) ]
 
         for name, attr_name, func in buttons:
             btn = QPushButton(name)
@@ -135,6 +142,7 @@ class MainWindow(QMainWindow):
 
         gridLayout.addWidget(self.button_stop, 4, 0)
         gridLayout.addWidget(self.button_off, 5, 0)
+        gridLayout.addWidget(self.button_reconnect, 5, 1)
 
         gridLayout.setRowStretch(6, 2)
         gridLayout.setColumnStretch(6, 2)
@@ -149,6 +157,10 @@ class MainWindow(QMainWindow):
         self.apply_field_lock_state(locked)
 
     def apply_field_lock_state(self, locked=None):
+        # While offline the enabled/disabled state is owned by _set_online_ui;
+        # don't let the lock logic re-enable the setter widgets under it.
+        if not self.device_ok:
+            return
         if locked is None:
             locked = field_param.is_locked()
         self.field_locked = locked
@@ -167,10 +179,57 @@ class MainWindow(QMainWindow):
             self.label_1.setText("Set Magnetic Field")
             self.label_lock.setText("")
 
+    # ---------------------------------------------------------- connection mgmt
+    def _try_connect(self):
+        """Open the BH-15 magnet controller. Never raises: the module sys.exit()s
+        (SystemExit) or throws when the GPIB bus / magnet PSU is down; swallow it
+        and stay offline."""
+        try:
+            self.itc_fc = itc.BH_15()
+            self.device_ok = getattr(self.itc_fc, 'status_flag', 1) == 1
+        except SystemExit:
+            self.itc_fc = None
+            self.device_ok = False
+        except Exception:
+            self.itc_fc = None
+            self.device_ok = False
+        return self.device_ok
+
+    def _go_offline(self):
+        """A device call failed mid-session: drop to offline instead of dying."""
+        self.device_ok = False
+        self.itc_fc = None
+        self._set_online_ui(False)
+
+    def _set_online_ui(self, online):
+        """Match the widgets to the connection state: online hands control back to
+        the field-lock logic; offline disables the setter widgets, shows a banner
+        and enables the Reconnect button."""
+        self.button_reconnect.setEnabled(not online)
+        if online:
+            self.apply_field_lock_state()
+        else:
+            self.Set_point.setReadOnly(True)
+            self.Set_point.setEnabled(False)
+            self.box_ini.setEnabled(False)
+            self.button_stop.setEnabled(False)
+            self.label_1.setText("Set Magnetic Field")
+            self.label_lock.setText("Device offline")
+
+    def reconnect(self):
+        self.label_lock.setText("Connecting...")
+        QApplication.processEvents()
+        self._try_connect()
+        self._set_online_ui(self.device_ok)
+
     def closeEvent(self, event):
         event.ignore()
 
         if self.field_locked:
+            sys.exit()
+
+        # Offline: nothing to ramp down and no bus to talk to -> just close.
+        if not self.device_ok:
             sys.exit()
 
         self.button_stop.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(211, 194, 78); border-style: outset; color: rgb(63, 63, 97); font-weight: bold; } ")
@@ -211,6 +270,10 @@ class MainWindow(QMainWindow):
         A function to quit the programm
         """
         if self.field_locked:
+            sys.exit()
+
+        # Offline: nothing to ramp down and no bus to talk to -> just close.
+        if not self.device_ok:
             sys.exit()
 
         self.button_stop.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(211, 194, 78); border-style: outset; color: rgb(63, 63, 97); font-weight: bold; } ")
@@ -256,6 +319,11 @@ class MainWindow(QMainWindow):
             self.Set_point.blockSignals(True)
             self.Set_point.setValue(self.cur_field_2)
             self.Set_point.blockSignals(False)
+            return
+
+        # No magnet controller -> can't ramp; ignore the request (the setter is
+        # disabled while offline, this only guards a programmatic trigger).
+        if not self.device_ok:
             return
 
         self.read_no_set_field()
