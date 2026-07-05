@@ -220,6 +220,10 @@ class MainWindow(QMainWindow):
         self.resid_widget = CrosshairPlotWidget()
         self.resid_widget.showGrid(x=True, y=True, alpha=0.2)
         self.resid_widget.setXLink(self.plot_widget)
+        # legend so batch (Fit-all) residual traces can be told apart and each
+        # clicked to hide/show it — a single dominant trace otherwise compresses
+        # the shared y-scale so the rest are unreadable.
+        self.resid_legend = self.resid_widget.addLegend(offset=(-10, 10))
         self.resid_zero = self.resid_widget.addLine(
             y=0, pen=pg.mkPen((150, 150, 175), width=1, style=Qt.PenStyle.DashLine))
         self._resid_item = None
@@ -1725,7 +1729,7 @@ class MainWindow(QMainWindow):
         note = ('<span style="color: rgb(150, 150, 175); font-size: 11px;">'
                 'DW ≈ 2 ⇒ unstructured residuals (green); off-2 (amber) ⇒ wrong '
                 'model shape. Lower AICc ⇒ better model (compare across fits); '
-                'red.χ²/AIC/BIC in the saved CSV.</span>')
+                '</span>')
         self.fit_result.setText('<div style="line-height: 150%;">'
                                 f'<b style="color: rgb(211, 194, 78);">{model}</b> — '
                                 f'{len(rows)} trace(s)<br>{formula_row}{table}'
@@ -1760,6 +1764,15 @@ class MainWindow(QMainWindow):
                 x, yfit, pen=pg.mkPen(col, width=2, style=Qt.PenStyle.DashLine),
                 name=f'{name} fit')
             resid_overlays.append((name, x, y - yfit, col))
+        # keep the preview x-axis label + SI prefix in step with the residuals
+        # (the batch bypasses redraw(), which is what normally sets these)
+        xlabel, xunit = _split_unit(self._xname())
+        self.plot_widget.setLabel('bottom', xlabel, units=xunit)
+        try:
+            self.plot_widget.getPlotItem().getAxis('bottom').enableAutoSIPrefix(
+                _si_autoprefix(xunit))
+        except Exception:
+            pass
         self._plot_key = None                 # force the next single redraw to refit
         self._render_batch_residuals(resid_overlays)
         try:
@@ -1795,11 +1808,51 @@ class MainWindow(QMainWindow):
             self._batch_resid_items[name] = self.resid_widget.plot(
                 np.asarray(x, float), np.asarray(resid, float),
                 pen=pg.mkPen(col, width=1), name=name)
+        # x-axis label + SI auto-prefix, same as the single-trace residual (else
+        # a time axis shows raw seconds, e.g. 2e-7, instead of ns/µs/ms)
+        xlabel, xunit = _split_unit(self._xname())
+        self.resid_widget.setLabel('bottom', xlabel, units=xunit)
         self.resid_widget.setLabel('left', 'residual')
+        try:
+            self.resid_widget.getPlotItem().getAxis('bottom').enableAutoSIPrefix(
+                _si_autoprefix(xunit))
+        except Exception:
+            pass
+        self._wire_resid_legend_hide()
         self._sync_resid_transforms()
         if not self.resid_dock.isVisible():
             self.resid_dock.show()
         try:
+            self.resid_widget.getPlotItem().getViewBox().autoRange()
+        except Exception:
+            pass
+
+    def _wire_resid_legend_hide(self):
+        """Make each Residuals-dock legend entry a click-to-hide toggle for its
+        curve, so a dominant trace can be removed from the shared y-scale. Left
+        click on the label or its colour sample flips that residual's visibility
+        and dims the legend entry; the view re-autoscales to what's left."""
+        leg = getattr(self, 'resid_legend', None)
+        if leg is None:
+            return
+        for sample, label in list(leg.items):
+            item = self._batch_resid_items.get(label.text)
+            if item is None:
+                continue
+            handler = (lambda ev, it=item, lb=label:
+                       self._toggle_resid_curve(ev, it, lb))
+            label.mouseClickEvent = handler
+            sample.mouseClickEvent = handler
+
+    def _toggle_resid_curve(self, ev, item, label):
+        if ev.button() != Qt.MouseButton.LeftButton:
+            ev.ignore()
+            return
+        ev.accept()
+        visible = not item.isVisible()
+        item.setVisible(visible)
+        label.setOpacity(1.0 if visible else 0.35)   # dim when hidden
+        try:                                          # rescale to visible curves
             self.resid_widget.getPlotItem().getViewBox().autoRange()
         except Exception:
             pass

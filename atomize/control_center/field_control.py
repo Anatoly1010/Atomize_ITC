@@ -141,8 +141,8 @@ class MainWindow(QMainWindow):
         gridLayout.addWidget(hline(), 3, 0, 1, 2)
 
         gridLayout.addWidget(self.button_stop, 4, 0)
-        gridLayout.addWidget(self.button_off, 5, 0)
-        gridLayout.addWidget(self.button_reconnect, 6, 0)
+        gridLayout.addWidget(self.button_reconnect, 5, 0)
+        gridLayout.addWidget(self.button_off, 6, 0)
 
         gridLayout.setRowStretch(7, 2)
         gridLayout.setColumnStretch(6, 2)
