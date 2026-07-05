@@ -6,6 +6,7 @@ import re
 import sys
 import math
 import time
+import json
 import tempfile
 import traceback
 import numpy as np
@@ -70,6 +71,19 @@ class MainWindow(QMainWindow):
         self.monitor_timer = QTimer()
         self.monitor_timer.timeout.connect(self.check_process_status)
         self.file_handler = openfile.Saver_Opener()
+
+        # ---- Live Edit (no-restart re-arm) ----
+        # When enabled, edits to a running preview's pulse Start / Length are
+        # pushed to the worker over the existing pipe and applied with a live
+        # pulser_update() -- no card teardown. Debounced so a burst of edits
+        # coalesces into one re-arm. live_sig captures the structure the running
+        # worker was opened with (active-pulse count, phase-cycle length,
+        # decimation); an edit that changes it falls back to a full restart.
+        self.live_edit_on = 0
+        self.live_sig = None
+        self.live_timer = QTimer()
+        self.live_timer.setSingleShot(True)
+        self.live_timer.timeout.connect(self.live_apply)
 
         # Watch for "Open in RECT" requests from the Sequence Calculator and
         # reload the preset into this already-open window. Seed the seen-nonce
@@ -716,9 +730,43 @@ class MainWindow(QMainWindow):
             }
         """)
 
+        # ---- Live Edit controls (stacked in cols 2-3; Progress shifts to 4-5) ----
+        live_label = QLabel("Live mode")
+        live_label.setFixedSize(170, 26)
+        live_label.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
+        self.live_edit_box = QCheckBox("")
+        self.live_edit_box.setStyleSheet(CHECKBOX_STYLE)
+        self.live_edit_box.setFixedSize(170, 26)
+        self.live_edit_box.setToolTip(
+            "When enabled, edits to a pulse's Start and Length are applied to the "
+            "running sequence immediately, without restarting the card. Changing the "
+            "channel/type, phase-cycle length, the number of pulses, or decimation "
+            "triggers an automatic restart instead. No effect until a sequence is "
+            "running.")
+        self.live_edit_box.stateChanged.connect(self.live_edit_toggle)
+
+        debounce_label = QLabel("Apply delay")
+        debounce_label.setFixedSize(170, 26)
+        debounce_label.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
+        self.Debounce = QSpinBox()
+        self.Debounce.setRange(200, 5000)
+        self.Debounce.setSingleStep(50)
+        self.Debounce.setValue(800)
+        self.Debounce.setSuffix(" ms")
+        self.Debounce.setFixedSize(170, 26)
+        self.Debounce.setButtonSymbols(QSpinBox.ButtonSymbols.PlusMinus)
+        self.Debounce.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
+        self.Debounce.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
+        self.Debounce.setToolTip("Delay after the last pulse edit before it is pushed to the running sequence.")
+
+        self.buttons_layout.addWidget(live_label, 0, 2)
+        self.buttons_layout.addWidget(self.live_edit_box, 0, 3)
+        self.buttons_layout.addWidget(debounce_label, 1, 2)
+        self.buttons_layout.addWidget(self.Debounce, 1, 3)
+
         label_widget = getattr(self, f"label_p1")
-        self.buttons_layout.addWidget(label_widget, 0, 2)
-        self.buttons_layout.addWidget(self.progress_bar, 0, 3)
+        self.buttons_layout.addWidget(label_widget, 0, 4)
+        self.buttons_layout.addWidget(self.progress_bar, 0, 5)
 
         self._update_rep_time_display()
 
@@ -2155,15 +2203,90 @@ class MainWindow(QMainWindow):
 
         self.time_per_point = 0.4 * self.decimation
 
+        # Decimation is fixed at pulser_open, so a live change can only be honored
+        # by a full restart -- route it through the same debounced path, which
+        # detects the structural change and restarts.
+        self.schedule_live_apply()
+
     ###
     def update_pulse_param(self, index, attr_suffix, val_suffix):
         spin_widget = getattr(self, f"P{index}{attr_suffix}")
         new_value = self.round_and_change(spin_widget)
         setattr(self, f"p{index}{val_suffix}", new_value)
-        
+
         if attr_suffix == "_len":
             self.update_pulse_phase(1)
         #print(f"Updated: p{index}{val_suffix} = {new_value}")
+
+        # Start / Length are the live-editable fields; schedule a debounced re-arm.
+        if attr_suffix in ("_st", "_len"):
+            self.schedule_live_apply()
+
+    # ---- Live Edit helpers ----
+    def live_edit_toggle(self):
+        self.live_edit_on = 1 if self.live_edit_box.isChecked() else 0
+
+    def _live_run_alive(self):
+        """A dig_on preview is running (not a long experiment) and reachable."""
+        if self.is_experiment:
+            return False
+        proc = getattr(self, 'digitizer_process', None)
+        try:
+            return proc is not None and proc.is_alive()
+        except (AttributeError, ValueError):
+            return False
+
+    def _live_snapshot(self):
+        """Current pulse table as [[typ, start, length, phase_list], ...] for P1..P9."""
+        snap = []
+        for i in range(1, 10):
+            snap.append([
+                getattr(self, f'p{i}_typ'),
+                getattr(self, f'p{i}_start'),
+                getattr(self, f'p{i}_length'),
+                getattr(self, f'ph_{i}'),
+            ])
+        return snap
+
+    def _structure_sig(self, snap):
+        """
+        Signature of everything that is NOT live-editable (only Start / Length
+        are): the count of active (non-zero-length) pulses, the phase-cycle
+        length, decimation, and the per-pulse channel/type (so a DETECTION/MW/
+        LASER change forces a restart rather than a partial live apply). A change
+        here cannot be re-armed live.
+        """
+        active = [p for p in snap if int(float(str(p[2]).split(' ')[0])) != 0]
+        phases = len(snap[0][3]) if snap and snap[0][3] is not None else 0
+        types = tuple(p[0] for p in active)
+        return (len(active), phases, self.decimation, types)
+
+    def schedule_live_apply(self):
+        """(Re)start the debounce timer when live edit is armed and a preview runs."""
+        if self.live_edit_on and self.opened == 0 and self._live_run_alive():
+            self.live_timer.start(int(self.Debounce.value()))
+
+    def live_apply(self):
+        """
+        Debounce fired: push the current pulse table into the running worker.
+        Geometry-preserving edits go over the pipe as a 'PU' snapshot; a
+        structural change transparently restarts the card with a notice.
+        """
+        if not (self.live_edit_on and self.opened == 0 and self._live_run_alive()):
+            return
+
+        snap = self._live_snapshot()
+        if self._structure_sig(snap) != self.live_sig:
+            self.errors.appendPlainText(
+                'Live Edit: rebuild-only parameter changed (channel/type / phase '
+                'cycle / pulse count / decimation) — full restart performed.')
+            self.update()
+            return
+
+        try:
+            self.parent_conn_dig.send('PU' + json.dumps(snap))
+        except (AttributeError, BrokenPipeError, OSError):
+            pass
 
     def update_pulse_type(self, index):
 
@@ -2171,11 +2294,15 @@ class MainWindow(QMainWindow):
         text = combo.currentText()
         
         setattr(self, f"p{index}_typ", text)
-        
+
         if index == 2:
             self.laser_flag = 1 if text == 'LASER' else 0
-            
+
         #print(f"Pulse {index} type set to: {text}")
+        # Channel/type is not live-editable; schedule the debounced path so the
+        # change auto-restarts (announced) instead of silently waiting for Run
+        # Pulses.
+        self.schedule_live_apply()
 
     def rep_rate(self):
         """
@@ -2392,6 +2519,10 @@ class MainWindow(QMainWindow):
             ]
             setattr(self, f'p{i}_list', data)
 
+        # Baseline the structure this preview is opened with, so later live edits
+        # can tell a re-armable change from one that needs a restart.
+        self.live_sig = self._structure_sig(self._live_snapshot())
+
         if self.laser_flag == 1:
             if self.combo_laser_num == 1:
                 self.Rep_rate.setValue(9.9)
@@ -2404,7 +2535,7 @@ class MainWindow(QMainWindow):
                 return
         except AttributeError:
             pass
-        
+
         self.parent_conn_dig, self.child_conn_dig = Pipe()
         # a process for running function script 
         # sending parameters for initial initialization
@@ -2967,6 +3098,50 @@ class Worker():
                     second_order = float( self.command[2:] )
                 elif self.command[0:2] == 'PD':
                     p_to_drop = int( self.command[2:] )
+                elif self.command[0:2] == 'PU':
+                    # Live Edit: re-arm the running sequence with an edited pulse
+                    # table (Start / Length) without a card restart. Only pulses
+                    # already present in pulse_array_pulser are touched; adding or
+                    # removing a pulse is a structural change handled by a restart
+                    # on the GUI side, so an unknown name is simply skipped here.
+                    try:
+                        snap = json.loads( self.command[2:] )
+                    except (ValueError, TypeError):
+                        snap = None
+
+                    if snap is not None:
+                        # Write the new base into both the live array and the
+                        # init array: pulser_pulse_reset() deep-copies the init
+                        # array back over the live one after every phase cycle,
+                        # so an edit that skips the init copy would be reverted.
+                        live_by_name = { p['name']: p for p in pb.pulse_array_pulser }
+                        init_by_name = { p['name']: p for p in pb.pulse_array_init_pulser }
+                        for idx, entry in enumerate(snap):
+                            length_str = entry[2].split(' ')[0]
+                            if int(float(length_str)) == 0:
+                                continue
+                            pulse = live_by_name.get(f'P{idx}')
+                            if pulse is None:
+                                continue
+
+                            # Mirror the start handling used at setup: in LASER
+                            # mode every pulse except the LASER pulse (idx 1) is
+                            # shifted by the Q-switch delay and snapped to 3.2 ns.
+                            if laser_flag == 1 and idx != 1:
+                                start_val = float(entry[1].split(' ')[0]) + laser_qsw_delay
+                                new_start = f"{self.round_to_closest(start_val, 3.2)} ns"
+                            else:
+                                new_start = entry[1]
+
+                            pulse['start'] = new_start
+                            pulse['length'] = entry[2]
+                            init_pulse = init_by_name.get(f'P{idx}')
+                            if init_pulse is not None:
+                                init_pulse['start'] = new_start
+                                init_pulse['length'] = entry[2]
+                            pb.shift_count_pulser = 1
+
+                        pb.pulser_update()
 
                 # check integration window
                 if win_left > WIN_ADC:

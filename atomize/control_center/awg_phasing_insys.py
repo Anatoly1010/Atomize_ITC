@@ -5,6 +5,7 @@ import re
 import sys
 import math
 import time
+import json
 import tempfile
 import traceback
 import numpy as np
@@ -54,7 +55,25 @@ class MainWindow(QMainWindow):
         self.deg_rad = 180 / np.pi #57.2957795131
         self.first_order_coef = 180 / np.pi * 1e-9
         self.sec_order_coef = 180 / np.pi * 1e-18
-        
+
+        # ---- Live Edit (no-restart re-arm) ----
+        # When enabled, edits to a running preview's AWG amplitude / frequency /
+        # start are pushed to the worker over the existing pipe and applied with
+        # a live awg_update()/pulser_update() -- no card teardown. Debounced so a
+        # burst of edits coalesces into one re-arm. live_sig captures the
+        # structure the running worker was opened with (active AWG-pulse count,
+        # phase-cycle length, decimation, laser mode); live_starts captures the
+        # pulse start positions. A structural change, or a Start edit that would
+        # overlap / reorder the sequence (changing dac_window), falls back to a
+        # full restart. Initialised before design_tab_1(), because the pulse
+        # spin-boxes fire their handlers (schedule_live_apply) during that build.
+        self.live_edit_on = 0
+        self.live_sig = None
+        self.live_starts = ()
+        self.live_timer = QTimer()
+        self.live_timer.setSingleShot(True)
+        self.live_timer.timeout.connect(self.live_apply)
+
         self.design_tab_1()
         self.design_tab_2()
         self.design_tab_3()
@@ -815,9 +834,44 @@ class MainWindow(QMainWindow):
             }
         """)
 
+        # ---- Live Edit controls (stacked in cols 2-3; Progress shifts to 4-5) ----
+        live_label = QLabel("Live mode")
+        live_label.setFixedSize(170, 26)
+        live_label.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
+        self.live_edit_box = QCheckBox("")
+        self.live_edit_box.setStyleSheet(CHECKBOX_STYLE)
+        self.live_edit_box.setFixedSize(170, 26)
+        self.live_edit_box.setToolTip(
+            "When enabled, edits to a pulse's Amplitude, Frequency, Sigma, Type "
+            "and Start are applied to the running sequence immediately, without "
+            "restarting the card. A Start edit that would overlap or reorder the "
+            "sequence, a LASER on/off, and any change to Length / phase cycle / "
+            "pulse count / decimation, trigger an automatic restart instead. No "
+            "effect until a sequence is running.")
+        self.live_edit_box.stateChanged.connect(self.live_edit_toggle)
+
+        debounce_label = QLabel("Apply delay")
+        debounce_label.setFixedSize(170, 26)
+        debounce_label.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
+        self.Debounce = QSpinBox()
+        self.Debounce.setRange(200, 5000)
+        self.Debounce.setSingleStep(50)
+        self.Debounce.setValue(800)
+        self.Debounce.setSuffix(" ms")
+        self.Debounce.setFixedSize(170, 26)
+        self.Debounce.setButtonSymbols(QSpinBox.ButtonSymbols.PlusMinus)
+        self.Debounce.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
+        self.Debounce.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
+        self.Debounce.setToolTip("Delay after the last pulse edit before it is pushed to the running sequence.")
+
+        self.buttons_layout.addWidget(live_label, 0, 2)
+        self.buttons_layout.addWidget(self.live_edit_box, 0, 3)
+        self.buttons_layout.addWidget(debounce_label, 1, 2)
+        self.buttons_layout.addWidget(self.Debounce, 1, 3)
+
         label_widget = getattr(self, f"label_p1")
-        self.buttons_layout.addWidget(label_widget, 0, 2)
-        self.buttons_layout.addWidget(self.progress_bar, 0, 3)
+        self.buttons_layout.addWidget(label_widget, 0, 4)
+        self.buttons_layout.addWidget(self.progress_bar, 0, 5)
 
         self._update_rep_time_display()
 
@@ -1621,9 +1675,11 @@ class MainWindow(QMainWindow):
             widget = getattr(self, attr_name)
             val = widget.value()
             value = val
-            
+
             setattr(self, f"p{index}_coef", value)
             #print(f"Updated p{index}_coef to {value}")
+            # Amplitude is a live-editable field (no dac_window change).
+            self.schedule_live_apply()
         else:
             pass
             #print(f"Warning: {attr_name} not found")
@@ -1634,11 +1690,15 @@ class MainWindow(QMainWindow):
         text = combo.currentText()
         
         setattr(self, f"p{index}_typ", text)
-        
+
         if index == 2:
             self.laser_flag = 1 if text == 'LASER' else 0
-            
+
         #print(f"Pulse {index} type set to: {text}")
+        # Type applies live (span-preserving; the worker sets function + freq
+        # shape + n/b atomically). A LASER on/off instead flips laser_flag, which
+        # is in the structure signature, so that case auto-restarts.
+        self.schedule_live_apply()
 
     ###
     def update_pulse_phase(self, index):
@@ -1687,10 +1747,12 @@ class MainWindow(QMainWindow):
     def update_awg_generic(self, index, attr_suffix, val_suffix):
         widget = getattr(self, f"P{index}{attr_suffix}")
         value = self.add_mhz(widget.value()) if "_freq" in val_suffix or "wurst" in val_suffix else widget.value()
-        
+
         target_attr = f"p{index}{val_suffix}" if val_suffix.startswith("_") else f"{val_suffix}{index}"
         setattr(self, target_attr, value)
         #print(f"Updated: {target_attr} = {value}")
+        # Frequency / frequency-sweep are live-editable (no dac_window change).
+        self.schedule_live_apply()
 
     ###
     def update_pulse_value(self, index, attr_suffix, val1_suffix, val2_suffix = None):
@@ -1716,7 +1778,166 @@ class MainWindow(QMainWindow):
         if attr_suffix == '_len':
             self.update_pulse_phase(1)
         #print(f"Updated: p{index}{val1_suffix} = {val1}")
- 
+
+        # Start and Sigma apply live (Start guarded to stay non-overlapping /
+        # array-ordered; Sigma is span-preserving). Length is not live-editable
+        # (it changes dac_window), so it is in the structure signature and its
+        # edit auto-restarts. Increment fields only affect swept experiments, not
+        # the preview, so they are left alone.
+        if attr_suffix in ('_st', '_len', '_sig'):
+            self.schedule_live_apply()
+
+    # ---- Live Edit helpers ----
+    def live_edit_toggle(self):
+        self.live_edit_on = 1 if self.live_edit_box.isChecked() else 0
+
+    def _live_run_alive(self):
+        """A dig_on preview is running (not a long experiment) and reachable."""
+        if self.is_experiment:
+            return False
+        proc = getattr(self, 'digitizer_process', None)
+        try:
+            return proc is not None and proc.is_alive()
+        except (AttributeError, ValueError):
+            return False
+
+    def _live_active_awg(self):
+        """
+        GUI indices of the active AWG pulses, in the same order and with the
+        same filter dig_on setup uses (rect3.. in LASER mode, rect2.. otherwise;
+        active == non-zero length). This is exactly the order of pb.pulse_array_awg.
+        """
+        rng = range(3, 10) if self.laser_flag == 1 else range(2, 10)
+        out = []
+        for k in rng:
+            length = float(str(getattr(self, f'p{k}_length')).split(' ')[0])
+            if length != 0:
+                out.append(k)
+        return out
+
+    def _live_snapshot(self):
+        """
+        Live-editable state per active AWG pulse: [k, amplitude, frequency,
+        awg_start, trigger_start, type, sigma]. frequency is a [start, end] pair
+        for WURST / SECH-TANH, a scalar 'X MHz' otherwise. Type and sigma are
+        span-preserving (same length -> same dac_window), so they re-arm live
+        like amplitude/frequency. Plus the DETECTION start.
+        """
+        pulses = []
+        for k in self._live_active_awg():
+            typ = getattr(self, f'p{k}_typ')
+            if typ in ('WURST', 'SECH/TANH'):
+                freq = [getattr(self, f'p{k}_freq'), getattr(self, f'wurst_sweep_cur_{k}')]
+            else:
+                freq = getattr(self, f'p{k}_freq')
+            pulses.append([
+                k,
+                getattr(self, f'p{k}_coef'),
+                freq,
+                getattr(self, f'p{k}_start'),
+                getattr(self, f'p{k}_start_rect'),
+                typ,
+                getattr(self, f'p{k}_sigma'),
+            ])
+        return {'p1': getattr(self, 'p1_start'), 'pulses': pulses}
+
+    def _structure_sig(self, snap):
+        """
+        Everything that is NOT live-editable: phase-cycle length, decimation,
+        laser mode, active-pulse count and per-pulse length. Amplitude /
+        frequency / start / sigma / type all re-arm live (type is span-preserving
+        and the worker sets function + freq-shape + n/b atomically). A LASER
+        on/off is caught via laser_flag (it changes the whole setup path); a
+        Length change is caught here (it changes dac_window). A change to any of
+        these makes the next live edit fall back to a full restart.
+        """
+        phases = len(self.ph_1) if getattr(self, 'ph_1', None) is not None else 0
+        fixed = tuple((e[0], str(getattr(self, f'p{e[0]}_length'))) for e in snap['pulses'])
+        return (phases, self.decimation, self.laser_flag, fixed)
+
+    def _live_starts(self, snap):
+        """Just the start columns, to detect whether an edit actually moved a pulse."""
+        return tuple((e[0], str(e[3]), str(e[4])) for e in snap['pulses']) + (str(snap['p1']),)
+
+    def _ns(self, s):
+        return float(str(s).split(' ')[0])
+
+    def _live_start_bases(self, snap):
+        """Baseline start floats (detection, and per-pulse awg/trigger) recorded
+        at Run Pulses, so live edits can be sent as GUI-space deltas."""
+        return {
+            'p1': self._ns(snap['p1']),
+            'pulses': {e[0]: (self._ns(e[3]), self._ns(e[4])) for e in snap['pulses']},
+        }
+
+    def _live_start_safe(self, snap):
+        """
+        A Start change is live-safe only if the TRIGGER_AWG windows stay
+        non-overlapping and in array order: each window must start at/after the
+        previous one ends. Then dac_window == sum(lengths) is unchanged and the
+        single-joined segment<->trigger mapping is preserved. Any overlap or
+        reorder changes the merged buffer / mapping and needs a restart.
+        """
+        prev_end = None
+        for e in snap['pulses']:
+            k = e[0]
+            length = float(str(getattr(self, f'p{k}_length')).split(' ')[0])
+            s = float(str(e[4]).split(' ')[0])   # trigger start
+            if prev_end is not None and s < prev_end - 0.05:
+                return False
+            prev_end = s + length
+        return True
+
+    def schedule_live_apply(self):
+        """(Re)start the debounce timer when live edit is armed and a preview runs."""
+        if self.live_edit_on and self.opened == 0 and self._live_run_alive():
+            self.live_timer.start(int(self.Debounce.value()))
+
+    def live_apply(self):
+        """
+        Debounce fired: push amplitude / frequency / start into the running
+        worker as a 'PU' snapshot. A structural change, or a Start edit that
+        would overlap or reorder the sequence, transparently restarts instead.
+        """
+        if not (self.live_edit_on and self.opened == 0 and self._live_run_alive()):
+            return
+
+        snap = self._live_snapshot()
+        if self._structure_sig(snap) != self.live_sig:
+            self.errors.appendPlainText(
+                'Live Edit: rebuild-only parameter changed (length / LASER / phase '
+                'cycle / pulse count / decimation) — full restart performed.')
+            self.update()
+            return
+
+        if self._live_starts(snap) != self.live_starts and not self._live_start_safe(snap):
+            self.errors.appendPlainText(
+                'Live Edit: Start would overlap or reorder the sequence '
+                '— full restart performed.')
+            self.update()
+            return
+
+        # Send amplitude / frequency absolute, but starts as GUI-space deltas
+        # from the recorded baseline (the worker adds them to the pristine
+        # post-setup start, preserving the channel shift / LASER offset).
+        base = getattr(self, 'live_base', None)
+        if base is None:
+            return
+        payload = {'p1_d': self._ns(snap['p1']) - base['p1'], 'pulses': []}
+        for e in snap['pulses']:
+            k = e[0]
+            if k not in base['pulses']:
+                return  # active set drifted from baseline; a restart will resync
+            a_base, t_base = base['pulses'][k]
+            payload['pulses'].append([k, e[1], e[2],
+                                      self._ns(e[3]) - a_base,
+                                      self._ns(e[4]) - t_base,
+                                      e[5], e[6]])   # type, sigma
+        try:
+            self.parent_conn_dig.send('PU' + json.dumps(payload))
+        except (AttributeError, BrokenPipeError, OSError):
+            pass
+
     def start_exp(self):
         if self.is_experiment == True:
             return
@@ -2779,6 +3000,10 @@ class MainWindow(QMainWindow):
         self.win_left()
         self.win_right()
 
+        # Decimation is fixed at pulser_open; a live change can only be honored
+        # by a restart -- the debounced path detects the structural change.
+        self.schedule_live_apply()
+
     def n_wurst(self):
         """
         A function to set n_wurst parameter for the WURST and SECH/TANH pulses
@@ -3118,6 +3343,14 @@ class MainWindow(QMainWindow):
                 getattr(self, f'ph_{i}')
             ]
             setattr(self, f'p{i}_awg_list', awg_data)
+
+        # Baseline the structure + start positions this preview opens with, so
+        # later live edits can tell a re-armable change from one that needs a
+        # restart (structural change, or a Start that overlaps/reorders).
+        _snap0 = self._live_snapshot()
+        self.live_sig = self._structure_sig(_snap0)
+        self.live_starts = self._live_starts(_snap0)
+        self.live_base = self._live_start_bases(_snap0)
 
         if self.laser_flag == 1:
             if self.combo_laser_num == 1:
@@ -3788,6 +4021,18 @@ class Worker():
             #pb.pulser_visualize()
             pb.pulser_open()
 
+            # Pristine (post-setup) stored start of every pulse, keyed by name.
+            # Live Edit ('PU') repositions a pulse as orig_start + GUI-space
+            # delta: pulser_pulse bakes a channel-dependent shift into the stored
+            # start (e.g. -trigger_awg_shift for TRIGGER_AWG, + the LASER
+            # Q-switch delay), which neither a raw write nor pulser_redefine_start
+            # reproduces. Because that transform is affine, adding the GUI delta
+            # to the original stored value is correct for every channel without
+            # having to know the shift -- and it never accumulates (always the
+            # original + the total delta from the baseline the GUI recorded).
+            _orig_pul_start = { p['name']: p['start'] for p in pb.pulse_array_pulser }
+            _orig_awg_start = { p['name']: p['start'] for p in pb.pulse_array_awg }
+
             # the idea of automatic and dynamic changing is
             # sending a new value of repetition rate via self.command
             # in each cycle we will check the current value of self.command
@@ -3858,6 +4103,90 @@ class Worker():
                 elif self.command[0:2] == 'LM':
                     #l_mode = int( self.command[2:] )
                     pass
+                elif self.command[0:2] == 'PU':
+                    # Live Edit: re-arm amplitude / frequency / start without a
+                    # restart. Amplitude & frequency rebuild the DAC waveform;
+                    # start only shifts the TRIGGER_AWG timing (the GUI has
+                    # guaranteed the sequence stays non-overlapping and ordered,
+                    # so dac_window is unchanged). Starts arrive as GUI-space
+                    # deltas and are applied to the pristine post-setup value
+                    # (orig_start + delta) so the channel shift / LASER offset is
+                    # preserved and edits never accumulate. Both the live and the
+                    # init arrays are written, because awg_pulse_reset() /
+                    # pulser_pulse_reset() deep-copy the init arrays over the live
+                    # ones after every phase cycle. The re-arm itself is applied
+                    # by the awg_next_phase()/pulser_update() calls in the phase
+                    # loop just below (same pattern as the amplitude sweep).
+                    try:
+                        snap = json.loads( self.command[2:] )
+                    except (ValueError, TypeError):
+                        snap = None
+
+                    if snap is not None:
+                        awg_live = { p['name']: p for p in pb.pulse_array_awg }
+                        awg_init = { p['name']: p for p in pb.pulse_array_init_awg }
+                        pul_live = { p['name']: p for p in pb.pulse_array_pulser }
+                        pul_init = { p['name']: p for p in pb.pulse_array_init_pulser }
+
+                        def _shift_start(orig_str, delta):
+                            base = float( str(orig_str).split(' ')[0] )
+                            return f"{self.round_to_closest(base + float(delta), 3.2)} ns"
+
+                        # DETECTION start (P1, pulser side)
+                        det = pul_live.get('P1')
+                        if det is not None and 'P1' in _orig_pul_start:
+                            new_det = _shift_start(_orig_pul_start['P1'], snap['p1_d'])
+                            det['start'] = new_det
+                            if 'P1' in pul_init:
+                                pul_init['P1']['start'] = new_det
+                            pb.shift_count_pulser = 1
+
+                        for entry in snap['pulses']:
+                            k, amp, freq, a_delta, t_delta, typ, sigma = entry
+                            # Name scheme mirrors dig_on setup: LASER mode packs
+                            # AWG pulses from rect3.. (P1 detection, L1 laser),
+                            # otherwise from rect2..; each active pulse is a
+                            # waveform P{2i+2} plus its trigger P{2i+3}.
+                            if laser_flag == 1:
+                                awg_name = f'P{2*(k-3)+2}'
+                                trg_name = f'P{2*(k-3)+3}'
+                            else:
+                                awg_name = f'P{2*(k-2)+2}'
+                                trg_name = f'P{2*(k-2)+3}'
+
+                            ap = awg_live.get(awg_name)
+                            if ap is not None:
+                                # Type & sigma are span-preserving: set the
+                                # waveform function / sigma (and, for a swept
+                                # pulse, the chirp params n/b from the values this
+                                # run opened with) before the DAC is rebuilt.
+                                ap['function'] = typ
+                                ap['sigma'] = sigma
+                                if typ in ('WURST', 'SECH/TANH'):
+                                    ap['n'] = n_wurst
+                                    ap['b'] = b_sech
+                                pb.awg_redefine_amplitude(name=awg_name, amplitude=str(amp))
+                                pb.awg_redefine_frequency(name=awg_name, freq=freq)
+                                if awg_name in _orig_awg_start:
+                                    ap['start'] = _shift_start(_orig_awg_start[awg_name], a_delta)
+                                ai = awg_init.get(awg_name)
+                                if ai is not None:
+                                    ai['function'] = ap['function']
+                                    ai['sigma'] = ap['sigma']
+                                    ai['n'] = ap['n']
+                                    ai['b'] = ap['b']
+                                    ai['amp'] = ap['amp']
+                                    ai['frequency'] = ap['frequency']
+                                    ai['start'] = ap['start']
+                                pb.shift_count_awg = 1
+
+                            tp = pul_live.get(trg_name)
+                            if tp is not None and trg_name in _orig_pul_start:
+                                new_trg = _shift_start(_orig_pul_start[trg_name], t_delta)
+                                tp['start'] = new_trg
+                                if trg_name in pul_init:
+                                    pul_init[trg_name]['start'] = new_trg
+                                pb.shift_count_pulser = 1
 
                 ###
                 ###awg.phase_x = cur_phase

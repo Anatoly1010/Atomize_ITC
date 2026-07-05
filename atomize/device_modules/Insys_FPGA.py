@@ -2937,47 +2937,53 @@ class Insys_FPGA:
         def func(*, name1, name2): defines a function without default values of key arguments
         """
 
+        # Normalize the batch shape from ``name`` (not ``freq``): a WURST / SECH-TANH
+        # pulse carries its frequency as a two-element [f_start, f_end] sweep pair,
+        # which is itself a list. Deciding single-vs-batch from ``freq`` would mistake
+        # that pair for two separate pulses; keying off ``name`` keeps a lone swept
+        # pulse intact.
+        if isinstance(name, str):
+            names_list = [name]
+            freq_list = [freq]
+        else:
+            names_list = list(name)
+            freq_list = list(freq)
+
         if self.test_flag != 'test':
-            names_list = [name] if isinstance(name, str) else name
-            freq_list = [freq] if isinstance(freq, str) else freq
-
-            for name, fr in zip(names_list, freq_list):
-            
-                for i, pulse in enumerate(self.pulse_array_awg):                     
-
-                    if pulse['name'] == name:
+            for nm, fr in zip(names_list, freq_list):
+                for pulse in self.pulse_array_awg:
+                    if pulse['name'] == nm:
                         pulse['frequency'] = fr
                         self.shift_count_awg = 1
+                        break
 
         elif self.test_flag == 'test':
-            names_list = [name] if isinstance(name, str) else name
-            freq_list = [freq] if isinstance(freq, str) else freq
+            for nm, fr in zip(names_list, freq_list):
+                assert( nm in self.pulse_name_array_awg ), 'Pulse with the specified name is not defined'
 
-            for name, fr in zip(names_list, freq_list):
-                assert( name in self.pulse_name_array_awg ), 'Pulse with the specified name is not defined'
-            
-                for i, pulse in enumerate(self.pulse_array_awg):
-                    if pulse['function'] != 'WURST' and pulse['function'] != 'SECH/TANH':
-                        temp_freq = fr.split(" ")
-                        coef = temp_freq[1]
-                        p_freq = float(temp_freq[0])
-                        assert (coef == 'MHz'), 'Incorrect frequency dimension. Only MHz is possible'
-                        assert(p_freq >= self.min_freq_awg), 'Frequency is lower than minimum available (' + str(self.min_freq_awg) +' MHz)'
-                        assert(p_freq < self.max_freq_awg), 'Frequency is longer than minimum available (' + str(self.max_freq_awg) +' MHz)'
-                    else:
-                        temp_freq_st = fr[0].split(" ")
-                        temp_freq_end = fr[1].split(" ")
-                        coef_st = temp_freq_st[1]
-                        coef_end = temp_freq_end[1]
-                        p_freq_st = float(temp_freq_st[0])
-                        p_freq_end = float(temp_freq_end[0])
-                        assert (coef_st == 'MHz' and coef_end == 'MHz'), 'Incorrect frequency dimension. Only MHz is possible'
-                        assert(p_freq_st >= self.min_freq_awg and p_freq_end >= self.min_freq_awg), 'Frequency is lower than minimum available (' + str(self.min_freq_awg) +' MHz)'
-                        assert(p_freq_st < self.max_freq_awg and p_freq_end < self.max_freq_awg), 'Frequency is longer than minimum available (' + str(self.max_freq_awg) +' MHz)'                        
+                for pulse in self.pulse_array_awg:
+                    if pulse['name'] == nm:
+                        if pulse['function'] != 'WURST' and pulse['function'] != 'SECH/TANH':
+                            temp_freq = fr.split(" ")
+                            coef = temp_freq[1]
+                            p_freq = float(temp_freq[0])
+                            assert (coef == 'MHz'), 'Incorrect frequency dimension. Only MHz is possible'
+                            assert(p_freq >= self.min_freq_awg), 'Frequency is lower than minimum available (' + str(self.min_freq_awg) +' MHz)'
+                            assert(p_freq < self.max_freq_awg), 'Frequency is higher than maximum available (' + str(self.max_freq_awg) +' MHz)'
+                        else:
+                            temp_freq_st = fr[0].split(" ")
+                            temp_freq_end = fr[1].split(" ")
+                            coef_st = temp_freq_st[1]
+                            coef_end = temp_freq_end[1]
+                            p_freq_st = float(temp_freq_st[0])
+                            p_freq_end = float(temp_freq_end[0])
+                            assert (coef_st == 'MHz' and coef_end == 'MHz'), 'Incorrect frequency dimension. Only MHz is possible'
+                            assert(p_freq_st >= self.min_freq_awg and p_freq_end >= self.min_freq_awg), 'Frequency is lower than minimum available (' + str(self.min_freq_awg) +' MHz)'
+                            assert(p_freq_st < self.max_freq_awg and p_freq_end < self.max_freq_awg), 'Frequency is higher than maximum available (' + str(self.max_freq_awg) +' MHz)'
 
-                    if pulse['name'] == name:
                         pulse['frequency'] = fr
                         self.shift_count_awg = 1
+                        break
 
     def awg_redefine_amplitude(self, *, name, amplitude):
         """
