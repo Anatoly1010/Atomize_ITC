@@ -1744,6 +1744,11 @@ class MainWindow(QMainWindow):
         except (IndexError, AttributeError, Exception) as e:
             pass
 
+        # The phase cycle is not live-editable (it changes the number of phases /
+        # the GIM buffer layout). Route it through the debounced path so the edit
+        # auto-restarts (announced) instead of silently waiting for Run Pulses.
+        self.schedule_live_apply()
+
     def update_awg_generic(self, index, attr_suffix, val_suffix):
         widget = getattr(self, f"P{index}{attr_suffix}")
         value = self.add_mhz(widget.value()) if "_freq" in val_suffix or "wurst" in val_suffix else widget.value()
@@ -1793,7 +1798,7 @@ class MainWindow(QMainWindow):
 
     def _live_run_alive(self):
         """A dig_on preview is running (not a long experiment) and reachable."""
-        if self.is_experiment:
+        if getattr(self, 'is_experiment', False):
             return False
         proc = getattr(self, 'digitizer_process', None)
         try:
@@ -1853,7 +1858,11 @@ class MainWindow(QMainWindow):
         """
         phases = len(self.ph_1) if getattr(self, 'ph_1', None) is not None else 0
         fixed = tuple((e[0], str(getattr(self, f'p{e[0]}_length'))) for e in snap['pulses'])
-        return (phases, self.decimation, self.laser_flag, fixed)
+        # The DETECTION pulse (P1) length sets adc_window, which is baked into the
+        # stream buffer / WIN_ADC / x_axis / data_raw at pulser_open -- it cannot
+        # be re-armed live, so a detection-window change forces a restart.
+        det_len = str(getattr(self, 'p1_length', ''))
+        return (phases, self.decimation, self.laser_flag, fixed, det_len)
 
     def _live_starts(self, snap):
         """Just the start columns, to detect whether an edit actually moved a pulse."""
@@ -1889,8 +1898,11 @@ class MainWindow(QMainWindow):
         return True
 
     def schedule_live_apply(self):
-        """(Re)start the debounce timer when live edit is armed and a preview runs."""
-        if self.live_edit_on and self.opened == 0 and self._live_run_alive():
+        """(Re)start the debounce timer when live edit is armed and a preview runs.
+        Defensive getattr: this is invoked from update_pulse_phase() during widget
+        construction, before live_edit_on / opened are set."""
+        if (getattr(self, 'live_edit_on', 0) and getattr(self, 'opened', 1) == 0
+                and self._live_run_alive()):
             self.live_timer.start(int(self.Debounce.value()))
 
     def live_apply(self):
@@ -1902,19 +1914,24 @@ class MainWindow(QMainWindow):
         if not (self.live_edit_on and self.opened == 0 and self._live_run_alive()):
             return
 
+        # update() tears down the worker via dig_stop(), whose
+        # check_process_status() clears the log -- so announce a restart AFTER it,
+        # or the label is wiped microseconds after it is written and never seen.
+        # The new preview then appends its pulse lists below.
         snap = self._live_snapshot()
         if self._structure_sig(snap) != self.live_sig:
+            self.update()
             self.errors.appendPlainText(
                 'Live Edit: rebuild-only parameter changed (length / LASER / phase '
-                'cycle / pulse count / decimation) — full restart performed.')
-            self.update()
+                'cycle / pulse count / decimation / detection window) — full '
+                'restart performed.')
             return
 
         if self._live_starts(snap) != self.live_starts and not self._live_start_safe(snap):
+            self.update()
             self.errors.appendPlainText(
                 'Live Edit: Start would overlap or reorder the sequence '
                 '— full restart performed.')
-            self.update()
             return
 
         # Send amplitude / frequency absolute, but starts as GUI-space deltas
@@ -3457,6 +3474,8 @@ class MainWindow(QMainWindow):
             self.Acq_number.setValue(int(data))
         elif msg_type == 'Count':
             self.update_count_nip(data)
+        elif msg_type == 'PulseList':
+            self.update_pulse_list_display(data)
         else:
             self.timer.stop()
             if ( data.startswith('Exp') ) and (msg_type == 'test'):
@@ -3488,6 +3507,25 @@ class MainWindow(QMainWindow):
             cursor.insertText(line)
         else:
             self.errors.appendPlainText(line)
+
+    def update_pulse_list_display(self, text):
+        """
+        Show the current pulse lists in the log after a live edit, refreshing the
+        block in place (from the marker line to the end) so repeated live edits
+        do not stack copies. Any messages above the marker are left untouched.
+        """
+        marker = '--- Live pulse list ---'
+        block = marker + '\n' + text
+        doc = self.errors.toPlainText()
+        idx = doc.rfind(marker)
+        cursor = self.errors.textCursor()
+        if idx != -1:
+            cursor.setPosition(idx)
+            cursor.movePosition(QTextCursor.MoveOperation.End,
+                                QTextCursor.MoveMode.KeepAnchor)
+            cursor.insertText(block)
+        else:
+            self.errors.appendPlainText(block)
 
     def check_messages(self):
         if not hasattr(self, 'last_error'):
@@ -4033,6 +4071,16 @@ class Worker():
             _orig_pul_start = { p['name']: p['start'] for p in pb.pulse_array_pulser }
             _orig_awg_start = { p['name']: p['start'] for p in pb.pulse_array_awg }
 
+            # Show the pulse lists in the log right after (re)programming, so they
+            # are visible on every start and on every restart (a structural live
+            # edit tears down and re-runs this setup). Live edits refresh the same
+            # block in place from the 'PU' handler below.
+            if not script_test:
+                conn.send( ('PulseList',
+                    pb.pulser_pulse_list()
+                    + '--- AWG pulse list ---\n'
+                    + pb.awg_pulse_list()) )
+
             # the idea of automatic and dynamic changing is
             # sending a new value of repetition rate via self.command
             # in each cycle we will check the current value of self.command
@@ -4187,6 +4235,17 @@ class Worker():
                                 if trg_name in pul_init:
                                     pul_init[trg_name]['start'] = new_trg
                                 pb.shift_count_pulser = 1
+
+                        # Refresh both pulse lists shown in the log so they reflect
+                        # the live-edited tables (init arrays). 'PulseList' is a
+                        # side-effect-free message type the GUI refreshes in place;
+                        # unlike 'test' it must not touch the message-pump timer
+                        # while the preview is running.
+                        if not script_test:
+                            conn.send( ('PulseList',
+                                pb.pulser_pulse_list()
+                                + '--- AWG pulse list ---\n'
+                                + pb.awg_pulse_list()) )
 
                 ###
                 ###awg.phase_x = cur_phase
