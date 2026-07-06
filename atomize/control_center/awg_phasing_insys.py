@@ -3564,7 +3564,7 @@ class MainWindow(QMainWindow):
         block in place (from the marker line to the end) so repeated live edits
         do not stack copies. Any messages above the marker are left untouched.
         """
-        marker = '--- Live pulse list ---'
+        marker = '--- Live AWG pulse list ---'
         block = marker + '\n' + text
         doc = self.errors.toPlainText()
         idx = doc.rfind(marker)
@@ -4126,10 +4126,7 @@ class Worker():
             # edit tears down and re-runs this setup). Live edits refresh the same
             # block in place from the 'PU' handler below.
             if not script_test:
-                conn.send( ('PulseList',
-                    pb.pulser_pulse_list()
-                    + '--- AWG pulse list ---\n'
-                    + pb.awg_pulse_list()) )
+                conn.send( ('PulseList', pb.awg_pulse_list()) )
 
             # the idea of automatic and dynamic changing is
             # sending a new value of repetition rate via self.command
@@ -4286,16 +4283,13 @@ class Worker():
                                     pul_init[trg_name]['start'] = new_trg
                                 pb.shift_count_pulser = 1
 
-                        # Refresh both pulse lists shown in the log so they reflect
+                        # Refresh the AWG pulse list shown in the log so it reflects
                         # the live-edited tables (init arrays). 'PulseList' is a
                         # side-effect-free message type the GUI refreshes in place;
                         # unlike 'test' it must not touch the message-pump timer
                         # while the preview is running.
                         if not script_test:
-                            conn.send( ('PulseList',
-                                pb.pulser_pulse_list()
-                                + '--- AWG pulse list ---\n'
-                                + pb.awg_pulse_list()) )
+                            conn.send( ('PulseList', pb.awg_pulse_list()) )
 
                 ###
                 ###awg.phase_x = cur_phase
