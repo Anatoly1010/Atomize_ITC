@@ -33,7 +33,7 @@ from pathlib import Path
 
 import pyqtgraph as pg
 from pyqtgraph.dockarea import DockArea
-from PyQt6.QtCore import Qt, QProcess, QUrl
+from PyQt6.QtCore import Qt, QProcess, QUrl, QFileSystemWatcher, QTimer
 from PyQt6.QtGui import QIcon, QDesktopServices
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QLabel, QPushButton,
     QComboBox, QGridLayout, QVBoxLayout, QHBoxLayout, QTabWidget, QDoubleSpinBox,
@@ -179,6 +179,26 @@ class MainWindow(QMainWindow):
 
         self.design()
         self.load_from_buffer(silent=True)
+        self._init_buffer_watch()          # auto-load new data while open
+
+    def _init_buffer_watch(self):
+        """Watch the libs/ folder so a plot sent from the main GUI while this
+        window is already open is picked up automatically (no "Load from plot"
+        click needed). A short debounce lets the writer finish before we read;
+        the timer also coalesces the create/modify/delete burst into one load."""
+        self._buf_timer = QTimer(self)
+        self._buf_timer.setSingleShot(True)
+        self._buf_timer.setInterval(200)
+        self._buf_timer.timeout.connect(self._on_buffer_ready)
+        self._buf_watcher = QFileSystemWatcher(self)
+        watch_dir = os.path.dirname(BUFFER_PATH)
+        if os.path.isdir(watch_dir):
+            self._buf_watcher.addPath(watch_dir)
+        self._buf_watcher.directoryChanged.connect(lambda _p: self._buf_timer.start())
+
+    def _on_buffer_ready(self):
+        if os.path.isfile(BUFFER_PATH):
+            self.load_from_buffer(silent=True)
 
     # ----------------------------------------------------------------- UI
     def design(self):
