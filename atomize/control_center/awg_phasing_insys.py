@@ -1897,6 +1897,48 @@ class MainWindow(QMainWindow):
             prev_end = s + length
         return True
 
+    def _validate_live_edit(self):
+        """
+        Reject-and-keep-running pre-check for a live edit: return an error string
+        if the proposed phase cycle is invalid, else None. expand_phase_cycling
+        silently LCM-reconciles lengths and coerces unknown tokens to '+x', so a
+        cycle typo would otherwise slip straight to the card. On a non-None return
+        live_apply neither pushes 'PU' nor restarts -- the running preview is left
+        untouched and the error is shown. (Timing overlap is handled separately by
+        the _live_start_safe -> restart path, since an overlap is a valid rebuild
+        for the AWG single-joined buffer, not an error.)
+
+        Checks: (1) every phase token in a plain comma list is recognized;
+        (2) all *cycled* (>=2-step) plain lists share one length (a length-1 list
+        is a non-cycling fixed phase and is exempt; bracket/paren notation is an
+        intentional Kronecker expansion and is skipped).
+        """
+        valid = {'+x', '-x', '+y', '-y', 'x', 'y', 'i', '-i', '+', '-', '0'}
+        simple_lens = []
+        for i in range(1, 10):
+            length = float(str(getattr(self, f'p{i}_length')).split(' ')[0])
+            if length == 0:
+                continue
+            raw = getattr(self, f'Phase_{i}').toPlainText().strip()
+            if '[' in raw or '(' in raw:
+                continue
+            toks = [t.strip().lower().replace(' ', '')
+                    for t in raw.split(',') if t.strip()]
+            for t in toks:
+                if t not in valid:
+                    return f'unrecognized phase "{t}" in pulse P{i}.'
+            if len(toks) >= 2:
+                simple_lens.append((i, len(toks)))
+
+        if simple_lens:
+            i0, L0 = simple_lens[0]
+            for i, L in simple_lens[1:]:
+                if L != L0:
+                    return (f'phase-cycle length mismatch: P{i} has {L} steps but '
+                            f'P{i0} has {L0} (receiver and every cycled pulse must '
+                            f'share one length).')
+        return None
+
     def schedule_live_apply(self):
         """(Re)start the debounce timer when live edit is armed and a preview runs.
         Defensive getattr: this is invoked from update_pulse_phase() during widget
@@ -1909,9 +1951,17 @@ class MainWindow(QMainWindow):
         """
         Debounce fired: push amplitude / frequency / start into the running
         worker as a 'PU' snapshot. A structural change, or a Start edit that
-        would overlap or reorder the sequence, transparently restarts instead.
+        would overlap or reorder the sequence, transparently restarts instead; an
+        invalid phase cycle is rejected and the running preview is left untouched.
         """
         if not (self.live_edit_on and self.opened == 0 and self._live_run_alive()):
+            return
+
+        err = self._validate_live_edit()
+        if err is not None:
+            self.errors.appendPlainText(
+                'Live Edit rejected — ' + err
+                + ' Preview left running; fix the value.')
             return
 
         # update() tears down the worker via dig_stop(), whose
@@ -4348,16 +4398,9 @@ class Worker():
                 if not script_test:
                     conn.send( ('', f'Pulses are stopped') )
                 else:
-                    pulse_list_mod = ''
-                    for element in pb.pulse_array_awg:
-                        if isinstance(element, dict):
-                            if 'amp' in element:
-                                element['amp'] = round(float(element['amp']), 3)
-                        element.pop('phase', None)
-                        element.pop('channel', None)
-                        element.pop('delta_phase', None)
-                        pulse_list_mod = pulse_list_mod + str(element) + '\n'
-                    conn.send( ('test', f'{pulse_list_mod}') )
+                    # The composed pulse lists are now shown live via 'PulseList'
+                    # after pulser_open in the real preview, so the preflight copy
+                    # here is redundant. Keep only the TOO-MANY-PHASES warning.
                     if PHASES >= pb.number_adc_window_in_buffer():
                         str1 = '!!!TOO MANY PHASES FOR LIVE MODE!!!\n'
                         str2 = 'ADC WINDOWS IN BUFFER: '
