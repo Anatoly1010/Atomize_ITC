@@ -27,10 +27,13 @@ for i in range(POINTS):
     data_y[i] = ( data_y[i] * (j - 1) + y ) / j
 
     start_time = time.time()
-    general.wait('100 ms')
+    #general.wait('100 ms')
 
-    a = general.plot_1d('1D', x_axis, (data_x, data_y), label = 'test', xname = 'Delay', \
-            xscale = 's', yname = 'Area', yscale = 'V*s', pr = a, text=str(STEP*i))
+    general.plot_1d('1D', x_axis, (data_x, data_y), label = 'test', xname = 'Delay', \
+            xscale = 's', yname = 'Area', yscale = 'V*s', text=str(STEP*i))
+
+    general.plot_1d('1D2', x_axis, (np.zeros(POINTS), np.zeros(POINTS)), label = 'test', xname = 'Delay', \
+            xscale = 's', yname = 'Area', yscale = 'V*s', text=str(STEP*i))
 
     general.message(str(time.time() - start_time))
 
