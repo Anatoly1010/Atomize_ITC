@@ -2091,6 +2091,14 @@ class MainWindow(QMainWindow):
         A function to open a pulse list
         :param filename: string
         """
+        # Block loading a preset while an experiment is running: it would
+        # overwrite the GUI and leak digitizer/field commands into the running
+        # experiment's command pipe. Only valid when idle or previewing
+        # (Run Pulses).
+        if self.is_experiment:
+            self.message('Cannot load a preset while an experiment is running.')
+            return
+
         self.path = os.path.dirname(filename)
         ldir.save('phase', self.path)
         self.opened = 1
@@ -2194,6 +2202,11 @@ class MainWindow(QMainWindow):
         newly switches on (currently length 0), and we switch a pulse off
         (length 0) when the new sequence no longer uses it.
         """
+        # Same pipe-leak risk as open_file: block while an experiment runs.
+        if self.is_experiment:
+            self.message('Cannot apply pulses while an experiment is running.')
+            return
+
         self.opened = 1
 
         # A preset does not define pulse linking; reset the Link row to No and
