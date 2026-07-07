@@ -1727,6 +1727,7 @@ class MainWindow(QMainWindow):
 
         unit = delta / f_edit
         self._linking = True
+        clamped = False
         try:
             for j in range(1, 10):
                 if j == index:
@@ -1737,10 +1738,26 @@ class MainWindow(QMainWindow):
                 box_j = getattr(self, f"P{j}{suffix}", None)
                 if box_j is None:
                     continue
-                box_j.setValue(box_j.value() + unit * f_j)
+                target = box_j.value() + unit * f_j
+                # QSpinBox/QDoubleSpinBox silently clamp to their range. For the
+                # amplitude (_cf, 0.1..100 %) a coupled shift can drive a linked
+                # pulse past the 100 % ceiling; detect that so the operator is told
+                # the coupling is no longer strictly proportional instead of it
+                # breaking silently.
+                if target > box_j.maximum() + 1e-9 or target < box_j.minimum() - 1e-9:
+                    clamped = True
+                box_j.setValue(target)
                 self._link_prev[(suffix, j)] = box_j.value()
         finally:
             self._linking = False
+
+        if clamped:
+            if suffix == '_cf':
+                self.message('Link: a coupled amplitude hit the 0.1-100 % limit '
+                             'and was clamped; the link is no longer proportional.')
+            else:
+                self.message('Link: a coupled value hit its limit and was clamped; '
+                             'the link is no longer proportional.')
 
     def x0(self):
         self.cur_x0 = self.round_and_change_no_ns(self.X0)
@@ -2017,12 +2034,34 @@ class MainWindow(QMainWindow):
         these makes the next live edit fall back to a full restart.
         """
         phases = len(self.ph_1) if getattr(self, 'ph_1', None) is not None else 0
+        # Hash every active pulse's phase text, not just the receiver step count:
+        # phases are not in the live 'PU' payload, so ANY phase-cycle edit (a
+        # content change that keeps the same number of steps, or a step-count
+        # change) must fall back to the announced restart instead of being
+        # silently dropped.
+        phase_sig = self._phase_sig()
         fixed = tuple((e[0], str(getattr(self, f'p{e[0]}_length'))) for e in snap['pulses'])
         # The DETECTION pulse (P1) length sets adc_window, which is baked into the
         # stream buffer / WIN_ADC / x_axis / data_raw at pulser_open -- it cannot
         # be re-armed live, so a detection-window change forces a restart.
         det_len = str(getattr(self, 'p1_length', ''))
-        return (phases, self.decimation, self.laser_flag, fixed, det_len)
+        return (phases, phase_sig, self.decimation, self.laser_flag, fixed, det_len)
+
+    def _phase_sig(self):
+        """Normalized phase text of every active (non-zero-length) pulse, keyed by
+        index. Any edit to a phase box changes this, forcing a live-edit restart
+        (phases can only be applied by rebuilding, never via the 'PU' payload)."""
+        out = []
+        for i in range(1, 10):
+            try:
+                if float(str(getattr(self, f'p{i}_length')).split(' ')[0]) == 0:
+                    continue
+            except (ValueError, AttributeError):
+                continue
+            box = getattr(self, f'Phase_{i}', None)
+            if box is not None:
+                out.append((i, box.toPlainText().strip().lower().replace(' ', '')))
+        return tuple(out)
 
     def _live_starts(self, snap):
         """Just the start columns, to detect whether an edit actually moved a pulse."""
@@ -2140,8 +2179,8 @@ class MainWindow(QMainWindow):
         if self._live_starts(snap) != self.live_starts and not self._live_start_safe(snap):
             self.update()
             self.errors.appendPlainText(
-                'Live Edit: Start would overlap or reorder the sequence '
-                '— full restart performed.')
+                'Live Edit: the new Start times would overlap or reorder the '
+                'pulses — full restart performed.')
             return
 
         # Send amplitude / frequency absolute, but starts as GUI-space deltas
@@ -3022,6 +3061,13 @@ class MainWindow(QMainWindow):
         self.quad = 0
         self.opened = 0
 
+        # A freshly loaded preset no longer matches whatever sequence a live
+        # preview is still running (the dig_stop above is a no-op while
+        # opened == 1). In live mode, stop those pulses now so the operator
+        # restarts cleanly with Run Pulses on the loaded sequence.
+        if getattr(self, 'live_edit_on', 0) and self._live_run_alive():
+            self.dig_stop()
+
     def setter(self, text, index, typ, st, leng, sig, freq, w_sweep, coef, phase, d_start, len_inc, d_start2 = None):
         """
         Auxiliary function to set all the values from *.awg file
@@ -3098,6 +3144,11 @@ class MainWindow(QMainWindow):
         self.fft = 0
         self.quad = 0
         self.opened = 0
+
+        # In live mode, stop a still-running preview so the loaded layout is
+        # applied cleanly on the next Run Pulses (see open_file).
+        if getattr(self, 'live_edit_on', 0) and self._live_run_alive():
+            self.dig_stop()
 
     def save_file(self, filename):
         """

@@ -2157,6 +2157,13 @@ class MainWindow(QMainWindow):
         self.quad = 0
         self.opened = 0
 
+        # A freshly loaded preset no longer matches whatever sequence a live
+        # preview is still running (the dig_stop above is a no-op while
+        # opened == 1). In live mode, stop those pulses now so the operator
+        # restarts cleanly with Run Pulses on the loaded sequence.
+        if getattr(self, 'live_edit_on', 0) and self._live_run_alive():
+            self.dig_stop()
+
     def setter(self, text, index, typ, st, leng, phase, d_start, len_inc):
         """
         Auxiliary function to set all the values from *.pulse file
@@ -2219,6 +2226,11 @@ class MainWindow(QMainWindow):
         self.fft = 0
         self.quad = 0
         self.opened = 0
+
+        # In live mode, stop a still-running preview so the loaded layout is
+        # applied cleanly on the next Run Pulses (see open_file).
+        if getattr(self, 'live_edit_on', 0) and self._live_run_alive():
+            self.dig_stop()
 
     ###
     def save_file(self, filename):
@@ -2437,13 +2449,35 @@ class MainWindow(QMainWindow):
         """
         active = [p for p in snap if int(float(str(p[2]).split(' ')[0])) != 0]
         phases = len(snap[0][3]) if snap and snap[0][3] is not None else 0
+        # Hash every active pulse's phase text, not just the receiver step count:
+        # phases are not in the live 'PU' payload, so ANY phase-cycle edit (a
+        # content change that keeps the same number of steps, or a step-count
+        # change) must fall back to the announced restart instead of being
+        # silently dropped.
+        phase_sig = self._phase_sig()
         types = tuple(p[0] for p in active)
         # The DETECTION pulse length sets adc_window, which is baked into the
         # stream buffer / WIN_ADC / x_axis / data_raw at pulser_open -- it cannot
         # be re-armed live, so a detection-window change belongs in the signature
         # and forces a restart.
         det_len = tuple(str(p[2]) for p in snap if p[0] == 'DETECTION')
-        return (len(active), phases, self.decimation, types, det_len)
+        return (len(active), phases, phase_sig, self.decimation, types, det_len)
+
+    def _phase_sig(self):
+        """Normalized phase text of every active (non-zero-length) pulse, keyed by
+        index. Any edit to a phase box changes this, forcing a live-edit restart
+        (phases can only be applied by rebuilding, never via the 'PU' payload)."""
+        out = []
+        for i in range(1, 10):
+            try:
+                if float(str(getattr(self, f'p{i}_length')).split(' ')[0]) == 0:
+                    continue
+            except (ValueError, AttributeError):
+                continue
+            box = getattr(self, f'Phase_{i}', None)
+            if box is not None:
+                out.append((i, box.toPlainText().strip().lower().replace(' ', '')))
+        return tuple(out)
 
     def _validate_live_edit(self):
         """
