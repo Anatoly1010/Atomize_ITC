@@ -2165,11 +2165,11 @@ class MainWindow(QMainWindow):
         self.quad = 0
         self.opened = 0
 
-        # A freshly loaded preset no longer matches whatever sequence a live
+        # A freshly loaded preset no longer matches whatever sequence a
         # preview is still running (the dig_stop above is a no-op while
-        # opened == 1). In live mode, stop those pulses now so the operator
+        # opened == 1). If Run Pulses is active, stop it now so the operator
         # restarts cleanly with Run Pulses on the loaded sequence.
-        if getattr(self, 'live_edit_on', 0) and self._live_run_alive():
+        if self._live_run_alive():
             self.dig_stop()
 
     def setter(self, text, index, typ, st, leng, phase, d_start, len_inc):
@@ -2240,9 +2240,9 @@ class MainWindow(QMainWindow):
         self.quad = 0
         self.opened = 0
 
-        # In live mode, stop a still-running preview so the loaded layout is
-        # applied cleanly on the next Run Pulses (see open_file).
-        if getattr(self, 'live_edit_on', 0) and self._live_run_alive():
+        # If Run Pulses is active, stop the running preview so the loaded layout
+        # is applied cleanly on the next Run Pulses (see open_file).
+        if self._live_run_alive():
             self.dig_stop()
 
     ###
@@ -2923,6 +2923,12 @@ class MainWindow(QMainWindow):
             self.update_count_nip(data)
         elif msg_type == 'PulseList':
             self.update_pulse_list_display(data)
+        elif msg_type == 'LiveReject':
+            # The worker's test-mode Insys rebuild found the live edit invalid
+            # (e.g. an overlap the AMP_ON/LNA_PROTECT join cannot resolve). The
+            # running preview was left on the previous sequence; surface why.
+            self.errors.appendPlainText('Live Edit rejected — ' + str(data)
+                + ' Preview left running; fix the value.')
         else:
             self.timer.stop()
             if ( data.startswith('Exp') ) and (msg_type == 'test'):
@@ -3434,55 +3440,100 @@ class Worker():
                         snap = None
 
                     if snap is not None:
-                        # Write the new base into both the live array and the
-                        # init array: pulser_pulse_reset() deep-copies the init
-                        # array back over the live one after every phase cycle,
-                        # so an edit that skips the init copy would be reverted.
-                        live_by_name = { p['name']: p for p in pb.pulse_array_pulser }
-                        init_by_name = { p['name']: p for p in pb.pulse_array_init_pulser }
-                        for idx, entry in enumerate(snap):
-                            length_str = entry[2].split(' ')[0]
-                            if int(float(length_str)) == 0:
-                                continue
-                            pulse = live_by_name.get(f'P{idx}')
-                            if pulse is None:
-                                continue
+                        # Validate the proposed table in a throwaway TEST-mode Insys
+                        # before committing. Start AND Length are live-editable here,
+                        # so an edit can create a genuine overlap the running preview
+                        # would then program blindly. The 'PU' snap is the full pulse
+                        # table, so rebuilding it into a fresh test-mode card and
+                        # running pulser_update() re-runs check_problem_pulses_*(),
+                        # whose overlap assert fires ONLY in test mode. pulser_open()
+                        # is intentionally not used: in test mode it skips the check
+                        # and would falsely assert "card already opened" against the
+                        # live status file. A rejected edit is dropped -- the real pb
+                        # is untouched, so the phase loop keeps the previous sequence.
+                        reject = None
+                        saved_argv = sys.argv
+                        saved_tf = general.test_flag
+                        try:
+                            sys.argv = ['', 'test']
+                            general.test_flag = 'test'
+                            pbt = pb_pro.Insys_FPGA()
+                            for idx, entry in enumerate(snap):
+                                if int(float(entry[2].split(' ')[0])) == 0:
+                                    continue
+                                if laser_flag == 1 and idx != 1:
+                                    start_val = float(entry[1].split(' ')[0]) + laser_qsw_delay
+                                    st = f"{self.round_to_closest(start_val, 3.2)} ns"
+                                else:
+                                    st = entry[1]
+                                kw = {'name': f'P{idx}', 'channel': entry[0],
+                                      'start': st, 'length': entry[2]}
+                                if not (laser_flag == 1 and idx == 1):
+                                    kw['phase_list'] = entry[3]
+                                pbt.pulser_pulse(**kw)
+                            pbt.pulser_repetition_rate( str(rep_rate) + ' Hz' )
+                            pbt.pulser_update()
+                        except AssertionError as ae:
+                            reject = str(ae) or 'pulses overlap after the edit'
+                        except BaseException as be:
+                            reject = str(be)
+                        finally:
+                            sys.argv = saved_argv
+                            general.test_flag = saved_tf
 
-                            # Mirror the start handling used at setup: in LASER
-                            # mode every pulse except the LASER pulse (idx 1) is
-                            # shifted by the Q-switch delay and snapped to 3.2 ns.
-                            if laser_flag == 1 and idx != 1:
-                                start_val = float(entry[1].split(' ')[0]) + laser_qsw_delay
-                                new_start = f"{self.round_to_closest(start_val, 3.2)} ns"
-                            else:
-                                new_start = entry[1]
+                        if reject is not None:
+                            if not script_test:
+                                conn.send( ('LiveReject', reject) )
+                        else:
+                            # Write the new base into both the live array and the
+                            # init array: pulser_pulse_reset() deep-copies the init
+                            # array back over the live one after every phase cycle,
+                            # so an edit that skips the init copy would be reverted.
+                            live_by_name = { p['name']: p for p in pb.pulse_array_pulser }
+                            init_by_name = { p['name']: p for p in pb.pulse_array_init_pulser }
+                            for idx, entry in enumerate(snap):
+                                length_str = entry[2].split(' ')[0]
+                                if int(float(length_str)) == 0:
+                                    continue
+                                pulse = live_by_name.get(f'P{idx}')
+                                if pulse is None:
+                                    continue
 
-                            pulse['start'] = new_start
-                            pulse['length'] = entry[2]
-                            init_pulse = init_by_name.get(f'P{idx}')
-                            if init_pulse is not None:
-                                init_pulse['start'] = new_start
-                                init_pulse['length'] = entry[2]
-                            pb.shift_count_pulser = 1
+                                # Mirror the start handling used at setup: in LASER
+                                # mode every pulse except the LASER pulse (idx 1) is
+                                # shifted by the Q-switch delay and snapped to 3.2 ns.
+                                if laser_flag == 1 and idx != 1:
+                                    start_val = float(entry[1].split(' ')[0]) + laser_qsw_delay
+                                    new_start = f"{self.round_to_closest(start_val, 3.2)} ns"
+                                else:
+                                    new_start = entry[1]
 
-                        # NB: do NOT call pb.pulser_update() here. The GIM engine
-                        # runs a strict 1:1 cadence -- each pulser_update() arms the
-                        # next instruction buffer and the *following* acquisition
-                        # drives the hardware switch to completion. A bare update
-                        # with no acquisition after it arms a buffer that is never
-                        # driven, so the next pulser_update() (inside
-                        # pulser_next_phase below) blocks on getGIM_swComp and
-                        # times out. Setting shift_count_pulser = 1 is enough: the
-                        # edit is applied by the pulser_next_phase()/pulser_update()
-                        # at the top of the phase loop, preserving the cadence.
+                                pulse['start'] = new_start
+                                pulse['length'] = entry[2]
+                                init_pulse = init_by_name.get(f'P{idx}')
+                                if init_pulse is not None:
+                                    init_pulse['start'] = new_start
+                                    init_pulse['length'] = entry[2]
+                                pb.shift_count_pulser = 1
 
-                        # Refresh the pulse list shown in the log so it reflects the
-                        # live-edited table (init array, same source pulser_close
-                        # uses). 'PulseList' is a side-effect-free message type that
-                        # the GUI refreshes in place -- unlike 'test', it must not
-                        # touch the message-pump timer while the preview is running.
-                        if not script_test:
-                            conn.send( ('PulseList', pb.pulser_pulse_list()) )
+                            # NB: do NOT call pb.pulser_update() here. The GIM engine
+                            # runs a strict 1:1 cadence -- each pulser_update() arms the
+                            # next instruction buffer and the *following* acquisition
+                            # drives the hardware switch to completion. A bare update
+                            # with no acquisition after it arms a buffer that is never
+                            # driven, so the next pulser_update() (inside
+                            # pulser_next_phase below) blocks on getGIM_swComp and
+                            # times out. Setting shift_count_pulser = 1 is enough: the
+                            # edit is applied by the pulser_next_phase()/pulser_update()
+                            # at the top of the phase loop, preserving the cadence.
+
+                            # Refresh the pulse list shown in the log so it reflects the
+                            # live-edited table (init array, same source pulser_close
+                            # uses). 'PulseList' is a side-effect-free message type that
+                            # the GUI refreshes in place -- unlike 'test', it must not
+                            # touch the message-pump timer while the preview is running.
+                            if not script_test:
+                                conn.send( ('PulseList', pb.pulser_pulse_list()) )
 
                 # check integration window
                 if win_left > WIN_ADC:

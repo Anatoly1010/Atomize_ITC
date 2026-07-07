@@ -3069,11 +3069,11 @@ class MainWindow(QMainWindow):
         self.quad = 0
         self.opened = 0
 
-        # A freshly loaded preset no longer matches whatever sequence a live
+        # A freshly loaded preset no longer matches whatever sequence a
         # preview is still running (the dig_stop above is a no-op while
-        # opened == 1). In live mode, stop those pulses now so the operator
+        # opened == 1). If Run Pulses is active, stop it now so the operator
         # restarts cleanly with Run Pulses on the loaded sequence.
-        if getattr(self, 'live_edit_on', 0) and self._live_run_alive():
+        if self._live_run_alive():
             self.dig_stop()
 
     def setter(self, text, index, typ, st, leng, sig, freq, w_sweep, coef, phase, d_start, len_inc, d_start2 = None):
@@ -3158,9 +3158,9 @@ class MainWindow(QMainWindow):
         self.quad = 0
         self.opened = 0
 
-        # In live mode, stop a still-running preview so the loaded layout is
-        # applied cleanly on the next Run Pulses (see open_file).
-        if getattr(self, 'live_edit_on', 0) and self._live_run_alive():
+        # If Run Pulses is active, stop the running preview so the loaded layout
+        # is applied cleanly on the next Run Pulses (see open_file).
+        if self._live_run_alive():
             self.dig_stop()
 
     def save_file(self, filename):
@@ -3767,6 +3767,12 @@ class MainWindow(QMainWindow):
             self.update_count_nip(data)
         elif msg_type == 'PulseList':
             self.update_pulse_list_display(data)
+        elif msg_type == 'LiveReject':
+            # The worker's test-mode Insys rebuild found the live edit invalid
+            # (e.g. an overlap the AMP_ON/LNA_PROTECT join cannot resolve). The
+            # running preview was left on the previous sequence; surface why.
+            self.errors.appendPlainText('Live Edit rejected — ' + str(data)
+                + ' Preview left running; fix the value.')
         else:
             self.timer.stop()
             if ( data.startswith('Exp') ) and (msg_type == 'test'):
@@ -4211,10 +4217,19 @@ class Worker():
 
             pb.awg_amplitude('CH0', str(ch0_ampl), 'CH1', str(ch1_ampl) )
 
+            # Ordered record of the exact awg_pulse / pulser_pulse setup calls
+            # (user-space kwargs). A live edit is validated by replaying these
+            # into a throwaway test-mode Insys with shifted starts (see the 'PU'
+            # handler), so the overlap check sees exactly what the real build did.
+            pulser_setup_calls = []
+
             # DETECTION pulse
             iq_freq = -int( rect1[4].split(" MHz")[0] )
             if int(float(rect1[2].split(' ')[0])) != 0:
                 pb.pulser_pulse(name='P1', channel=rect1[0], start=rect1[1], length=rect1[2], phase_list=rect1[3])
+                pulser_setup_calls.append({'kind': 'pulser', 'kwargs': {
+                    'name': 'P1', 'channel': rect1[0], 'start': rect1[1],
+                    'length': rect1[2], 'phase_list': rect1[3]}})
 
             #Laser flag
             if laser_flag != 1:
@@ -4244,14 +4259,18 @@ class Worker():
                             awg_kwargs.update({'n': n_wurst, 'b': b_sech})
                             
                         pb.awg_pulse(**awg_kwargs)
+                        pulser_setup_calls.append({'kind': 'awg', 'kwargs': dict(awg_kwargs)})
 
                         if ap[0] != 'BLANK':
                             pb.pulser_pulse(
                                 name=f'P{2*i + 3}',
-                                channel='TRIGGER_AWG', 
-                                start=tp[0], 
+                                channel='TRIGGER_AWG',
+                                start=tp[0],
                                 length=tp[1]
                             )
+                            pulser_setup_calls.append({'kind': 'pulser', 'kwargs': {
+                                'name': f'P{2*i + 3}', 'channel': 'TRIGGER_AWG',
+                                'start': tp[0], 'length': tp[1]}})
                 pb.pulser_repetition_rate( str(rep_rate) + ' Hz' )
 
             else:
@@ -4265,6 +4284,9 @@ class Worker():
                     start=rect2[0],
                     length=rect2[1]
                 )
+                pulser_setup_calls.append({'kind': 'pulser', 'kwargs': {
+                    'name': 'L1', 'channel': 'LASER',
+                    'start': rect2[0], 'length': rect2[1]}})
 
                 trigger_pulses = [rect3, rect4, rect5, rect6, rect7, rect8, rect9]
                 awg_params = [awg3, awg4, awg5, awg6, awg7, awg8, awg9]
@@ -4297,6 +4319,7 @@ class Worker():
                             awg_kwargs.update({'n': n_wurst, 'b': b_sech})
 
                         pb.awg_pulse(**awg_kwargs)
+                        pulser_setup_calls.append({'kind': 'awg', 'kwargs': dict(awg_kwargs)})
 
                         if ap[0] != 'BLANK':
                             pb.pulser_pulse(
@@ -4305,6 +4328,9 @@ class Worker():
                                 start=tp[0],
                                 length=tp[1]
                             )
+                            pulser_setup_calls.append({'kind': 'pulser', 'kwargs': {
+                                'name': f'P{2*i + 3}', 'channel': 'TRIGGER_AWG',
+                                'start': tp[0], 'length': tp[1]}})
 
                 if laser_num == 1:
                     pb.pulser_repetition_rate( '9.9 Hz' )
@@ -4459,78 +4485,135 @@ class Worker():
                         snap = None
 
                     if snap is not None:
-                        awg_live = { p['name']: p for p in pb.pulse_array_awg }
-                        awg_init = { p['name']: p for p in pb.pulse_array_init_awg }
-                        pul_live = { p['name']: p for p in pb.pulse_array_pulser }
-                        pul_init = { p['name']: p for p in pb.pulse_array_init_pulser }
-
                         def _shift_start(orig_str, delta):
                             base = float( str(orig_str).split(' ')[0] )
                             return f"{self.round_to_closest(base + float(delta), 3.2)} ns"
 
-                        # DETECTION start (P1, pulser side)
-                        det = pul_live.get('P1')
-                        if det is not None and 'P1' in _orig_pul_start:
-                            new_det = _shift_start(_orig_pul_start['P1'], snap['p1_d'])
-                            det['start'] = new_det
-                            if 'P1' in pul_init:
-                                pul_init['P1']['start'] = new_det
-                            pb.shift_count_pulser = 1
-
+                        # Validate the proposed geometry in a throwaway TEST-mode
+                        # Insys before committing. The 'PU' payload only moves starts
+                        # (amplitude/frequency/type/sigma are span-preserving), but a
+                        # start move can still push the AMP_ON/LNA_PROTECT auto-defense
+                        # windows into a genuine collision the geometric GUI check
+                        # cannot see once those windows are joined. Replaying the exact
+                        # setup calls (captured at build time) into a fresh test-mode
+                        # card and running pulser_update() re-runs
+                        # check_problem_pulses_phase_pulser(), whose overlap assert
+                        # fires ONLY in test mode. pulser_open() is deliberately NOT
+                        # used: in test mode it skips the check and would falsely assert
+                        # "card already opened" against the live status file. A rejected
+                        # edit is dropped -- the real pb is untouched, so the phase loop
+                        # below simply keeps re-arming the previous sequence.
+                        delta_by_name = {}
+                        if 'p1_d' in snap:
+                            delta_by_name['P1'] = snap['p1_d']
                         for entry in snap['pulses']:
                             k, amp, freq, a_delta, t_delta, typ, sigma = entry
-                            # Name scheme mirrors dig_on setup: LASER mode packs
-                            # AWG pulses from rect3.. (P1 detection, L1 laser),
-                            # otherwise from rect2..; each active pulse is a
-                            # waveform P{2i+2} plus its trigger P{2i+3}.
                             if laser_flag == 1:
-                                awg_name = f'P{2*(k-3)+2}'
-                                trg_name = f'P{2*(k-3)+3}'
+                                delta_by_name[f'P{2*(k-3)+2}'] = a_delta
+                                delta_by_name[f'P{2*(k-3)+3}'] = t_delta
                             else:
-                                awg_name = f'P{2*(k-2)+2}'
-                                trg_name = f'P{2*(k-2)+3}'
+                                delta_by_name[f'P{2*(k-2)+2}'] = a_delta
+                                delta_by_name[f'P{2*(k-2)+3}'] = t_delta
 
-                            ap = awg_live.get(awg_name)
-                            if ap is not None:
-                                # Type & sigma are span-preserving: set the
-                                # waveform function / sigma (and, for a swept
-                                # pulse, the chirp params n/b from the values this
-                                # run opened with) before the DAC is rebuilt.
-                                ap['function'] = typ
-                                ap['sigma'] = sigma
-                                if typ in ('WURST', 'SECH/TANH'):
-                                    ap['n'] = n_wurst
-                                    ap['b'] = b_sech
-                                pb.awg_redefine_amplitude(name=awg_name, amplitude=str(amp))
-                                pb.awg_redefine_frequency(name=awg_name, freq=freq)
-                                if awg_name in _orig_awg_start:
-                                    ap['start'] = _shift_start(_orig_awg_start[awg_name], a_delta)
-                                ai = awg_init.get(awg_name)
-                                if ai is not None:
-                                    ai['function'] = ap['function']
-                                    ai['sigma'] = ap['sigma']
-                                    ai['n'] = ap['n']
-                                    ai['b'] = ap['b']
-                                    ai['amp'] = ap['amp']
-                                    ai['frequency'] = ap['frequency']
-                                    ai['start'] = ap['start']
-                                pb.shift_count_awg = 1
+                        reject = None
+                        saved_argv = sys.argv
+                        saved_tf = general.test_flag
+                        try:
+                            sys.argv = ['', 'test']
+                            general.test_flag = 'test'
+                            pbt = pb_pro.Insys_FPGA()
+                            pbt.awg_amplitude('CH0', str(ch0_ampl), 'CH1', str(ch1_ampl))
+                            for c in pulser_setup_calls:
+                                kw = dict(c['kwargs'])
+                                kw['start'] = _shift_start(kw['start'],
+                                                           delta_by_name.get(kw['name'], 0.0))
+                                if c['kind'] == 'awg':
+                                    pbt.awg_pulse(**kw)
+                                else:
+                                    pbt.pulser_pulse(**kw)
+                            pbt.pulser_repetition_rate( str(rep_rate) + ' Hz' )
+                            pbt.pulser_default_synt(combo_synt)
+                            pbt.pulser_update()
+                        except AssertionError as ae:
+                            reject = str(ae) or 'pulses overlap after the edit'
+                        except BaseException as be:
+                            reject = str(be)
+                        finally:
+                            sys.argv = saved_argv
+                            general.test_flag = saved_tf
 
-                            tp = pul_live.get(trg_name)
-                            if tp is not None and trg_name in _orig_pul_start:
-                                new_trg = _shift_start(_orig_pul_start[trg_name], t_delta)
-                                tp['start'] = new_trg
-                                if trg_name in pul_init:
-                                    pul_init[trg_name]['start'] = new_trg
+                        if reject is not None:
+                            if not script_test:
+                                conn.send( ('LiveReject', reject) )
+                        else:
+                            awg_live = { p['name']: p for p in pb.pulse_array_awg }
+                            awg_init = { p['name']: p for p in pb.pulse_array_init_awg }
+                            pul_live = { p['name']: p for p in pb.pulse_array_pulser }
+                            pul_init = { p['name']: p for p in pb.pulse_array_init_pulser }
+
+                            # DETECTION start (P1, pulser side)
+                            det = pul_live.get('P1')
+                            if det is not None and 'P1' in _orig_pul_start:
+                                new_det = _shift_start(_orig_pul_start['P1'], snap['p1_d'])
+                                det['start'] = new_det
+                                if 'P1' in pul_init:
+                                    pul_init['P1']['start'] = new_det
                                 pb.shift_count_pulser = 1
 
-                        # Refresh the AWG pulse list shown in the log so it reflects
-                        # the live-edited tables (init arrays). 'PulseList' is a
-                        # side-effect-free message type the GUI refreshes in place;
-                        # unlike 'test' it must not touch the message-pump timer
-                        # while the preview is running.
-                        if not script_test:
-                            conn.send( ('PulseList', pb.awg_pulse_list()) )
+                            for entry in snap['pulses']:
+                                k, amp, freq, a_delta, t_delta, typ, sigma = entry
+                                # Name scheme mirrors dig_on setup: LASER mode packs
+                                # AWG pulses from rect3.. (P1 detection, L1 laser),
+                                # otherwise from rect2..; each active pulse is a
+                                # waveform P{2i+2} plus its trigger P{2i+3}.
+                                if laser_flag == 1:
+                                    awg_name = f'P{2*(k-3)+2}'
+                                    trg_name = f'P{2*(k-3)+3}'
+                                else:
+                                    awg_name = f'P{2*(k-2)+2}'
+                                    trg_name = f'P{2*(k-2)+3}'
+
+                                ap = awg_live.get(awg_name)
+                                if ap is not None:
+                                    # Type & sigma are span-preserving: set the
+                                    # waveform function / sigma (and, for a swept
+                                    # pulse, the chirp params n/b from the values this
+                                    # run opened with) before the DAC is rebuilt.
+                                    ap['function'] = typ
+                                    ap['sigma'] = sigma
+                                    if typ in ('WURST', 'SECH/TANH'):
+                                        ap['n'] = n_wurst
+                                        ap['b'] = b_sech
+                                    pb.awg_redefine_amplitude(name=awg_name, amplitude=str(amp))
+                                    pb.awg_redefine_frequency(name=awg_name, freq=freq)
+                                    if awg_name in _orig_awg_start:
+                                        ap['start'] = _shift_start(_orig_awg_start[awg_name], a_delta)
+                                    ai = awg_init.get(awg_name)
+                                    if ai is not None:
+                                        ai['function'] = ap['function']
+                                        ai['sigma'] = ap['sigma']
+                                        ai['n'] = ap['n']
+                                        ai['b'] = ap['b']
+                                        ai['amp'] = ap['amp']
+                                        ai['frequency'] = ap['frequency']
+                                        ai['start'] = ap['start']
+                                    pb.shift_count_awg = 1
+
+                                tp = pul_live.get(trg_name)
+                                if tp is not None and trg_name in _orig_pul_start:
+                                    new_trg = _shift_start(_orig_pul_start[trg_name], t_delta)
+                                    tp['start'] = new_trg
+                                    if trg_name in pul_init:
+                                        pul_init[trg_name]['start'] = new_trg
+                                    pb.shift_count_pulser = 1
+
+                            # Refresh the AWG pulse list shown in the log so it reflects
+                            # the live-edited tables (init arrays). 'PulseList' is a
+                            # side-effect-free message type the GUI refreshes in place;
+                            # unlike 'test' it must not touch the message-pump timer
+                            # while the preview is running.
+                            if not script_test:
+                                conn.send( ('PulseList', pb.awg_pulse_list()) )
 
                 ###
                 ###awg.phase_x = cur_phase
