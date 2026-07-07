@@ -52,10 +52,24 @@ class MainWindow(QMainWindow):
         self.first_order_coef = 180 / np.pi * 1e-9
         self.sec_order_coef = 180 / np.pi * 1e-18
 
+        # ---- Link mode state ----
+        # link_param selects which pulse parameter is coupled ('Off' when
+        # disabled); link_factor maps pulse index -> weight (0 = No). Editing a
+        # linked pulse's active parameter by delta shifts every other linked
+        # pulse proportionally (unit = delta / factor_edited; pulse_j += unit *
+        # factor_j). Initialised before design_tab_1(), because the pulse
+        # spin-boxes connect link_source_changed during that build. Defaulting
+        # link_param to 'Off' keeps build-time value snaps inert.
+        self.link_param = 'Off'
+        self.link_factor = {i: 0.0 for i in range(1, 10)}
+        self._linking = False
+        self._link_prev = {}
+
         self.design_tab_1()
         self.design_tab_2()
         self.design_tab_3()
         self.design_tab_4()
+        self.design_tab_5()
 
         self.laser_q_switch_delay = 0 #160000 # in ns
 
@@ -385,7 +399,7 @@ class MainWindow(QMainWindow):
         self.setWindowIcon( QIcon(icon_path) )
         self.path = os.path.join(path_to_main, '..', '..', '..', '..', 'experimental_data')
 
-        self.setMinimumHeight(610)
+        self.setMinimumHeight(644)
         self.setMinimumWidth(1720)
         self.setMaximumWidth(2660)
 
@@ -541,9 +555,14 @@ class MainWindow(QMainWindow):
                 setattr(self, f"P{i}{pulse_set[7]}", spin_box)
                 # parameter name pulse_set[8]
                 spin_box.valueChanged.connect(
-                        lambda val, idx = i, s7 = pulse_set[7], s8 = pulse_set[8]: 
+                        lambda val, idx = i, s7 = pulse_set[7], s8 = pulse_set[8]:
                         self.update_pulse_param(idx, s7, s8)
                         )
+                # Start / Length are linkable (Position / Length).
+                if pulse_set[7] in ('_st', '_len'):
+                    spin_box.valueChanged.connect(
+                        lambda val, idx = i, s7 = pulse_set[7]: self.link_source_changed(idx, s7)
+                    )
 
                 start_value = self.round_and_change(spin_box)
                 setattr(self, f"p{i}{pulse_set[8]}", start_value)
@@ -667,6 +686,34 @@ class MainWindow(QMainWindow):
         self.gridLayout.addWidget(label_widget, 10, 0)
         self.gridLayout.addWidget(hline(), 11, 0, 1, 10)
 
+        # ---- Link factor row ----
+        # Per-pulse weight for Link mode. The coupled parameter is chosen in the
+        # Settings tab; the weight here (No / 0.5x / 1x / 2x) scales how far this
+        # pulse moves relative to the pulse being edited.
+        self.link_row_label = QLabel("Link")
+        self.link_row_label.setFixedSize(170, 26)
+        self.link_row_label.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
+        self.gridLayout.addWidget(self.link_row_label, 12, 0)
+
+        for i in range(1, 10):
+            combo = QComboBox()
+            combo.addItems(["No", "0.5x", "1x", "2x"])
+            combo.setCurrentText("No")
+            combo.setFixedSize(170, 26)
+            combo.setStyleSheet("""
+                QComboBox
+                { color : rgb(193, 202, 227);
+                selection-color: rgb(211, 194, 78);
+                selection-background-color: rgb(63, 63, 97);
+                outline: none;
+                }
+                """)
+            setattr(self, f"P{i}_lk", combo)
+            combo.currentTextChanged.connect(lambda _, idx = i: self.update_link_factor(idx))
+            self.gridLayout.addWidget(combo, 12, i)
+
+        self.gridLayout.addWidget(hline(), 13, 0, 1, 10)
+
 
         # ---- Boxes----
         boxes = [(QDoubleSpinBox, "Rep_rate", "repetition_rate", self.rep_rate, 0.1, 20e3, 500, 1, 1, " Hz"),
@@ -730,43 +777,10 @@ class MainWindow(QMainWindow):
             }
         """)
 
-        # ---- Live Edit controls (stacked in cols 2-3; Progress shifts to 4-5) ----
-        live_label = QLabel("Live mode")
-        live_label.setFixedSize(170, 26)
-        live_label.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.live_edit_box = QCheckBox("")
-        self.live_edit_box.setStyleSheet(CHECKBOX_STYLE)
-        self.live_edit_box.setFixedSize(170, 26)
-        self.live_edit_box.setToolTip(
-            "When enabled, edits to a pulse's Start and Length are applied to the "
-            "running sequence immediately, without restarting the card. Changing the "
-            "channel/type, phase-cycle length, the number of pulses, or decimation "
-            "triggers an automatic restart instead. No effect until a sequence is "
-            "running.")
-        self.live_edit_box.stateChanged.connect(self.live_edit_toggle)
-
-        debounce_label = QLabel("Apply delay")
-        debounce_label.setFixedSize(170, 26)
-        debounce_label.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
-        self.Debounce = QSpinBox()
-        self.Debounce.setRange(200, 5000)
-        self.Debounce.setSingleStep(50)
-        self.Debounce.setValue(800)
-        self.Debounce.setSuffix(" ms")
-        self.Debounce.setFixedSize(170, 26)
-        self.Debounce.setButtonSymbols(QSpinBox.ButtonSymbols.PlusMinus)
-        self.Debounce.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
-        self.Debounce.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
-        self.Debounce.setToolTip("Delay after the last pulse edit before it is pushed to the running sequence.")
-
-        self.buttons_layout.addWidget(live_label, 0, 2)
-        self.buttons_layout.addWidget(self.live_edit_box, 0, 3)
-        self.buttons_layout.addWidget(debounce_label, 1, 2)
-        self.buttons_layout.addWidget(self.Debounce, 1, 3)
-
+        # Live Edit controls (Live mode + Apply delay) live in the Settings tab.
         label_widget = getattr(self, f"label_p1")
-        self.buttons_layout.addWidget(label_widget, 0, 4)
-        self.buttons_layout.addWidget(self.progress_bar, 0, 5)
+        self.buttons_layout.addWidget(label_widget, 0, 2)
+        self.buttons_layout.addWidget(self.progress_bar, 0, 3)
 
         self._update_rep_time_display()
 
@@ -1263,6 +1277,148 @@ class MainWindow(QMainWindow):
 
         gridLayout.setRowStretch(2, 1)
         gridLayout.setColumnStretch(2, 1)
+
+    def design_tab_5(self):
+        settings_page = QWidget()
+        gridLayout = QGridLayout()
+        gridLayout.setContentsMargins(15, 15, 10, 10)
+        gridLayout.setVerticalSpacing(4)
+        gridLayout.setHorizontalSpacing(20)
+
+        settings_page.setLayout(gridLayout)
+
+        self.tab_pulse.addTab(settings_page, "Settings")
+        self.tab_pulse.tabBar().setTabTextColor(4, QColor(193, 202, 227))
+
+        # ---- Separator ----
+        def hline():
+            line = QFrame()
+            line.setFrameShape(QFrame.Shape.HLine)
+            line.setFrameShadow(QFrame.Shadow.Sunken)
+            line.setLineWidth(2)
+            return line
+
+        # ---- Live Edit controls ----
+        live_label = QLabel("Live mode")
+        live_label.setFixedSize(170, 26)
+        live_label.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
+        self.live_edit_box = QCheckBox("")
+        self.live_edit_box.setStyleSheet(CHECKBOX_STYLE)
+        self.live_edit_box.setFixedSize(170, 26)
+        self.live_edit_box.setToolTip(
+            "When enabled, edits to a pulse's Start and Length are applied to the "
+            "running sequence immediately, without restarting the card. Changing the "
+            "channel/type, phase-cycle length, the number of pulses, or decimation "
+            "triggers an automatic restart instead. No effect until a sequence is "
+            "running.")
+        self.live_edit_box.stateChanged.connect(self.live_edit_toggle)
+
+        debounce_label = QLabel("Apply delay")
+        debounce_label.setFixedSize(170, 26)
+        debounce_label.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
+        self.Debounce = QSpinBox()
+        self.Debounce.setRange(200, 5000)
+        self.Debounce.setSingleStep(50)
+        self.Debounce.setValue(800)
+        self.Debounce.setSuffix(" ms")
+        self.Debounce.setFixedSize(170, 26)
+        self.Debounce.setButtonSymbols(QSpinBox.ButtonSymbols.PlusMinus)
+        self.Debounce.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
+        self.Debounce.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
+        self.Debounce.setToolTip("Delay after the last pulse edit before it is pushed to the running sequence.")
+
+        # ---- Link mode: coupled parameter ----
+        link_param_label = QLabel("Link Parameter")
+        link_param_label.setFixedSize(170, 26)
+        link_param_label.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
+        self.Combo_link = QComboBox()
+        self.Combo_link.addItems(["Off", "Length", "Position"])
+        self.Combo_link.setCurrentText("Off")
+        self.Combo_link.setFixedSize(170, 26)
+        self.Combo_link.setStyleSheet("""
+            QComboBox
+            { color : rgb(193, 202, 227);
+            selection-color: rgb(211, 194, 78);
+            selection-background-color: rgb(63, 63, 97);
+            outline: none;
+            }
+            """)
+        self.Combo_link.setToolTip(
+            "Couple this parameter across pulses. Set a per-pulse weight "
+            "(No / 0.5x / 1x / 2x) in the Link row of the Pulses tab; editing "
+            "the parameter on any linked pulse shifts every other linked pulse "
+            "proportionally to its weight.")
+        self.Combo_link.currentTextChanged.connect(self.link_param_changed)
+
+        gridLayout.addWidget(live_label, 0, 0)
+        gridLayout.addWidget(self.live_edit_box, 0, 1)
+        gridLayout.addWidget(debounce_label, 1, 0)
+        gridLayout.addWidget(self.Debounce, 1, 1)
+        gridLayout.addWidget(hline(), 2, 0, 1, 2)
+        gridLayout.addWidget(link_param_label, 3, 0)
+        gridLayout.addWidget(self.Combo_link, 3, 1)
+        gridLayout.addWidget(hline(), 4, 0, 1, 2)
+
+        gridLayout.setColumnStretch(2, 1)
+        gridLayout.setRowStretch(5, 1)
+
+        # All pulse spin-boxes now exist; snapshot their values so the first
+        # linked edit computes the correct delta.
+        self._seed_link_prev()
+
+    # ---- Link mode helpers ----
+    def _link_suffix(self):
+        """Spin-box suffix for the currently coupled parameter, or None."""
+        return {'Length': '_len', 'Position': '_st'}.get(self.link_param)
+
+    def _seed_link_prev(self):
+        for suf in ('_st', '_len'):
+            for i in range(1, 10):
+                box = getattr(self, f"P{i}{suf}", None)
+                if box is not None:
+                    self._link_prev[(suf, i)] = box.value()
+
+    def link_param_changed(self, _text = None):
+        self.link_param = self.Combo_link.currentText()
+
+    def update_link_factor(self, index):
+        txt = getattr(self, f"P{index}_lk").currentText()
+        self.link_factor[index] = {'No': 0.0, '0.5x': 0.5, '1x': 1.0, '2x': 2.0}.get(txt, 0.0)
+
+    def link_source_changed(self, index, suffix):
+        """A linkable spin-box changed: shift the other linked pulses in step."""
+        box = getattr(self, f"P{index}{suffix}")
+        new_val = box.value()
+        prev = self._link_prev.get((suffix, index), new_val)
+        self._link_prev[(suffix, index)] = new_val
+
+        # Re-entrancy guard (we are the one moving the other boxes), inactive
+        # parameter, or this pulse is not linked -> nothing to propagate.
+        if self._linking or suffix != self._link_suffix():
+            return
+        f_edit = self.link_factor.get(index, 0.0)
+        if f_edit == 0.0:
+            return
+        delta = new_val - prev
+        if delta == 0:
+            return
+
+        unit = delta / f_edit
+        self._linking = True
+        try:
+            for j in range(1, 10):
+                if j == index:
+                    continue
+                f_j = self.link_factor.get(j, 0.0)
+                if f_j == 0.0:
+                    continue
+                box_j = getattr(self, f"P{j}{suffix}", None)
+                if box_j is None:
+                    continue
+                box_j.setValue(box_j.value() + unit * f_j)
+                self._link_prev[(suffix, j)] = box_j.value()
+        finally:
+            self._linking = False
 
     def x0(self):
         self.cur_x0 = self.round_and_change_no_ns(self.X0)
@@ -1938,6 +2094,15 @@ class MainWindow(QMainWindow):
         self.path = os.path.dirname(filename)
         ldir.save('phase', self.path)
         self.opened = 1
+
+        # A preset does not define pulse linking; reset the Link row to No and
+        # the Settings Link parameter to Off so a freshly loaded sequence starts
+        # uncoupled (this also keeps the pulse values loaded below from
+        # triggering link propagation).
+        self.Combo_link.setCurrentText("Off")
+        for i in range(1, 10):
+            getattr(self, f"P{i}_lk").setCurrentText("No")
+
         text = open(filename).read()
         lines = text.split('\n')
 
@@ -2023,6 +2188,15 @@ class MainWindow(QMainWindow):
         (length 0) when the new sequence no longer uses it.
         """
         self.opened = 1
+
+        # A preset does not define pulse linking; reset the Link row to No and
+        # the Settings Link parameter to Off so the pushed layout starts
+        # uncoupled (this also keeps the pulse Starts set below from triggering
+        # link propagation).
+        self.Combo_link.setCurrentText("Off")
+        for i in range(1, 10):
+            getattr(self, f"P{i}_lk").setCurrentText("No")
+
         lines = open(filename).read().split('\n')
         for i in range(1, 10):
             try:
