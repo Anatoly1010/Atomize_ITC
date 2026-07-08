@@ -2003,7 +2003,8 @@ class MainWindow(QMainWindow):
         awg_start, trigger_start, type, sigma]. frequency is a [start, end] pair
         for WURST / SECH-TANH, a scalar 'X MHz' otherwise. Type and sigma are
         span-preserving (same length -> same dac_window), so they re-arm live
-        like amplitude/frequency. Plus the DETECTION start.
+        like amplitude/frequency. Plus the DETECTION start and its frequency (the
+        latter only sets the digitizer IQ demod frequency, so it re-arms live).
         """
         pulses = []
         for k in self._live_active_awg():
@@ -2021,7 +2022,8 @@ class MainWindow(QMainWindow):
                 typ,
                 getattr(self, f'p{k}_sigma'),
             ])
-        return {'p1': getattr(self, 'p1_start'), 'pulses': pulses}
+        return {'p1': getattr(self, 'p1_start'),
+                'p1_freq': getattr(self, 'p1_freq', None), 'pulses': pulses}
 
     def _structure_sig(self, snap):
         """
@@ -2189,7 +2191,8 @@ class MainWindow(QMainWindow):
         base = getattr(self, 'live_base', None)
         if base is None:
             return
-        payload = {'p1_d': self._ns(snap['p1']) - base['p1'], 'pulses': []}
+        payload = {'p1_d': self._ns(snap['p1']) - base['p1'],
+                   'p1_freq': snap.get('p1_freq'), 'pulses': []}
         for e in snap['pulses']:
             k = e[0]
             if k not in base['pulses']:
@@ -4546,6 +4549,18 @@ class Worker():
                             if not script_test:
                                 conn.send( ('LiveReject', reject) )
                         else:
+                            # DETECTION frequency is not an AWG waveform or a
+                            # pulse-geometry parameter -- it only sets the digitizer
+                            # IQ demodulation frequency (iq_freq), applied per scan
+                            # below. Re-arm it live with no card rebuild. Done inside
+                            # the accepted branch so a rejected geometry edit leaves
+                            # both the geometry AND the demod frequency untouched.
+                            if snap.get('p1_freq') is not None:
+                                try:
+                                    iq_freq = -int( str(snap['p1_freq']).split(" MHz")[0] )
+                                except (ValueError, TypeError):
+                                    pass
+
                             awg_live = { p['name']: p for p in pb.pulse_array_awg }
                             awg_init = { p['name']: p for p in pb.pulse_array_init_awg }
                             pul_live = { p['name']: p for p in pb.pulse_array_pulser }
