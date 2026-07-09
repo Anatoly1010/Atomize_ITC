@@ -1746,7 +1746,13 @@ class MainWindow(QMainWindow):
                 # breaking silently.
                 if target > box_j.maximum() + 1e-9 or target < box_j.minimum() - 1e-9:
                     clamped = True
-                box_j.setValue(target)
+                # '_fr' boxes are integer QSpinBoxes; PyQt6 setValue(int)
+                # rejects a float, so coerce for them (unit*factor can be
+                # fractional, e.g. a 0.5x weight on an odd delta).
+                if isinstance(box_j, QDoubleSpinBox):
+                    box_j.setValue(target)
+                else:
+                    box_j.setValue(int(round(target)))
                 self._link_prev[(suffix, j)] = box_j.value()
         finally:
             self._linking = False
