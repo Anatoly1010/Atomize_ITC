@@ -423,6 +423,7 @@ class MainWindow(QMainWindow):
             yscal = meta['Y']
             znam = meta['Zname']
             zscal = meta['Z']
+            tex = meta.get('value', '')
             if start_step is not None:
                 (x0, dx), (y0, dy) = start_step
                 pw.setAxisLabels(xname=xnam, xscale =xscal, yname=ynam, yscale =yscal,\
@@ -432,6 +433,9 @@ class MainWindow(QMainWindow):
                 pw.setAxisLabels(xname=xnam, xscale =xscal, yname=ynam, yscale =yscal,\
                  zname=znam, zscale =zscal)
                 pw.setImage(store, autoLevels=False)
+            # Graph title (scan / point counter), same as plot_z
+            if tex != '':
+                pw.setTitle(tex)
 
 
         elif operation == 'append_z':

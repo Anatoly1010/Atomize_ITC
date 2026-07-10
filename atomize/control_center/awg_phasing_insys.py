@@ -5006,6 +5006,12 @@ class Worker():
             x_axis = f_delay + np.linspace(0, (POINTS - 1)*STEP, num = POINTS)
             x_axis_plot = x_axis / 1e9
             a = 0
+            # Partial-range readout state: rng = point range patched by the
+            # most recent successful readout; data_x / data_y = persistent
+            # per-point IQ-corrected integrals (patched per touched column).
+            rng = None
+            data_x = np.zeros( POINTS )
+            data_y = np.zeros( POINTS )
 
             # general.scans() yields only 1 when test_flag == 'test'; production
             # mode uses a closure-based generator so the 'SC' command can
@@ -5042,10 +5048,14 @@ class Worker():
                             if (not script_test) or j == 0:
                                 if a is not None:
                                     if iq_cor == 0:
+                                        # redraw only the columns patched by the last
+                                        # readout (full frame on the very first draw)
+                                        p0, p1 = rng if rng is not None else (0, POINTS)
                                         if step != 1:
-                                            process = general.plot_2d(
+                                            process = general.update_2d(
                                                 EXP_NAME,
                                                 data,
+                                                p0, p1,
                                                 start_step = ((0, dec_calc), (f_delay/1e9, step_ns)),
                                                 xname = 'Time',
                                                 xscale = 's',
@@ -5057,9 +5067,10 @@ class Worker():
                                                 pr = process
                                             )
                                         else:
-                                            process = general.plot_2d(
+                                            process = general.update_2d(
                                                 EXP_NAME,
                                                 data,
+                                                p0, p1,
                                                 start_step = ((0, dec_calc), (0, 1)),
                                                 xname = 'Time',
                                                 xscale = 's',
@@ -5071,7 +5082,8 @@ class Worker():
                                                 pr = process
                                             )
                                     elif iq_cor == 1:
-                                        data_x, data_y = pb.digitizer_iq(data[0], data[1], iq_freq, zp, first_order, sec_order, integral = True)
+                                        # data_x / data_y are patched per touched column
+                                        # at the readout below -- no full-array recompute
                                         if step != 1:
                                             general.plot_1d(EXP_NAME, x_axis_plot, ( data_x, data_y ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j*STEP, 1)))
                                         else:
@@ -5081,13 +5093,27 @@ class Worker():
                             pb.pulser_update()
 
                             if (not script_test) or j == 0:
-                                a, b = pb.digitizer_get_curve(
+                                # Partial-range readout: only the point columns
+                                # recomputed from this call's buffers come back;
+                                # patch them into the persistent arrays instead of
+                                # copying the full O(points x window) frame.
+                                a, b, rng = pb.digitizer_get_curve(
                                     POINTS,
                                     PHASES,
                                     current_scan = k,
-                                    total_scan = SCANS )
+                                    total_scan = SCANS,
+                                    partial = True )
                                 if a is not None:
-                                    data[0], data[1] = a, b
+                                    data[0][:, rng[0]:rng[1]] = a
+                                    data[1][:, rng[0]:rng[1]] = b
+                                    if iq_cor == 1:
+                                        # IQ-corrected integrals for just the touched
+                                        # columns: the digitizer_iq phase correction
+                                        # depends only on the time axis, so per-column
+                                        # patching is exact.
+                                        dx, dy = pb.digitizer_iq(a, b, iq_freq, zp, first_order, sec_order, integral = True)
+                                        data_x[rng[0]:rng[1]] = dx
+                                        data_y[rng[0]:rng[1]] = dy
 
                         pb.pulser_shift()
                         if increment == 1:
@@ -5559,6 +5585,12 @@ class Worker():
             x_axis = f_delay + np.linspace(0, (POINTS - 1)*STEP, num = POINTS)
             x_axis_plot = x_axis / 1e9
             a = 0
+            # Partial-range readout state: rng = point range patched by the
+            # most recent successful readout; data_x / data_y = persistent
+            # per-point IQ-corrected integrals (patched per touched column).
+            rng = None
+            data_x = np.zeros( POINTS )
+            data_y = np.zeros( POINTS )
 
             # Whether any pulse actually carries a non-zero Start Increment 2.
             has_eseem = any( float( v.split(' ')[0] ) != 0 for v in eseem_all_inc2 )
@@ -5624,10 +5656,14 @@ class Worker():
                             if (not script_test) or j == 0:
                                 if a is not None:
                                     if iq_cor == 0:
+                                        # redraw only the columns patched by the last
+                                        # readout (full frame on the very first draw)
+                                        p0, p1 = rng if rng is not None else (0, POINTS)
                                         if step != 1:
-                                            process = general.plot_2d(
+                                            process = general.update_2d(
                                                 EXP_NAME,
                                                 data,
+                                                p0, p1,
                                                 start_step = ((0, dec_calc), (f_delay/1e9, step_ns)),
                                                 xname = 'Time',
                                                 xscale = 's',
@@ -5639,9 +5675,10 @@ class Worker():
                                                 pr = process
                                             )
                                         else:
-                                            process = general.plot_2d(
+                                            process = general.update_2d(
                                                 EXP_NAME,
                                                 data,
+                                                p0, p1,
                                                 start_step = ((0, dec_calc), (0, 1)),
                                                 xname = 'Time',
                                                 xscale = 's',
@@ -5653,7 +5690,8 @@ class Worker():
                                                 pr = process
                                             )
                                     elif iq_cor == 1:
-                                        data_x, data_y = pb.digitizer_iq(data[0], data[1], iq_freq, zp, first_order, sec_order, integral = True)
+                                        # data_x / data_y are patched per touched column
+                                        # at the readout below -- no full-array recompute
                                         if step != 1:
                                             general.plot_1d(EXP_NAME, x_axis_plot, ( data_x, data_y ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = f'Cycle {cycle + 1}/{CYCLES} Scan {k}')
                                         else:
@@ -5663,13 +5701,27 @@ class Worker():
                             pb.pulser_update()
 
                             if (not script_test) or j == 0:
-                                a, b = pb.digitizer_get_curve(
+                                # Partial-range readout: only the point columns
+                                # recomputed from this call's buffers come back;
+                                # patch them into the persistent arrays instead of
+                                # copying the full O(points x window) frame.
+                                a, b, rng = pb.digitizer_get_curve(
                                     POINTS,
                                     PHASES,
                                     current_scan = k,
-                                    total_scan = SCANS )
+                                    total_scan = SCANS,
+                                    partial = True )
                                 if a is not None:
-                                    data[0], data[1] = a, b
+                                    data[0][:, rng[0]:rng[1]] = a
+                                    data[1][:, rng[0]:rng[1]] = b
+                                    if iq_cor == 1:
+                                        # IQ-corrected integrals for just the touched
+                                        # columns: the digitizer_iq phase correction
+                                        # depends only on the time axis, so per-column
+                                        # patching is exact.
+                                        dx, dy = pb.digitizer_iq(a, b, iq_freq, zp, first_order, sec_order, integral = True)
+                                        data_x[rng[0]:rng[1]] = dx
+                                        data_y[rng[0]:rng[1]] = dy
 
                         pb.pulser_shift()
                         if increment == 1:
@@ -6114,6 +6166,12 @@ class Worker():
 
             x_axis = np.linspace(START_FIELD, END_FIELD, num = POINTS)
             a = 0
+            # Partial-range readout state: rng = point range patched by the
+            # most recent successful readout; data_x / data_y = persistent
+            # per-point IQ-corrected integrals (patched per touched column).
+            rng = None
+            data_x = np.zeros( POINTS )
+            data_y = np.zeros( POINTS )
 
             def _scan_iter():
                 if script_test:
@@ -6152,9 +6210,13 @@ class Worker():
                             if (not script_test) or j == 0:
                                 if a is not None:
                                     if iq_cor == 0:
-                                        process = general.plot_2d(
+                                        # redraw only the columns patched by the last
+                                        # readout (full frame on the very first draw)
+                                        p0, p1 = rng if rng is not None else (0, POINTS)
+                                        process = general.update_2d(
                                             EXP_NAME,
                                             data,
+                                            p0, p1,
                                             start_step = ((0, dec_calc), (START_FIELD, FIELD_STEP)),
                                             xname = 'Time',
                                             xscale = 's',
@@ -6166,20 +6228,35 @@ class Worker():
                                             pr = process
                                         )
                                     elif iq_cor == 1:
-                                        data_x, data_y = pb.digitizer_iq(data[0], data[1], iq_freq, zp, first_order, sec_order, integral = True)
+                                        # data_x / data_y are patched per touched column
+                                        # at the readout below -- no full-array recompute
                                         process = general.plot_1d(EXP_NAME, x_axis, ( data_x, data_y ), xname = 'Field', xscale = 'G', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Field: ' + str(k) + ' / ' + str(field), pr = process)
 
                             pb.awg_next_phase()
                             pb.pulser_update()
 
                             if (not script_test) or j == 0:
-                                a, b = pb.digitizer_get_curve(
+                                # Partial-range readout: only the point columns
+                                # recomputed from this call's buffers come back;
+                                # patch them into the persistent arrays instead of
+                                # copying the full O(points x window) frame.
+                                a, b, rng = pb.digitizer_get_curve(
                                     POINTS,
                                     PHASES,
                                     current_scan = k,
-                                    total_scan = SCANS )
+                                    total_scan = SCANS,
+                                    partial = True )
                                 if a is not None:
-                                    data[0], data[1] = a, b
+                                    data[0][:, rng[0]:rng[1]] = a
+                                    data[1][:, rng[0]:rng[1]] = b
+                                    if iq_cor == 1:
+                                        # IQ-corrected integrals for just the touched
+                                        # columns: the digitizer_iq phase correction
+                                        # depends only on the time axis, so per-column
+                                        # patching is exact.
+                                        dx, dy = pb.digitizer_iq(a, b, iq_freq, zp, first_order, sec_order, integral = True)
+                                        data_x[rng[0]:rng[1]] = dx
+                                        data_y[rng[0]:rng[1]] = dy
 
                         field = round( (FIELD_STEP + field), 3 )
 
@@ -6625,6 +6702,12 @@ class Worker():
             dec_calc = 0.4 * DEC_COEF / 1e9
             x_axis_plot = x_axis / 1e9
             a = 0
+            # Partial-range readout state: rng = point range patched by the
+            # most recent successful readout; data_x / data_y = persistent
+            # per-point IQ-corrected integrals (patched per touched column).
+            rng = None
+            data_x = np.zeros( POINTS )
+            data_y = np.zeros( POINTS )
             #####
 
             def _scan_iter():
@@ -6657,9 +6740,13 @@ class Worker():
                             if (not script_test) or j == 0:
                                 if a is not None:
                                     if iq_cor == 0:
-                                        general.plot_2d(
+                                        # redraw only the columns patched by the last
+                                        # readout (full frame on the very first draw)
+                                        p0, p1 = rng if rng is not None else (0, POINTS)
+                                        general.update_2d(
                                             EXP_NAME,
                                             data,
+                                            p0, p1,
                                             start_step = ((0, dec_calc), (0, 1)),
                                             xname = 'Time',
                                             xscale = 's',
@@ -6670,20 +6757,35 @@ class Worker():
                                             text = f"Scan / Point: {k} / {j}"
                                         )
                                     elif iq_cor == 1:
-                                        data_x, data_y = pb.digitizer_iq(data[0], data[1], iq_freq, zp, first_order, sec_order, integral = True)
+                                        # data_x / data_y are patched per touched column
+                                        # at the readout below -- no full-array recompute
                                         process = general.plot_1d(EXP_NAME, x_axis_plot, ( data_x, data_y ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Point: ' + str(k) + ' / ' + str(j), pr = process)
 
                             pb.awg_next_phase()
                             pb.pulser_update()
 
                             if (not script_test) or j == 0:
-                                a, b = pb.digitizer_get_curve(
+                                # Partial-range readout: only the point columns
+                                # recomputed from this call's buffers come back;
+                                # patch them into the persistent arrays instead of
+                                # copying the full O(points x window) frame.
+                                a, b, rng = pb.digitizer_get_curve(
                                     POINTS,
                                     PHASES,
                                     current_scan = k,
-                                    total_scan = SCANS )
+                                    total_scan = SCANS,
+                                    partial = True )
                                 if a is not None:
-                                    data[0], data[1] = a, b
+                                    data[0][:, rng[0]:rng[1]] = a
+                                    data[1][:, rng[0]:rng[1]] = b
+                                    if iq_cor == 1:
+                                        # IQ-corrected integrals for just the touched
+                                        # columns: the digitizer_iq phase correction
+                                        # depends only on the time axis, so per-column
+                                        # patching is exact.
+                                        dx, dy = pb.digitizer_iq(a, b, iq_freq, zp, first_order, sec_order, integral = True)
+                                        data_x[rng[0]:rng[1]] = dx
+                                        data_y[rng[0]:rng[1]] = dy
 
                         # nonlinear_time_shift is calculated from the initial position of the pulses
                         if j > 0:
@@ -7087,6 +7189,12 @@ class Worker():
             x_axis = f_delay + np.linspace(0, (POINTS - 1)*STEP, num = POINTS)
             x_axis_plot = x_axis
             a = 0
+            # Partial-range readout state: rng = point range patched by the
+            # most recent successful readout; data_x / data_y = persistent
+            # per-point IQ-corrected integrals (patched per touched column).
+            rng = None
+            data_x = np.zeros( POINTS )
+            data_y = np.zeros( POINTS )
 
             def _scan_iter():
                 if script_test:
@@ -7119,10 +7227,14 @@ class Worker():
                             if (not script_test) or j == 0:
                                 if a is not None:
                                     if iq_cor == 0:
+                                        # redraw only the columns patched by the last
+                                        # readout (full frame on the very first draw)
+                                        p0, p1 = rng if rng is not None else (0, POINTS)
                                         if point_flag != 1:
-                                            process = general.plot_2d(
+                                            process = general.update_2d(
                                                 EXP_NAME,
                                                 data,
+                                                p0, p1,
                                                 start_step = ((0, dec_calc), (f_delay, step)),
                                                 xname = 'Time',
                                                 xscale = 's',
@@ -7134,9 +7246,10 @@ class Worker():
                                                 pr = process
                                             )
                                         else:
-                                            process = general.plot_2d(
+                                            process = general.update_2d(
                                                 EXP_NAME,
                                                 data,
+                                                p0, p1,
                                                 start_step = ((0, dec_calc), (0, 1)),
                                                 xname = 'Time',
                                                 xscale = 's',
@@ -7148,7 +7261,8 @@ class Worker():
                                                 pr = process
                                             )
                                     elif iq_cor == 1:
-                                        data_x, data_y = pb.digitizer_iq(data[0], data[1], iq_freq, zp, first_order, sec_order, integral = True)
+                                        # data_x / data_y are patched per touched column
+                                        # at the readout below -- no full-array recompute
                                         if point_flag != 1:
                                             general.plot_1d(EXP_NAME, x_axis_plot, ( data_x, data_y ), xname = 'Amplitude', xscale = '%', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Amplitude: ' + str(k) + ' / ' + str(round(f_delay + j * STEP, 1)))
                                         else:
@@ -7158,13 +7272,27 @@ class Worker():
                             pb.pulser_update()
 
                             if (not script_test) or j == 0:
-                                a, b = pb.digitizer_get_curve(
+                                # Partial-range readout: only the point columns
+                                # recomputed from this call's buffers come back;
+                                # patch them into the persistent arrays instead of
+                                # copying the full O(points x window) frame.
+                                a, b, rng = pb.digitizer_get_curve(
                                     POINTS,
                                     PHASES,
                                     current_scan = k,
-                                    total_scan = SCANS )
+                                    total_scan = SCANS,
+                                    partial = True )
                                 if a is not None:
-                                    data[0], data[1] = a, b
+                                    data[0][:, rng[0]:rng[1]] = a
+                                    data[1][:, rng[0]:rng[1]] = b
+                                    if iq_cor == 1:
+                                        # IQ-corrected integrals for just the touched
+                                        # columns: the digitizer_iq phase correction
+                                        # depends only on the time axis, so per-column
+                                        # patching is exact.
+                                        dx, dy = pb.digitizer_iq(a, b, iq_freq, zp, first_order, sec_order, integral = True)
+                                        data_x[rng[0]:rng[1]] = dx
+                                        data_y[rng[0]:rng[1]] = dy
 
                         pb.pulser_shift()
                         pb.awg_pulse_reset()

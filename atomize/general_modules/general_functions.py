@@ -372,7 +372,7 @@ _update_2d_ranges = {}
 
 def _drain_update_2d(strname, data, start_step=None,
                      xname='X', xscale='arb. u.', yname='Y',
-                     yscale='arb. u.', zname='Z', zscale='arb. u.'):
+                     yscale='arb. u.', zname='Z', zscale='arb. u.', text=''):
     with _update_2d_lock:
         rng = _update_2d_ranges.pop(strname, None)
     if rng is None:
@@ -381,11 +381,12 @@ def _drain_update_2d(strname, data, start_step=None,
     arr = np.asarray(data)
     _plotter().update_z(strname, arr[..., lo:hi], lo, arr.shape,
                         start_step=start_step, xname=xname, xscale=xscale,
-                        yname=yname, yscale=yscale, zname=zname, zscale=zscale)
+                        yname=yname, yscale=yscale, zname=zname, zscale=zscale,
+                        text=text)
 
 def update_2d(strname, data, lo, hi, start_step=None,
     xname='X', xscale='arb. u.', yname='Y', yscale='arb. u.', zname='Z',
-    zscale='arb. u.', pr='None'):
+    zscale='arb. u.', pr='None', text=''):
     """
     Incremental counterpart of plot_2d for partial-range readouts (e.g.
     digitizer_get_curve(..., partial=True)): redraw only the columns [lo:hi)
@@ -410,7 +411,7 @@ def update_2d(strname, data, lo, hi, start_step=None,
     if int(np.prod(arr.shape[-2:])) > _PLOT_MAX_CELLS_2D:
         return plot_2d(strname, data, start_step=start_step, xname=xname,
                        xscale=xscale, yname=yname, yscale=yscale, zname=zname,
-                       zscale=zscale, pr=pr)
+                       zscale=zscale, pr=pr, text=text)
     if pr == 'None' and _async_default:
         pr = _ASYNC_HANDLE
     with _update_2d_lock:
@@ -423,7 +424,7 @@ def update_2d(strname, data, lo, hi, start_step=None,
     args = (strname, data)
     kwargs = {'start_step': start_step, 'xname': xname, 'xscale': xscale,
               'yname': yname, 'yscale': yscale, 'zname': zname,
-              'zscale': zscale}
+              'zscale': zscale, 'text': text}
     if pr == 'None':
         _safe_call(_drain_update_2d, args, kwargs)
         return None

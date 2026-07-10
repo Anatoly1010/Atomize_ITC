@@ -3858,9 +3858,13 @@ class Worker():
                                     else:
                                         general.plot_1d(EXP_NAME, x_axis, ( data[0], data[1] ), xname = 'Point', xscale = '', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j, 1)))
 
-                                a, b = pb.digitizer_get_curve( POINTS, PHASES, current_scan = k, total_scan = SCANS, integral = True )
+                                # Partial-range readout: only the point range recomputed
+                                # from this call's buffers comes back; patch it into the
+                                # persistent data array instead of copying the full curve.
+                                a, b, rng = pb.digitizer_get_curve( POINTS, PHASES, current_scan = k, total_scan = SCANS, integral = True, partial = True )
                                 if a is not None:
-                                    data[0], data[1] = a, b
+                                    data[0][rng[0]:rng[1]] = a
+                                    data[1][rng[0]:rng[1]] = b
 
                         pb.pulser_shift()
                         pb.pulser_increment()
@@ -4122,9 +4126,13 @@ class Worker():
                             pb.pulser_next_phase()
 
                             if (not script_test) or j == 0:
-                                a, b = pb.digitizer_get_curve( POINTS, PHASES, current_scan = k, total_scan = SCANS, integral = True )
+                                # Partial-range readout: only the point range recomputed
+                                # from this call's buffers comes back; patch it into the
+                                # persistent data array instead of copying the full curve.
+                                a, b, rng = pb.digitizer_get_curve( POINTS, PHASES, current_scan = k, total_scan = SCANS, integral = True, partial = True )
                                 if a is not None:
-                                    data[0], data[1] = a, b
+                                    data[0][rng[0]:rng[1]] = a
+                                    data[1][rng[0]:rng[1]] = b
 
                         field = round( (FIELD_STEP + field), 3 )
 
@@ -4426,9 +4434,13 @@ class Worker():
                                 if a is not None:
                                     process = general.plot_1d(EXP_NAME, x_axis_plot, ( data[0], data[1] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Point: ' + str(k) + ' / ' + str(j), pr = process)
 
-                                a, b = pb.digitizer_get_curve( POINTS, PHASES, current_scan = k, total_scan = SCANS, integral = True )
+                                # Partial-range readout: only the point range recomputed
+                                # from this call's buffers comes back; patch it into the
+                                # persistent data array instead of copying the full curve.
+                                a, b, rng = pb.digitizer_get_curve( POINTS, PHASES, current_scan = k, total_scan = SCANS, integral = True, partial = True )
                                 if a is not None:
-                                    data[0], data[1] = a, b
+                                    data[0][rng[0]:rng[1]] = a
+                                    data[1][rng[0]:rng[1]] = b
 
                         # nonlinear_time_shift is calculated from the initial position of the pulses
                         if j > 0:

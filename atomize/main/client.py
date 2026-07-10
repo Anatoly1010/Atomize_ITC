@@ -269,7 +269,7 @@ class LivePlotClient(object):
         #self.send_to_plotter({'name':'none', 'operation':'none'}, np.array([0]))
 
     def update_z(self, name, arr, index, full_shape, start_step=None, xname='X axis',\
-     xscale='arb. u.', yname='Y axis', yscale='arb. u.', zname='Z axis', zscale='arb. u.'):
+     xscale='arb. u.', yname='Y axis', yscale='arb. u.', zname='Z axis', zscale='arb. u.', text=''):
         '''
         Partial rank-2 update: replace the columns
         [index : index + arr.shape[-1]) along the LAST axis of the image
@@ -292,6 +292,7 @@ class LivePlotClient(object):
             'Xname': xname,
             'Yname': yname,
             'Zname': zname,
+            'value': text,
             }
         self.send_to_plotter(meta, arr)
 
