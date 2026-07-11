@@ -4356,6 +4356,10 @@ class Worker():
 
             POINTS = 1
             pb.digitizer_decimation(decimation)
+            # Live tuning runs in live_mode=1, which is always processed
+            # synchronously; disable the background processing thread
+            # explicitly so no worker resources are created in this process.
+            pb.digitizer_processing_thread(0)
             DETECTION_WINDOW = round( pb.adc_window * 3.2, 1 )
             TR_ADC = round( 3.2 / 8, 1 )
             WIN_ADC = int( pb.adc_window * 8 / decimation )
