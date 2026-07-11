@@ -5145,6 +5145,12 @@ class Worker():
                 self.command = 'exit'
 
             if self.command == 'exit':
+                # Final readout before releasing the card: digitizer_at_exit()
+                # waits for the background processing thread to finish the
+                # queued buffers and recomputes the exact accumulated state.
+                # Covers natural completion of all scans; the Stop path inside
+                # the loop already did the same (repeating it is harmless).
+                data[0], data[1] = pb.digitizer_at_exit()
                 tb = round( pb.digitizer_window(), 1)
                 pb.pulser_close()
 
@@ -5786,6 +5792,12 @@ class Worker():
             # answer as-is (this is the bug fix: no software division/re-average).
 
             if self.command == 'exit':
+                # Final readout before releasing the card: digitizer_at_exit()
+                # waits for the background processing thread to finish the
+                # queued buffers and recomputes the exact accumulated state.
+                # Covers natural completion of all scans; the Stop path inside
+                # the loop already did the same (repeating it is harmless).
+                data[0], data[1] = pb.digitizer_at_exit()
                 tb = round( pb.digitizer_window(), 1)
                 pb.pulser_close()
 
@@ -6289,6 +6301,12 @@ class Worker():
                 self.command = 'exit'
 
             if self.command == 'exit':
+                # Final readout before releasing the card: digitizer_at_exit()
+                # waits for the background processing thread to finish the
+                # queued buffers and recomputes the exact accumulated state.
+                # Covers natural completion of all scans; the Stop path inside
+                # the loop already did the same (repeating it is harmless).
+                data[0], data[1] = pb.digitizer_at_exit()
                 tb = round( pb.digitizer_window(), 1)
                 pb.pulser_close()
 
@@ -6818,6 +6836,12 @@ class Worker():
                 self.command = 'exit'
 
             if self.command == 'exit':
+                # Final readout before releasing the card: digitizer_at_exit()
+                # waits for the background processing thread to finish the
+                # queued buffers and recomputes the exact accumulated state.
+                # Covers natural completion of all scans; the Stop path inside
+                # the loop already did the same (repeating it is harmless).
+                data[0], data[1] = pb.digitizer_at_exit()
                 tb = round( pb.digitizer_window(), 1)
                 pb.pulser_close()
 
@@ -7322,6 +7346,12 @@ class Worker():
                 self.command = 'exit'
 
             if self.command == 'exit':
+                # Final readout before releasing the card: digitizer_at_exit()
+                # waits for the background processing thread to finish the
+                # queued buffers and recomputes the exact accumulated state.
+                # Covers natural completion of all scans; the Stop path inside
+                # the loop already did the same (repeating it is harmless).
+                data[0], data[1] = pb.digitizer_at_exit()
                 tb = round( pb.digitizer_window(), 1)
                 pb.pulser_close()
 
