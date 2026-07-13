@@ -267,6 +267,7 @@ class MainExtended(MainWindow):
 
         for process in self.all_processes:
             process.readyReadStandardOutput.connect(self.handle_output_control_center)
+            process.finished.connect(self._cc_output_finished)
 
         # Use the current interpreter (sys.executable) so subprocesses inherit
         # the pipx/venv/conda site-packages — bare 'python3' would resolve to
@@ -287,24 +288,62 @@ class MainExtended(MainWindow):
             return
 
         raw_data = sending_process.readAllStandardOutput().data().decode(self.system_encoding, errors='replace')
-        if raw_data.startswith("print "):
-            msg = raw_data[6:].strip()
-            self.text_errors.appendPlainText(msg)
-        # Sequence Calculator one-click open: launch the target phasing tool
-        # pre-loaded with the preset it just wrote.
-        elif raw_data.startswith("open_awg "):
-            self.start_awg_phasing(raw_data[9:].strip())
-        elif raw_data.startswith("open_rect "):
-            self.start_rect_phasing(raw_data[10:].strip())
-        # Insys stdOut
-        elif raw_data.startswith("before "):
-            self.skip_lines = 1
-        elif 'ret = 0' in raw_data:
-            self.skip_lines = 0
-        elif raw_data.startswith("closing "):
-            pass
-        elif self.skip_lines != 1:
-            self.text_errors.appendPlainText(raw_data[:-1])
+
+        # A single read may carry several concatenated messages or split one
+        # across reads, so dispatch per complete line and buffer the trailing
+        # partial line for the next read. Every child line ends with '\n'
+        # (general.message / the sentinels all print with flush); without this
+        # a burst of messages gets merged (only the first prefix stripped) and
+        # a split line is shown raw or lost.
+        bufs = self.__dict__.setdefault('_cc_linebuf', {})
+        key = id(sending_process)
+        pending = bufs.get(key, '') + raw_data
+        *lines, tail = pending.split('\n')
+        # Defensive backstop: nothing here streams newline-free output, but
+        # never let a pathological unterminated line grow the buffer without
+        # bound -- force-flush it once it passes 64 KB and start a fresh line.
+        if len(tail) > 65536:
+            lines.append(tail)
+            tail = ''
+        bufs[key] = tail
+
+        for line in lines:
+            if line.startswith("print "):
+                self.text_errors.appendPlainText(line[6:].strip())
+            # Sequence Calculator one-click open: launch the target phasing tool
+            # pre-loaded with the preset it just wrote.
+            elif line.startswith("open_awg "):
+                self.start_awg_phasing(line[9:].strip())
+            elif line.startswith("open_rect "):
+                self.start_rect_phasing(line[10:].strip())
+            # Insys stdOut
+            elif line.startswith("before "):
+                self.skip_lines = 1
+            elif 'ret = 0' in line:
+                self.skip_lines = 0
+            elif line.startswith("closing "):
+                pass
+            elif self.skip_lines != 1:
+                self.text_errors.appendPlainText(line)
+
+    def _cc_output_finished(self, *args):
+        """On process exit, flush any buffered final line (the child emitted
+        it without a trailing '\n') and drop the per-process line buffer, so a
+        partial line left by one run can't prepend to the next run of the same
+        (persistent) QProcess. Display-only: never re-fire launch commands or
+        toggle suppression from a partial line."""
+        process = self.sender()
+        if not process:
+            return
+        leftover = self.__dict__.get('_cc_linebuf', {}).pop(id(process), '')
+        if not leftover:
+            return
+        if leftover.startswith("print "):
+            self.text_errors.appendPlainText(leftover[6:].strip())
+        elif (self.skip_lines != 1
+                and not leftover.startswith(("open_awg ", "open_rect ", "before ", "closing "))
+                and 'ret = 0' not in leftover):
+            self.text_errors.appendPlainText(leftover)
 
     # control tab design
     def set_control_center(self):
