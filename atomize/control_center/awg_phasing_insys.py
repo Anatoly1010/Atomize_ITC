@@ -1738,6 +1738,13 @@ class MainWindow(QMainWindow):
                 box_j = getattr(self, f"P{j}{suffix}", None)
                 if box_j is None:
                     continue
+                # A fixed-range box (min == max, e.g. the DETECTION pulse's
+                # amplitude locked at 100 %) cannot be shifted -- skip it so a
+                # coupled edit neither no-ops against it nor trips the clamp
+                # warning below. Its frequency box is not fixed, so freq link
+                # (which retunes the digitizer IQ demod) still propagates.
+                if box_j.maximum() - box_j.minimum() < 1e-9:
+                    continue
                 target = box_j.value() + unit * f_j
                 # QSpinBox/QDoubleSpinBox silently clamp to their range. For the
                 # amplitude (_cf, 0.1..100 %) a coupled shift can drive a linked
@@ -2010,7 +2017,9 @@ class MainWindow(QMainWindow):
         for WURST / SECH-TANH, a scalar 'X MHz' otherwise. Type and sigma are
         span-preserving (same length -> same dac_window), so they re-arm live
         like amplitude/frequency. Plus the DETECTION start and its frequency (the
-        latter only sets the digitizer IQ demod frequency, so it re-arms live).
+        latter only sets the digitizer IQ demod frequency, so it re-arms live)
+        and the global WURST/SECH chirp params N/B (they change the DAC samples,
+        not dac_window, so they re-arm live too).
         """
         pulses = []
         for k in self._live_active_awg():
@@ -2029,7 +2038,10 @@ class MainWindow(QMainWindow):
                 getattr(self, f'p{k}_sigma'),
             ])
         return {'p1': getattr(self, 'p1_start'),
-                'p1_freq': getattr(self, 'p1_freq', None), 'pulses': pulses}
+                'p1_freq': getattr(self, 'p1_freq', None),
+                'n_wurst': getattr(self, 'n_wurst_cur', None),
+                'b_sech': getattr(self, 'b_sech_cur', None),
+                'pulses': pulses}
 
     def _structure_sig(self, snap):
         """
@@ -2198,7 +2210,9 @@ class MainWindow(QMainWindow):
         if base is None:
             return
         payload = {'p1_d': self._ns(snap['p1']) - base['p1'],
-                   'p1_freq': snap.get('p1_freq'), 'pulses': []}
+                   'p1_freq': snap.get('p1_freq'),
+                   'n_wurst': snap.get('n_wurst'), 'b_sech': snap.get('b_sech'),
+                   'pulses': []}
         for e in snap['pulses']:
             k = e[0]
             if k not in base['pulses']:
@@ -2345,6 +2359,10 @@ class MainWindow(QMainWindow):
         A function to set b_sech parameter for the SECH/TANH pulse
         """
         self.b_sech_cur = float( self.B_sech.value() )
+        # N/B change the WURST/SECH DAC samples but not dac_window, so they
+        # re-arm live like amplitude/type -- nudge the debounce to push the new
+        # chirp through the 'PU' payload (carried as snap['n_wurst']/['b_sech']).
+        self.schedule_live_apply()
 
     def quad_online(self):
         """
@@ -3326,6 +3344,8 @@ class MainWindow(QMainWindow):
         A function to set n_wurst parameter for the WURST and SECH/TANH pulses
         """
         self.n_wurst_cur = int( self.N_wurst.value() )
+        # See b_sech_func: N re-arms the DAC waveform live via the 'PU' payload.
+        self.schedule_live_apply()
 
     def ch0_amp(self):
         """
@@ -4607,8 +4627,10 @@ class Worker():
                                     ap['function'] = typ
                                     ap['sigma'] = sigma
                                     if typ in ('WURST', 'SECH/TANH'):
-                                        ap['n'] = n_wurst
-                                        ap['b'] = b_sech
+                                        # N/B re-arm live: use the payload values
+                                        # (current GUI), not the opened baseline.
+                                        ap['n'] = snap.get('n_wurst', n_wurst)
+                                        ap['b'] = snap.get('b_sech', b_sech)
                                     pb.awg_redefine_amplitude(name=awg_name, amplitude=str(amp))
                                     pb.awg_redefine_frequency(name=awg_name, freq=freq)
                                     if awg_name in _orig_awg_start:
@@ -4630,6 +4652,25 @@ class Worker():
                                     tp['start'] = new_trg
                                     if trg_name in pul_init:
                                         pul_init[trg_name]['start'] = new_trg
+                                    pb.shift_count_pulser = 1
+
+                                # The TRIGGER_AWG pulse has a paired 'AWG'-channel
+                                # pulser entry (name + 'AWG', built in
+                                # Insys_FPGA.pulser_pulse) whose start drives the
+                                # RECT_AWG / AMP_ON / LNA_PROTECT gate. pulser_redefine_start
+                                # moves both together, so the live edit must too, or
+                                # the amplifier/protection gate stays at the old
+                                # position while the trigger + DAC waveform move.
+                                # Use the pair's OWN baseline: its stored start has no
+                                # trigger_awg_shift baked in, unlike the trigger's, so
+                                # shifting new_trg here would drag the gate 160 ns early.
+                                awg_pair = trg_name + 'AWG'
+                                pp = pul_live.get(awg_pair)
+                                if pp is not None and awg_pair in _orig_pul_start:
+                                    new_pair = _shift_start(_orig_pul_start[awg_pair], t_delta)
+                                    pp['start'] = new_pair
+                                    if awg_pair in pul_init:
+                                        pul_init[awg_pair]['start'] = new_pair
                                     pb.shift_count_pulser = 1
 
                             # Refresh the AWG pulse list shown in the log so it reflects
