@@ -1420,7 +1420,19 @@ class MainWindow(QMainWindow):
                 # coupled edit neither no-ops against it nor trips the warning.
                 if box_j.maximum() - box_j.minimum() < 1e-9:
                     continue
-                target = box_j.value() + unit * f_j
+                shift = unit * f_j
+                # For grid-quantised position/length, the snap re-fired by
+                # setValue (round_to_closest) CEILS a fractional shift up to the
+                # next grid step, so a 0.5x link factor would drag a coupled
+                # pulse a full step on +delta and nothing on -delta -- a one-way
+                # ratchet. Snap the SHIFT to the nearest grid step here so
+                # fractional factors round symmetrically (0.5x on a single-step
+                # edit -> no move); the box is already on-grid, so setValue's own
+                # snap then no-ops.
+                if suffix in ('_st', '_len'):
+                    grid = 3.2  # RECT pulse time grid (ns)
+                    shift = round(shift / grid) * grid
+                target = box_j.value() + shift
                 # QDoubleSpinBox silently clamps to its range; a coupled shift can
                 # drive a linked pulse past a limit (e.g. the length ceiling), so
                 # flag it -- the coupling is then no longer strictly proportional.
