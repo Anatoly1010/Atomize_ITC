@@ -20,14 +20,31 @@ there, and run `/code-review` (Fable) after Opus implementation sessions.
 - [x] `--test` dry-run: whole protocol executes against test-mode devices
       (lazy Insys/Micran/BH_15 in session; canned results marked `canned: True`)
 
-## Phase 1 — Engine (extract from awg_phasing_insys)
-- [ ] **[F]** `engine/sequence.py`: `.phase_awg` preset → pulse program on a
-      test-mode `Insys_FPGA` (phase cycling expansion, AWG amp-gate partner handling)
-- [ ] **[F]** `engine/acquisition.py`: scan loop + digitizer readout + per-scan
-      accumulation, LivePlot optional (deer_bench.py as the reference loop)
-- [ ] Equivalence check: engine output for `hahn_echo_4s.phase_awg` matches
-      what the phasing tool arms (compare test-mode pulse tables / DAC hashes,
-      reuse the `~/pulser_optim/` golden-harness approach)
+## Phase 1 — Engine (reuse awg_phasing_insys Worker) — DONE 2026-07-16
+Design change vs the original plan: instead of extracting the sequence/scan
+code, the engine REUSES `awg_phasing_insys.Worker` directly (the class the GUI
+itself pickles into a Process — GUI-free, hardware-validated). The engine
+reproduces only the GUI's snapshot pipeline.
+- [x] **[F]** `engine/snapshot.py`: `.phase_awg` preset → exact Worker argument
+      tuples (grid snap, ns/MHz strings, phase-cycle expansion via the GUI's
+      own `expand_phase_cycling`, deg→rad, window ns→points, TimeLogSpinBox
+      log-grid quantization)
+- [x] **[F]** `engine/executor.py`: runs Worker.exp/exp_log/exp_amplitude/
+      exp_field in a child process, speaks the pipe protocol (Status/Message/
+      Error/Open→'FL<path>'/test/exit); scan loop + readout stay in Worker
+- [x] Equivalence check: `~/epr_auto_dev/gui_vs_engine.py` drives the REAL GUI
+      headless (offscreen), captures `dig_start_exp`'s Process args per preset,
+      compares element-wise vs the engine — **ALL 13 presets PASS** across all
+      four sweep types; executor pre-flight (`script_test=True`) runs clean
+      end-to-end for all four. **Re-run this harness after ANY change to the
+      GUI snapshot pipeline or engine/snapshot.py.**
+- [x] 'ESEEM Avg' sweep (exp_eseem: eseem_inc2/cycles/save_each tail) and
+      LASER presets (laser_flag/laser_num + Nd:YaG 9.9 Hz rep-rate forcing) —
+      equivalence-tested via synthetic presets the harness derives at runtime
+      (none exist on disk); executor pre-flight clean (2026-07-16)
+- Not covered yet: live 'SC' resize; per-cycle 'Save each' file naming in the
+      executor (single save_path answers every 'Open'); resonator-correction
+      overrides → moved to the backlog below.
 
 ## Phase 2 — Tuning primitives + judges
 - [ ] `tune.auto_phase` (acquire echo → `fft.auto_phase_zero` → apply)
@@ -61,6 +78,9 @@ there, and run `/code-review` (Fable) after Opus implementation sessions.
 - [ ] **Hardware**: full chain on the spectrometer, supervised mode
 
 ## Later phases (unordered backlog)
+- Resonator-correction overrides in the engine (equivalent of the GUI's
+  `_hand_correction_to_worker` + Combo_cor/Combo_model settings; Worker
+  defaults are used until then) — deliberately deferred 2026-07-16
 - RECT channel support for calibration + runners
 - ESEEM / DEER payload experiments (reuse ESEEM-avg + benchmark know-how)
 - Autopilot GUI (control_center tool wrapping the runner)
@@ -82,3 +102,20 @@ there, and run `/code-review` (Fable) after Opus implementation sessions.
   +epr-auto script. Verified: dry-run end-to-end (test-mode Insys instantiates
   headless), 9 broken-protocol cases all give file:line errors, live run
   refuses with exit 3. Next: Phase 1 engine extraction ([F] — prefer Fable).
+- **2026-07-16 (3)** — Phase 0 reviewed (5 findings fixed: UTF-8 protocol read,
+  duplicate-key rejection, per-item step lines, EOF at checkpoint prompt,
+  user-config bootstrap in cli) and committed: ITC `f994f6f`. Phase 1 started.
+- **2026-07-16 (4)** — Phase 1 complete (uncommitted). Key decision: reuse
+  `Worker` instead of extracting it — engine = snapshot builder + executor.
+  Equivalence harness `~/epr_auto_dev/gui_vs_engine.py`: ALL 13 presets PASS
+  (byte-identical worker args vs real offscreen GUI; harness must reset
+  `window.is_experiment = False` between presets — dig_start_exp latches it).
+  Gotchas encoded in snapshot.py: `_snap` is ceil-to-3.2-grid; log sweep
+  bounds go through TimeLogSpinBox unit-grid quantization (`_log_snap`);
+  P1 'phase' field is receiver coefficients, expanded together with active
+  pulses only (length ≠ 0); combo_cor/combo_synt/save2d are NOT in presets
+  (GUI defaults 0/1/0). Next: Phase 2 tuning primitives wired through the
+  engine (field.edfs→exp_field, pi_calibration→exp_amplitude/exp).
+- **2026-07-16 (5)** — ESEEM Avg + LASER added to the engine (ALL 15 PASS incl.
+  2 synthetic presets); resonator-correction deferred to backlog; CLAUDE.md
+  gained the phasing-GUI ↔ engine mirror rule.

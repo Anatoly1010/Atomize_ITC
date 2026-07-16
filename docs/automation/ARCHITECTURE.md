@@ -67,9 +67,12 @@ atomize/epr_auto/runner.py            step executor: checkpoints, retries,
         │                             judges, results manifest, notifications
 atomize/epr_auto/primitives/          tune.auto_phase / tune.pi_calibration /
         │                             field.edfs / exp.t1 / exp.t2 + judges
-atomize/epr_auto/engine/              preset-driven sequence builder +
-        │                             scan/acquisition loop (extracted from
-        │                             awg_phasing_insys internals)
+atomize/epr_auto/engine/              snapshot.py: preset → exact Worker arg
+        │                             tuples; executor.py: runs the Worker +
+        │                             speaks its pipe protocol
+awg_phasing_insys.Worker              the REUSED, hardware-validated scan/
+        │                             acquisition loop (not extracted — the
+        │                             GUI pickles this same class)
 device modules (Insys_FPGA, Micran bridge, BH_15, Lakeshore_335)
 ```
 
@@ -147,6 +150,17 @@ later steps see them via the session state and presets are patched accordingly.
   touching Lakeshore/BH_15 — same discipline as the four experiment runners.
 - Buffer forcing order: `streamBufSizeKb` only after `pulser_repetition_rate`
   (memory `insys-benchmark-automation`).
+
+## Engine ↔ GUI contract (Phase 1)
+
+`engine/snapshot.py` mirrors, line for line, the GUI pipeline
+`open_file/setter → update_* handlers → dig_start_exp` packing. The sweep
+type picks the Worker method: Linear Time→`exp`, Log Time→`exp_log`,
+Amplitude→`exp_amplitude`, Field→`exp_field` (ESEEM Avg: not supported yet).
+**Any edit to either side must be followed by re-running
+`~/epr_auto_dev/gui_vs_engine.py`** (offscreen GUI vs engine, all presets,
+element-wise). Executor stop semantics: sending 'exit' still reads out and
+saves — treat operator stop as "finish early", not "discard".
 
 ## Reference code
 
