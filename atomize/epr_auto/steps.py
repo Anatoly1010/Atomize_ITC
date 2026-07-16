@@ -1,10 +1,18 @@
 """Step registry: maps protocol step names to parameter specs and implementations.
 
-Phase 0: implementations are dry-run stubs — they validate wiring (lazy
-test-mode device creation, parameter plumbing, state flow) and return canned
-results marked with 'canned': True. Real acquisition arrives with the engine
-(Phase 1) and the tuning/experiment primitives (Phases 2/4); the specs here
-are the stable protocol-facing contract.
+The tuning/field steps (Phase 2) delegate to atomize.epr_auto.primitives —
+imported lazily inside the step functions, never at module scope: the
+primitives pull in the engine (PyQt6 + general_functions via
+awg_phasing_insys), and this module must stay importable for headless
+validation before test/real mode is decided. The exp.* steps are still
+dry-run stubs until Phase 4.
+
+Judge policy: every primitive returns (result, judge_reports). In a live run
+any failed judge aborts the step (StepFailure) except the advisory ones
+(pi_ratio_linearity — a compression diagnostic, not a data-quality gate);
+in a dry-run judges are logged only. Rail-triggered automatic fallback to
+tune.power_for_length is a Phase 3 runner-policy item — until then a rail
+failure surfaces as a StepFailure carrying the judge's hint.
 """
 from dataclasses import dataclass
 from typing import Callable
@@ -39,16 +47,50 @@ def register(name, summary, params=None, check=None):
     return deco
 
 
+# ---------------------------------------------------------------- helpers
+
+# Advisory judges warn but never abort: pi_ratio_linearity is a compression
+# diagnostic; fit_quality reports the GLOBAL nutation fit while pi/pi2 come
+# from de-biased local estimates (a mediocre adj-R2 does not invalidate
+# them); convergence is power_for_length's failure diagnostic (its hard gate
+# is pi_length_target). NOTE Phase 4: relaxation-fit steps must gate on a
+# differently-named hard judge (e.g. 'relaxation_fit'), not 'fit_quality'.
+_ADVISORY_JUDGES = ('pi_ratio_linearity', 'fit_quality', 'convergence')
+
+
+def _run_primitive(session, func, **kwargs):
+    """Call a primitive, log its judge reports, gate on them (live only)."""
+    try:
+        result, judge_reports = func(session, **kwargs)
+    except (ValueError, RuntimeError) as e:
+        # expected failure modes: bad preset/arguments (ValueError), engine /
+        # vane / lock errors (RuntimeError incl. EngineError) — report as a
+        # failed step, not a traceback
+        raise StepFailure(str(e)) from None
+    for j in judge_reports:
+        session.log(f'      {j}')
+    if not session.test:
+        hard = [j for j in judge_reports
+                if not j.passed and j.name not in _ADVISORY_JUDGES]
+        if hard:
+            raise StepFailure('; '.join(str(j) for j in hard))
+    return result
+
+
 # ---------------------------------------------------------------- tuning
 
 @register('tune.auto_phase',
-          'Acquire an echo and zero the signal phase (principal-axis auto_phase_zero)')
-def tune_auto_phase(session):
-    # Touching session.pulser here exercises the lazy test-mode device path
-    # end-to-end in every dry-run.
-    session.log(f'      pulser: {session.pulser.pulser_name()}')
-    session.log('      [stub] would acquire echo and apply auto-phase (Phase 2)')
-    return {'phase_deg': 0.0, 'canned': True}
+          'Acquire an echo and zero the signal phase (principal-axis auto_phase_zero)',
+          params={
+              'preset': PresetFile(default='hahn_echo_4s.phase_awg'),
+              'points': Int(min=2, default=4,
+                            help='sweep points for the quick phase acquisition'),
+              'scans': Int(min=1, default=1),
+          })
+def tune_auto_phase(session, preset, points, scans):
+    from atomize.epr_auto.primitives import tune
+    return _run_primitive(session, tune.auto_phase,
+                          preset=preset, points=points, scans=scans)
 
 
 @register('tune.power_for_length',
@@ -58,11 +100,20 @@ def tune_auto_phase(session):
               'target_length': TimeStr(required=True, help='desired pi pulse length'),
               'amplitude': Float(min=1, max=100, default=95.0,
                                  help='AWG amplitude (%) held during the vane scan'),
+              'preset': PresetFile(default='rabi_echo_4s.phase_awg',
+                                   help='length-nutation preset used to measure pi'),
+              'tolerance': TimeStr(default='3.2 ns'),
+              'max_iter': Int(min=1, default=4),
+              'rehome': Choice('no', 'limit', default='no',
+                               help='limit: true re-home at the 60 dB switch first'),
           })
-def tune_power_for_length(session, target_length, amplitude):
-    session.log('      [stub] would scan rotary vane (same-direction approach) '
-                'and invalidate auto-phase + fine calibration (Phase 2)')
-    return {'attenuation_db': 12.0, 'target_length': target_length, 'canned': True}
+def tune_power_for_length(session, target_length, amplitude, preset,
+                          tolerance, max_iter, rehome):
+    from atomize.epr_auto.primitives import tune
+    return _run_primitive(session, tune.power_for_length,
+                          target_length=target_length, amplitude=amplitude,
+                          preset=preset, tolerance=tolerance,
+                          max_iter=max_iter, rehome=rehome)
 
 
 def _check_pi_calibration(params, ctx):
@@ -78,17 +129,17 @@ def _check_pi_calibration(params, ctx):
               'preset': PresetFile(help='defaults to ampl_4s / rabi_echo_4s by mode'),
               'mode': Choice('amplitude', 'length', default='amplitude'),
               'channel': Choice('AWG', default='AWG'),
-              'points': Int(min=2, default=50),
-              'scans': Int(min=1, default=1),
+              'points': Int(min=2, help='sweep points (default: preset value)'),
+              'scans': Int(min=1, help='scans (default: preset value)'),
+              'step': Float(min=0.01, help='amplitude step in % (Amplitude mode; '
+                                           'default: preset value)'),
           },
           check=_check_pi_calibration)
-def tune_pi_calibration(session, preset, mode, channel, points, scans):
-    session.log(f'      [stub] would run {mode} sweep from {preset} (Phase 2)')
-    # amp(pi)/amp(pi/2) deliberately != 2 in the canned result: the linearity
-    # judge must not learn to expect the ideal ratio.
-    result = {'pi': 68.0, 'pi2': 33.5, 'unit': '%', 'mode': mode, 'canned': True}
-    session.state['pi_calibration'] = result
-    return result
+def tune_pi_calibration(session, preset, mode, channel, points, scans, step):
+    from atomize.epr_auto.primitives import tune
+    return _run_primitive(session, tune.pi_calibration,
+                          preset=preset, mode=mode, channel=channel,
+                          points=points, scans=scans, step=step)
 
 
 # ---------------------------------------------------------------- field
@@ -96,6 +147,9 @@ def tune_pi_calibration(session, preset, mode, channel, points, scans):
 def _check_edfs(params, ctx):
     if params['pick'] == 'value' and params['value'] is None:
         raise ParamError("pick: value requires the 'value' parameter")
+    if params['pick'] == 'marker':
+        raise ParamError('pick: marker needs the interactive tools — '
+                         'use max or value (operator pick is a Phase 3 item)')
     lo, hi = (parse_field_g(v) for v in params['range'])
     if lo >= hi:
         raise ParamError(f"range must be [low, high], got {params['range']}")
@@ -113,22 +167,18 @@ def _check_edfs(params, ctx):
           },
           check=_check_edfs)
 def field_edfs(session, preset, range, points, scans, pick, value):
-    session.log(f'      [stub] would sweep {range[0]} .. {range[1]} ({points} pts) '
-                f'from {preset}, pick={pick} (Phase 2)')
-    field_g = parse_field_g(value) if pick == 'value' else \
-        (parse_field_g(range[0]) + parse_field_g(range[1])) / 2
-    result = {'field': f'{field_g:.1f} G', 'pick': pick, 'canned': True}
-    session.state['field'] = result['field']
-    return result
+    from atomize.epr_auto.primitives import field as field_primitives
+    return _run_primitive(session, field_primitives.edfs,
+                          preset=preset, range=range, points=points,
+                          scans=scans, pick=pick, value=value)
 
 
 @register('field.set',
           'Set the magnetic field directly',
           params={'value': FieldStr(required=True)})
 def field_set(session, value):
-    session.log('      [stub] would set BH_15 (respecting field.param lock) (Phase 2)')
-    session.state['field'] = value
-    return {'field': value, 'canned': True}
+    from atomize.epr_auto.primitives import field as field_primitives
+    return _run_primitive(session, field_primitives.set_field, value=value)
 
 
 # ---------------------------------------------------------------- experiments

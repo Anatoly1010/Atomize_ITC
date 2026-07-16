@@ -42,30 +42,59 @@ reproduces only the GUI's snapshot pipeline.
       LASER presets (laser_flag/laser_num + Nd:YaG 9.9 Hz rep-rate forcing) —
       equivalence-tested via synthetic presets the harness derives at runtime
       (none exist on disk); executor pre-flight clean (2026-07-16)
-- Not covered yet: live 'SC' resize; per-cycle 'Save each' file naming in the
-      executor (single save_path answers every 'Open'); resonator-correction
-      overrides → moved to the backlog below.
+- Status of the original "not covered" list (updated 2026-07-17):
+      resonator-correction overrides → engine side DONE (review fix: WorkerArgs
+      correction fields + executor hand-off; YAML plumbing still backlog);
+      per-cycle 'Save each' naming → NOT a gap (review-refuted: the Worker
+      derives `_cycle{n}.csv` names internally from the single path and sends
+      exactly one 'Open' — the executor's single save_path answer is correct);
+      live 'SC' resize → still uncovered, not needed for protocol runs (scan
+      count is fixed up front) — future hook for judge-driven adaptive scan
+      control in autonomous mode (backlog).
 
-## Phase 2 — Tuning primitives + judges
-- [ ] `tune.auto_phase` (acquire echo → `fft.auto_phase_zero` → apply)
-- [ ] `tune.pi_calibration`, two modes: amplitude sweep (default for AWG,
-      `ampl_4s.phase_awg`) and length-increment nutation (`rabi_echo_4s.phase_awg`);
-      fit → π, π/2 calibrated independently; amp(π)/amp(π/2)-ratio linearity judge
-- [ ] `tune.power_for_length` (coarse stage): rotary vane scan at ~90–95 % AWG
-      amplitude until π lands at target length; same-direction approach,
-      optional Limit-mode re-home; invalidates auto-phase + fine calibration
-      (see ARCHITECTURE.md "Flip-angle knobs")
-- [ ] Rail-triggered fallback: fine sweep hits 100 % / <~30 % amplitude ⇒
-      runner re-runs coarse stage per autonomy policy
-- [ ] `field.edfs` (ed preset sweep → pick max/marker/value → set BH_15,
-      respecting field.param lock)
-- [ ] `judges.py`: echo SNR, fit RMSE/adj-R², convergence; every primitive
-      returns (result, judge_report)
+## Phase 2 — Tuning primitives + judges — code DONE 2026-07-17 (needs hardware)
+- [x] `tune.auto_phase` (short echo run via the engine → principal-axis
+      `auto_phase_zero` → `zero_order_new = (used − φ) mod 360`; the corrected
+      zero-order flows into every later build via session state)
+- [x] `tune.pi_calibration`, two modes: amplitude sweep (default,
+      `ampl_4s.phase_awg` — the swept pulse is the one with nonzero Start
+      Increment, the worker's own name_list criterion) and length nutation
+      (`rabi_echo_4s.phase_awg`, nonzero Length Increment). The sequences are
+      inversion-detection ⇒ echo ∝ cos θ(x); θ = b·x + s·x² fitted (s absorbs
+      compression), then de-biased: π from the model-free parabola vertex at
+      the observed minimum, π/2 from a re-fit with θ anchored at that π.
+      Synthetic benchmark (20 noise seeds, 10 % compression): π −0.3 ± 0.34 %,
+      π/2 −0.3 ± 0.4 % of full scale; length mode 179.8/89.9 ns vs 180/90 true
+- [x] `tune.power_for_length` (coarse): length nutation at held amplitude →
+      dB += 20·log10(target/measured) per iteration; same-direction (from-
+      above +1 dB overshoot) vane moves, exact mechanical wait from the
+      device's own calibration curve (36 ms/step), optional Limit-mode
+      re-home; every vane move invalidates auto-phase + fine cal
+- [x] Rail detection: π ≥ 99 % ('cannot reach π') or ≤ 30 % (wasted dynamic
+      range) fails the `amplitude_rails` judge; π beyond the sweep end is
+      reported as `rails: high` with x[-1] as a lower bound. Automatic
+      re-run of the coarse stage = Phase 3 runner policy (retry framework)
+- [x] `field.edfs` (exp_field run → pick max/value → BH_15 via the session,
+      field.param + temp_param locks seized with source 'epr_auto', atexit
+      release; pick=marker rejected at validation until Phase 3) + `field.set`
+- [x] `judges.py`: echo SNR (MAD-of-diff sigma, extreme-value ceiling —
+      pure noise scores ~1), fit RMSE/adj-R², convergence, π-ratio linearity
+      (advisory: warns, never aborts), amplitude rails; every primitive
+      returns (result, judge_reports), steps gate on them in live runs only
+- [x] Engine data-return: `executor.load_1d`/`acquire_1d` (iq_cor==1 CSV:
+      axis, I, Q; axis s / % / G by sweep); dry-run = real per-preset
+      engine pre-flight (Worker child forces test devices) + canned result
 
 ## Phase 3 — Runner UX & autonomy
 - [ ] Checkpoint gating: terminal prompt at `checkpoint: true` steps;
       autonomy = supervised / checkpointed / autonomous
-- [ ] Retry policy per step (n retries, on-fail: abort | skip | ask)
+- [ ] Retry policy per step (n retries, on-fail: abort | skip | ask);
+      wire the rail-triggered fallback (failed `amplitude_rails` judge ⇒
+      re-run tune.power_for_length per autonomy policy)
+- [ ] Adaptive scan control via the worker's live 'SC<n>' resize: a command
+      channel into `run_worker`'s poll loop so a judge reaching its SNR /
+      convergence target mid-run shrinks the scan count and the worker
+      finishes early (still reading out + saving); autonomous mode only
 - [ ] Run directory: manifest (protocol snapshot + resolved parameters +
       calibration results + judge reports), CSVs with headers
 - [ ] Telegram notifications on checkpoint/finish/abort (`general.bot_message`)
@@ -92,7 +121,16 @@ reproduces only the GUI's snapshot pipeline.
 - Port to fork repos once stable
 
 ## Pending hardware validation
-- (none yet)
+- **Phase 2 primitives on the spectrometer** (all code-complete, dry-run
+  clean; nothing has touched hardware): auto-phase round-trip (zero-order
+  sign: digitizer_iq rotates by exp(−i·z), so z_new = z_used − φ_residual —
+  verify the corrected run comes out real-positive); pi_calibration amplitude
+  sweep on `ampl_4s` (fit + rails on real compression); power_for_length vane
+  loop (dB step direction, mechanical wait long enough, backlash approach);
+  edfs pick=max lands on the line; field.param/temp_param locks vs an open
+  field_control/temp_control GUI.
+- LivePlot behaviour of engine-run Workers (plots go to the open GUI exactly
+  like GUI-launched runs — expected but unverified).
 
 ## Session log
 - **2026-07-16** — Variants discussed, decisions fixed (see ARCHITECTURE.md
@@ -183,4 +221,50 @@ reproduces only the GUI's snapshot pipeline.
   the run fails. Harness re-run: ALL PASS (17 presets + 5 pre-flights +
   handshake). Refuted by review: awg_grid getattr default (unreachable),
   per-cycle Save-each naming (worker-internal, single Open is correct).
-  Next: Phase 2 tuning primitives.
+  Committed+pushed: ITC `c855ca1`.
+- **2026-07-17 (2)** — **Phase 2 code-complete** (uncommitted).
+  `primitives/{judges,tune,field}.py` + engine `load_1d`/`acquire_1d` +
+  session run_dir/save_path/hardware-locks(atexit)/invalidate_fine_calibrations;
+  steps.py rewired (stubs → primitives, judge gating: failed judge ⇒
+  StepFailure live-only, pi_ratio_linearity advisory). Key discoveries
+  encoded in code comments: Amplitude-sweep swept-pulse = nonzero st_inc
+  (worker name_list criterion; acquire-then-step, so axis[j] = amplitude at
+  point j); ampl_4s/rabi are inversion-detection ⇒ cos θ nutation;
+  digitizer_iq applies exp(−i·zero_order) ⇒ z_new = z_used − φ; exp_field
+  axis in G, POINTS = (end−start)/step + 1; Worker pre-flight forces
+  sys.argv=['','test'] in-child (safe against live hardware); vane wait
+  must be slept out locally (worker child owns a fresh Micran instance).
+  π/π2 extraction: global fit judges, model-free vertex for π, θ-anchored
+  re-fit for π/2 (benchmarked; free fit root was 6× noisier from the
+  c0/envelope degeneracy). New `protocols/tune_up.yaml`; overnight_t2 +
+  tune_up dry-run clean; validate/steps/marker-rejection OK;
+  gui_vs_engine ALL PASS. Next: hardware validation of Phase 2 (see
+  Pending), then Phase 3 (runner retry/fallback policy + manifest) or
+  Phase 4 (exp.t1/t2 on the same acquire_1d path).
+- **2026-07-17 (3)** — Opus /code-review of Phase 2 (23-agent workflow,
+  harness in scope) — 10 findings, all fixed (uncommitted): (1) sign-blind
+  principal-axis rotation could hand the fit a −cos trace → orientation from
+  the leading points (θ(x₀) < π/2 in the presets) + flip-rescue; chasing the
+  fix exposed a second fit basin (small-b/positive-s accelerating chirp,
+  plausible SSR, garbage π/2) → physical chirp bound r = s·x_max/b ∈
+  [−0.35, 0.15] in BOTH the free fit and the anchored re-fit (benchmark:
+  inverted-trace π/2 went from +4.8 ± 7.7 to −0.5 ± 0.6); (2)
+  power_for_length no longer moves the vane after the last measurement —
+  the returned (attenuation_db, pi_length) pair always describes the state
+  the vane is in; (3) auto_phase judged by new `phase_coherence`
+  (resultant length R) — echo_snr's MAD-of-diff sigma is meaningless on a
+  4-point trace; (4)+(5) judge gating: fit_quality + convergence moved to
+  advisory (π/π2 come from de-biased local estimates; pi_length_target is
+  power_for_length's hard gate; convergence emitted only on failure as a
+  diagnostic — a single large-but-correct vane jump is not a defect; NOTE
+  Phase 4 relaxation fits need a differently-named HARD fit judge); (6)
+  _run_primitive now routes RuntimeError (incl. EngineError, vane parse,
+  lock conflicts) to StepFailure, not a traceback; (7) iq_cor==1 checked in
+  _acquire before the pre-flight so --test rejects non-'IQ Correction: 2'
+  presets; (8) edfs validates pick=value against the range before the
+  sweep (dry-run parity); (9) _vane_set reads the vane once; (10)
+  pi_calibration reuses its probe parse (_build accepts a Preset).
+  Re-verified: nutation battery incl. inverted + length-inverted cases,
+  exception-routing unit test, both protocol dry-runs, gui_vs_engine ALL
+  PASS. Refuted by review: rail score literal 100 (intended), points=None
+  defaults (intended), canned-branch duplication (accepted).

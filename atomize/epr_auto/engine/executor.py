@@ -12,6 +12,8 @@ accumulated data and saves), 'SC<n>' (resize scan count mid-run).
 """
 from multiprocessing import Pipe, Process
 
+import numpy as np
+
 from atomize.control_center.awg_phasing_insys import Worker
 from atomize.epr_auto.engine.snapshot import CORRECTION_ATTRS, SWEEP_TYPES
 
@@ -123,3 +125,30 @@ def run_worker(worker_args, sweep_type, save_path=None, script_test=False,
         if process.is_alive():
             process.terminate()
             process.join()
+
+
+def load_1d(path):
+    """Load a worker 1-D save (iq_cor == 1 format: axis, I, Q columns,
+    '# '-commented header lines). Returns (axis, i, q) float arrays."""
+    arr = np.genfromtxt(path, dtype=float, delimiter=',', encoding='latin1')
+    if arr.ndim != 2 or arr.shape[1] < 3:
+        raise EngineError(f'{path}: expected a 3-column 1-D save, '
+                          f'got shape {getattr(arr, "shape", None)}')
+    return arr[:, 0], arr[:, 1], arr[:, 2]
+
+
+def acquire_1d(worker_args, sweep_type, save_path,
+               on_status=None, on_message=None):
+    """Run a real experiment to completion and return its 1-D result
+    (axis, i, q). The axis unit is the sweep's: seconds for the time sweeps,
+    % for Amplitude, Gauss for Field.
+
+    Requires worker_args.iq_cor == 1 (preset 'IQ Correction:  2'), otherwise
+    the worker writes the raw 2-D format this loader does not parse.
+    """
+    if worker_args.iq_cor != 1:
+        raise EngineError("acquire_1d needs iq_cor == 1 "
+                          "(preset 'IQ Correction:  2')")
+    run_worker(worker_args, sweep_type, save_path=save_path,
+               on_status=on_status, on_message=on_message)
+    return load_1d(save_path)

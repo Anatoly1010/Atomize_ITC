@@ -5,6 +5,8 @@ cli.py can set sys.argv[1] = 'test' first — device __init__ reads it to pick
 the test branch. The Insys driver also requires cwd == Atomize_ITC/libs at
 instantiation time; cli.py chdirs before the runner starts.
 """
+import datetime
+from pathlib import Path
 
 
 class EPRSession:
@@ -19,6 +21,9 @@ class EPRSession:
         self._pulser = None
         self._mw_bridge = None
         self._field_controller = None
+        self._run_dir = None
+        self._save_counter = 0
+        self._locked = False
 
     def log(self, text):
         # Terminal-first output. When the runner gains a GUI launch path
@@ -46,3 +51,63 @@ class EPRSession:
             import atomize.device_modules.BH_15 as bh
             self._field_controller = bh.BH_15()
         return self._field_controller
+
+    # ------------------------------------------------------------- run dir
+
+    @property
+    def run_dir(self):
+        """Directory the primitives save their acquisitions into (created
+        lazily). The Phase 3 manifest will formalize its contents."""
+        if self._run_dir is None:
+            stamp = datetime.date.today().isoformat()
+            safe_sample = ''.join(c if c.isalnum() or c in '-_' else '_'
+                                  for c in str(self.sample))
+            self._run_dir = Path.home() / 'epr_data' / f'epr_auto_{stamp}_{safe_sample}'
+            self._run_dir.mkdir(parents=True, exist_ok=True)
+        return self._run_dir
+
+    def save_path(self, tag):
+        """A fresh CSV path in the run directory (counter-unique per session)."""
+        self._save_counter += 1
+        return str(self.run_dir / f'{self._save_counter:03d}_{tag}.csv')
+
+    # ------------------------------------------------- cross-process locks
+
+    def ensure_hardware_locks(self):
+        """Seize the field.param / temp_param locks (same discipline as the
+        four experiment-runner GUIs: seize at run start so the interactive
+        field/temperature tools stay off the GPIB devices). Idempotent;
+        no-op in test mode — a dry-run must not touch the real lock files."""
+        if self.test or self._locked:
+            return
+        from atomize.control_center import field_param, temp_param
+        for mod, name in ((field_param, 'field'), (temp_param, 'temperature')):
+            if mod.is_locked() and mod.lock_source() not in ('', 'epr_auto'):
+                raise RuntimeError(
+                    f'{name} lock is held by {mod.lock_source()!r} — another '
+                    'tool is driving the hardware; close it or wait')
+        field_param.set_lock('epr_auto')
+        temp_param.set_lock('epr_auto')
+        self._locked = True
+        # never leave the interactive tools locked out after a crash/exit —
+        # the runner GUIs clear their locks on every exit path, mirror that
+        import atexit
+        atexit.register(self.release_hardware_locks)
+
+    def release_hardware_locks(self):
+        if not self._locked:
+            return
+        from atomize.control_center import field_param, temp_param
+        field_param.clear_lock()
+        temp_param.clear_lock()
+        self._locked = False
+
+    # ------------------------------------------------- calibration validity
+
+    def invalidate_fine_calibrations(self, reason):
+        """Any rotary-vane move changes B1 for everything: auto-phase and the
+        fine amplitude calibration are no longer valid (ARCHITECTURE.md
+        'Vane rules')."""
+        dropped = [k for k in ('auto_phase', 'pi_calibration') if self.state.pop(k, None)]
+        if dropped:
+            self.log(f'      calibrations invalidated ({reason}): {", ".join(dropped)}')

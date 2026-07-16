@@ -1,0 +1,27 @@
+# Full tune-up chain (Phase 2 primitives): coarse power, field, phase, fine cal.
+# Dry-run (no hardware, no GUI needed):
+#   python -m atomize.epr_auto run protocols/tune_up.yaml --test
+sample: test_sample
+autonomy: checkpointed
+
+steps:
+  # coarse stage: rotary vane until pi lands at 32 ns at ~95 % AWG amplitude
+  # (run once per sample/resonator setup; invalidates auto-phase + fine cal)
+  - tune.power_for_length:
+      target_length: 32 ns
+      amplitude: 95
+      checkpoint: true          # vane moves default to a confirmation
+
+  - field.edfs:
+      range: [338 mT, 352 mT]
+      pick: max
+      checkpoint: true
+
+  - tune.auto_phase
+
+  # fine stage: per-pulse amplitude sweep; pi and pi/2 fitted independently
+  - tune.pi_calibration:
+      mode: amplitude
+
+  - field.set:
+      value: 3450 G
