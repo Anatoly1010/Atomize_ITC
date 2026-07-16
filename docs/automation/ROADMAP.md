@@ -297,5 +297,6 @@ reproduces only the GUI's snapshot pipeline.
   fallback incl. no-coarse-step case/autonomous checkpoint/no-manifest-in-
   dry-run/schema validation), both protocol dry-runs, harness ALL PASS
   incl. new StubWorkerSC scan-control round-trip. tune_up.yaml demonstrates
-  retries. Next: /code-review (Phase 3), then Phase 4 exp.t1/t2 (wire
+  retries. Committed+pushed: ITC `f45433c` (session-log line added post-
+  commit). Next: /code-review (Phase 3), then Phase 4 exp.t1/t2 (wire
   max_duration -> scan_control policy there).
