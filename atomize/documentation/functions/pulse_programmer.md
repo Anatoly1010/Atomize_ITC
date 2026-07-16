@@ -66,7 +66,7 @@ This function sets a pulse with specified parameters. The default argument is `n
 **Range (Insys FM214x3GDA):** pulse length `3.2 ns` – `1900 ns`; sequence ≈ `10 s` max
 {: .enum }
 
-In the case of Insys FM214x3GDA `start`, `length`, `delta_start`, and `length_increment` will be rounded to a multiple of 3.2.
+In the case of Insys FM214x3GDA `start`, `length`, `delta_start`, and `length_increment` will be rounded to a multiple of 3.2 (`TRIGGER_AWG` timing, and the `DETECTION` `start`/`delta_start`, follow the grid set by [`awg_time_resolution()`](#awg_time_resolution): 3.2 ns by default, optionally 0.8 ns).
 
 In the case of Pulse Blaster ESR 500 Pro and Pulse Blaster Micran the `DETECTION` pulse may carry a `phase_list`. This list declares the acquisition phase cycle and is used by [`pulser_acquisition_cycle()`](#pulser_acquisition_cycle) whenever that function is called without an explicit `acq_cycle` argument; passing `acq_cycle` directly still overrides it. Alternatively, the acquisition phases can be indicated directly in [`pulser_acquisition_cycle()`](#pulser_acquisition_cycle) and the `DETECTION` pulse left without a `phase_list`. The plain `TRIGGER` channel must always have an empty `phase_list`. In the case of Insys FM214x3GDA a `phase_list` of `DETECTION` pulse is used to [phase cycle](digitizer.md#digitizer_get_curve-points) the data.
 
@@ -177,7 +177,7 @@ pulser_redefine_start(name=['P0', 'P1'], start=['0 ns', '320 ns'])
 
 This function should be called with two keyword arguments, namely `name` and `start`. The first argument specifies the name of the pulse as a string. The second argument defines a new value of pulse start as a string in the format `number + [' ms', ' us', ' ns']`. Arguments can be either single strings or lists, for example: `name = ['P0', 'P1']`, `start = ['0 ns', '320 ns']`. The main purpose of the function is non-uniform sampling. Please note, that the function does not update the pulse programmer. The [`pulser_update()`](#pulser_update) function should be called to apply changes.
 
-In the case of Insys FM214x3GDA `start` will be rounded to a multiple of 3.2.
+In the case of Insys FM214x3GDA `start` will be rounded to a multiple of 3.2 (for `TRIGGER_AWG`/`DETECTION` pulses: to the grid set by [`awg_time_resolution()`](#awg_time_resolution)).
 
 ---
 
@@ -193,7 +193,7 @@ pulser_redefine_delta_start(
 
 This function should be called with two keyword arguments, namely `name` and `delta_start`. The first argument specifies the name of the pulse as a string. The second argument defines a new value of `delta_start` as a string in the format `number + [' ms', ' us', ' ns']`. Arguments can be either single strings or lists, for example: `name = ['P0', 'P1']`, `delta_start = ['0 ns', '32 ns']`. The main purpose of the function is non-uniform sampling. Please note, that the function does not update the pulse programmer. The [`pulser_update()`](#pulser_update) function should be called to apply changes.
 
-In the case of Insys FM214x3GDA `delta_start` will be rounded to a multiple of 3.2.
+In the case of Insys FM214x3GDA `delta_start` will be rounded to a multiple of 3.2 (for `TRIGGER_AWG`/`DETECTION` pulses: to the grid set by [`awg_time_resolution()`](#awg_time_resolution)).
 
 ---
 
@@ -209,7 +209,23 @@ pulser_redefine_length_increment(
 
 This function should be called with two keyword arguments, namely `name` and `length_increment`. The first argument specifies the name of the pulse as a string. The second argument defines a new value of length increment as a string in the format `number + [' ms', ' us', ' ns']`. Arguments can be either single strings or lists, for example: `name = ['P0', 'P1']`, `length_increment = ['0 ns', '3.2 ns']`. The main purpose of the function is non-uniform sampling. Please note, that the function does not update the pulse programmer. The [`pulser_update()`](#pulser_update) function should be called to apply changes.
 
-In the case of Insys FM214x3GDA `length_increment` will be rounded to a multiple of 3.2.
+In the case of Insys FM214x3GDA `length_increment` will be rounded to a multiple of 3.2 (for `TRIGGER_AWG` pulses: to the grid set by [`awg_time_resolution()`](#awg_time_resolution)).
+
+---
+
+### awg_time_resolution(resolution) { #awg_time_resolution data-toc-label="awg_time_resolution" }
+
+```python
+awg_time_resolution('3.2 ns')    # default 3.2 ns grid
+awg_time_resolution('0.8 ns')    # enable the 0.8 ns AWG timing grid
+```
+
+This function sets the effective time grid for AWG pulse timing and is only available for Insys FM214x3GDA. The grid applies to the `start`, `length`, `delta_start`, and `length_increment` of `TRIGGER_AWG` pulses and [`awg_pulse()`](awg.md#awg_pulse) pulses, and to the `start` and `delta_start` of the `DETECTION` pulse. All other TTL channels always stay on the 3.2 ns grid. The function should be used before defining pulses.
+
+The default resolution is `'3.2 ns'`, which is one pulser tick. With `'0.8 ns'`, which is one DAC sample, the TTL trigger and gate stay on the 3.2 ns hardware grid and the sub-tick remainder is produced by leading zero samples inside the pulse's DAC gate segment. The `DETECTION` window is likewise placed on the 3.2 ns grid and its sub-tick residual is corrected digitally at readout by shifting the integration window and aligning the trace. This correction is exact for a decimation of 1 or 2 and is rounded to 1.6 ns for a decimation of 4.
+
+**Allowed:** `'3.2 ns'`, `'0.8 ns'`
+{: .enum }
 
 ---
 

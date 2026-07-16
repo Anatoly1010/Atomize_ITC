@@ -38,6 +38,9 @@ _UNIT_MAX = {'ns': 1e10, 'μs': 1e7, 'ms': 1e4, 's': 10.0}
 # that is also a 3.2 ns multiple. This is also the grid we snap typed
 # / programmatic values onto.
 _UNIT_STEP = {'ns': 3.2, 'μs': 0.08, 'ms': 0.01, 's': 0.01}
+# Fine-grid variant (0.8 ns = one Insys DAC sample): the smallest
+# 2-decimal value in each unit that is a 0.8 ns multiple.
+_UNIT_STEP_FINE = {'ns': 0.8, 'μs': 0.02, 'ms': 0.01, 's': 0.01}
 _UNITS = ('ns', 'μs', 'ms', 's')
 
 _DECIMALS = 2
@@ -47,13 +50,6 @@ _DECIMALS = 2
 _SNAP_NS = 3.2
 
 
-def _snap_to_grid(ns, unit):
-    """Snap a time value (in ns) onto the unit's grid (smallest
-    2-decimal-visible 3.2 ns multiple). Floor at one grid step."""
-    grid = _UNIT_STEP[unit] * _UNIT_FACTOR[unit]
-    if ns <= grid:
-        return grid
-    return round(ns / grid) * grid
 
 
 class TimeLogSpinBox(QWidget):
@@ -95,16 +91,20 @@ class TimeLogSpinBox(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
 
+        # Per-unit grid table; switched between the 3.2 ns (default) and
+        # 0.8 ns (fine) variants by set_fine_grid().
+        self._unit_step = dict(_UNIT_STEP)
+
         # Source of truth: snapped time in ns. Initialised at one ns
         # grid step (= 3.2 ns) so an uninitialised widget reads as a
         # legal value.
-        self._ns_value = _UNIT_STEP['ns'] * _UNIT_FACTOR['ns']
+        self._ns_value = self._unit_step['ns'] * _UNIT_FACTOR['ns']
 
         self._spin = QDoubleSpinBox()
         self._spin.setMinimum(0.0)
         self._spin.setMaximum(_UNIT_MAX['ns'])
         self._spin.setDecimals(_DECIMALS)
-        self._spin.setSingleStep(_UNIT_STEP['ns'])
+        self._spin.setSingleStep(self._unit_step['ns'])
         self._spin.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.PlusMinus)
         self._spin.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
         self._spin.setKeyboardTracking(False)
@@ -140,6 +140,20 @@ class TimeLogSpinBox(QWidget):
 
     # ----- Public API -----
 
+    def set_fine_grid(self, fine):
+        """
+        Switch between the 3.2 ns (default) and 0.8 ns per-unit grids.
+        Switching to coarse re-snaps the stored value (may lose sub-tick
+        precision); switching to fine is lossless.
+        """
+        self._unit_step = dict(_UNIT_STEP_FINE if fine else _UNIT_STEP)
+        unit = self._unit.currentText()
+        old_log = self.value()
+        self._ns_value = self._snap_to_grid(self._ns_value, unit)
+        self._refresh_display(unit)
+        if self.value() != old_log:
+            self.valueChanged.emit(self.value())
+
     def value(self):
         """Return log10(time_in_ns), rounded to 3 decimals."""
         return round(math.log10(self._ns_value), 3)
@@ -153,11 +167,19 @@ class TimeLogSpinBox(QWidget):
         """
         ns_raw = 10.0 ** float(log_ns)
         new_unit = self._pick_unit(ns_raw)
-        self._ns_value = _snap_to_grid(ns_raw, new_unit)
+        self._ns_value = self._snap_to_grid(ns_raw, new_unit)
         self._refresh_display(new_unit)
         self.valueChanged.emit(self.value())
 
     # ----- Internal -----
+
+    def _snap_to_grid(self, ns, unit):
+        """Snap a time value (in ns) onto the unit's grid (smallest
+        2-decimal-visible grid multiple). Floor at one grid step."""
+        grid = self._unit_step[unit] * _UNIT_FACTOR[unit]
+        if ns <= grid:
+            return grid
+        return round(ns / grid) * grid
 
     @staticmethod
     def _pick_unit(ns):
@@ -177,7 +199,7 @@ class TimeLogSpinBox(QWidget):
             self._unit.setCurrentText(unit)
             self._prev_unit = unit
             self._spin.setMaximum(_UNIT_MAX[unit])
-            self._spin.setSingleStep(_UNIT_STEP[unit])
+            self._spin.setSingleStep(self._unit_step[unit])
             self._spin.setValue(display_val)
         finally:
             self._silent = False
@@ -187,7 +209,7 @@ class TimeLogSpinBox(QWidget):
             return
         cur_unit = self._unit.currentText()
         ns_raw = self._spin.value() * _UNIT_FACTOR[cur_unit]
-        self._ns_value = _snap_to_grid(ns_raw, cur_unit)
+        self._ns_value = self._snap_to_grid(ns_raw, cur_unit)
         # Re-display the snapped value (may differ from typed value).
         self._refresh_display(cur_unit)
         self.valueChanged.emit(self.value())
@@ -207,7 +229,7 @@ class TimeLogSpinBox(QWidget):
             return
 
         old_log = self.value()
-        self._ns_value = _snap_to_grid(self._ns_value, new_unit)
+        self._ns_value = self._snap_to_grid(self._ns_value, new_unit)
         self._refresh_display(new_unit)
         new_log = self.value()
         if new_log != old_log:

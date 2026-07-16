@@ -51,6 +51,16 @@ class MainWindow(QMainWindow):
         
         self.awg_output_shift = 0 #494 # in ns
 
+        # ---- AWG timing grid ----
+        # 3.2 ns (pulser tick, default) or 0.8 ns (one DAC sample; Settings
+        # tab checkbox). The fine grid applies to the P2-P9 timing boxes and
+        # to the P1 (DETECTION) start / start increments; P1 length and
+        # X0/XDelta stay on the 3.2 ns tick. Transported to the Worker as
+        # worker.awg_grid_cur and to the card via pb.awg_time_resolution().
+        self.pulser_grid_ns = 3.2
+        self.awg_grid_ns = 0.8
+        self.awg_fine_grid = False
+
         # Phase correction
         self.deg_rad = 180 / np.pi #57.2957795131
         self.first_order_coef = 180 / np.pi * 1e-9
@@ -884,7 +894,7 @@ class MainWindow(QMainWindow):
             }
         """)
 
-        # Live Edit controls (Live mode + Apply delay) live in the Settings tab.
+        # Live Edit controls (Live Mode + Apply Delay) live in the Settings tab.
         label_widget = getattr(self, f"label_p1")
         self.buttons_layout.addWidget(label_widget, 0, 2)
         self.buttons_layout.addWidget(self.progress_bar, 0, 3)
@@ -1619,7 +1629,7 @@ class MainWindow(QMainWindow):
             return line
 
         # ---- Live Edit controls ----
-        live_label = QLabel("Live mode")
+        live_label = QLabel("Live Mode")
         live_label.setFixedSize(170, 26)
         live_label.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
         self.live_edit_box = QCheckBox("")
@@ -1634,7 +1644,7 @@ class MainWindow(QMainWindow):
             "effect until a sequence is running.")
         self.live_edit_box.stateChanged.connect(self.live_edit_toggle)
 
-        debounce_label = QLabel("Apply delay")
+        debounce_label = QLabel("Apply Delay")
         debounce_label.setFixedSize(170, 26)
         debounce_label.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
         self.Debounce = QSpinBox()
@@ -1680,8 +1690,28 @@ class MainWindow(QMainWindow):
         gridLayout.addWidget(self.Combo_link, 3, 1)
         gridLayout.addWidget(hline(), 4, 0, 1, 2)
 
+        # ---- AWG timing grid (0.8 ns / 3.2 ns) ----
+        fine_label = QLabel("0.8 ns AWG Grid")
+        fine_label.setFixedSize(170, 26)
+        fine_label.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
+        self.fine_grid_box = QCheckBox("")
+        self.fine_grid_box.setStyleSheet(CHECKBOX_STYLE)
+        self.fine_grid_box.setFixedSize(170, 26)
+        self.fine_grid_box.setToolTip(
+            "Timing grid for the AWG pulses. Off: the 3.2 ns pulser tick "
+            "(default). On: 0.8 ns (one DAC sample) for the P2-P9 Start / "
+            "Length / Sigma / increments and the P1 Start / Start increments; "
+            "the TTL trigger stays on the 3.2 ns grid and the sub-tick part "
+            "is produced by zero samples in the DAC buffer. The detection "
+            "window residual is corrected digitally at readout; use "
+            "Decimation 1 or 2 for 0.8 ns detection sweeps.")
+        self.fine_grid_box.stateChanged.connect(self.fine_grid_toggle)
+        gridLayout.addWidget(fine_label, 5, 0)
+        gridLayout.addWidget(self.fine_grid_box, 5, 1)
+        gridLayout.addWidget(hline(), 6, 0, 1, 2)
+
         gridLayout.setColumnStretch(2, 1)
-        gridLayout.setRowStretch(5, 1)
+        gridLayout.setRowStretch(7, 1)
 
         # All pulse spin-boxes now exist; snapshot their values so the first
         # linked edit computes the correct delta.
@@ -1756,7 +1786,7 @@ class MainWindow(QMainWindow):
                 # snap then no-ops. (_cf amplitude is not grid-snapped and _fr
                 # frequency rounds to nearest below, so both are exempt.)
                 if suffix in ('_st', '_len'):
-                    grid = 3.2  # AWG pulse time grid (ns)
+                    grid = self.grid_for(j, suffix)  # AWG pulse time grid (ns)
                     shift = round(shift / grid) * grid
                 target = box_j.value() + shift
                 # QSpinBox/QDoubleSpinBox silently clamp to their range. For the
@@ -1972,7 +2002,7 @@ class MainWindow(QMainWindow):
         val2_suffix: '_start_rect' или 'b' (второстепенная переменная)
         """
         spin_widget = getattr(self, f"P{index}{attr_suffix}")
-        val1, val2 = self.round_and_change(spin_widget)
+        val1, val2 = self.round_and_change(spin_widget, self.grid_for(index, attr_suffix))
 
         if index == 1 and attr_suffix == '_st':
             setattr(self, f"p{index}_a", val1)
@@ -1998,6 +2028,50 @@ class MainWindow(QMainWindow):
     # ---- Live Edit helpers ----
     def live_edit_toggle(self):
         self.live_edit_on = 1 if self.live_edit_box.isChecked() else 0
+
+    def fine_grid_toggle(self):
+        """
+        Switch the AWG timing grid between 3.2 ns and 0.8 ns. Updates the
+        arrow step of every affected pulse box and re-snaps the current
+        values onto the new grid (a no-op when enabling the fine grid, since
+        0.8 divides 3.2). _linking suppresses Link-mode cascades while the
+        re-snap runs; the link baseline is re-seeded afterwards.
+
+        The grid is baked into the running worker at launch (awg_grid_cur),
+        so it cannot change under a live sequence: block the toggle during a
+        full experiment (revert the box), and stop a running preview so the
+        operator restarts on the new grid — same rule as loading a preset.
+        """
+        if getattr(self, 'is_experiment', False):
+            self.fine_grid_box.blockSignals(True)
+            self.fine_grid_box.setChecked(self.awg_fine_grid)
+            self.fine_grid_box.blockSignals(False)
+            self.message('Cannot change the AWG timing grid while an experiment is running.')
+            return
+        self.awg_fine_grid = self.fine_grid_box.isChecked()
+        self._linking = True
+        try:
+            for i in range(1, 10):
+                for sfx in ('_st', '_len', '_sig', '_st_inc', '_st_inc2', '_len_inc'):
+                    box = getattr(self, f'P{i}{sfx}', None)
+                    if box is None:
+                        continue
+                    grid = self.grid_for(i, sfx)
+                    box.setSingleStep(grid)
+                    snapped = self.round_to_closest(box.value(), grid)
+                    if snapped != box.value():
+                        box.setValue(snapped)
+        finally:
+            self._linking = False
+        self._seed_link_prev()
+        if hasattr(self.Log_start, 'set_fine_grid'):
+            self.Log_start.set_fine_grid(self.awg_fine_grid)
+            self.Log_end.set_fine_grid(self.awg_fine_grid)
+        # A running preview's worker still carries the old grid; stop it so the
+        # operator restarts cleanly (the same rule open_file applies).
+        if self._live_run_alive():
+            self.dig_stop()
+        self.message(f'AWG timing grid: {self.awg_grid()} ns')
 
     def _live_run_alive(self):
         """A dig_on preview is running (not a long experiment) and reachable."""
@@ -3035,6 +3109,20 @@ class MainWindow(QMainWindow):
         text = open(filename).read()
         lines = text.split('\n')
 
+        # AWG timing grid: parse the (optional, trailing) grid line FIRST so
+        # every setValue below snaps onto the preset's grid. Older presets
+        # have no such line and load on the default 3.2 ns grid.
+        preset_fine = False
+        for line in lines:
+            if line.startswith('AWG grid:'):
+                try:
+                    preset_fine = float( line.split(':  ')[1] ) == self.awg_grid_ns
+                except (IndexError, ValueError):
+                    pass
+                break
+        if preset_fine != self.awg_fine_grid:
+            self.fine_grid_box.setChecked(preset_fine)   # runs fine_grid_toggle
+
         self.setter(text, 0, self.P1_type, self.P1_st, self.P1_len, self.P1_sig, self.P1_fr, self.P1_sw, self.P1_cf, self.Phase_1, self.P1_st_inc, self.P1_len_inc, self.P1_st_inc2)
         self.setter(text, 1, self.P2_type, self.P2_st, self.P2_len, self.P2_sig, self.P2_fr, self.P2_sw, self.P2_cf, self.Phase_2, self.P2_st_inc, self.P2_len_inc, self.P2_st_inc2)
         self.setter(text, 2, self.P3_type, self.P3_st, self.P3_len, self.P3_sig, self.P3_fr, self.P3_sw, self.P3_cf, self.Phase_3, self.P3_st_inc, self.P3_len_inc, self.P3_st_inc2)
@@ -3272,6 +3360,9 @@ class MainWindow(QMainWindow):
             file.write( 'Cycles:  ' + str( self.box_cycles.value() ) + '\n' )
             file.write( 'Save Each Cycle:  ' + str( self.Save_each.checkState().value ) + '\n' )
 
+            # AWG timing grid (appended at the end for backward compat)
+            file.write( 'AWG grid:  ' + str( self.awg_grid() ) + '\n' )
+
     def remove_ns(self, string1):
         return string1.split(' ')[0]
 
@@ -3311,11 +3402,28 @@ class MainWindow(QMainWindow):
         """
         return round(( y * ( ( x // y ) + (round(x % y, 2) > 0) ) ), 1)
 
-    def round_and_change(self, doubleBox):
+    def awg_grid(self):
+        """Active AWG time grid in ns ('0.8 ns AWG Grid' Settings toggle)"""
+        return self.awg_grid_ns if self.awg_fine_grid else self.pulser_grid_ns
+
+    def grid_for(self, index, attr_suffix = '_st'):
+        """
+        Snap grid for the pulse-row box P{index}{attr_suffix}. P1 is the
+        DETECTION pulse: only its start / start increments may move on the
+        fine grid (the sub-tick window residual is corrected at readout);
+        its length stays on the 3.2 ns tick (ADC window granularity)
+        """
+        if not self.awg_fine_grid:
+            return self.pulser_grid_ns
+        if index >= 2 or attr_suffix in ('_st', '_st_inc', '_st_inc2'):
+            return self.awg_grid_ns
+        return self.pulser_grid_ns
+
+    def round_and_change(self, doubleBox, grid = 3.2):
         """
         """
         raw = doubleBox.value()
-        current = self.round_to_closest( raw, 3.2 )
+        current = self.round_to_closest( raw, grid )
         if current != raw:
             doubleBox.setValue( current )
         return self.add_ns( doubleBox.value() ), self.add_ns( round(doubleBox.value() + self.awg_output_shift, 1) )
@@ -3508,6 +3616,7 @@ class MainWindow(QMainWindow):
 
     def dig_start_exp(self):
         worker = Worker()
+        worker.awg_grid_cur = self.awg_grid()
         self._hand_correction_to_worker(worker)
 
         self.p1_exp = [self.p1_typ, self.p1_start, self.p1_length,
@@ -3672,6 +3781,7 @@ class MainWindow(QMainWindow):
         self.param_i are used as parameters for script function
         """
         worker = Worker()
+        worker.awg_grid_cur = self.awg_grid()
         self._hand_correction_to_worker(worker)
 
         self.p1_list = [self.p1_typ, self.p1_start, self.p1_length, self.ph_1, self.p1_freq]
@@ -3959,6 +4069,7 @@ class MainWindow(QMainWindow):
     def run_main_experiment(self):
 
         worker = Worker()
+        worker.awg_grid_cur = self.awg_grid()
         self._hand_correction_to_worker(worker)
         self.parent_conn_dig, self.child_conn_dig = Pipe()
 
@@ -3985,6 +4096,7 @@ class MainWindow(QMainWindow):
     def run_experiment(self):
 
         worker = Worker()
+        worker.awg_grid_cur = self.awg_grid()
         self._hand_correction_to_worker(worker)
         self.parent_conn_dig, self.child_conn_dig = Pipe()
         
@@ -4180,6 +4292,12 @@ class Worker():
         self.meas_freq_cur = None
         self.meas_H_cur = None
 
+        # AWG timing grid (ns), set by the MainWindow before launch: 3.2
+        # (pulser tick, default) or 0.8 (one DAC sample). Pushed to the card
+        # via pb.awg_time_resolution() and used by every worker-side snap of
+        # AWG/detection starts.
+        self.awg_grid_cur = 3.2
+
     def _apply_awg_correction(self, pb, mode):
         """Read correction.param and push resonator-correction settings to pb.
 
@@ -4240,6 +4358,7 @@ class Worker():
             import atomize.device_modules.BH_15 as itc
 
             pb = pb_pro.Insys_FPGA()
+            pb.awg_time_resolution(f'{self.awg_grid_cur} ns')
             fft = fft_module.Fast_Fourier()
             bh15 = itc.BH_15()
             #bh15.magnet_setup( mag_field, 0.5 )
@@ -4338,9 +4457,9 @@ class Worker():
                     if int(float(tp[1].split(' ')[0])) != 0:
                         # add q_delay
                         start_val = float(tp[0].split(' ')[0]) + laser_qsw_delay
-                        tp[0] = f"{self.round_to_closest(start_val, 3.2)} ns"
+                        tp[0] = f"{self.round_to_closest(start_val, self.awg_grid_cur)} ns"
                         start_val_awg = float(ap[5].split(' ')[0]) + laser_qsw_delay
-                        ap[5] = f"{self.round_to_closest(start_val_awg, 3.2)} ns"
+                        ap[5] = f"{self.round_to_closest(start_val_awg, self.awg_grid_cur)} ns"
 
                         is_complex = ap[0] in ['WURST', 'SECH/TANH']
                         freq = (ap[1], ap[2]) if is_complex else ap[1]
@@ -4515,8 +4634,10 @@ class Worker():
                     # Live Edit: re-arm amplitude / frequency / start without a
                     # restart. Amplitude & frequency rebuild the DAC waveform;
                     # start only shifts the TRIGGER_AWG timing (the GUI has
-                    # guaranteed the sequence stays non-overlapping and ordered,
-                    # so dac_window is unchanged). Starts arrive as GUI-space
+                    # guaranteed the sequence stays non-overlapping and ordered;
+                    # on the 0.8 ns grid a sub-tick start can still grow a gate
+                    # by one tick -- the buffer rebuild below handles it). Starts
+                    # arrive as GUI-space
                     # deltas and are applied to the pristine post-setup value
                     # (orig_start + delta) so the channel shift / LASER offset is
                     # preserved and edits never accumulate. Both the live and the
@@ -4531,9 +4652,9 @@ class Worker():
                         snap = None
 
                     if snap is not None:
-                        def _shift_start(orig_str, delta):
+                        def _shift_start(orig_str, delta, grid = self.awg_grid_cur):
                             base = float( str(orig_str).split(' ')[0] )
-                            return f"{self.round_to_closest(base + float(delta), 3.2)} ns"
+                            return f"{self.round_to_closest(base + float(delta), grid)} ns"
 
                         # Validate the proposed geometry in a throwaway TEST-mode
                         # Insys before committing. The 'PU' payload only moves starts
@@ -4568,11 +4689,14 @@ class Worker():
                             sys.argv = ['', 'test']
                             general.test_flag = 'test'
                             pbt = pb_pro.Insys_FPGA()
+                            pbt.awg_time_resolution(f'{self.awg_grid_cur} ns')
                             pbt.awg_amplitude('CH0', str(ch0_ampl), 'CH1', str(ch1_ampl))
                             for c in pulser_setup_calls:
                                 kw = dict(c['kwargs'])
+                                g = self.awg_grid_cur if (c['kind'] == 'awg' or
+                                    kw.get('channel') in ('TRIGGER_AWG', 'DETECTION')) else 3.2
                                 kw['start'] = _shift_start(kw['start'],
-                                                           delta_by_name.get(kw['name'], 0.0))
+                                                           delta_by_name.get(kw['name'], 0.0), g)
                                 if c['kind'] == 'awg':
                                     pbt.awg_pulse(**kw)
                                 else:
@@ -4854,6 +4978,7 @@ class Worker():
 
             file_handler = openfile.Saver_Opener()
             pb = pb_pro.Insys_FPGA()
+            pb.awg_time_resolution(f'{self.awg_grid_cur} ns')
             bh15 = bh.BH_15()
             ls335 = ls.Lakeshore_335()
             mw = mwBridge.Micran_X_band_MW_bridge_v2()
@@ -4875,20 +5000,20 @@ class Worker():
                     step = round( float( rect1[4].split(' ')[0] ), 1)
                     for p in pulses2:
                         if p[3] != '0.0 ns':
-                            f_delay = self.round_to_closest( float(p[1].split(' ')[0]), 3.2)
+                            f_delay = self.round_to_closest( float(p[1].split(' ')[0]), self.awg_grid_cur)
                             break
                         else:
-                            f_delay = self.round_to_closest( float(rect1[1].split(' ')[0]), 3.2)
+                            f_delay = self.round_to_closest( float(rect1[1].split(' ')[0]), self.awg_grid_cur)
 
                 elif rect1[5] != '0.0 ns':
                     #length_increment
                     step = round( float( rect1[5].split(' ')[0] ), 1)
-                    f_delay = self.round_to_closest( float(rect1[2].split(' ')[0]), 3.2)
+                    f_delay = self.round_to_closest( float(rect1[2].split(' ')[0]), self.awg_grid_cur)
                 else:
                     for p in pulses2:
                         if p[2] != '0.0 ns':
                             step = round( float( p[2].split(' ')[0] ), 1)
-                            f_delay = self.round_to_closest( float(p[0].split(' ')[0]), 3.2)
+                            f_delay = self.round_to_closest( float(p[0].split(' ')[0]), self.awg_grid_cur)
                             break
                         else:
                             #prevent no increment
@@ -5008,9 +5133,9 @@ class Worker():
                     if int(float(tp[1].split(' ')[0])) != 0:
                         # add q_delay
                         start_val = float(tp[0].split(' ')[0]) + q_switch_delay
-                        tp[0] = f"{self.round_to_closest(start_val, 3.2)} ns"
+                        tp[0] = f"{self.round_to_closest(start_val, self.awg_grid_cur)} ns"
                         start_val_awg = float(ap[5].split(' ')[0]) + q_switch_delay
-                        ap[5] = f"{self.round_to_closest(start_val_awg, 3.2)} ns"
+                        ap[5] = f"{self.round_to_closest(start_val_awg, self.awg_grid_cur)} ns"
 
                         is_complex = ap[0] in ['WURST', 'SECH/TANH']
                         freq = (ap[1], ap[2]) if is_complex else ap[1]
@@ -5418,6 +5543,7 @@ class Worker():
 
             file_handler = openfile.Saver_Opener()
             pb = pb_pro.Insys_FPGA()
+            pb.awg_time_resolution(f'{self.awg_grid_cur} ns')
             bh15 = bh.BH_15()
             ls335 = ls.Lakeshore_335()
             mw = mwBridge.Micran_X_band_MW_bridge_v2()
@@ -5439,20 +5565,20 @@ class Worker():
                     step = round( float( rect1[4].split(' ')[0] ), 1)
                     for p in pulses2:
                         if p[3] != '0.0 ns':
-                            f_delay = self.round_to_closest( float(p[1].split(' ')[0]), 3.2)
+                            f_delay = self.round_to_closest( float(p[1].split(' ')[0]), self.awg_grid_cur)
                             break
                         else:
-                            f_delay = self.round_to_closest( float(rect1[1].split(' ')[0]), 3.2)
+                            f_delay = self.round_to_closest( float(rect1[1].split(' ')[0]), self.awg_grid_cur)
 
                 elif rect1[5] != '0.0 ns':
                     #length_increment
                     step = round( float( rect1[5].split(' ')[0] ), 1)
-                    f_delay = self.round_to_closest( float(rect1[2].split(' ')[0]), 3.2)
+                    f_delay = self.round_to_closest( float(rect1[2].split(' ')[0]), self.awg_grid_cur)
                 else:
                     for p in pulses2:
                         if p[2] != '0.0 ns':
                             step = round( float( p[2].split(' ')[0] ), 1)
-                            f_delay = self.round_to_closest( float(p[0].split(' ')[0]), 3.2)
+                            f_delay = self.round_to_closest( float(p[0].split(' ')[0]), self.awg_grid_cur)
                             break
                         else:
                             #prevent no increment
@@ -5593,9 +5719,9 @@ class Worker():
                     if int(float(tp[1].split(' ')[0])) != 0:
                         # add q_delay
                         start_val = float(tp[0].split(' ')[0]) + q_switch_delay
-                        tp[0] = f"{self.round_to_closest(start_val, 3.2)} ns"
+                        tp[0] = f"{self.round_to_closest(start_val, self.awg_grid_cur)} ns"
                         start_val_awg = float(ap[5].split(' ')[0]) + q_switch_delay
-                        ap[5] = f"{self.round_to_closest(start_val_awg, 3.2)} ns"
+                        ap[5] = f"{self.round_to_closest(start_val_awg, self.awg_grid_cur)} ns"
 
                         is_complex = ap[0] in ['WURST', 'SECH/TANH']
                         freq = (ap[1], ap[2]) if is_complex else ap[1]
@@ -6068,6 +6194,7 @@ class Worker():
 
             file_handler = openfile.Saver_Opener()
             pb = pb_pro.Insys_FPGA()
+            pb.awg_time_resolution(f'{self.awg_grid_cur} ns')
             bh15 = bh.BH_15()
             ls335 = ls.Lakeshore_335()
             mw = mwBridge.Micran_X_band_MW_bridge_v2()
@@ -6181,9 +6308,9 @@ class Worker():
                             raise ValueError("Please remove Start Increments for all pulses")
 
                         start_val = float(tp[0].split(' ')[0]) + q_switch_delay
-                        tp[0] = f"{self.round_to_closest(start_val, 3.2)} ns"
+                        tp[0] = f"{self.round_to_closest(start_val, self.awg_grid_cur)} ns"
                         start_val_awg = float(ap[5].split(' ')[0]) + q_switch_delay
-                        ap[5] = f"{self.round_to_closest(start_val_awg, 3.2)} ns"
+                        ap[5] = f"{self.round_to_closest(start_val_awg, self.awg_grid_cur)} ns"
 
                         is_complex = ap[0] in ['WURST', 'SECH/TANH']
                         freq = (ap[1], ap[2]) if is_complex else ap[1]
@@ -6534,7 +6661,7 @@ class Worker():
             T_end = log_end
 
             nonlinear_time_raw = 10 ** np.linspace( T_start, T_end, POINTS )
-            nonlinear_time = np.unique( general.numpy_round( nonlinear_time_raw, 3.2 ) )
+            nonlinear_time = np.unique( general.numpy_round( nonlinear_time_raw, self.awg_grid_cur ) )
             nonlinear_diff = np.append(np.diff(nonlinear_time), 0)
             original_time = np.concatenate(([0], nonlinear_diff)).cumsum()
             POINTS = len( nonlinear_time )
@@ -6542,6 +6669,7 @@ class Worker():
 
             file_handler = openfile.Saver_Opener()
             pb = pb_pro.Insys_FPGA()
+            pb.awg_time_resolution(f'{self.awg_grid_cur} ns')
             bh15 = bh.BH_15()
             ls335 = ls.Lakeshore_335()
             mw = mwBridge.Micran_X_band_MW_bridge_v2()
@@ -6625,14 +6753,14 @@ class Worker():
 
             if rel_shift[0] != 0.0:
                 if x0 == 0:
-                    x_axis = x_axis * rel_shift[0] + self.round_to_closest( float(rect1[1].split(" ")[0]) , 3.2)
+                    x_axis = x_axis * rel_shift[0] + self.round_to_closest( float(rect1[1].split(" ")[0]) , self.awg_grid_cur)
                 else:
                     x_axis = x_axis * rel_shift[0] + x0
             else:
                 indices = np.where(rel_shift[1:] != 0)[0] + 1
                 if indices.size > 0:
                     if x0 == 0:
-                        x_axis = x_axis * rel_shift[indices[0]] + self.round_to_closest( float(pulses[indices[0]][1].split(" ")[0]) , 3.2)
+                        x_axis = x_axis * rel_shift[indices[0]] + self.round_to_closest( float(pulses[indices[0]][1].split(" ")[0]) , self.awg_grid_cur)
                     else:
                         x_axis = x_axis * rel_shift[indices[0]] + x0
                 else:
@@ -6640,7 +6768,7 @@ class Worker():
                     raise ValueError(f"Pulses do not have Start Increments")
 
             if 'P1' in name_list:
-                pb.pulser_redefine_delta_start(name = 'P1', delta_start = f"{self.round_to_closest( nonlinear_diff[0] * rel_shift[0], 3.2 )} ns")
+                pb.pulser_redefine_delta_start(name = 'P1', delta_start = f"{self.round_to_closest( nonlinear_diff[0] * rel_shift[0], self.awg_grid_cur )} ns")
             ####
             
             #Laser flag
@@ -6688,7 +6816,7 @@ class Worker():
                                 channel='TRIGGER_AWG',
                                 start=tp[0],
                                 length=tp[1],
-                                delta_start=f"{self.round_to_closest( nonlinear_diff[0] * rel_shift[rs_idx], 3.2 )} ns"
+                                delta_start=f"{self.round_to_closest( nonlinear_diff[0] * rel_shift[rs_idx], self.awg_grid_cur )} ns"
                             )
                         rs_idx += 1
                 pb.pulser_repetition_rate( REP_RATE )
@@ -6727,9 +6855,9 @@ class Worker():
                     if int(float(tp[1].split(' ')[0])) != 0:
                         # add q_delay
                         start_val = float(tp[0].split(' ')[0]) + q_switch_delay
-                        tp[0] = f"{self.round_to_closest(start_val, 3.2)} ns"
+                        tp[0] = f"{self.round_to_closest(start_val, self.awg_grid_cur)} ns"
                         start_val_awg = float(ap[5].split(' ')[0]) + q_switch_delay
-                        ap[5] = f"{self.round_to_closest(start_val_awg, 3.2)} ns"
+                        ap[5] = f"{self.round_to_closest(start_val_awg, self.awg_grid_cur)} ns"
 
                         is_complex = ap[0] in ['WURST', 'SECH/TANH']
                         freq = (ap[1], ap[2]) if is_complex else ap[1]
@@ -6758,7 +6886,7 @@ class Worker():
                                 channel='TRIGGER_AWG',
                                 start=tp[0],
                                 length=tp[1],
-                                delta_start=f"{self.round_to_closest( nonlinear_diff[0] * rel_shift[rs_idx], 3.2 )} ns"
+                                delta_start=f"{self.round_to_closest( nonlinear_diff[0] * rel_shift[rs_idx], self.awg_grid_cur )} ns"
                             )
                         rs_idx += 1
                 if laser_num == 1:
@@ -6867,7 +6995,7 @@ class Worker():
                         if j > 0:
                             new_delta_start = nonlinear_diff[j-1]
 
-                            delta_starts = [f"{self.round_to_closest(x * new_delta_start, 3.2)} ns" for x in rel_shift]
+                            delta_starts = [f"{self.round_to_closest(x * new_delta_start, 3.2 if nm == 'L1' else self.awg_grid_cur)} ns" for nm, x in zip(name_list, rel_shift)]
                             pb.pulser_redefine_delta_start(name = name_list, delta_start = delta_starts )
 
                         pb.pulser_shift()
@@ -7081,6 +7209,7 @@ class Worker():
 
             file_handler = openfile.Saver_Opener()
             pb = pb_pro.Insys_FPGA()
+            pb.awg_time_resolution(f'{self.awg_grid_cur} ns')
             bh15 = bh.BH_15()
             ls335 = ls.Lakeshore_335()
             mw = mwBridge.Micran_X_band_MW_bridge_v2()
@@ -7206,9 +7335,9 @@ class Worker():
                             ampl_list.append( float( ap[6] ) )
 
                         start_val = float(tp[0].split(' ')[0]) + q_switch_delay
-                        tp[0] = f"{self.round_to_closest(start_val, 3.2)} ns"
+                        tp[0] = f"{self.round_to_closest(start_val, self.awg_grid_cur)} ns"
                         start_val_awg = float(ap[5].split(' ')[0]) + q_switch_delay
-                        ap[5] = f"{self.round_to_closest(start_val_awg, 3.2)} ns"
+                        ap[5] = f"{self.round_to_closest(start_val_awg, self.awg_grid_cur)} ns"
 
                         is_complex = ap[0] in ['WURST', 'SECH/TANH']
                         freq = (ap[1], ap[2]) if is_complex else ap[1]

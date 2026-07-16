@@ -110,7 +110,8 @@ reproduces only the GUI's snapshot pipeline.
   Equivalence harness `~/epr_auto_dev/gui_vs_engine.py`: ALL 13 presets PASS
   (byte-identical worker args vs real offscreen GUI; harness must reset
   `window.is_experiment = False` between presets — dig_start_exp latches it).
-  Gotchas encoded in snapshot.py: `_snap` is ceil-to-3.2-grid; log sweep
+  Gotchas encoded in snapshot.py: `_snap` is ceil-to-grid (3.2 ns default,
+  0.8 ns for fine-grid presets since 2026-07-16 (6)); log sweep
   bounds go through TimeLogSpinBox unit-grid quantization (`_log_snap`);
   P1 'phase' field is receiver coefficients, expanded together with active
   pulses only (length ≠ 0); combo_cor/combo_synt/save2d are NOT in presets
@@ -120,3 +121,39 @@ reproduces only the GUI's snapshot pipeline.
   2 synthetic presets); resonator-correction deferred to backlog; CLAUDE.md
   gained the phasing-GUI ↔ engine mirror rule. Phase 1 committed+pushed: ITC
   `f28bb47`. **Next session: /code-review of f28bb47 first, then Phase 2.**
+- **2026-07-16 (6)** — **0.8 ns AWG timing step implemented** (uncommitted;
+  plan of record: `AWG_FINE_STEP_PLAN.md`, all software phases done). DAC =
+  1250 MHz ⇒ 0.8 ns/sample; TTL stays on the 3.2 ns tick; sub-tick start =
+  floor(gate) + k∈{0..3} leading zero samples in the DAC segment
+  (`Insys_FPGA._trigger_gate_ticks`), waveform cache untouched
+  (paste-at-offset). Receive side: virtual fine DETECTION start (floored TTL
+  window + per-nid residual, `det_residual_by_nid`), corrected at readout by
+  integer ADC-point slice shifts / row alignment (`_window_sum` /
+  `_align_det_rows`; exact at decimation 1–2). Opt-in everywhere:
+  `pb.awg_time_resolution('0.8 ns')`, GUI Settings checkbox, preset trailing
+  `AWG grid:  0.8` line; engine mirrors via `Preset.awg_grid` →
+  `WorkerArgs.awg_grid` → `worker.awg_grid_cur` (attribute, not an arg).
+  Verification: golden pulser harness BIT-EXACT (toggle off), fine-grid
+  functional suite ALL PASS (scratch `test_fine_grid.py` — decomposition,
+  k-cycling sweep, gate-overlap merge, readout corrections), offscreen GUI
+  suite ALL PASS (`test_gui_fine.py` — toggle, re-snap, preset round-trip,
+  worker transport), gui_vs_engine ALL 17 PASS (now incl. 2 fine-grid
+  synthetic presets + awg_grid_cur attribute check), end-to-end test-mode
+  Worker runs pass for fine + coarse presets.
+  **Opus /code-review done (15-agent workflow) — 6 findings, all fixed:**
+  (1) grid toggle mid-preview left the running worker on the stale launch-time
+  grid → now blocked during an experiment and stops a live preview (mirrors
+  open_file); (2) NameError on an invalid TRIGGER_AWG length unit (moved
+  dac_window accounting referenced p_length) → gated on a valid length, so the
+  historical silent skip is restored; (3) trig_info paired with the AWG
+  waveforms positionally but sorted by the FLOORED gate tick → now sorted by
+  gate start in samples (matches the waveform start-sort, no floor-tie
+  mispairing); (4) test-mode `_acc_dec` stayed 1 while the scale used dec_coef
+  → locked to dec_coef in the test readout; (5)+(6) coarse mode still ran the
+  per-row residual dict-loop / built+sorted trig_info every rebuild → residuals
+  now recorded only when nonzero (empty dict ⇒ readout fast-returns None) and
+  trig_info is built only on the fine grid, restoring the free-when-off path.
+  Golden BIT-EXACT + all suites still green after the fixes. **Next: lab bench
+  items (AWG_FINE_STEP_PLAN.md verification table: scope TTL vs DAC at k=0..3,
+  0.8 ns τ sweep, residual 4-point flatness, GIM re-arm under mid-sweep gate
+  ±1 tick).**

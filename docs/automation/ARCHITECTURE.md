@@ -12,7 +12,8 @@ built on Atomize. Companion file: [ROADMAP.md](ROADMAP.md) (phases + session log
 | Execution context | Terminal process **with the Atomize GUI open** (deer_bench.py pattern: LivePlot socket reachable, cwd = `libs/`); also launchable through the GUI Start button (argv-compatible) |
 | Autonomy | Policy knob per protocol: `supervised` (pause every step) / `checkpointed` (pause at `checkpoint: true` steps) / `autonomous` (judges auto-approve, Telegram notify) |
 | Tuning scope v1 | auto-phase, π/π₂ calibration, EDFS + field setup. Resonator tuning: out of scope |
-| π-calibration modes | **Amplitude sweep (default for AWG**, fixed length ⇒ fixed bandwidth, no 3.2 ns grid; preset `ampl_4s.phase_awg`) and length-increment nutation (`rabi_echo_4s.phase_awg`) — `mode: amplitude \| length` |
+| π-calibration modes | **Amplitude sweep (default for AWG**, fixed length ⇒ fixed bandwidth, no time-grid quantization; preset `ampl_4s.phase_awg`) and length-increment nutation (`rabi_echo_4s.phase_awg`) — `mode: amplitude \| length` |
+| AWG timing grid | **3.2 ns default; opt-in 0.8 ns** (one DAC sample) via the preset's trailing `AWG grid:  0.8` line / GUI Settings toggle / `pb.awg_time_resolution('0.8 ns')`. TTL stays on 3.2 ns; sub-tick = zero samples in the DAC buffer; detection window residual corrected digitally at readout (use decimation ≤ 2). Plan: `docs/automation/AWG_FINE_STEP_PLAN.md` |
 | π-calibration strategy | **Two-stage** (agreed 2026-07-16): coarse = rotary vane sets the power regime ("power for desired length"), fine = per-pulse AWG amplitude sweep at fixed length. See "Flip-angle knobs" below |
 
 ## Flip-angle knobs: length / AWG amplitude / rotary vane
@@ -20,7 +21,8 @@ built on Atomize. Companion file: [ROADMAP.md](ROADMAP.md) (phases + session log
 Three knobs set the flip angle; they have fixed roles, not interchangeable ones:
 
 - **Length** = an experimental *requirement* (bandwidth/selectivity), chosen by
-  the protocol, quantized to the 3.2 ns grid — not a free tuning knob on AWG.
+  the protocol, quantized to the active AWG time grid (3.2 ns default, 0.8 ns
+  opt-in — see the AWG-timing-grid decision above) — not a free tuning knob on AWG.
 - **Rotary vane attenuator** (`mw_bridge_rotary_vane`, 0.1 dB steps) = coarse,
   **global** (scales B₁ of every pulse at once — cannot set π and π/2
   independently at equal length), mechanical, slow (36 ms/step, ~7 s homing),

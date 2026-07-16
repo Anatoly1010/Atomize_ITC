@@ -777,7 +777,7 @@ class MainWindow(QMainWindow):
             }
         """)
 
-        # Live Edit controls (Live mode + Apply delay) live in the Settings tab.
+        # Live Edit controls (Live Mode + Apply Delay) live in the Settings tab.
         label_widget = getattr(self, f"label_p1")
         self.buttons_layout.addWidget(label_widget, 0, 2)
         self.buttons_layout.addWidget(self.progress_bar, 0, 3)
@@ -1299,7 +1299,7 @@ class MainWindow(QMainWindow):
             return line
 
         # ---- Live Edit controls ----
-        live_label = QLabel("Live mode")
+        live_label = QLabel("Live Mode")
         live_label.setFixedSize(170, 26)
         live_label.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
         self.live_edit_box = QCheckBox("")
@@ -1313,7 +1313,7 @@ class MainWindow(QMainWindow):
             "running.")
         self.live_edit_box.stateChanged.connect(self.live_edit_toggle)
 
-        debounce_label = QLabel("Apply delay")
+        debounce_label = QLabel("Apply Delay")
         debounce_label.setFixedSize(170, 26)
         debounce_label.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
         self.Debounce = QSpinBox()

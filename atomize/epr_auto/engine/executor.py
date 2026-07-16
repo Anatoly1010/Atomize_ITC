@@ -49,6 +49,9 @@ def run_worker(worker_args, sweep_type, save_path=None, script_test=False,
     args = getattr(worker_args, args_builder)()
 
     worker = Worker()
+    # AWG timing grid travels as a worker attribute (pickled with the
+    # instance), exactly like the GUI's dig_start_exp does
+    worker.awg_grid_cur = getattr(worker_args, 'awg_grid', 3.2)
     parent_conn, child_conn = Pipe()
     process = Process(target=getattr(worker, method_name),
                       args=(child_conn, *args, script_test))

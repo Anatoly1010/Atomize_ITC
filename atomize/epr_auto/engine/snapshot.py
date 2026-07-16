@@ -17,6 +17,7 @@ from pathlib import Path
 
 # Same constants as awg_phasing_insys.MainWindow.__init__
 GRID_NS = 3.2
+AWG_GRID_NS = 0.8              # fine grid (one DAC sample), 'AWG grid' preset line
 AWG_OUTPUT_SHIFT_NS = 0        # MainWindow.awg_output_shift
 DEG_RAD = 180 / math.pi        # zero-order phase: deg -> rad
 FIRST_ORDER_COEF = 180 / math.pi * 1e-9    # first order: deg/ns -> rad/s
@@ -29,25 +30,27 @@ class PresetError(ValueError):
     pass
 
 
-def _snap(value):
-    """MainWindow.round_to_closest(x, 3.2): snap UP to the 3.2 ns grid."""
-    x, y = float(value), GRID_NS
+def _snap(value, grid=GRID_NS):
+    """MainWindow.round_to_closest(x, grid): snap UP to the grid."""
+    x, y = float(value), grid
     return round((y * ((x // y) + (round(x % y, 2) > 0))), 1)
 
 
-def _log_snap(log_ns):
+def _log_snap(log_ns, fine=False):
     """TimeLogSpinBox.setValue quantization: pick the largest display unit
     (ns/us/ms/s), snap 10**log_ns onto that unit's grid (every grid is a
-    3.2 ns multiple), return round(log10, 3) — the widget's value() form."""
+    base-grid multiple: 3.2 ns default, 0.8 ns fine — see
+    time_log_spinbox._UNIT_STEP / _UNIT_STEP_FINE), return round(log10, 3)
+    — the widget's value() form."""
     ns_raw = 10.0 ** float(log_ns)
     if ns_raw >= 1e9:
         grid = 0.01 * 1e9
     elif ns_raw >= 1e6:
         grid = 0.01 * 1e6
     elif ns_raw >= 1e3:
-        grid = 0.08 * 1e3
+        grid = (0.02 if fine else 0.08) * 1e3
     else:
-        grid = 3.2
+        grid = 0.8 if fine else 3.2
     ns = grid if ns_raw <= grid else round(ns_raw / grid) * grid
     return round(math.log10(ns), 3)
 
@@ -114,6 +117,7 @@ class Preset:
     step_ampl: float = 1.0
     cycles: int = 1
     save_each: int = 0
+    awg_grid: float = GRID_NS   # 'AWG grid' trailing line; 3.2 when absent
 
 
 def load_preset(path):
@@ -175,6 +179,15 @@ def load_preset(path):
         preset.save_each = int(int(val(41)) == 2)
     except (IndexError, ValueError):
         pass
+    # AWG timing grid (trailing line, like open_file's guarded parse)
+    for line in lines:
+        if line.startswith('AWG grid:'):
+            try:
+                if float(line.split(':  ')[1]) == AWG_GRID_NS:
+                    preset.awg_grid = AWG_GRID_NS
+            except (IndexError, ValueError):
+                pass
+            break
 
     if preset.sweep_type not in SWEEP_TYPES:
         raise PresetError(f'{path}: unknown sweep type {preset.sweep_type!r}')
@@ -244,6 +257,7 @@ class WorkerArgs:
     eseem_inc2: list = field(default_factory=list)   # P1..P9 'X ns' strings
     cycles: int = 1
     save_each: int = 0
+    awg_grid: float = GRID_NS  # -> worker.awg_grid_cur (attribute, not an arg)
 
     def _common_tail(self):
         return (self.b_sech, self.combo_cor, self.combo_synt,
@@ -323,27 +337,33 @@ def build_worker_args(preset, exp_name, curve_name='exp', combo_cor=0,
 
     ph = _expand_phases(slots)
 
+    # AWG timing grid: mirrors MainWindow.grid_for -- on the fine grid all
+    # P2..P9 timing fields and the P1 start / start increments snap to
+    # 0.8 ns; the P1 length (ADC window) stays on the 3.2 ns tick.
+    g = preset.awg_grid
+    fine = g == AWG_GRID_NS
+
     # P1 / DETECTION: p1_exp = [type, start(+shift), length, receiver phases,
     # start inc, length inc, detection frequency]
     p1 = slots[0]
     rect = [[p1.typ,
-             _ns(round(_snap(p1.start) + AWG_OUTPUT_SHIFT_NS, 1)),
+             _ns(round(_snap(p1.start, g) + AWG_OUTPUT_SHIFT_NS, 1)),
              _ns(_snap(p1.length)), ph[0],
-             _ns(_snap(p1.st_inc)), _ns(_snap(p1.len_inc)),
+             _ns(_snap(p1.st_inc, g)), _ns(_snap(p1.len_inc)),
              _mhz(p1.freq)]]
     awg = []
     for i in range(1, 9):
         s = slots[i]
         # p{i}_exp: TRIGGER_AWG gate = [start(+shift), length, d_start, len_inc]
-        rect.append([_ns(round(_snap(s.start) + AWG_OUTPUT_SHIFT_NS, 1)),
-                     _ns(_snap(s.length)),
-                     _ns(_snap(s.st_inc)), _ns(_snap(s.len_inc))])
+        rect.append([_ns(round(_snap(s.start, g) + AWG_OUTPUT_SHIFT_NS, 1)),
+                     _ns(_snap(s.length, g)),
+                     _ns(_snap(s.st_inc, g)), _ns(_snap(s.len_inc, g))])
         # p{i}_awg_exp: [func, freq, sweep, length, sigma, start, amplitude,
         # phases, d_start, len_inc]
         awg.append([s.typ, _mhz(s.freq), _mhz(s.sweep),
-                    _ns(_snap(s.length)), _ns(_snap(s.sigma)),
-                    _ns(_snap(s.start)), s.coef, ph[i],
-                    _ns(_snap(s.st_inc)), _ns(_snap(s.len_inc))])
+                    _ns(_snap(s.length, g)), _ns(_snap(s.sigma, g)),
+                    _ns(_snap(s.start, g)), s.coef, ph[i],
+                    _ns(_snap(s.st_inc, g)), _ns(_snap(s.len_inc, g))])
 
     # Integration window: ns -> points at 0.4 ns * decimation, clamped to the
     # detection length (win_left()/win_right()).
@@ -374,9 +394,10 @@ def build_worker_args(preset, exp_name, curve_name='exp', combo_cor=0,
         first_order=preset.first_order_deg / FIRST_ORDER_COEF,
         second_order=preset.second_order_deg / SEC_ORDER_COEF,
         save2d=save2d,
-        log_start=_log_snap(preset.log_start), log_end=_log_snap(preset.log_end),
+        log_start=_log_snap(preset.log_start, fine), log_end=_log_snap(preset.log_end, fine),
         start_field=preset.start_field, end_field=preset.end_field,
         step_field=preset.step_field, step_ampl=preset.step_ampl,
-        eseem_inc2=[_ns(_snap(s.st_inc2)) for s in slots],
+        eseem_inc2=[_ns(_snap(s.st_inc2, g)) for s in slots],
         cycles=preset.cycles, save_each=preset.save_each,
+        awg_grid=g,
     )
