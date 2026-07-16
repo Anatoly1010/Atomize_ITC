@@ -1,0 +1,22 @@
+# Example v1 protocol: tune up, then run T2.
+# Dry-run (no hardware, no GUI needed):
+#   python -m atomize.epr_auto run protocols/overnight_t2.yaml --test
+sample: test_sample
+autonomy: checkpointed        # supervised | checkpointed | autonomous
+
+steps:
+  - tune.auto_phase
+
+  - field.edfs:
+      range: [338 mT, 352 mT]
+      pick: max
+      checkpoint: true        # confirm the chosen field before continuing
+
+  - tune.pi_calibration:
+      mode: amplitude         # fine stage; amplitude sweep at fixed length
+
+  - exp.t2:
+      tau_start: 300 ns
+      tau_step: 12 ns
+      points: 400
+      scans: 16

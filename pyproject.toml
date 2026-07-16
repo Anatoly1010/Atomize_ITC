@@ -24,11 +24,12 @@ classifiers = [
     "Topic :: Scientific/Engineering",
 ]
 
-dependencies = ["numpy>=1.25", "pyvisa>=1.11", "pyvisa-py>=0.5", "pyqtgraph>=0.12", "PyQt6>=6.2", "platformdirs>=4.5"]
+dependencies = ["numpy>=1.25", "pyvisa>=1.11", "pyvisa-py>=0.5", "pyqtgraph>=0.12", "PyQt6>=6.2", "platformdirs>=4.5", "pyyaml>=5.4"]
 license-files = ["license.md"]
 
 [project.scripts]
 atomize-itc = "atomize.main.main:main"
+epr-auto = "atomize.epr_auto.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/Anatoly1010/Atomize"
