@@ -11,13 +11,18 @@ from pathlib import Path
 
 class EPRSession:
 
-    def __init__(self, sample, autonomy, test):
+    def __init__(self, sample, autonomy, test, output=None, notify='none'):
         self.sample = sample
         self.autonomy = autonomy
         self.test = test
+        self.output = output          # run-dir template ({date}, {sample})
+        self.notify_mode = notify     # 'none' | 'telegram'
         # Cross-step results (calibrations, chosen field, ...); step functions
         # read what earlier steps stored here.
         self.state = {}
+        # Judge reports of the most recent primitive call (set by the step
+        # layer); the runner snapshots them into the run manifest.
+        self.last_judges = []
         self._pulser = None
         self._mw_bridge = None
         self._field_controller = None
@@ -56,13 +61,17 @@ class EPRSession:
 
     @property
     def run_dir(self):
-        """Directory the primitives save their acquisitions into (created
-        lazily). The Phase 3 manifest will formalize its contents."""
+        """Directory for this run's acquisitions + manifest (created lazily).
+        Honors the protocol's 'output' template; {date} and {sample} expand."""
         if self._run_dir is None:
             stamp = datetime.date.today().isoformat()
             safe_sample = ''.join(c if c.isalnum() or c in '-_' else '_'
                                   for c in str(self.sample))
-            self._run_dir = Path.home() / 'epr_data' / f'epr_auto_{stamp}_{safe_sample}'
+            if self.output:
+                self._run_dir = Path(self.output.format(
+                    date=stamp, sample=safe_sample)).expanduser()
+            else:
+                self._run_dir = Path.home() / 'epr_data' / f'epr_auto_{stamp}_{safe_sample}'
             self._run_dir.mkdir(parents=True, exist_ok=True)
         return self._run_dir
 
@@ -101,6 +110,23 @@ class EPRSession:
         field_param.clear_lock()
         temp_param.clear_lock()
         self._locked = False
+
+    # ---------------------------------------------------------- notifications
+
+    def notify(self, text):
+        """Operator notification (Telegram via general.bot_message when the
+        protocol enables it). Logged always; a notification failure must
+        never take down a run, and dry-runs never message anyone."""
+        self.log(f'      [notify] {text}')
+        if self.notify_mode != 'telegram' or self.test:
+            return
+        try:
+            # lazy: general_functions needs the GUI's LivePlot socket at
+            # import in a real run, and bot credentials from main_config.ini
+            import atomize.general_modules.general_functions as general
+            general.bot_message(text)
+        except Exception as e:
+            self.log(f'      [notify] telegram failed: {e}')
 
     # ------------------------------------------------- calibration validity
 

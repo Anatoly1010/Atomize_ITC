@@ -3,6 +3,8 @@
 #   python -m atomize.epr_auto run protocols/tune_up.yaml --test
 sample: test_sample
 autonomy: checkpointed
+notify: none                  # telegram: bot_message on checkpoint/finish/abort
+# output: ~/epr_data/{date}_{sample}   # run-dir template (default shown)
 
 steps:
   # coarse stage: rotary vane until pi lands at 32 ns at ~95 % AWG amplitude
@@ -19,9 +21,12 @@ steps:
 
   - tune.auto_phase
 
-  # fine stage: per-pulse amplitude sweep; pi and pi/2 fitted independently
+  # fine stage: per-pulse amplitude sweep; pi and pi/2 fitted independently.
+  # retries: one extra attempt on a failed judge; a rail failure additionally
+  # re-runs the coarse stage above (+ auto-phase) once and retries.
   - tune.pi_calibration:
       mode: amplitude
+      retries: 1
 
   - field.set:
       value: 3450 G

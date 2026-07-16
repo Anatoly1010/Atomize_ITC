@@ -85,19 +85,32 @@ reproduces only the GUI's snapshot pipeline.
       axis, I, Q; axis s / % / G by sweep); dry-run = real per-preset
       engine pre-flight (Worker child forces test devices) + canned result
 
-## Phase 3 — Runner UX & autonomy
-- [ ] Checkpoint gating: terminal prompt at `checkpoint: true` steps;
-      autonomy = supervised / checkpointed / autonomous
-- [ ] Retry policy per step (n retries, on-fail: abort | skip | ask);
-      wire the rail-triggered fallback (failed `amplitude_rails` judge ⇒
-      re-run tune.power_for_length per autonomy policy)
-- [ ] Adaptive scan control via the worker's live 'SC<n>' resize: a command
-      channel into `run_worker`'s poll loop so a judge reaching its SNR /
-      convergence target mid-run shrinks the scan count and the worker
-      finishes early (still reading out + saving); autonomous mode only
-- [ ] Run directory: manifest (protocol snapshot + resolved parameters +
-      calibration results + judge reports), CSVs with headers
-- [ ] Telegram notifications on checkpoint/finish/abort (`general.bot_message`)
+## Phase 3 — Runner UX & autonomy — code DONE 2026-07-17 (review next session)
+- [x] Checkpoint gating completed: autonomous mode never pauses — checkpoints
+      auto-approve with a notification, judges are the only brake; supervised /
+      checkpointed keep the Phase 0 terminal prompt (GUI checkpoint = later)
+- [x] Retry policy per step: `retries: n` (extra attempts) + `on_fail:
+      abort | skip | ask` reserved step keys (parsed like `checkpoint`);
+      'ask' prompts retry/skip/abort (autonomous or no-tty ⇒ abort + notify)
+- [x] Rail-triggered fallback wired: StepFailure carries `rails` from the
+      failing amplitude_rails judge; the runner re-runs the protocol's
+      earlier tune.power_for_length (+ tune.auto_phase — the vane move
+      invalidated the phase) once per step and retries — automatic in
+      autonomous mode (with notification), y/n prompt otherwise; only
+      available when the protocol declared the coarse step (its resolved
+      params define the stage)
+- [x] Adaptive scan channel: `run_worker(scan_control=(pct, elapsed_s) ->
+      int|None)` sends 'SC<n>' on change (harness stub-tests the round
+      trip). The judge/budget-driven POLICY consumer lands with the Phase 4
+      exp steps — nothing calls it yet
+- [x] Run directory + manifest: protocol-level `output` template
+      ({date}/{sample}) now honored; manifest.json (protocol snapshot copy,
+      per-step resolved params / result / judge dicts / attempts / errors,
+      status + timestamps) rewritten atomically after every step; dry-runs
+      write nothing. Worker CSVs already carry headers
+- [x] Notifications: protocol-level `notify: telegram` -> session.notify()
+      via general.bot_message (never raises, logged always, silent in
+      dry-run) on autonomous checkpoints, on_fail skips/aborts, finish, abort
 
 ## Phase 4 — T1/T2 end-to-end
 - [ ] `exp.t2` (hahn_echo preset, linear τ sweep) with fit + report
@@ -267,4 +280,22 @@ reproduces only the GUI's snapshot pipeline.
   Re-verified: nutation battery incl. inverted + length-inverted cases,
   exception-routing unit test, both protocol dry-runs, gui_vs_engine ALL
   PASS. Refuted by review: rail score literal 100 (intended), points=None
-  defaults (intended), canned-branch duplication (accepted).
+  defaults (intended), canned-branch duplication (accepted). Committed+
+  pushed: ITC `5d73529`.
+- **2026-07-17 (4)** — **Phase 3 code-complete** (uncommitted, NOT yet
+  code-reviewed — **next session: /code-review of Phase 3 first**). Protocol
+  schema: step keys `retries`/`on_fail`, top-level `notify`, `output`
+  template now honored by session.run_dir. Runner rewritten: retry loop
+  (attempts = 1 + retries), on_fail abort/skip/ask, rail fallback (once per
+  step, extra attempt outside the retry budget, re-runs coarse + auto_phase
+  from the protocol's own resolved params), autonomous checkpoint
+  auto-approval, crash-safe manifest.json (atomic rewrite per step;
+  disabled in dry-run), notifications on checkpoint/skip/finish/abort.
+  Executor: scan_control command channel ('SC<n>' on change only).
+  cli releases hardware locks in finally. Verified: 8-case runner unit
+  suite (scratch test_runner_phase3.py — retry/skip/abort/manifest/rail
+  fallback incl. no-coarse-step case/autonomous checkpoint/no-manifest-in-
+  dry-run/schema validation), both protocol dry-runs, harness ALL PASS
+  incl. new StubWorkerSC scan-control round-trip. tune_up.yaml demonstrates
+  retries. Next: /code-review (Phase 3), then Phase 4 exp.t1/t2 (wire
+  max_duration -> scan_control policy there).

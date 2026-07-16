@@ -12,7 +12,9 @@ from atomize.epr_auto.params import ParamError
 from atomize.epr_auto.steps import STEPS
 
 AUTONOMY_MODES = ('supervised', 'checkpointed', 'autonomous')
-_TOP_KEYS = ('sample', 'autonomy', 'output', 'steps')
+NOTIFY_MODES = ('none', 'telegram')
+ON_FAIL_MODES = ('abort', 'skip', 'ask')
+_TOP_KEYS = ('sample', 'autonomy', 'output', 'notify', 'steps')
 
 
 class ProtocolError(Exception):
@@ -74,6 +76,8 @@ class Step:
     params: dict
     checkpoint: bool
     line: int
+    retries: int = 0            # extra attempts after the first failure
+    on_fail: str = 'abort'      # after all attempts: abort | skip | ask
 
 
 @dataclass
@@ -81,7 +85,8 @@ class Protocol:
     path: Path
     sample: str
     autonomy: str
-    output: str | None
+    output: str | None          # run-dir template; {date} and {sample} expand
+    notify: str = 'none'        # none | telegram (general.bot_message)
     steps: list = field(default_factory=list)
 
 
@@ -118,6 +123,11 @@ def load_protocol(path):
     if output is not None and not isinstance(output, str):
         raise ProtocolError(path, top_line, f"'output' must be a string, got {output!r}")
 
+    notify = doc.get('notify', 'none')
+    if notify not in NOTIFY_MODES:
+        raise ProtocolError(path, top_line,
+                            f"notify must be one of: {', '.join(NOTIFY_MODES)}; got {notify!r}")
+
     raw_steps = doc.get('steps')
     if not isinstance(raw_steps, list) or not raw_steps:
         raise ProtocolError(path, top_line, "'steps' (non-empty list) is required")
@@ -126,7 +136,8 @@ def load_protocol(path):
     item_lines = getattr(raw_steps, 'item_lines', [top_line] * len(raw_steps))
     steps = [_parse_step(path, item, item_lines[i], ctx)
              for i, item in enumerate(raw_steps)]
-    return Protocol(path=path, sample=sample, autonomy=autonomy, output=output, steps=steps)
+    return Protocol(path=path, sample=sample, autonomy=autonomy, output=output,
+                    notify=notify, steps=steps)
 
 
 def _parse_step(path, item, fallback_line, ctx):
@@ -153,6 +164,13 @@ def _parse_step(path, item, fallback_line, ctx):
     checkpoint = raw_params.pop('checkpoint', False)
     if not isinstance(checkpoint, bool):
         raise ProtocolError(path, line, f'checkpoint must be true/false, got {checkpoint!r}')
+    retries = raw_params.pop('retries', 0)
+    if not isinstance(retries, int) or isinstance(retries, bool) or retries < 0:
+        raise ProtocolError(path, line, f'retries must be an integer >= 0, got {retries!r}')
+    on_fail = raw_params.pop('on_fail', 'abort')
+    if on_fail not in ON_FAIL_MODES:
+        raise ProtocolError(path, line,
+                            f"on_fail must be one of: {', '.join(ON_FAIL_MODES)}; got {on_fail!r}")
 
     for key in raw_params:
         if key not in spec.params:
@@ -180,4 +198,5 @@ def _parse_step(path, item, fallback_line, ctx):
         except ParamError as e:
             raise ProtocolError(path, line, f'[{name}] {e}') from None
 
-    return Step(name=name, params=params, checkpoint=checkpoint, line=line)
+    return Step(name=name, params=params, checkpoint=checkpoint, line=line,
+                retries=retries, on_fail=on_fail)

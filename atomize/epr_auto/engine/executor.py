@@ -8,8 +8,12 @@ The Worker (from awg_phasing_insys) reports over a multiprocessing Pipe:
     ('test', '')       script_test pre-flight finished successfully
     ('', 'Experiment <name> finished')   real run finished (after saving)
 Commands into the worker: 'exit' (stop; the worker still reads out the
-accumulated data and saves), 'SC<n>' (resize scan count mid-run).
+accumulated data and saves), 'SC<n>' (resize scan count mid-run — the
+scan_control callback below is the channel for judge/budget-driven
+early finish; a count at or below the scans already done makes the
+worker finish after the current scan, still reading out and saving).
 """
+import time
 from multiprocessing import Pipe, Process
 
 import numpy as np
@@ -40,12 +44,16 @@ class EngineError(RuntimeError):
 
 
 def run_worker(worker_args, sweep_type, save_path=None, script_test=False,
-               on_status=None, on_message=None, poll_s=0.2):
+               on_status=None, on_message=None, poll_s=0.2,
+               scan_control=None):
     """Execute one experiment; blocks until the worker finishes.
 
     save_path answers the worker's 'Open' request (required for a real run —
     the worker always saves; pass script_test=True for the no-save pre-flight).
     on_status(pct) / on_message(text) are optional progress callbacks.
+    scan_control(pct, elapsed_s) is the adaptive-scan command channel: called
+    on every Status tick; return an int to resize the worker's scan count
+    ('SC<n>' — shrink to finish early with data intact), or None to leave it.
     Raises EngineError on a worker-side error; KeyboardInterrupt sends 'exit'
     and waits for the worker to read out and save, however long that takes
     (a second KeyboardInterrupt force-terminates the worker, losing the data).
@@ -73,6 +81,8 @@ def run_worker(worker_args, sweep_type, save_path=None, script_test=False,
                       args=(child_conn, *args, script_test))
     process.start()
 
+    t_start = time.monotonic()
+    scans_sent = None            # last 'SC<n>' sent (send only on change)
     try:
         while True:
             if not parent_conn.poll(poll_s):
@@ -88,6 +98,11 @@ def run_worker(worker_args, sweep_type, save_path=None, script_test=False,
             if kind == 'Status':
                 if on_status is not None:
                     on_status(payload)
+                if scan_control is not None:
+                    new_scans = scan_control(payload, time.monotonic() - t_start)
+                    if new_scans is not None and int(new_scans) != scans_sent:
+                        scans_sent = int(new_scans)
+                        parent_conn.send(f'SC{scans_sent}')
             elif kind == 'Message':
                 if on_message is not None:
                     on_message(payload)

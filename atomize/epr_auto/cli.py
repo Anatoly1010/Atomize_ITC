@@ -105,7 +105,8 @@ def _run(protocol_path, test):
     from atomize.epr_auto.runner import RunnerAbort, run_protocol
     from atomize.epr_auto.session import EPRSession
 
-    session = EPRSession(sample=protocol.sample, autonomy=protocol.autonomy, test=test)
+    session = EPRSession(sample=protocol.sample, autonomy=protocol.autonomy,
+                         test=test, output=protocol.output, notify=protocol.notify)
     try:
         run_protocol(protocol, session)
     except RunnerAbort as e:
@@ -114,6 +115,10 @@ def _run(protocol_path, test):
     except KeyboardInterrupt:
         print('\nABORTED: interrupted by operator', file=sys.stderr)
         return EXIT_ABORTED
+    finally:
+        # belt to the session's atexit braces: free the field/temp locks the
+        # moment the run ends, not at interpreter shutdown
+        session.release_hardware_locks()
     return EXIT_OK
 
 

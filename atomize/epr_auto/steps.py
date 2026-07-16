@@ -25,7 +25,14 @@ from atomize.epr_auto.params import (
 
 class StepFailure(RuntimeError):
     """Raised by a step implementation when the step itself failed
-    (bad data, judge rejection); the runner reports it without a traceback."""
+    (bad data, judge rejection); the runner reports it without a traceback.
+    `rails` ('high'/'low') is set when the failure came from the
+    amplitude_rails judge — the runner's trigger for the coarse-stage
+    fallback (ARCHITECTURE.md 'Rail-triggered fallback')."""
+
+    def __init__(self, msg, rails=None):
+        super().__init__(msg)
+        self.rails = rails
 
 
 @dataclass
@@ -62,18 +69,23 @@ def _run_primitive(session, func, **kwargs):
     """Call a primitive, log its judge reports, gate on them (live only)."""
     try:
         result, judge_reports = func(session, **kwargs)
+    except StepFailure:
+        raise
     except (ValueError, RuntimeError) as e:
         # expected failure modes: bad preset/arguments (ValueError), engine /
         # vane / lock errors (RuntimeError incl. EngineError) — report as a
         # failed step, not a traceback
         raise StepFailure(str(e)) from None
+    session.last_judges = list(judge_reports)   # runner -> manifest
     for j in judge_reports:
         session.log(f'      {j}')
     if not session.test:
         hard = [j for j in judge_reports
                 if not j.passed and j.name not in _ADVISORY_JUDGES]
         if hard:
-            raise StepFailure('; '.join(str(j) for j in hard))
+            rails = next((j.details.get('rail') for j in hard
+                          if j.name == 'amplitude_rails'), None)
+            raise StepFailure('; '.join(str(j) for j in hard), rails=rails)
     return result
 
 
