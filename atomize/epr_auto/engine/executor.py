@@ -10,10 +10,10 @@ The Worker (from awg_phasing_insys) reports over a multiprocessing Pipe:
 Commands into the worker: 'exit' (stop; the worker still reads out the
 accumulated data and saves), 'SC<n>' (resize scan count mid-run).
 """
-import time
 from multiprocessing import Pipe, Process
 
 from atomize.control_center.awg_phasing_insys import Worker
+from atomize.epr_auto.engine.snapshot import CORRECTION_ATTRS, SWEEP_TYPES
 
 # Worker method per preset sweep type
 SWEEP_METHOD = {
@@ -23,6 +23,14 @@ SWEEP_METHOD = {
     'Field': ('exp_field', 'exp_field_args'),
     'ESEEM Avg': ('exp_eseem', 'exp_eseem_args'),
 }
+
+# Keep the hand-maintained method map in lockstep with the preset loader:
+# fail at import time instead of silently skipping a whole sweep family
+# (load_preset accepts everything in SWEEP_TYPES).
+if set(SWEEP_METHOD) != set(SWEEP_TYPES):
+    raise ImportError('executor.SWEEP_METHOD is out of sync with '
+                      'snapshot.SWEEP_TYPES: '
+                      f'{sorted(set(SWEEP_METHOD) ^ set(SWEEP_TYPES))}')
 
 
 class EngineError(RuntimeError):
@@ -37,7 +45,8 @@ def run_worker(worker_args, sweep_type, save_path=None, script_test=False,
     the worker always saves; pass script_test=True for the no-save pre-flight).
     on_status(pct) / on_message(text) are optional progress callbacks.
     Raises EngineError on a worker-side error; KeyboardInterrupt sends 'exit'
-    (the worker reads out, saves and finishes cleanly).
+    and waits for the worker to read out and save, however long that takes
+    (a second KeyboardInterrupt force-terminates the worker, losing the data).
     """
     if sweep_type not in SWEEP_METHOD:
         raise EngineError(f'sweep type {sweep_type!r} is not runnable '
@@ -50,14 +59,18 @@ def run_worker(worker_args, sweep_type, save_path=None, script_test=False,
 
     worker = Worker()
     # AWG timing grid travels as a worker attribute (pickled with the
-    # instance), exactly like the GUI's dig_start_exp does
+    # instance), exactly like the GUI's dig_start_exp does...
     worker.awg_grid_cur = getattr(worker_args, 'awg_grid', 3.2)
+    # ...and so does the resonator-correction state (the GUI's
+    # _hand_correction_to_worker); WorkerArgs defaults match Worker defaults.
+    for attr in CORRECTION_ATTRS:
+        if hasattr(worker_args, attr):
+            setattr(worker, attr, getattr(worker_args, attr))
     parent_conn, child_conn = Pipe()
     process = Process(target=getattr(worker, method_name),
                       args=(child_conn, *args, script_test))
     process.start()
 
-    stopping = False
     try:
         while True:
             if not parent_conn.poll(poll_s):
@@ -85,12 +98,13 @@ def run_worker(worker_args, sweep_type, save_path=None, script_test=False,
             # anything else ('Count', ...) is preview-only chatter — ignore
 
     except KeyboardInterrupt:
-        if not stopping:
-            stopping = True
-            parent_conn.send('exit')
-            # Let the worker read out + save; surface its remaining messages.
-            deadline = time.time() + 60
-            while time.time() < deadline:
+        parent_conn.send('exit')
+        # Let the worker read out + save, however long that takes — the GUI
+        # stop path never hard-kills a saving worker either. A second
+        # KeyboardInterrupt gives up (data is lost: the finally block
+        # terminates the still-running child).
+        try:
+            while True:
                 if parent_conn.poll(poll_s):
                     kind, payload = parent_conn.recv()
                     if kind == 'Open':
@@ -101,7 +115,9 @@ def run_worker(worker_args, sweep_type, save_path=None, script_test=False,
                         return {'status': 'stopped', 'file': save_path}
                 elif not process.is_alive():
                     break
-            raise
+        except KeyboardInterrupt:
+            pass
+        raise
     finally:
         process.join(timeout=10)
         if process.is_alive():

@@ -78,9 +78,12 @@ reproduces only the GUI's snapshot pipeline.
 - [ ] **Hardware**: full chain on the spectrometer, supervised mode
 
 ## Later phases (unordered backlog)
-- Resonator-correction overrides in the engine (equivalent of the GUI's
-  `_hand_correction_to_worker` + Combo_cor/Combo_model settings; Worker
-  defaults are used until then) — deliberately deferred 2026-07-16
+- Resonator-correction overrides in the runner/protocol YAML (the ENGINE side
+  is done 2026-07-17: WorkerArgs carries cor_model_cur/f0_cur/q_cur/
+  phase_cor_cur/meas_freq_cur/meas_H_cur and the executor hands them to the
+  worker like the GUI's `_hand_correction_to_worker`; set them on the built
+  WorkerArgs. Remaining: plumb them from protocol steps + measured-H file
+  loading outside the GUI)
 - RECT channel support for calibration + runners
 - ESEEM / DEER payload experiments (reuse ESEEM-avg + benchmark know-how)
 - Autopilot GUI (control_center tool wrapping the runner)
@@ -157,3 +160,27 @@ reproduces only the GUI's snapshot pipeline.
   items (AWG_FINE_STEP_PLAN.md verification table: scope TTL vs DAC at k=0..3,
   0.8 ns τ sweep, residual 4-point flatness, GIM re-arm under mid-sweep gate
   ±1 tick).**
+- **2026-07-17** — /code-review of f28bb47 (workflow, high effort, harness
+  included in scope) — 9 findings, all fixed (uncommitted): (1) executor now
+  mirrors `_hand_correction_to_worker` (WorkerArgs gained the six correction
+  fields, defaults = Worker/GUI defaults; harness compares them as worker
+  attributes next to awg_grid_cur — mutation-tested: a diverging f0_cur fails
+  every preset); (2) harness SKIP-on-missing-runner now counts as FAIL *and*
+  executor raises at import if SWEEP_METHOD ≠ snapshot.SWEEP_TYPES; (3)
+  harness now exercises `executor.run_worker` itself — real test-mode
+  pre-flight per sweep type + real-run save handshake (Open→'FL<path>'→
+  finished, Status/Message callbacks) via a protocol-speaking StubWorker;
+  (4) KeyboardInterrupt stop no longer hard-kills a still-saving worker after
+  60 s — waits indefinitely, second Ctrl-C force-terminates (dead `stopping`
+  flag removed); (5) harness `normalize` derives slot inactivity per-side
+  (each payload's own awg length) instead of blanking both sides from the
+  engine's view; (6) expander-tautology coverage limit documented in
+  `_expand_phases` + harness docstring (shared expander is by design); (7)
+  the five preset-independent args (exp/curve name, combo_cor/synt/save2d)
+  are fed to the engine as literals with the GUI defaults asserted, no longer
+  compared against themselves; (8) = (2) import-time sync check; (9) coverage
+  gates: ≥ MIN_COMPARED (17) presets compared + every sweep type covered or
+  the run fails. Harness re-run: ALL PASS (17 presets + 5 pre-flights +
+  handshake). Refuted by review: awg_grid getattr default (unreachable),
+  per-cycle Save-each naming (worker-internal, single Open is correct).
+  Next: Phase 2 tuning primitives.

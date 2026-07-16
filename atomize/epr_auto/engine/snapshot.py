@@ -25,6 +25,13 @@ SEC_ORDER_COEF = 180 / math.pi * 1e-18     # second order: deg/ns^2 -> rad/s^2
 
 SWEEP_TYPES = ('Linear Time', 'Log Time', 'Amplitude', 'Field', 'ESEEM Avg')
 
+# Worker attributes the GUI copies onto a fresh Worker before launching it
+# (_hand_correction_to_worker, called next to the awg_grid_cur assignment in
+# dig_start_exp). The executor must hand over the same set from WorkerArgs,
+# and the equivalence harness compares them alongside awg_grid_cur.
+CORRECTION_ATTRS = ('cor_model_cur', 'f0_cur', 'q_cur', 'phase_cor_cur',
+                    'meas_freq_cur', 'meas_H_cur')
+
 
 class PresetError(ValueError):
     pass
@@ -199,7 +206,10 @@ def _expand_phases(slots):
     ACTIVE pulses together. Returns ph[0..8]; inactive slots get a ['+x']
     placeholder (the worker never reads them)."""
     # Single source of truth for the notation: call the GUI's own expander
-    # (an effectively-static method; it never touches self).
+    # (an effectively-static method; it never touches self). NOTE: because
+    # both sides share it, the equivalence harness cannot catch a bug INSIDE
+    # expand_phase_cycling — its phase comparison only verifies the
+    # active-slot selection and the ph[] index mapping done below.
     from atomize.control_center.awg_phasing_insys import MainWindow
 
     active = [(i, s.phase_text) for i, s in enumerate(slots) if s.active]
@@ -258,6 +268,16 @@ class WorkerArgs:
     cycles: int = 1
     save_each: int = 0
     awg_grid: float = GRID_NS  # -> worker.awg_grid_cur (attribute, not an arg)
+    # Resonator-correction state, handed to the worker as attributes exactly
+    # like awg_grid (the GUI's _hand_correction_to_worker). Not stored in
+    # presets; defaults = Worker.__init__ = GUI defaults. Set these on the
+    # returned WorkerArgs to run with a non-default correction model.
+    cor_model_cur: str = 'measured'
+    f0_cur: float = 9700.0
+    q_cur: float = 88.0
+    phase_cor_cur: str = 'False'
+    meas_freq_cur: object = None   # np.ndarray (MHz) when a measured H(f) is loaded
+    meas_H_cur: object = None      # matching complex np.ndarray
 
     def _common_tail(self):
         return (self.b_sech, self.combo_cor, self.combo_synt,
