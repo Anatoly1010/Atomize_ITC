@@ -118,4 +118,5 @@ reproduces only the GUI's snapshot pipeline.
   engine (field.edfs→exp_field, pi_calibration→exp_amplitude/exp).
 - **2026-07-16 (5)** — ESEEM Avg + LASER added to the engine (ALL 15 PASS incl.
   2 synthetic presets); resonator-correction deferred to backlog; CLAUDE.md
-  gained the phasing-GUI ↔ engine mirror rule.
+  gained the phasing-GUI ↔ engine mirror rule. Phase 1 committed+pushed: ITC
+  `f28bb47`. **Next session: /code-review of f28bb47 first, then Phase 2.**
