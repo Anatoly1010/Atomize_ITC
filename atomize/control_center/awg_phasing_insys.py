@@ -357,21 +357,21 @@ class MainWindow(QMainWindow):
         self.copy_pulse_func(pulse_number)
 
         if pulse_number == 1:
-            values = [576, 816, 0, 0, 0, 0, 100, 0, "+x,-x", "DETECTION"]
+            values = [576, 816, 0, 0, 0, 0, 0, 100, 0, "+x,-x", "DETECTION"]
         else:
-            values = [0, 0, 0, 0, 50, 350, 100, 0, "+x,+x", "SINE"]
+            values = [0, 0, 0, 0, 0, 50, 350, 100, 0, "+x,+x", "SINE"]
 
-        suffixes = ["_st", "_len", "_st_inc", "_len_inc", "_fr", "_sw", "_cf", "_sig"]
-        
+        suffixes = ["_st", "_len", "_st_inc", "_st_inc2", "_len_inc", "_fr", "_sw", "_cf", "_sig"]
+
         for i, suffix in enumerate(suffixes):
             getattr(self, f"P{pulse_number}{suffix}").setValue(values[i])
 
         phase_widget = getattr(self, f"Phase_{pulse_number}")
-        new_phase_text = str(values[8])
+        new_phase_text = str(values[9])
         phase_widget.setPlainText(new_phase_text)
-            
+
         combo_widget = getattr(self, f"P{pulse_number}_type")
-        new_combo_text = str(values[9])
+        new_combo_text = str(values[10])
         combo_widget.setCurrentText(new_combo_text)
 
     def paste_pulse_func(self, pulse_number):
@@ -381,6 +381,7 @@ class MainWindow(QMainWindow):
         getattr(self, f"P{pulse_number}_st").setValue(self.pulse_buffer['st'])
         getattr(self, f"P{pulse_number}_len").setValue(self.pulse_buffer['len'])
         getattr(self, f"P{pulse_number}_st_inc").setValue(self.pulse_buffer['st_inc'])
+        getattr(self, f"P{pulse_number}_st_inc2").setValue(self.pulse_buffer['st_inc2'])
         getattr(self, f"P{pulse_number}_len_inc").setValue(self.pulse_buffer['len_inc'])
         getattr(self, f"Phase_{pulse_number}").setPlainText(self.pulse_buffer['phase'])
         getattr(self, f"P{pulse_number}_type").setCurrentText(self.pulse_buffer['type'])
@@ -394,6 +395,7 @@ class MainWindow(QMainWindow):
             'st': getattr(self, f"P{pulse_number}_st").value(),
             'len': getattr(self, f"P{pulse_number}_len").value(),
             'st_inc': getattr(self, f"P{pulse_number}_st_inc").value(),
+            'st_inc2': getattr(self, f"P{pulse_number}_st_inc2").value(),
             'len_inc': getattr(self, f"P{pulse_number}_len_inc").value(),
             'phase': getattr(self, f"Phase_{pulse_number}").toPlainText(),
             'type': getattr(self, f"P{pulse_number}_type").currentText(),
@@ -405,25 +407,25 @@ class MainWindow(QMainWindow):
 
     def reset_pulse_func(self, pulse_number):
         if pulse_number == 1:
-            values = [576, 816, 0, 0, 50, 0, 100, 0, "+x,-x", "DETECTION"]
+            values = [576, 816, 0, 0, 0, 50, 0, 100, 0, "+x,-x", "DETECTION"]
         elif pulse_number == 2:
-            values = [0, 22.4, 0, 0, 50, 350, 100, 0, "+x,-x", "SINE"]
+            values = [0, 22.4, 0, 0, 0, 50, 350, 100, 0, "+x,-x", "SINE"]
         elif pulse_number == 3:
-            values = [288, 44.8, 0, 0, 50, 350, 100, 0, "+x,+x", "SINE"]
+            values = [288, 44.8, 0, 0, 0, 50, 350, 100, 0, "+x,+x", "SINE"]
         else:
-            values = [0, 0, 0, 0, 50, 350, 100, 0, "+x,+x", "SINE"]
+            values = [0, 0, 0, 0, 0, 50, 350, 100, 0, "+x,+x", "SINE"]
 
-        suffixes = ["_st", "_len", "_st_inc", "_len_inc", "_fr", "_sw", "_cf", "_sig"]
-        
+        suffixes = ["_st", "_len", "_st_inc", "_st_inc2", "_len_inc", "_fr", "_sw", "_cf", "_sig"]
+
         for i, suffix in enumerate(suffixes):
             getattr(self, f"P{pulse_number}{suffix}").setValue(values[i])
 
         phase_widget = getattr(self, f"Phase_{pulse_number}")
-        new_phase_text = str(values[8])
+        new_phase_text = str(values[9])
         phase_widget.setPlainText(new_phase_text)
-            
+
         combo_widget = getattr(self, f"P{pulse_number}_type")
-        new_combo_text = str(values[9])
+        new_combo_text = str(values[10])
         combo_widget.setCurrentText(new_combo_text)
 
     def reset_all_func(self):
