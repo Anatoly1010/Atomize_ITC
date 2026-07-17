@@ -538,8 +538,11 @@ not autonomous without them.
   review superseded code:
   - `4aa1c27` Phase 5 (tune-up completeness) — was flagged "review first" and
     never got it;
-  - `5136a3c` phasing tools: Accumulation Mode checkbox — never logged for
-    review at all, spotted 2026-07-17 while untangling this;
+  - `5136a3c` phasing tools: Accumulation Mode checkbox — **NOT under review:
+    user judged it trivial (2026-07-17), accepted as-is. It is inside the range
+    only because it touches the same two files as `b9cbc66`
+    (awg_phasing_insys.py, phasing_insys.py) and so cannot be split out by
+    path. Spend no effort on it;**
   - `b9cbc66` this session (temperature re-phase + points_from_ns).
   `b9cbc66` rewrites FIVE files Phase 5 introduced or changed (temp.py,
   tune.py, steps.py, session.py, snapshot.py) — e.g. Phase 5's temp.py has no
