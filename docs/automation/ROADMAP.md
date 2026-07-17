@@ -121,7 +121,8 @@ reproduces only the GUI's snapshot pipeline.
 - [ ] `protocols/overnight_t2.yaml` full chain in `--test`
 - [ ] **Hardware**: full chain on the spectrometer, supervised mode
 
-## Phase 5 — Tune-up completeness — code DONE 2026-07-17 (review next session;
+## Phase 5 — Tune-up completeness — code DONE 2026-07-17 (review folded into
+## the single `3be399d..b9cbc66` review — see the end of the session log;
 ## decisions in ARCHITECTURE.md "Tune-up completeness")
 Gaps found reviewing the plan: classical length calibration had no consumer,
 detection-pulse convention was implicit, and window / temperature / signal
@@ -413,7 +414,8 @@ not autonomous without them.
 - **2026-07-17 (7)** — Phase 3 review fixes committed+pushed ITC `3be399d`.
   **Phase 5 code-complete, committed+pushed ITC `4aa1c27`** (all 7
   checklist items, details in the Phase 5 section above — NOT yet
-  code-reviewed; **next session: /code-review of Phase 5 first**). Highlights/gotchas: dig_on never sends
+  code-reviewed; superseded in part by `b9cbc66`, so its review is folded
+  into the single `3be399d..b9cbc66` review at the end of this log). Highlights/gotchas: dig_on never sends
   trace data over the pipe (the GUI reads it off the LivePlot), so
   acquire_trace captures via a general.plot_1d patch in the child and stops
   through the normal 'exit' path at a cycle boundary; dig_on's l_mode is
@@ -527,10 +529,27 @@ not autonomous without them.
   name resolution order, the IQ Correction: 2 requirement, and what the
   session overrides on top of the preset. Written because the bare
   `- tune.auto_phase` snippets read as if no preset were involved at all.
-  **COMMITTED: ITC `b9cbc66`** (not yet reviewed).
-  **>>> NEXT SESSION, FIRST THING: `/code-review` commit `b9cbc66`. <<<**
-  Reviewer's brief -- the judgement calls worth a second opinion, and the
-  two claims this session already had to retract:
+  **COMMITTED: ITC `b9cbc66`** (+ hash record `6cdeaa0`).
+
+  ### >>> NEXT SESSION, FIRST THING: ONE code-review of `3be399d..b9cbc66` <<<
+
+  **Scope = the whole unreviewed backlog, as ONE review, not three.** Three
+  commits are unreviewed and they OVERLAP, so reviewing them separately would
+  review superseded code:
+  - `4aa1c27` Phase 5 (tune-up completeness) — was flagged "review first" and
+    never got it;
+  - `5136a3c` phasing tools: Accumulation Mode checkbox — never logged for
+    review at all, spotted 2026-07-17 while untangling this;
+  - `b9cbc66` this session (temperature re-phase + points_from_ns).
+  `b9cbc66` rewrites FIVE files Phase 5 introduced or changed (temp.py,
+  tune.py, steps.py, session.py, snapshot.py) — e.g. Phase 5's temp.py has no
+  rephase_delta and its echo_window has an unargued `factor` bound. Review the
+  RANGE against the current tree; do NOT review `4aa1c27` in isolation.
+  (`20b70c0` / `b061c67` in the range are docs-only.)
+
+  Reviewer's brief for the `b9cbc66` part — the judgement calls worth a
+  second opinion, and the two claims this session already had to retract
+  (the Phase 5 part's own gotchas are in the Phase 5 section above):
   - `rephase_delta` default 5 K is a guess, not a measurement. The oTP
     series only sampled 40 K steps (8 deg from 80->120 K, 55 deg from
     240->280 K), so the phase-vs-T slope is unknown below 40 K and is
@@ -557,4 +576,5 @@ not autonomous without them.
     reachable -- the sweep that "found" it drew FWHM from 1 ns. Both are
     corrected in this file and in the code comments; if the reviewer finds
     either claim still asserted anywhere, that is a real defect.
-  Next: Phase 4.
+  Next (AFTER that single review + its fixes): Phase 4 exp.t1/t2, then the
+  hardware run per HARDWARE_CHECKLIST.md.
