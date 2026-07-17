@@ -235,11 +235,16 @@ def field_set(session, value):
               'setpoint': Float(min=0.1, max=400, required=True, help='kelvin'),
               'heater_range': Choice(*('Off', '0.5 W', '5 W', '50 W'),
                                      help='unchanged when omitted'),
+              'rephase_delta': Float(min=0, default=5.0,
+                                     help='invalidate auto_phase once the setpoint '
+                                          'moves this many K from where the phase '
+                                          'was measured (0 = any change)'),
           })
-def temp_set(session, setpoint, heater_range):
+def temp_set(session, setpoint, heater_range, rephase_delta):
     from atomize.epr_auto.primitives import temp
     return _run_primitive(session, temp.set_temperature,
-                          setpoint=setpoint, heater_range=heater_range)
+                          setpoint=setpoint, heater_range=heater_range,
+                          rephase_delta=rephase_delta)
 
 
 @register('temp.wait',
@@ -253,12 +258,17 @@ def temp_set(session, setpoint, heater_range):
               'timeout': TimeStr(default='1800 s'),
               'setpoint': Float(min=0.1, max=400,
                                 help='default: the setpoint already on the device'),
+              'rephase_delta': Float(min=0, default=5.0,
+                                     help='invalidate auto_phase once the setpoint '
+                                          'moves this many K from where the phase '
+                                          'was measured (0 = any change)'),
           })
-def temp_wait(session, band, channels, hold, timeout, setpoint):
+def temp_wait(session, band, channels, hold, timeout, setpoint, rephase_delta):
     from atomize.epr_auto.primitives import temp
     return _run_primitive(session, temp.wait_temperature,
                           band=band, channels=channels, hold=hold,
-                          timeout=timeout, setpoint=setpoint)
+                          timeout=timeout, setpoint=setpoint,
+                          rephase_delta=rephase_delta)
 
 
 # ---------------------------------------------------------------- experiments

@@ -118,6 +118,13 @@ def _swept_slot(preset, mode):
 
 # ------------------------------------------------------------- auto-phase
 
+def _phase_temperature(session):
+    """Setpoint the phase is being measured at, or None when no temp step has
+    run. temp.set/temp.wait compare against this to decide re-phasing."""
+    t = session.state.get('temperature')
+    return t.get('setpoint') if t else None
+
+
 def auto_phase(session, preset, points=4, scans=1):
     """Acquire a short echo run, measure the residual signal phase
     (principal-axis auto_phase_zero) and store the corrected zero-order
@@ -127,10 +134,12 @@ def auto_phase(session, preset, points=4, scans=1):
                      points=points, scans=scans)
     acq = _acquire(session, wa, pre.sweep_type, 'auto_phase', log=session.log)
 
+    at_k = _phase_temperature(session)
     if acq is None:
         result = {'phase_deg': 0.0, 'zero_order_deg': pre.zero_order_deg,
-                  'canned': True}
-        session.state['auto_phase'] = {'zero_order_deg': pre.zero_order_deg}
+                  'temperature_k': at_k, 'canned': True}
+        session.state['auto_phase'] = {'zero_order_deg': pre.zero_order_deg,
+                                       'temperature_k': at_k}
         return result, [JudgeReport('phase_coherence', True, float('inf'),
                                     {'note': 'dry-run, not judged'})]
 
@@ -140,9 +149,10 @@ def auto_phase(session, preset, points=4, scans=1):
     used = pre.zero_order_deg          # post-build: includes session override
     new_zero = round((used - phi) % 360.0, 2)
 
-    session.state['auto_phase'] = {'zero_order_deg': new_zero}
+    session.state['auto_phase'] = {'zero_order_deg': new_zero,
+                                   'temperature_k': at_k}
     result = {'phase_deg': round(phi, 2), 'zero_order_deg': new_zero,
-              'data_file': path}
+              'temperature_k': at_k, 'data_file': path}
     # phase_coherence, not echo_snr: a `points`-long trace has too few
     # point-to-point differences for the MAD-of-diff noise estimate
     return result, [phase_coherence(sig)]

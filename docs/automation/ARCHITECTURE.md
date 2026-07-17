@@ -60,6 +60,32 @@ overshoot-and-return) to kill backlash; (c) Limit-mode re-home at the start of
 long autonomous runs (position is dead-reckoned); (d) vane moves default to
 `checkpoint: true` in checkpointed mode.
 
+**Temperature rules:** temperature detunes the resonator, so the demod
+zero-order drifts — but B₁ is untouched, so the rules are *not* the vane
+rules. Measured on the 2026-07-03 oTP series (`~/Documents/OTP/
+2026_07_03_ap210_oTP_new`, `t1/` + `t2/` presets), at constant pulse
+amplitudes (84 % / 42 %, Ampl 260/260, 32 ns throughout — nobody re-calibrated
+power between temperatures):
+
+| T | 80 K | 120 K | 160 K | 200 K | 240 K | 280 K |
+|---|---|---|---|---|---|---|
+| zero-order | 215° | 207° | 192° | 160° | 80° | 25° |
+
+A monotonic 190° swing. Hence: (a) a setpoint move beyond `rephase_delta`
+(default 5 K) invalidates **auto-phase only** — `session.invalidate_phase`,
+checked in both `temp.set` and `temp.wait`; (b) the fine amplitude
+calibration **survives** a temperature change — only the vane moves B₁, and
+in practice the vane is re-set only after a large ΔT, to hold bandwidth;
+(c) `tune.auto_phase` stamps `temperature_k` on its result so the manifest
+records where each phase was taken.
+
+The same series also shows what zero-order does *not* depend on: it is
+identical for T1 and T2 at matched (T, field) in 25 of 26 pairs — despite
+their DETECTION pulses starting at 678.4 ns vs 409.6 ns — and identical
+across 3000–3460 G. Zero-order is a property of the detection chain and
+resonator state, never of the pulse sequence: one `tune.auto_phase` serves
+every experiment at a given (temperature, vane) state.
+
 **RECT channel (later phase):** no per-pulse amplitude, so the modes are true
 alternatives there — power-for-length when bandwidth matters, plain length
 nutation otherwise.

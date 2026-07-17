@@ -456,3 +456,75 @@ not autonomous without them.
   Next: /code-review Phase 5, commit, then Phase 4 exp.t1/t2 (acquire_1d +
   max_duration → scan_control + the window/apply_cal consumers) and the
   hardware run.
+- **2026-07-17** — Temperature re-phase rule (investigation-driven; the
+  `2026_07_03_ap210_oTP_new` t1/t2 presets are the evidence). Two findings
+  from that data: (a) zero-order is a detection-chain property, identical for
+  T1 vs T2 at matched (T, field) in 25/26 pairs despite DETECTION starts of
+  678.4 vs 409.6 ns, and flat across 3000–3460 G ⇒ one auto_phase per state
+  serves every experiment; (b) it swings 215°→25° monotonically over 80–280 K
+  at constant B1 ⇒ "once per run" was wrong. Only the vane invalidated
+  anything before this, so a T-series silently carried a stale phase.
+  Implemented: `session.invalidate_phase` (auto_phase only, vs
+  `invalidate_fine_calibrations`' both — temperature does not move B1, and per
+  the operator the vane is re-set only after a large ΔT to hold bandwidth);
+  `tune.auto_phase` stamps `temperature_k`; `_rephase_check` in BOTH temp.set
+  and temp.wait (temp.set-without-wait, and external-setpoint, both closed),
+  fires in dry-runs too; `rephase_delta` param, default 5 K. ARCHITECTURE.md
+  'Temperature rules' + HARDWARE_CHECKLIST §1 scope note added.
+  **Window ns -> points truncation FIXED** (found while reviewing
+  tune.echo_window's `factor` bound; the bound STAYS at min=1 -- that is the
+  matched-filter optimum, SNR peaks at factor ~1.19 for a Gaussian echo and
+  the 2.0 default trades 10% SNR for capturing 98% of it). The bug:
+  `int(win_ns / tpp)` truncates on binary float error -- tpp is 0.4*dec,
+  which has no exact binary form, so `int(259.2/1.6)` gives 161 not 162, and
+  a requested 12.0 ns boundary lands at 11.6. Present in the GUI
+  (awg_phasing_insys) as much as in the engine. At realistic echo widths
+  (FWHM 20-500 ns) about a THIRD of windows have an edge one ADC point off.
+  Magnitude is small: one point at a window EDGE sits in the echo tail (~6%
+  of peak at factor 2), so the integral error is ~0.03% at dec=1, ~1% at
+  dec=8. Worth fixing as correctness, not a data-integrity issue -- no
+  published result is affected.
+  Fix: `points_from_ns()` at module scope in awg_phasing_insys.py (a
+  float-error-tolerant floor, +1e-9 point -- far above the ~1e-13 division
+  error, far below any real off-grid entry, so floor() semantics are
+  untouched), used at all 5 GUI sites (win_left x2, win_right x2, the
+  Win_left/Win_right widget-init in the spin-box loop) and called DIRECTLY
+  by engine/snapshot.py's win_points, as the engine already does with
+  expand_phase_cycling -- sharing beats mirroring for a one-line arithmetic
+  helper, at the known cost that gui_vs_engine.py cannot catch a bug inside
+  it. Verified: 0/64000 on-grid truncations (was 10462), off-grid floor()
+  unchanged (12.7 ns @ 0.4 -> 31), harness ALL PASS, both example protocols
+  dry-run clean.
+  **CORRECTION to an earlier claim in this session:** a degenerate
+  win_left == win_right (which both integration paths would consume as a
+  bare empty `[wl:wr]` slice => silent all-zero scan) is NOT reachable from
+  echo_window. It needs FWHM*factor < tpp, i.e. an echo narrower than 3.2 ns
+  even at dec=8 -- a single ADC sample, not an echo. The randomized sweep
+  that "found" it was drawing FWHM from 1 ns. Real echoes give windows of
+  7-52 points at worst (dec 8..1). The GUI's equality guard
+  (`cur_win_right += 1`, in dig_stop's param-file writer, not on the exp
+  path) is therefore left exactly as it is; no real preset of the 85 checked
+  (repo + oTP campaign) has an empty window.
+  **Fork port: NOT NEEDED — the forks are IMMUNE, verified not assumed.**
+  NIOCH / NIOCH_Q `awg_phasing.py` + `phasing.py` set
+  `time_per_point = 2` (both assignments in all four files are that literal;
+  never dynamic). 2 is a power of two, so `ns / 2` is exact in IEEE 754 and
+  `int()` can never truncate short: 0 of 16001 on-grid spin-box values, vs
+  5580 for ITC at dec=1. The bug needs ITC's `tpp = 0.4 * decimation`, and
+  0.4 has no exact binary form. Porting would be pure churn plus a docstring
+  that is false there. Re-check IF a fork ever moves to a dynamic /
+  non-power-of-two time_per_point.
+  The real gap that scan found was in ITC itself: **`phasing_insys.py` (the
+  RECT tool) had all 5 sites** and is now fixed too — it imports
+  points_from_ns from awg_phasing_insys (sibling import, same package, the
+  module is __main__-guarded and side-effect-free; the engine already reaches
+  into it the same way for expand_phase_cycling). epr_auto has no RECT path
+  yet, so this is a GUI-only fix, but it lands before RECT support does.
+  `sync_check.py` green before and after; no fork repo touched.
+  Also added: HARDWARE_CHECKLIST 'Presets' section — where the pulse sequence
+  actually comes from (the YAML names a preset, it never describes a
+  sequence), bare-string vs mapping step form, the per-step default table,
+  name resolution order, the IQ Correction: 2 requirement, and what the
+  session overrides on top of the preset. Written because the bare
+  `- tune.auto_phase` snippets read as if no preset were involved at all.
+  Next: Phase 4.

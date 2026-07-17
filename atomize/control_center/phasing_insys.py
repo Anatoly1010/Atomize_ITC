@@ -21,6 +21,10 @@ import atomize.control_center.field_param as field_param
 import atomize.control_center.temp_param as temp_param
 from atomize.control_center.time_log_spinbox import TimeLogSpinBox
 from atomize.general_modules.gui_style import CHECKBOX_STYLE
+# Shared with the AWG tool (its docstring has the rationale): both Insys
+# phasing GUIs map the integration window ns -> points against a
+# time_per_point of 0.4 * decimation, which has no exact binary form.
+from atomize.control_center.awg_phasing_insys import points_from_ns
 
 # Reload-signal file written by the Sequence Calculator (sequence_calculator.py).
 # While this window is open we poll it and reload the named preset when the
@@ -938,7 +942,7 @@ class MainWindow(QMainWindow):
                     setattr(self, par_name, int(spin_box.value()))
             else:
                 if attr_name == 'Win_left' or attr_name == 'Win_right':
-                    setattr(self, par_name, int( float( spin_box.value() ) / self.time_per_point ))
+                    setattr(self, par_name, points_from_ns( spin_box.value(), self.time_per_point ))
                 else:
                     setattr(self, par_name, float(spin_box.value()))
 
@@ -1667,9 +1671,9 @@ class MainWindow(QMainWindow):
         """
         A function to change left integration window
         """
-        self.cur_win_left = int( float( self.Win_left.value() ) / self.time_per_point )
+        self.cur_win_left = points_from_ns( self.Win_left.value(), self.time_per_point )
         if round( self.cur_win_left * self.time_per_point, 1) > round( float( self.remove_ns( self.p1_length ) ), 1):
-            self.cur_win_left = int( round( float( self.remove_ns( self.p1_length ) ), 1) / self.time_per_point )
+            self.cur_win_left = points_from_ns( round( float( self.remove_ns( self.p1_length ) ), 1), self.time_per_point )
             self.Win_left.setValue( round( self.cur_win_left * self.time_per_point, 1) )
         
         if self.opened == 0:
@@ -1679,9 +1683,9 @@ class MainWindow(QMainWindow):
                 pass
 
     def win_right(self):
-        self.cur_win_right = int( float( self.Win_right.value() ) / self.time_per_point )
+        self.cur_win_right = points_from_ns( self.Win_right.value(), self.time_per_point )
         if round( self.cur_win_right * self.time_per_point, 1) > round( float( self.remove_ns( self.p1_length ) ), 1):
-            self.cur_win_right = int( round( float( self.remove_ns( self.p1_length ) ), 1) / self.time_per_point )
+            self.cur_win_right = points_from_ns( round( float( self.remove_ns( self.p1_length ) ), 1), self.time_per_point )
             self.Win_right.setValue( round( self.cur_win_right * self.time_per_point, 1) )
 
         if self.opened == 0:

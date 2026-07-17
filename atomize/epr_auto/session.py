@@ -142,6 +142,15 @@ class EPRSession:
         """Any rotary-vane move changes B1 for everything: auto-phase and the
         fine amplitude calibration are no longer valid (ARCHITECTURE.md
         'Vane rules')."""
-        dropped = [k for k in ('auto_phase', 'pi_calibration') if self.state.pop(k, None)]
+        self._drop(('auto_phase', 'pi_calibration'), reason)
+
+    def invalidate_phase(self, reason):
+        """Temperature detunes the resonator, so the demod zero-order drifts —
+        but B1 is untouched, so the fine calibration survives (ARCHITECTURE.md
+        'Temperature rules'). Drop auto_phase only."""
+        self._drop(('auto_phase',), reason)
+
+    def _drop(self, keys, reason):
+        dropped = [k for k in keys if self.state.pop(k, None)]
         if dropped:
             self.log(f'      calibrations invalidated ({reason}): {", ".join(dropped)}')

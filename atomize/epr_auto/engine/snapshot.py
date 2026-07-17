@@ -410,14 +410,20 @@ def build_worker_args(preset, exp_name, curve_name='exp', combo_cor=0,
                     _ns(_snap(s.st_inc, g)), _ns(_snap(s.len_inc, g))])
 
     # Integration window: ns -> points at 0.4 ns * decimation, clamped to the
-    # detection length (win_left()/win_right()).
+    # detection length (win_left()/win_right()). The ns -> points conversion
+    # is the GUI's own points_from_ns (a float-error-tolerant floor; see its
+    # docstring) called directly, like expand_phase_cycling above -- the same
+    # trade-off applies: sharing it means the two cannot drift, but the
+    # equivalence harness cannot catch a bug inside it either.
+    from atomize.control_center.awg_phasing_insys import points_from_ns
+
     tpp = 0.4 * preset.decimation
     p1_len = _snap(p1.length)
 
     def win_points(win_ns):
-        pts = int(float(win_ns) / tpp)
+        pts = points_from_ns(win_ns, tpp)
         if round(pts * tpp, 1) > round(p1_len, 1):
-            pts = int(round(p1_len, 1) / tpp)
+            pts = points_from_ns(round(p1_len, 1), tpp)
         return pts
 
     return WorkerArgs(

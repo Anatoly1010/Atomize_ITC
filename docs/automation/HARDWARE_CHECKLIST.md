@@ -29,6 +29,71 @@ python -m atomize.epr_auto steps                        # list all steps + param
 python -m atomize.epr_auto validate <file>.yaml         # check without running
 ```
 
+## Presets — where the pulse sequence actually comes from
+
+**A protocol never describes a pulse sequence.** It names a `.phase_awg`
+preset, and every pulse parameter — types, starts, lengths, amplitude
+coefficients, phase-cycle text, increments, rep rate, detection window — is
+read out of that file by `engine/snapshot.py:load_preset`, using the same
+line indices as the phasing GUI's `open_file()`. To change a sequence, edit
+or copy the preset; the YAML can only reach the scalars a step chooses to
+expose.
+
+The snippets below mostly write a step as a bare string:
+
+```yaml
+steps:
+  - tune.auto_phase          # <- no preset named, but one IS used
+```
+
+That is the shorthand form (`protocol.py:_parse_step`); the loader fills in
+every omitted parameter from its spec default, so the line above is exactly
+equivalent to:
+
+```yaml
+steps:
+  - tune.auto_phase:
+      preset: hahn_echo_4s.phase_awg    # the default, filled in for you
+      points: 4
+      scans: 1
+```
+
+Use that mapping form (note the colon and the indented block) to name your
+own preset. Defaults per step:
+
+| step | default preset |
+|---|---|
+| `tune.auto_phase` | `hahn_echo_4s.phase_awg` |
+| `tune.echo_window` | `hahn_echo_4s.phase_awg` |
+| `tune.power_for_length` | `rabi_echo_4s.phase_awg` |
+| `tune.pi_calibration` | `ampl_4s.phase_awg` (mode: amplitude) / `rabi_echo_4s.phase_awg` (mode: length) |
+| `field.edfs` | `ed_4s.phase_awg` |
+| `exp.t2` | `hahn_echo_4s.phase_awg` |
+| `exp.t1` | `inversion_recovery_echo_4s_log.phase_awg` |
+
+Rules (`params.py:PresetFile`, `primitives/tune.py:_build`):
+
+- A bare name resolves against **your protocol's own directory first**, then
+  `atomize/control_center/experiments/`; an absolute path also works. A name
+  that resolves nowhere is a load-time error with a file:line, not a
+  surprise at the bench.
+- The preset must be saved with **`IQ Correction:  2`** (IQ-corrected 1-D
+  data) or the step is rejected at pre-flight — checked up front, before any
+  hardware moves.
+- `python -m atomize.epr_auto steps` prints every step's parameters and
+  defaults, and `validate` resolves each preset to its absolute path without
+  running anything. Use both before a bench session.
+- What runs is *not* the preset as saved: the step's own parameters
+  (`points`, `scans`, …) plus the session's calibrations override it —
+  `field.edfs` replaces the stored `Field:`, `tune.echo_window` replaces
+  `Window left/right`, `tune.auto_phase` replaces the zero-order. So the
+  preset supplies the pulse *geometry*; the run supplies the state.
+- Choosing a preset per step is rarely about the experiment: `tune.auto_phase`
+  just needs an echo, so `hahn_echo_4s` serves. Override it only when that
+  sequence does not suit the sample — e.g. its fixed 288 ns τ is too long for
+  a short-Tm sample, so you copy the preset with a shorter τ and point at the
+  copy.
+
 ## 1. tune.auto_phase — first hardware contact (no moving parts)
 
 Sets only the digitizer demod phase. Compare `zero_order_deg` with the
@@ -43,6 +108,15 @@ steps:
 
 Expect: `phase_coherence` PASS, echo mostly in I after a re-run
 (`phase_deg` near 0 on the second pass). Record: zero_order before/after.
+
+Scope of one auto-phase (ARCHITECTURE.md 'Temperature rules'): the result is
+a property of the detection chain, not of the sequence — the same value
+serves T1, T2, ESEEM and DEER at a given (temperature, vane) state, so it is
+run once per state and *not* once per experiment. It does drift strongly with
+temperature (190° over 80–280 K on oTP), so a setpoint move beyond
+`rephase_delta` (default 5 K) drops it and the protocol must re-run
+`tune.auto_phase` after the new temperature settles. The fine calibration is
+not dropped — temperature does not move B₁.
 
 ## 2. tune.echo_window — NEW Phase 5, engine trace path (no moving parts)
 

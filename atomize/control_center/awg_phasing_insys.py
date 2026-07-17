@@ -29,6 +29,35 @@ from atomize.general_modules.gui_style import apply_app_style, CHECKBOX_STYLE
 SEQCALC_SIGNAL = os.path.join(tempfile.gettempdir(), 'atomize_seqcalc.param')
 SEQCALC_CHANNEL = 'awg'
 
+def points_from_ns( value, time_per_point ):
+    """
+    Integration-window ns -> point index. floor(), but tolerant of binary
+    float error: time_per_point is 0.4 * decimation, which has no exact
+    binary form, so an on-grid value can divide just short of a whole
+    number -- 259.2 / 1.6 is 161.99999999999997, and a bare int() truncates
+    that to 161. About 16% of the values reachable on the 0.4 ns spin-box
+    grid land one point off this way. The effect is small (a window EDGE
+    moved by one point sits in the echo tail), but it is simply not what was
+    asked for.
+
+    The epsilon is in points: 1e-9 point is far above the ~1e-13 division
+    error yet far below any real off-grid entry, so genuine floor()
+    behaviour is untouched -- 12.7 ns / 0.4 still floors to 31.
+
+    Only the Insys tools need this. The NIOCH forks use a fixed
+    time_per_point of 2 ns; division by a power of two is exact, so they
+    cannot hit it (re-check if that ever becomes dynamic).
+
+    Shared with the automation engine: atomize/epr_auto/engine/snapshot.py
+    calls this function directly (as it does expand_phase_cycling) so that
+    the two cannot drift.
+
+    Shared with the automation engine: atomize/epr_auto/engine/snapshot.py
+    calls this function directly (as it does expand_phase_cycling) so that
+    the two cannot drift.
+    """
+    return int( float( value ) / time_per_point + 1e-9 )
+
 class MainWindow(QMainWindow):
     """
     A main window class
@@ -1059,7 +1088,7 @@ class MainWindow(QMainWindow):
                     setattr(self, par_name, int(spin_box.value()))
             else:
                 if attr_name == 'Win_left' or attr_name == 'Win_right':
-                    setattr(self, par_name, int( float( spin_box.value() ) / self.time_per_point ))
+                    setattr(self, par_name, points_from_ns( spin_box.value(), self.time_per_point ))
                 else:
                     setattr(self, par_name, float(spin_box.value()))
         
@@ -2632,9 +2661,9 @@ class MainWindow(QMainWindow):
         """
         A function to change left integration window
         """
-        self.cur_win_left = int( float( self.Win_left.value() ) / self.time_per_point )
+        self.cur_win_left = points_from_ns( self.Win_left.value(), self.time_per_point )
         if round( self.cur_win_left * self.time_per_point, 1) > round( float( self.remove_ns( self.p1_length ) ), 1):
-            self.cur_win_left = int( round( float( self.remove_ns( self.p1_length ) ), 1) / self.time_per_point )
+            self.cur_win_left = points_from_ns( round( float( self.remove_ns( self.p1_length ) ), 1), self.time_per_point )
             self.Win_left.setValue( round( self.cur_win_left * self.time_per_point, 1) )
 
         if self.opened == 0:
@@ -2644,9 +2673,9 @@ class MainWindow(QMainWindow):
                 pass
 
     def win_right(self):
-        self.cur_win_right = int( float( self.Win_right.value() ) / self.time_per_point )
+        self.cur_win_right = points_from_ns( self.Win_right.value(), self.time_per_point )
         if round( self.cur_win_right * self.time_per_point, 1) > round( float( self.remove_ns( self.p1_length ) ), 1):
-            self.cur_win_right = int( round( float( self.remove_ns( self.p1_length ) ), 1) / self.time_per_point )
+            self.cur_win_right = points_from_ns( round( float( self.remove_ns( self.p1_length ) ), 1), self.time_per_point )
             self.Win_right.setValue( round( self.cur_win_right * self.time_per_point, 1) )
 
         if self.opened == 0:
