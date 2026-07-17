@@ -45,20 +45,29 @@ def _session_overrides(session):
     fd = session.state.get('field')
     if fd:
         ov['field'] = float(str(fd).split(' ')[0])
+    ew = session.state.get('echo_window')
+    if ew:
+        # stored relative to the DETECTION pulse start — the same frame the
+        # preset's Window left/right live in, so it transfers across presets
+        # whose tau (absolute echo position) differs
+        ov['win_left_ns'] = ew['win_left_ns']
+        ov['win_right_ns'] = ew['win_right_ns']
     return ov
 
 
 def _build(session, preset_path, exp_name, slot_coef=None, **overrides):
     """Preset -> (preset, WorkerArgs) with session calibrations + explicit
-    overrides applied. slot_coef=(slot_index, value) overrides one pulse's
-    amplitude coefficient (a nested field build_worker_args overrides can't
-    reach). Accepts a path or an already-loaded Preset (which is mutated —
-    pass a fresh parse, never a cached one)."""
+    overrides applied. slot_coef=(slot_index, value) — or a list of such
+    pairs — overrides pulse amplitude coefficients (a nested field
+    build_worker_args overrides can't reach). Accepts a path or an
+    already-loaded Preset (which is mutated — pass a fresh parse, never a
+    cached one)."""
     preset = preset_path if isinstance(preset_path, snapshot.Preset) \
         else snapshot.load_preset(preset_path)
     if slot_coef is not None:
-        idx, value = slot_coef
-        preset.slots[idx].coef = float(value)
+        pairs = [slot_coef] if isinstance(slot_coef[0], int) else slot_coef
+        for idx, value in pairs:
+            preset.slots[idx].coef = float(value)
     ov = _session_overrides(session)
     ov.update({k: v for k, v in overrides.items() if v is not None})
     wa = snapshot.build_worker_args(preset, exp_name=exp_name, **ov)
@@ -137,6 +146,165 @@ def auto_phase(session, preset, points=4, scans=1):
     # phase_coherence, not echo_snr: a `points`-long trace has too few
     # point-to-point differences for the MAD-of-diff noise estimate
     return result, [phase_coherence(sig)]
+
+
+# ------------------------------------------------- calibration hand-off
+
+def _infer_cal_map(preset):
+    """Default apply_cal mapping (ARCHITECTURE.md 'Tune-up completeness'):
+    among the active hard MW pulses (P2..P9, BLANK/LASER excluded;
+    soft/selective detection pulses excluded by the >= 2x-shortest length
+    criterion) the preset's own two amplitude levels map to pi (higher
+    level) and pi/2 (lower). Anything else is ambiguous -> explicit map."""
+    mw = [(i, s) for i, s in enumerate(preset.slots)
+          if i > 0 and s.active and s.typ not in ('BLANK', 'LASER')]
+    if not mw:
+        raise ValueError('apply_cal: the preset has no active MW pulses to patch')
+    # soft/selective detection sits at ~3-4x the shortest pulse; a
+    # length-encoded pi is exactly 2x its pi/2, so cut between them
+    min_len = min(s.length for _, s in mw)
+    hard = [(i, s) for i, s in mw if s.length < 2.5 * min_len]
+    amp_levels = sorted({s.coef for _, s in hard})
+    if len(amp_levels) == 2:
+        lo = amp_levels[0]
+        return {f'P{i + 1}': ('pi2' if s.coef == lo else 'pi') for i, s in hard}
+    len_levels = sorted({s.length for _, s in hard})
+    if len(amp_levels) == 1 and len(len_levels) == 2:
+        # equal amplitudes, pi encoded as the 2x-longer pulse (hahn_echo style)
+        lo = len_levels[0]
+        return {f'P{i + 1}': ('pi2' if s.length == lo else 'pi') for i, s in hard}
+    found = ', '.join(f'P{i + 1}={s.coef}%/{s.length}ns' for i, s in hard)
+    raise ValueError(
+        'apply_cal: cannot infer the pulse roles — expected two amplitude '
+        'levels, or one amplitude level with two pulse lengths, among the '
+        f'hard MW pulses; found [{found}]; give an explicit map, e.g. '
+        'apply_cal: {P2: pi2, P3: pi}')
+
+
+def apply_calibration(session, preset, mapping=None):
+    """Patch a loaded Preset in place with the session's pi_calibration
+    result: amplitude-mode calibrations set the mapped slots' amplitude
+    coefficient at fixed length; length-mode calibrations set the length,
+    quantized to the preset's AWG grid (nearest multiple). mapping is the
+    explicit {P2..P9: pi|pi2} map; None infers it (_infer_cal_map).
+    Returns {slot: {role, field, value}} describing the patch, or None when
+    the session has no calibration yet (nothing to apply)."""
+    cal = session.state.get('pi_calibration')
+    if cal is None:
+        if mapping is not None:
+            raise ValueError('apply_cal: no pi_calibration result in the '
+                             'session (run tune.pi_calibration first)')
+        return None
+    if cal.get('pi') is None or cal.get('pi2') is None:
+        raise ValueError('apply_cal: the pi_calibration result is incomplete '
+                         f"(pi={cal.get('pi')}, pi2={cal.get('pi2')})")
+    if mapping is None:
+        mapping = _infer_cal_map(preset)
+
+    grid = preset.awg_grid
+    patched = {}
+    for slot_name, role in sorted(mapping.items()):
+        idx = int(slot_name[1:]) - 1
+        s = preset.slots[idx]
+        if not s.active:
+            raise ValueError(f'apply_cal: {slot_name} is inactive in '
+                             f'{preset.path}')
+        value = float(cal['pi' if role == 'pi' else 'pi2'])
+        if cal['mode'] == 'amplitude':
+            # standard inverse-length scaling (the amp is nearly linear, lab
+            # fact 2026-07-17): the calibration measured amp(theta) at its own
+            # swept-pulse length, so a slot of a different length needs
+            # amp * L_cal / L_slot. Equal lengths -> the value verbatim.
+            l_cal = cal.get('length_ns')
+            if l_cal:
+                l_slot = snapshot._snap(s.length, grid)
+                value = round(value * float(l_cal) / l_slot, 2)
+            if value > 100.0:
+                raise ValueError(
+                    f'apply_cal: {slot_name} would need {value}% (> 100%) at '
+                    f'{s.length} ns — re-run the coarse power stage (more '
+                    'power) or lengthen the pulse')
+            s.coef = value
+            patched[slot_name] = {'role': role, 'field': 'amplitude',
+                                  'value': value, 'unit': '%'}
+        else:
+            q = round(max(1, round(value / grid)) * grid, 2)
+            s.length = q
+            patched[slot_name] = {'role': role, 'field': 'length',
+                                  'value': q, 'unit': 'ns'}
+    return patched
+
+
+# ------------------------------------------------------------ echo window
+
+def echo_window(session, preset, factor=2.0, sweeps=3):
+    """Tune the integration window from an averaged echo trace (engine
+    acquire_trace on the Worker's dig_on preview path, accumulating mode):
+    center = max of the smoothed |V(t)|, width = FWHM * factor, edges
+    rounded outward onto the ADC grid (0.4 ns * decimation) and clamped to
+    the detection window. Stored relative to the DETECTION pulse start and
+    applied to every later build via the session overrides — MUST run
+    before tune.auto_phase, which integrates over this window."""
+    factor = float(factor)
+    if factor < 1.0:
+        raise ValueError(f'factor must be >= 1 (got {factor})')
+    pre, wa = _build(session, preset, exp_name='EchoWindow')
+    if wa.iq_cor != 1:
+        raise ValueError("preset must be saved with 'IQ Correction:  2' "
+                         '(IQ-corrected 1-D data) for automation acquisitions')
+    executor.acquire_trace(wa, script_test=True)
+    if session.test:
+        result = {'win_left_ns': pre.win_left_ns,
+                  'win_right_ns': pre.win_right_ns,
+                  'center_ns': round((pre.win_left_ns + pre.win_right_ns) / 2, 1),
+                  'fwhm_ns': None, 'canned': True}
+        session.state['echo_window'] = {'win_left_ns': pre.win_left_ns,
+                                        'win_right_ns': pre.win_right_ns}
+        return result, [JudgeReport('echo_in_trace', True, float('inf'),
+                                    {'note': 'dry-run, not judged'})]
+
+    session.ensure_hardware_locks()
+    t_s, i, q = executor.acquire_trace(
+        wa, n_sweeps=sweeps,
+        on_message=lambda m: session.log(f'      worker: {m}'))
+    t = t_s * 1e9                      # dig_on plots the trace axis in seconds
+    sig = i + 1j * q
+    mag = _smooth(np.abs(sig))
+
+    c_idx = int(np.argmax(mag))
+    peak = float(mag[c_idx])
+    floor = float(np.median(mag))      # echo occupies a minority of the window
+    half = floor + (peak - floor) / 2.0
+    below_l = np.nonzero(mag[:c_idx] < half)[0]
+    below_r = np.nonzero(mag[c_idx:] < half)[0]
+    l_idx = int(below_l[-1]) + 1 if below_l.size else 0
+    r_idx = c_idx + int(below_r[0]) - 1 if below_r.size else len(t) - 1
+    center = float(t[c_idx])
+    fwhm = float(t[r_idx] - t[l_idx])
+    # the echo must be fully resolved inside the trace: an FWHM edge on the
+    # trace boundary means the echo is cut by the acquisition window
+    resolved = below_l.size > 0 and below_r.size > 0
+
+    tpp = 0.4 * pre.decimation         # ADC grid after decimation
+    t_end = float(t[-1])
+    win_l = max(0.0, math.floor((center - fwhm * factor / 2) / tpp) * tpp)
+    win_r = min(t_end, math.ceil((center + fwhm * factor / 2) / tpp) * tpp)
+    win_l, win_r = round(win_l, 1), round(win_r, 1)
+
+    path = session.save_path('echo_window')
+    np.savetxt(path, np.column_stack((t, i, q)), delimiter=',',
+               header='time_ns,i_mv,q_mv')
+
+    session.state['echo_window'] = {'win_left_ns': win_l, 'win_right_ns': win_r}
+    result = {'win_left_ns': win_l, 'win_right_ns': win_r,
+              'center_ns': round(center, 1), 'fwhm_ns': round(fwhm, 1),
+              'data_file': path}
+    judges = [JudgeReport('echo_in_trace', resolved, round(fwhm, 1),
+                          {'center_ns': round(center, 1),
+                           'trace_ns': round(t_end, 1),
+                           'clamped': win_l == 0.0 or win_r == round(t_end, 1)}),
+              echo_snr(sig)]
+    return result, judges
 
 
 # --------------------------------------------------------- pi calibration
@@ -264,15 +432,59 @@ def _anchored_pi2(x, y, x_pi, popt):
     return _theta_root(b, (math.pi - b * x_pi) / x_pi ** 2, math.pi / 2)
 
 
+def _scale_detection_pair(pre, slot, pi_v, pi2_v, l_cal, log):
+    """Soft/selective detection pair re-scaling after a fine amplitude cal
+    (ARCHITECTURE.md 'Detection pulses'): pair = active MW pulses (not the
+    swept slot) at >= 2x the swept pulse's length, roles by relative
+    amplitude (lower = pi/2); the standard inverse-length rule
+    amp_det(theta) = amp_cal(theta) * L_cal / L_det (the amp is nearly
+    linear). Returns {slot_index: {role, amplitude, length_ns}}, empty when
+    there is no recognizable pair (preset-stored values stay in force)."""
+    swept_len = pre.slots[slot].length
+    pair = [(i, s) for i, s in enumerate(pre.slots)
+            if i > 0 and i != slot and s.active
+            and s.typ not in ('BLANK', 'LASER') and s.length >= 2 * swept_len]
+    if not pair or l_cal is None:
+        return {}
+    coefs = sorted({s.coef for _, s in pair})
+    if len(pair) == 1:
+        roles = {pair[0][0]: 'pi'}          # single refocusing pulse
+    elif len(coefs) == 2:
+        roles = {i: ('pi2' if s.coef == coefs[0] else 'pi') for i, s in pair}
+    else:
+        log('      detection pair: amplitudes indistinguishable — '
+            'preset-stored values left in force')
+        return {}
+    out = {}
+    for i, s in pair:
+        amp = ((pi_v if roles[i] == 'pi' else pi2_v)
+               * float(l_cal) / snapshot._snap(s.length, pre.awg_grid))
+        if amp > 100.0:
+            log(f'      detection pair: P{i + 1} would need {round(amp, 2)}% '
+                '(> 100%) — preset-stored values left in force')
+            return {}
+        out[i] = {'role': roles[i], 'amplitude': round(amp, 2),
+                  'length_ns': s.length}
+    return out
+
+
 def pi_calibration(session, preset, mode='amplitude', channel='AWG',
-                   points=None, scans=None, step=None, hold_amplitude=None):
+                   points=None, scans=None, step=None, hold_amplitude=None,
+                   refine=False, _pair_override=None):
     """Fine stage: nutation curve of the swept pulse -> amp/length of pi and
     pi/2, extracted independently through the theta(x) = b*x + s*x^2 fit.
 
     mode='amplitude': Amplitude-sweep preset, axis in % of AWG full scale
     (step overrides the preset's Amplitude Step). mode='length': linear-time
     nutation preset, axis converted to ns. hold_amplitude overrides the swept
-    pulse's amplitude coefficient (used by power_for_length)."""
+    pulse's amplitude coefficient (used by power_for_length).
+
+    After every amplitude-mode cal the soft detection pair is re-scaled by
+    the standard inverse-length rule (result key 'detection_pair'; the first
+    pass always runs the preset-stored pair — the nutation extremum position
+    is first-order independent of pair errors). refine=True re-runs the
+    nutation once with the re-scaled pair patched in (_pair_override is that
+    recursion's internal channel)."""
     if channel != 'AWG':
         raise ValueError('only the AWG channel is supported (RECT is a later phase)')
 
@@ -283,21 +495,48 @@ def pi_calibration(session, preset, mode='amplitude', channel='AWG',
                          f'got {pre_probe.sweep_type!r}')
     slot = _swept_slot(pre_probe, mode)
 
+    coef_overrides = []
+    if hold_amplitude is not None:
+        coef_overrides.append((slot, hold_amplitude))
+    if _pair_override:
+        coef_overrides.extend(_pair_override.items())
     pre, wa = _build(session, pre_probe, exp_name='PiCal',
-                     slot_coef=(slot, hold_amplitude) if hold_amplitude is not None else None,
+                     slot_coef=coef_overrides or None,
                      points=points, scans=scans, step_ampl=step)
     sweep = pre.sweep_type
     acq = _acquire(session, wa, sweep, f'pi_cal_{mode}', log=session.log)
     unit = '%' if mode == 'amplitude' else 'ns'
+    # the swept pulse's fixed quantity, needed to transfer the calibration to
+    # pulses of a different length (apply_cal's inverse-length amplitude scaling)
+    if mode == 'amplitude':
+        context = {'length_ns': snapshot._snap(pre.slots[slot].length,
+                                               pre.awg_grid)}
+    else:
+        context = {'held_amplitude': pre.slots[slot].coef}
 
     if acq is None:
         pi_v, pi2_v = _CANNED_PI, _CANNED_PI2
         result = {'pi': pi_v, 'pi2': pi2_v, 'unit': unit, 'mode': mode,
-                  'ratio': round(pi_v / pi2_v, 3), 'rails': None, 'canned': True}
+                  'ratio': round(pi_v / pi2_v, 3), 'rails': None,
+                  'canned': True, **context}
+        det = {} if mode != 'amplitude' else _scale_detection_pair(
+            pre, slot, pi_v, pi2_v, context.get('length_ns'), session.log)
+        if det:
+            result['detection_pair'] = {f'P{i + 1}': dict(v)
+                                        for i, v in det.items()}
         session.state['pi_calibration'] = result
         judges = [pi_ratio_linearity(pi_v, pi2_v)]
         if mode == 'amplitude':
             judges.append(amplitude_rails(pi_v))
+        if refine and det and _pair_override is None:
+            # dry-run still exercises the refine plumbing: the recursion
+            # pre-flights the pair-patched preset through the engine
+            session.log('      refine: would re-run the nutation with the '
+                        're-scaled detection pair')
+            return pi_calibration(session, preset, mode, channel, points,
+                                  scans, step, hold_amplitude, refine=False,
+                                  _pair_override={i: v['amplitude']
+                                                  for i, v in det.items()})
         return result, judges
 
     x, i, q, path = acq
@@ -352,9 +591,26 @@ def pi_calibration(session, preset, mode='amplitude', channel='AWG',
     pi2_v = round(float(pi2_v), 2) if pi2_v is not None else None
     result = {'pi': pi_v, 'pi2': pi2_v, 'unit': unit, 'mode': mode,
               'ratio': round(pi_v / pi2_v, 3) if pi_v and pi2_v else None,
-              'rails': rails, 'data_file': path}
+              'rails': rails, 'data_file': path, **context}
     if pi_v and pi2_v:
         judges.append(pi_ratio_linearity(pi_v, pi2_v))
+    # standard post-cal detection-pair re-scaling (skipped on a rail: the
+    # measured amplitudes do not describe a valid rotation)
+    if mode == 'amplitude' and rails is None and pi_v and pi2_v:
+        det = _scale_detection_pair(pre, slot, pi_v, pi2_v,
+                                    context.get('length_ns'), session.log)
+        if det:
+            result['detection_pair'] = {f'P{i + 1}': dict(v)
+                                        for i, v in det.items()}
+            if refine and _pair_override is None:
+                session.state['pi_calibration'] = result
+                session.log('      refine: re-running the nutation with the '
+                            're-scaled detection pair')
+                return pi_calibration(session, preset, mode, channel, points,
+                                      scans, step, hold_amplitude,
+                                      refine=False,
+                                      _pair_override={i: v['amplitude']
+                                                      for i, v in det.items()})
     session.state['pi_calibration'] = result
     return result, judges
 

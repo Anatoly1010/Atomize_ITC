@@ -26,6 +26,7 @@ class EPRSession:
         self._pulser = None
         self._mw_bridge = None
         self._field_controller = None
+        self._temp_controller = None
         self._run_dir = None
         self._save_counter = 0
         self._locked = False
@@ -56,6 +57,13 @@ class EPRSession:
             import atomize.device_modules.BH_15 as bh
             self._field_controller = bh.BH_15()
         return self._field_controller
+
+    @property
+    def temp_controller(self):
+        if self._temp_controller is None:
+            import atomize.device_modules.Lakeshore_335 as ls
+            self._temp_controller = ls.Lakeshore_335()
+        return self._temp_controller
 
     # ------------------------------------------------------------- run dir
 

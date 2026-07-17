@@ -1,4 +1,5 @@
-# Full tune-up chain (Phase 2 primitives): coarse power, field, phase, fine cal.
+# Full tune-up chain (canonical order, ARCHITECTURE.md 'Tune-up completeness'):
+#   [temp] -> coarse power -> field -> echo window -> phase -> fine cal.
 # Dry-run (no hardware, no GUI needed):
 #   python -m atomize.epr_auto run protocols/tune_up.yaml --test
 sample: test_sample
@@ -7,6 +8,14 @@ notify: none                  # telegram: bot_message on checkpoint/finish/abort
 # output: ~/epr_data/{date}_{sample}   # run-dir template (default shown)
 
 steps:
+  # optional temperature prologue (uncomment for a cryostat run)
+  # - temp.set:
+  #     setpoint: 80.0
+  #     heater_range: 5 W
+  # - temp.wait:
+  #     band: 0.3
+  #     timeout: 1800 s
+
   # coarse stage: rotary vane until pi lands at 32 ns at ~95 % AWG amplitude
   # (run once per sample/resonator setup; invalidates auto-phase + fine cal)
   - tune.power_for_length:
@@ -14,14 +23,21 @@ steps:
       amplitude: 95
       checkpoint: true          # vane moves default to a confirmation
 
+  # signal search: 'auto' centers on h*nu/(g*mu_B) from the synthesizer
+  # readout (one span-x2 escalation before giving up with a diagnosis)
   - field.edfs:
-      range: [338 mT, 352 mT]
+      range: auto
       pick: max
       checkpoint: true
 
+  # integration window from the averaged echo trace — before auto_phase,
+  # which integrates over this window
+  - tune.echo_window
+
   - tune.auto_phase
 
-  # fine stage: per-pulse amplitude sweep; pi and pi/2 fitted independently.
+  # fine stage: per-pulse amplitude sweep; pi and pi/2 fitted independently,
+  # soft detection pair re-scaled by the inverse-length rule afterwards.
   # retries: one extra attempt on a failed judge; a rail failure additionally
   # re-runs the coarse stage above (+ auto-phase) once and retries.
   - tune.pi_calibration:

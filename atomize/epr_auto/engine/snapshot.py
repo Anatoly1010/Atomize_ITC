@@ -257,6 +257,7 @@ class WorkerArgs:
     first_order: float  # rad/s
     second_order: float # rad/s^2
     save2d: int
+    p_to_drop: int = 0  # FFT drop points; dig_on (preview) only, exp* ignore it
     # sweep-specific extras
     log_start: float = 1.0
     log_end: float = 7.0
@@ -328,6 +329,29 @@ class WorkerArgs:
     def exp_eseem_args(self):
         """worker.exp_eseem (ESEEM Avg): exp args + tau-averaging tail."""
         return self.exp_args() + (self.eseem_inc2, self.cycles, self.save_each)
+
+    def dig_args(self, l_mode=1, fft_flag=0, quad=0):
+        """worker.dig_on (preview), matching dig_start / run_main_experiment's
+        packing: rect1 = [type, start, length, phases, freq] (p1_list),
+        rect2..9 = [start, length] (p{i}_list), awg lists without the
+        increment tail (p{i}_awg_list). The GUI defaults are l_mode=0,
+        fft=0, quad=0; the engine's trace capture defaults to l_mode=1 —
+        the accumulating (non-live) readout, i.e. the phase-cycled average
+        the exp methods integrate."""
+        r1 = self.rect[0]
+        rect1 = [r1[0], r1[1], r1[2], r1[3], r1[6]]
+        rects = [[r[0], r[1]] for r in self.rect[1:]]
+        awgs = [a[:8] for a in self.awg]
+        return ((self.decimation, l_mode, self.averages, self.win_left,
+                 self.win_right, rect1, *rects[:6],
+                 self.n_wurst, self.rep_rate, self.field, fft_flag,
+                 self.iq_phase, self.ch0_ampl, self.ch1_ampl, 0,
+                 *awgs[:6], quad, self.zero_order,
+                 self.first_order, self.second_order, self.p_to_drop,
+                 self.b_sech, self.combo_cor, self.combo_synt, 0,
+                 rects[6], rects[7], awgs[6], awgs[7],
+                 self.laser_flag, self.laser_num, self.q_switch_delay,
+                 self.iq_cor))
 
 
 def build_worker_args(preset, exp_name, curve_name='exp', combo_cor=0,
@@ -413,7 +437,7 @@ def build_worker_args(preset, exp_name, curve_name='exp', combo_cor=0,
         x0=_snap(preset.x0), xdelta=_snap(preset.xdelta),
         first_order=preset.first_order_deg / FIRST_ORDER_COEF,
         second_order=preset.second_order_deg / SEC_ORDER_COEF,
-        save2d=save2d,
+        save2d=save2d, p_to_drop=preset.p_to_drop,
         log_start=_log_snap(preset.log_start, fine), log_end=_log_snap(preset.log_end, fine),
         start_field=preset.start_field, end_field=preset.end_field,
         step_field=preset.step_field, step_ampl=preset.step_ampl,

@@ -14,11 +14,46 @@ from atomize.epr_auto.primitives.judges import JudgeReport, echo_snr
 from atomize.epr_auto.primitives.tune import _acquire, _build
 
 
-def edfs(session, preset, range, points, scans, pick='max', value=None):
+# h/mu_B in Gauss per MHz: B[G] = 0.71447704 * nu[MHz] / g
+_G_PER_MHZ = 0.71447704
+# an SNR score this far above the pure-noise ceiling (~1) counts as a weak
+# line for the failure diagnosis, even though it is below the judge's floor
+_WEAK_LINE_SCORE = 1.5
+
+
+def _synth_mhz(session):
+    ans = str(session.mw_bridge.mw_bridge_synthesizer())
+    try:
+        return float(ans.replace('Frequency:', '').replace('MHz', '').strip())
+    except ValueError:
+        raise RuntimeError(f'cannot parse synthesizer answer {ans!r}') from None
+
+
+def edfs(session, preset, range, points, scans, pick='max', value=None,
+         g=2.0023, span='250 G', offset='0 G', _escalated=False):
     """Echo-detected field sweep over range=[start, end] ('<x> G/mT/T'
     strings); pick the working field ('max' = magnitude maximum of the
-    sweep, 'value' = the given field) and set the magnet to it."""
-    lo, hi = (parse_field_g(v) for v in range)
+    sweep, 'value' = the given field) and set the magnet to it.
+
+    range='auto' is the initial signal search: center = h*nu/(g*mu_B) from
+    the synthesizer readout + offset (the magnet is not absolutely
+    calibrated — pass the setup's known shift; the result's shift_g reports
+    the measured line-minus-center distance to feed back in). +/- span
+    around that. On a failed echo-SNR judge the span widens x2 and the
+    sweep re-runs ONCE; a second failure surfaces with a diagnosis ('flat
+    everywhere' vs 'weak line found') naming what to check."""
+    center = None
+    if range == 'auto':
+        nu = _synth_mhz(session)
+        half = parse_field_g(span)
+        off = parse_field_g(offset)
+        center = _G_PER_MHZ * nu / float(g) + off
+        lo, hi = center - half, center + half
+        session.log(f'      range auto: synthesizer {nu:.0f} MHz, g = {g}'
+                    + (f', offset {off:+.1f} G' if off else '')
+                    + f' -> center {center:.1f} G, span +/- {half:.0f} G')
+    else:
+        lo, hi = (parse_field_g(v) for v in range)
     step = (hi - lo) / (points - 1)
     # validate the pick BEFORE the (multi-minute) sweep, so --test and the
     # live run both reject a bad configuration up front
@@ -26,7 +61,7 @@ def edfs(session, preset, range, points, scans, pick='max', value=None):
         picked_g = parse_field_g(value)
         if not (lo <= picked_g <= hi):
             raise ValueError(f'pick value {picked_g} G is outside the sweep '
-                             f'range ({lo}..{hi} G)')
+                             f'range ({lo:.1f}..{hi:.1f} G)')
     elif pick != 'max':
         raise ValueError(f"pick {pick!r} is not available headless "
                          "(marker needs the interactive tools)")
@@ -45,12 +80,42 @@ def edfs(session, preset, range, points, scans, pick='max', value=None):
 
     x, i, q, path = acq                      # x in Gauss (worker's axis)
     sig = i + 1j * q
+    snr_judge = echo_snr(sig)
+
+    if not snr_judge.passed and range == 'auto' and not _escalated:
+        wide = f'{2 * parse_field_g(span)} G'
+        session.log(f'      no echo above the SNR floor — widening the span '
+                    f'to +/- {parse_field_g(wide):.0f} G and re-running '
+                    '(one escalation)')
+        return edfs(session, preset, 'auto', points, scans, pick, value,
+                    g, wide, offset, _escalated=True)
+    if not snr_judge.passed:
+        # the search ladder ends at the human: name the precondition to
+        # check, and do NOT move the magnet to a noise maximum
+        peak_g = float(x[int(np.argmax(np.abs(sig)))])
+        if snr_judge.score >= _WEAK_LINE_SCORE:
+            snr_judge.details['diagnosis'] = (
+                f'weak line found near {peak_g:.1f} G (score '
+                f'{snr_judge.score:.2f}) — increase scans, or narrow the '
+                'range around it')
+        else:
+            snr_judge.details['diagnosis'] = (
+                'flat everywhere: no echo anywhere in the range — check the '
+                'resonator tuning, temperature, g-factor guess and sample '
+                'position')
+        return ({'field': None, 'pick': pick, 'data_file': path},
+                [snr_judge])
+
     field_g = picked_g if pick == 'value' else \
         float(x[int(np.argmax(np.abs(sig)))])
 
     set_result, set_judges = set_field(session, f'{field_g:.2f} G')
     result = {'field': set_result['field'], 'pick': pick, 'data_file': path}
-    return result, [echo_snr(sig)] + set_judges
+    if center is not None:
+        # measured line-minus-predicted-center: the setup's calibration
+        # shift, ready to be fed back as the offset parameter
+        result['shift_g'] = round(field_g - center, 1)
+    return result, [snr_judge] + set_judges
 
 
 def set_field(session, value):

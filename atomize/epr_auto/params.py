@@ -74,8 +74,14 @@ class TimeStr(Param):
 class FieldStr(Param):
     typename = 'field ("3478 G")'
 
+    def __init__(self, signed=False, **kw):
+        super().__init__(**kw)
+        self.signed = signed
+        if signed:
+            self.typename = 'field offset ("-15 G")'
+
     def validate(self, value, ctx):
-        if parse_field_g(value) < 0:
+        if parse_field_g(value) < 0 and not self.signed:
             raise ParamError(f'field must be non-negative, got {value!r}')
         return ' '.join(value.split())
 
@@ -145,6 +151,20 @@ class Choice(Param):
         return value
 
 
+class AutoOr(Param):
+    """The literal string 'auto', or a value validated by `inner`."""
+
+    def __init__(self, inner, **kw):
+        super().__init__(**kw)
+        self.inner = inner
+        self.typename = f"'auto' | {inner.typename}"
+
+    def validate(self, value, ctx):
+        if value == 'auto':
+            return 'auto'
+        return self.inner.validate(value, ctx)
+
+
 class PairOf(Param):
     """A two-element list, each element validated by `inner` (e.g. a field range)."""
 
@@ -157,6 +177,29 @@ class PairOf(Param):
         if not isinstance(value, (list, tuple)) or len(value) != 2:
             raise ParamError(f'expected a two-element list, got {value!r}')
         return [self.inner.validate(v, ctx) for v in value]
+
+
+class CalMap(Param):
+    """apply_cal slot -> role mapping, e.g. {P2: pi2, P3: pi}: which pulse
+    slots receive the calibrated pi / pi2 value (amplitude or grid-quantized
+    length, by the calibration's mode)."""
+
+    typename = 'mapping {P2..P9: pi | pi2}'
+    _SLOTS = tuple(f'P{i}' for i in range(2, 10))
+
+    def validate(self, value, ctx):
+        if not isinstance(value, dict) or not value:
+            raise ParamError('expected a non-empty mapping like '
+                             f'{{P2: pi2, P3: pi}}, got {value!r}')
+        out = {}
+        for k, v in value.items():
+            key = str(k).upper()
+            if key not in self._SLOTS:
+                raise ParamError(f'slot must be one of P2..P9, got {k!r}')
+            if v not in ('pi', 'pi2'):
+                raise ParamError(f"role must be 'pi' or 'pi2', got {v!r} for {key}")
+            out[key] = v
+        return out
 
 
 class PresetFile(Param):

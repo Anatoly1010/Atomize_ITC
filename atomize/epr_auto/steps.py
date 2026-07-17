@@ -18,8 +18,8 @@ from dataclasses import dataclass
 from typing import Callable
 
 from atomize.epr_auto.params import (
-    Choice, FieldStr, Float, Int, PairOf, ParamError, PresetFile, TimeStr,
-    parse_field_g, parse_time_ns,
+    AutoOr, Bool, CalMap, Choice, FieldStr, Float, Int, PairOf, ParamError,
+    PresetFile, TimeStr, parse_field_g, parse_time_ns,
 )
 
 
@@ -105,6 +105,22 @@ def tune_auto_phase(session, preset, points, scans):
                           preset=preset, points=points, scans=scans)
 
 
+@register('tune.echo_window',
+          'Set the integration window from an averaged echo trace (center = '
+          'smoothed |V| max, width = FWHM x factor); run BEFORE tune.auto_phase',
+          params={
+              'preset': PresetFile(default='hahn_echo_4s.phase_awg'),
+              'factor': Float(min=1, max=10, default=2.0,
+                              help='window width as a multiple of the echo FWHM'),
+              'sweeps': Int(min=1, default=3,
+                            help='full phase cycles to average for the trace'),
+          })
+def tune_echo_window(session, preset, factor, sweeps):
+    from atomize.epr_auto.primitives import tune
+    return _run_primitive(session, tune.echo_window,
+                          preset=preset, factor=factor, sweeps=sweeps)
+
+
 @register('tune.power_for_length',
           'Coarse stage: step the rotary vane until pi lands at the target length '
           '(see ARCHITECTURE.md "Flip-angle knobs")',
@@ -145,13 +161,18 @@ def _check_pi_calibration(params, ctx):
               'scans': Int(min=1, help='scans (default: preset value)'),
               'step': Float(min=0.01, help='amplitude step in % (Amplitude mode; '
                                            'default: preset value)'),
+              'refine': Bool(default=False,
+                             help='re-run the nutation once with the re-scaled '
+                                  'soft detection pair (new-sample insurance)'),
           },
           check=_check_pi_calibration)
-def tune_pi_calibration(session, preset, mode, channel, points, scans, step):
+def tune_pi_calibration(session, preset, mode, channel, points, scans, step,
+                        refine):
     from atomize.epr_auto.primitives import tune
     return _run_primitive(session, tune.pi_calibration,
                           preset=preset, mode=mode, channel=channel,
-                          points=points, scans=scans, step=step)
+                          points=points, scans=scans, step=step,
+                          refine=refine)
 
 
 # ---------------------------------------------------------------- field
@@ -162,27 +183,39 @@ def _check_edfs(params, ctx):
     if params['pick'] == 'marker':
         raise ParamError('pick: marker needs the interactive tools — '
                          'use max or value (operator pick is a Phase 3 item)')
-    lo, hi = (parse_field_g(v) for v in params['range'])
-    if lo >= hi:
-        raise ParamError(f"range must be [low, high], got {params['range']}")
+    if params['range'] != 'auto':
+        lo, hi = (parse_field_g(v) for v in params['range'])
+        if lo >= hi:
+            raise ParamError(f"range must be [low, high], got {params['range']}")
 
 
 @register('field.edfs',
-          'Echo-detected field sweep; pick the working field and set the magnet',
+          'Echo-detected field sweep; pick the working field and set the magnet. '
+          "range: auto centers on h*nu/(g*mu_B) from the synthesizer readout",
           params={
               'preset': PresetFile(default='ed_4s.phase_awg'),
-              'range': PairOf(FieldStr(), required=True, help='[start, end] field'),
+              'range': AutoOr(PairOf(FieldStr()), required=True,
+                              help="[start, end] field, or 'auto'"),
               'points': Int(min=2, default=200),
               'scans': Int(min=1, default=1),
               'pick': Choice('max', 'marker', 'value', default='max'),
               'value': FieldStr(help='field to set when pick: value'),
+              'g': Float(min=0.1, max=20, default=2.0023,
+                         help='g-factor for the range: auto center'),
+              'span': FieldStr(default='250 G',
+                               help='half-width of the range: auto sweep'),
+              'offset': FieldStr(signed=True, default='0 G',
+                                 help='known magnet-calibration shift added to '
+                                      'the range: auto center'),
           },
           check=_check_edfs)
-def field_edfs(session, preset, range, points, scans, pick, value):
+def field_edfs(session, preset, range, points, scans, pick, value, g, span,
+               offset):
     from atomize.epr_auto.primitives import field as field_primitives
     return _run_primitive(session, field_primitives.edfs,
                           preset=preset, range=range, points=points,
-                          scans=scans, pick=pick, value=value)
+                          scans=scans, pick=pick, value=value, g=g, span=span,
+                          offset=offset)
 
 
 @register('field.set',
@@ -193,7 +226,61 @@ def field_set(session, value):
     return _run_primitive(session, field_primitives.set_field, value=value)
 
 
+# ---------------------------------------------------------------- temperature
+
+@register('temp.set',
+          'Set the Lakeshore 335 setpoint (and heater range); returns '
+          'immediately — pair with temp.wait',
+          params={
+              'setpoint': Float(min=0.1, max=400, required=True, help='kelvin'),
+              'heater_range': Choice(*('Off', '0.5 W', '5 W', '50 W'),
+                                     help='unchanged when omitted'),
+          })
+def temp_set(session, setpoint, heater_range):
+    from atomize.epr_auto.primitives import temp
+    return _run_primitive(session, temp.set_temperature,
+                          setpoint=setpoint, heater_range=heater_range)
+
+
+@register('temp.wait',
+          'Wait until the temperature holds inside the band (temp_control '
+          'setter-waiter semantics); timeout fails the step',
+          params={
+              'band': Float(min=0.01, default=0.2, help='+/- kelvin around the setpoint'),
+              'channels': Choice('A', 'B', 'AB', default='B'),
+              'hold': Int(min=1, default=3,
+                          help='consecutive in-band polls (1 s cadence) required'),
+              'timeout': TimeStr(default='1800 s'),
+              'setpoint': Float(min=0.1, max=400,
+                                help='default: the setpoint already on the device'),
+          })
+def temp_wait(session, band, channels, hold, timeout, setpoint):
+    from atomize.epr_auto.primitives import temp
+    return _run_primitive(session, temp.wait_temperature,
+                          band=band, channels=channels, hold=hold,
+                          timeout=timeout, setpoint=setpoint)
+
+
 # ---------------------------------------------------------------- experiments
+
+def _apply_cal(session, preset, mapping):
+    """Load the experiment preset and patch it with the session's
+    pi_calibration result (explicit {slot: role} map, or inferred from the
+    preset's own two amplitude levels). Returns the patched Preset — Phase 4
+    builds the WorkerArgs from it; the stubs only log the patch."""
+    from atomize.epr_auto.engine import snapshot
+    from atomize.epr_auto.primitives import tune
+    pre = snapshot.load_preset(preset)
+    try:
+        patched = tune.apply_calibration(session, pre, mapping)
+    except ValueError as e:
+        raise StepFailure(str(e)) from None
+    if patched:
+        desc = ', '.join(f"{k}: {v['field']}={v['value']} {v['unit']} ({v['role']})"
+                         for k, v in patched.items())
+        session.log(f'      apply_cal -> {desc}')
+    return pre
+
 
 @register('exp.t2',
           'Hahn echo decay (T2/Tm), linear tau sweep, with fit',
@@ -203,10 +290,16 @@ def field_set(session, value):
               'tau_step': TimeStr(default='12 ns'),
               'points': Int(min=2, required=True),
               'scans': Int(min=1, default=1),
+              'window': Choice('auto', 'preset', default='auto',
+                               help='auto: tune.echo_window result; preset: stored values'),
+              'apply_cal': CalMap(help='slot -> pi/pi2 map; omitted = inferred '
+                                       'from the preset amplitude levels'),
           })
-def exp_t2(session, preset, tau_start, tau_step, points, scans):
+def exp_t2(session, preset, tau_start, tau_step, points, scans, window,
+           apply_cal):
+    _apply_cal(session, preset, apply_cal)
     session.log(f'      [stub] would acquire {points} pts x {scans} scans '
-                f'from {preset} (Phase 4)')
+                f'from {preset} (window: {window}) (Phase 4)')
     return {'t2': '1.8 us', 'fit': 'stretched_exp', 'canned': True}
 
 
@@ -223,9 +316,14 @@ def _check_t1(params, ctx):
               't_end': TimeStr(default='5 ms'),
               'points': Int(min=2, required=True),
               'scans': Int(min=1, default=1),
+              'window': Choice('auto', 'preset', default='auto',
+                               help='auto: tune.echo_window result; preset: stored values'),
+              'apply_cal': CalMap(help='slot -> pi/pi2 map; omitted = inferred '
+                                       'from the preset amplitude levels'),
           },
           check=_check_t1)
-def exp_t1(session, preset, t_start, t_end, points, scans):
+def exp_t1(session, preset, t_start, t_end, points, scans, window, apply_cal):
+    _apply_cal(session, preset, apply_cal)
     session.log(f'      [stub] would acquire log sweep {t_start} .. {t_end}, '
-                f'{points} pts x {scans} scans from {preset} (Phase 4)')
+                f'{points} pts x {scans} scans from {preset} (window: {window}) (Phase 4)')
     return {'t1': '1.2 ms', 'fit': 'exp_recovery', 'canned': True}

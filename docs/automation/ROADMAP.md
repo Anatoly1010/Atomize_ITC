@@ -121,41 +121,66 @@ reproduces only the GUI's snapshot pipeline.
 - [ ] `protocols/overnight_t2.yaml` full chain in `--test`
 - [ ] **Hardware**: full chain on the spectrometer, supervised mode
 
-## Phase 5 — Tune-up completeness (planned 2026-07-17; decisions in
-## ARCHITECTURE.md "Tune-up completeness")
+## Phase 5 — Tune-up completeness — code DONE 2026-07-17 (review next session;
+## decisions in ARCHITECTURE.md "Tune-up completeness")
 Gaps found reviewing the plan: classical length calibration had no consumer,
 detection-pulse convention was implicit, and window / temperature / signal
 search were missing entirely. `tune.echo_window` and the `apply_cal` hand-off
-should land **before** the Phase 4 overnight hardware run — the full chain is
+landed **before** the Phase 4 overnight hardware run — the full chain is
 not autonomous without them.
-- [ ] Calibration hand-off `apply_cal`: session pi_calibration results
-      (amplitudes at fixed length, or grid-quantized lengths in the classical
-      `mode: length` path) patch experiment presets via an explicit
-      `{slot: role}` map; default inferred from the preset's own two
-      amplitude levels among hard pulses; ambiguity ⇒ validation error
-- [ ] Detection-pair handling in calibration: soft/selective pair (~3–4×
-      target length) at proportionally lower amplitude; preset-stored values
-      on the first pass, then the standard scaling rule
-      `amp_det = amp_cal · L_target/L_det` (amp nearly linear) after every
-      fine cal; `refine: true` = one self-consistency nutation re-run
-- [ ] **[F]** `executor.acquire_trace`: engine-side echo-trace acquisition
-      reusing the Worker's preview (dig_on-style) path — the engine only
-      speaks the sweep-integral protocol today
-- [ ] `tune.echo_window`: rotate trace by current zero-order, center = max of
-      smoothed |V(t)|, width = FWHM × factor, snap to ADC grid; stored
-      relative to the DETECTION pulse start; applied via _session_overrides;
-      `window: auto | preset` on exp steps; MUST run before tune.auto_phase
-- [ ] `temp.set` / `temp.wait` primitives (Lakeshore 335, temp_control
-      setter-waiter semantics: per-channel band, hold count, wall-clock
-      timeout ⇒ StepFailure; temp_param lock already in session);
-      temperature-series protocols = explicit repeated steps in v1
-- [ ] `field.edfs range: auto`: center from `mw_bridge_synthesizer` + `g:`
-      (default 2.0023) ± `span:` (default 25 mT); one span-×2 escalation on
-      a failed echo-SNR judge; failure report names the precondition to
-      check ("flat everywhere" vs "weak line found")
-- [ ] tune_up.yaml updated to the canonical chain: power_for_length →
-      field.edfs → echo_window → auto_phase → pi_calibration (+ optional
-      temp.set/wait prologue)
+- [x] Calibration hand-off `apply_cal` (`tune.apply_calibration` +
+      `params.CalMap`, wired into the exp.* stubs so dry-runs validate):
+      amplitude-mode results patch slot coefficients with the standard
+      inverse-length scaling `amp = amp_cal · L_cal/L_slot` (pi_calibration
+      now stores `length_ns`; equal lengths ⇒ verbatim, >100 % ⇒ clean
+      error); length-mode results patch lengths quantized to the preset's
+      AWG grid. Default map inferred from the hard MW pulses: two amplitude
+      levels (lower = π/2), OR one amplitude level with two lengths
+      (hahn_echo-style length encoding, π = 2× π/2 — found in dry-run:
+      the amplitude-levels-only rule from the plan can't see these);
+      soft cutoff at ≥2.5× shortest; ambiguity ⇒ validation error
+- [x] Detection-pair re-scaling after every fine amplitude cal
+      (`_scale_detection_pair`: pair = active MW ≥2× swept length, roles by
+      relative amplitude, rule `amp_det = amp_cal · L_cal/L_det`; skipped on
+      a rail or an unrecognizable pair with a log note; result key
+      `detection_pair`); `refine: true` = one nutation re-run with the
+      re-scaled pair patched in (recursion; dry-run pre-flights it too)
+- [x] **[F]** `executor.acquire_trace`: runs Worker.dig_on UNMODIFIED in the
+      accumulating readout (l_mode=1 → live_mode=0, the phase-cycled
+      average the exp methods integrate), captures the trace by patching
+      general.plot_1d in the child (dig_on never pipes data — it only
+      plots), per-cycle Status from the capture, 'exit' at 100 % = the GUI
+      Stop path, trace = last completed cycle. `WorkerArgs.dig_args()`
+      mirrors dig_start/run_main_experiment packing (43 args; + p_to_drop
+      field); harness extended: per-preset dig_on packing comparison (17
+      presets) + real-dig_on pre-flight + stub capture round-trip
+- [x] `tune.echo_window`: center = max of smoothed |V(t)| (phase-free, so
+      it can run before auto_phase), width = FWHM × factor (≥1, default 2),
+      edges rounded outward onto the ADC grid (0.4 ns × decimation) and
+      clamped; trace saved to the run dir; judge `echo_in_trace` (hard:
+      FWHM edge on the trace boundary = echo cut) + echo_snr; stored
+      relative to DETECTION start, applied via _session_overrides
+      (win_left_ns/win_right_ns); `window: auto | preset` param on exp steps
+      (consumer lands with Phase 4)
+- [x] `temp.set` / `temp.wait` (`primitives/temp.py`, session lazy
+      Lakeshore_335): setter validates heater range + setpoint through the
+      device test branch; waiter = hold consecutive in-band polls at 1 s
+      cadence inside a wall-clock timeout ('1800 s' TimeStr — no 'min'
+      unit), `temperature_band` hard judge ⇒ StepFailure on timeout so
+      retries/on_fail apply; readings mirrored into temp.param for an open
+      temp_control window
+- [x] `field.edfs range: auto` (params.AutoOr): center =
+      0.71447704·ν[MHz]/g from `mw_bridge_synthesizer()` readout, `g:`
+      (default 2.0023) ± `span:` (default 250 G), + `offset:` (signed
+      FieldStr, default '0 G' — the magnet is not absolutely calibrated;
+      the result's `shift_g` = measured line − predicted center, ready to
+      feed back as the standing offset); one span-×2 escalation on
+      a failed echo-SNR judge; a second failure returns WITHOUT moving the
+      magnet (no noise-argmax field.set) and the judge carries a
+      `diagnosis`: score ≥1.5 = "weak line near X G — more scans / narrow
+      range", else "flat everywhere — check tuning/temperature/g/sample"
+- [x] tune_up.yaml = canonical chain: power_for_length → field.edfs (auto) →
+      echo_window → auto_phase → pi_calibration (+ commented temp prologue)
 
 ## Later phases (unordered backlog)
 - Resonator-correction overrides in the runner/protocol YAML (the ENGINE side
@@ -385,3 +410,49 @@ not autonomous without them.
   coarse selection, template validation) ALL PASS; both protocol dry-runs;
   gui_vs_engine ALL PASS (executor/snapshot untouched). Next: commit, then
   Phase 5 items or Phase 4 exp.t1/t2.
+- **2026-07-17 (7)** — Phase 3 review fixes committed+pushed ITC `3be399d`.
+  **Phase 5 code-complete** (all 7 checklist items, details in the Phase 5
+  section above — uncommitted, NOT yet code-reviewed; **next session:
+  /code-review of Phase 5 first**). Highlights/gotchas: dig_on never sends
+  trace data over the pipe (the GUI reads it off the LivePlot), so
+  acquire_trace captures via a general.plot_1d patch in the child and stops
+  through the normal 'exit' path at a cycle boundary; dig_on's l_mode is
+  INVERTED (l_mode=1 → live_mode=0 = accumulating, phase-cycled — what the
+  trace needs); GUI dig_start pre-flights with script_test=True,
+  run_main_experiment is the real preview launcher. apply_cal inference
+  needed a second rule the plan lacked: hahn_echo-style presets encode
+  π/π₂ by LENGTH (2×) at equal amplitude — direct amp patching there would
+  be wrong, hence the inverse-length scaling (amp ≈ linear, the same rule
+  as the detection pair); pi_calibration results now carry
+  length_ns / held_amplitude context. edfs auto: the failed-SNR path must
+  NOT set the magnet (noise argmax). Verified: 13-case runner suite,
+  tune_up (6/6) + overnight_t2 (4/4) dry-runs, gui_vs_engine ALL PASS
+  incl. the new per-preset dig_on packing comparison (MIN_COMPARED gate
+  ×2) + real-dig_on trace pre-flight + stub capture round-trip. Follow-up
+  same session (user review): edfs auto gains `offset:` (signed FieldStr —
+  magnet calibration shift) + `shift_g` in the result to measure it;
+  l_mode question answered (n_averages = on-board per-phase-step shots;
+  the phase-cycle sign-fold reads the persistent accumulator, which
+  live_mode=1 RESETS on every call — no averages setting substitutes for
+  the accumulating mode). Corollary pinned as an executor invariant (user
+  point): the accumulating buffer is allocated once and NEVER cleared on a
+  parameter change (flag_adc_buffer latch, Insys_FPGA.py:2438/2468), so a
+  mid-preview live edit would corrupt the average — acquire_trace sends
+  ONLY 'start'/'exit', never live-edit commands; a parameter change = a
+  new acquire_trace call (fresh child, fresh accumulator). Driver audit of
+  the (never-hardware-used) dig_on accumulating path (user request):
+  PHASES>=2 is the everyday multi-scan exp accumulate mechanism
+  (pulser_pulse_reset per cycle restarts nIP_No_brd/N_IP, so the blocking
+  is_drain gate is fresh each cycle; intermediate readouts may return
+  (None, None) → dig_on writes NaN frames — cosmetic, and the capture now
+  refuses non-finite frames); PHASES==1 is NOT safe (no reset → is_drain
+  never fires again, header nids may all fall out of the parser's
+  in_range filter) → acquire_trace rejects single-phase presets with a
+  clear error. HARDWARE_CHECKLIST item 2 doubles as this path's first
+  bench validation (watch: cycle-boundary stall / missing trace / SNR not
+  growing with sweeps). **docs/automation/HARDWARE_CHECKLIST.md** added:
+  ordered list of everything runnable on the spectrometer today, with
+  YAML snippets + expected outcomes (incl. the shift_g measurement run).
+  Next: /code-review Phase 5, commit, then Phase 4 exp.t1/t2 (acquire_1d +
+  max_duration → scan_control + the window/apply_cal consumers) and the
+  hardware run.
