@@ -411,9 +411,9 @@ not autonomous without them.
   gui_vs_engine ALL PASS (executor/snapshot untouched). Next: commit, then
   Phase 5 items or Phase 4 exp.t1/t2.
 - **2026-07-17 (7)** — Phase 3 review fixes committed+pushed ITC `3be399d`.
-  **Phase 5 code-complete** (all 7 checklist items, details in the Phase 5
-  section above — uncommitted, NOT yet code-reviewed; **next session:
-  /code-review of Phase 5 first**). Highlights/gotchas: dig_on never sends
+  **Phase 5 code-complete, committed+pushed ITC `4aa1c27`** (all 7
+  checklist items, details in the Phase 5 section above — NOT yet
+  code-reviewed; **next session: /code-review of Phase 5 first**). Highlights/gotchas: dig_on never sends
   trace data over the pipe (the GUI reads it off the LivePlot), so
   acquire_trace captures via a general.plot_1d patch in the child and stops
   through the normal 'exit' path at a cycle boundary; dig_on's l_mode is
