@@ -527,4 +527,34 @@ not autonomous without them.
   name resolution order, the IQ Correction: 2 requirement, and what the
   session overrides on top of the preset. Written because the bare
   `- tune.auto_phase` snippets read as if no preset were involved at all.
+  **COMMITTED: ITC `b9cbc66`** (not yet reviewed).
+  **>>> NEXT SESSION, FIRST THING: `/code-review` commit `b9cbc66`. <<<**
+  Reviewer's brief -- the judgement calls worth a second opinion, and the
+  two claims this session already had to retract:
+  - `rephase_delta` default 5 K is a guess, not a measurement. The oTP
+    series only sampled 40 K steps (8 deg from 80->120 K, 55 deg from
+    240->280 K), so the phase-vs-T slope is unknown below 40 K and is
+    strongly non-linear across the range. 5 K may be far too loose near
+    280 K and pointlessly tight near 80 K.
+  - `_rephase_check` fires in temp.set AND temp.wait (deliberate: covers
+    set-without-wait and external setpoints, and both are idempotent) --
+    but that means two invalidation points for one physical event. Check
+    the log noise and that no path double-reports.
+  - `was is None` (phased before any temp step) invalidates. Conservative;
+    could be judged wrong for a protocol that phases at ambient and then
+    sets that same temperature.
+  - Invalidation is a log line + a dropped key, so a protocol that changes
+    temperature and does NOT re-run tune.auto_phase silently falls back to
+    the PRESET's stored zero_order. That is better than a stale session
+    value but is still silent. A hard gate was considered and not built.
+  - `points_from_ns` is imported by phasing_insys.py FROM awg_phasing_insys.py
+    (RECT tool -> AWG tool). Import-safe and drift-free, but the dependency
+    direction is odd; a small shared control_center module (cf.
+    time_log_spinbox.py) may be the better home.
+  - The +1e-9 epsilon is justified in the docstring but is a magic number.
+  - Retraction #1: "run auto_phase once per protocol" was wrong (temperature).
+    Retraction #2: the degenerate-window / silent-all-zero hazard was NOT
+    reachable -- the sweep that "found" it drew FWHM from 1 ns. Both are
+    corrected in this file and in the code comments; if the reviewer finds
+    either claim still asserted anywhere, that is a real defect.
   Next: Phase 4.
