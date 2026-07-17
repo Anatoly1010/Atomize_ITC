@@ -25,6 +25,8 @@ normal lab work. Date of writing: 2026-07-17.
 ```bash
 python -m atomize.epr_auto run <protocol>.yaml --test   # always dry-run first
 python -m atomize.epr_auto run <protocol>.yaml          # live
+python -m atomize.epr_auto steps                        # list all steps + params
+python -m atomize.epr_auto validate <file>.yaml         # check without running
 ```
 
 ## 1. tune.auto_phase — first hardware contact (no moving parts)
