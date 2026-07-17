@@ -88,7 +88,7 @@ FREQ = '50 MHz'
 AMPL_90 = 20
 AMPL_180 = 40
 
-# IQ demodulation / phase correction (digitizer_iq); used only to DISPLAY and to
+# IQ demodulation / phase correction (digitizer_demodulate); used only to DISPLAY and to
 # post-process the trace - the raw saved data is never integrated.
 IQ_FREQ = -float(FREQ.split(' ')[0])    # MHz
 ZERO_ORDER = None       # rad      ; None -> use digitizer_insys.param
@@ -213,7 +213,7 @@ for k in general.scans(SCANS):
             data[0], data[1] = a, b
             # demodulate the WHOLE trace for display only (integral = False, i.e.
             # no integration) - echoes show up as a decaying train of peaks.
-            di, dq = pb.digitizer_iq(
+            di, dq = pb.digitizer_demodulate(
                 data[0], data[1], IQ_FREQ,
                 zero_order, first_order, second_order, integral = False )
             disp[0], disp[1] = di[:, 0], dq[:, 0]
@@ -247,7 +247,7 @@ file_handler.save_data(file_data, data[:, :, 0], header = header, mode = 'w')
 # Adjust ECHO_INT_HALF (and, if the hardware pre-trigger shifts the window, a
 # constant offset) if the echoes do not line up.
 # ---------------------------------------------------------------------------
-demod_i, demod_q = pb.digitizer_iq(
+demod_i, demod_q = pb.digitizer_demodulate(
     data[0], data[1], IQ_FREQ, zero_order, first_order, second_order, integral = False )
 demod_i, demod_q = demod_i[:, 0], demod_q[:, 0]
 

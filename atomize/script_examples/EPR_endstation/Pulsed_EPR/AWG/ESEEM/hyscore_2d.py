@@ -31,7 +31,7 @@ signal.signal(signal.SIGTERM, cleanup)
 # t1 is the fast (inner) delay, t2 is the slow (outer) delay.
 # The indirect dimension is acquired as a single plain row of N1*N2 points
 # (digitizer_get_curve handles the whole array); after IQ demodulation +
-# integration of the echo (digitizer_iq, integral = True) it is reshaped into the
+# integration of the echo (digitizer_demodulate, integral = True) it is reshaped into the
 # real (t1, t2) HYSCORE map, which is what we plot live - so the result is
 # visible immediately as it fills in.
 N1 = 128                    # number of t1 points (inner / fast delay)
@@ -81,14 +81,14 @@ FREQ = '100 MHz'
 AMPL_90 = 50
 AMPL_180 = 100
 
-# IQ demodulation / phase correction (digitizer_iq).
+# IQ demodulation / phase correction (digitizer_demodulate).
 # The AWG pulses sit at a digital IF (FREQ), so the detected signal must be
 # digitally down-converted before integration. The demodulation frequency is the
 # NEGATIVE of the AWG frequency, exactly as awg_phasing_insys computes it
 # (iq_freq = -FREQ in MHz).
 IQ_FREQ = -float(FREQ.split(' ')[0])    # MHz
 
-# Phase corrections passed to digitizer_iq (worker units: rad, rad/s, rad/s^2).
+# Phase corrections passed to digitizer_demodulate (worker units: rad, rad/s, rad/s^2).
 # By default they are read from digitizer_insys.param via digitizer_read_settings()
 # below, so they follow the phasing GUI even when no preset was saved. Set any of
 # these to a number to override the value coming from the file.
@@ -147,7 +147,7 @@ pb.digitizer_number_of_averages(AVERAGES)
 
 # Integration window (win_left / win_right) and decimation are taken from the
 # live digitizer_insys.param file written by the phasing GUI, so the script
-# integrates exactly the window the user phased on. digitizer_iq( integral = True )
+# integrates exactly the window the user phased on. digitizer_demodulate( integral = True )
 # uses these internally.
 pb.digitizer_read_settings()
 points_window = pb.digitizer_window_points()
@@ -230,7 +230,7 @@ for k in general.scans(SCANS):
                 # IQ demodulate + integrate the echo -> one complex value per
                 # flattened delay point, then refactor the row into the real
                 # (t1, t2) HYSCORE map (idx = i2 * N1 + i1).
-                integral_i, integral_q = pb.digitizer_iq(
+                integral_i, integral_q = pb.digitizer_demodulate(
                     data[0], data[1], IQ_FREQ,
                     zero_order, first_order, second_order, integral = True )
                 hyscore[0] = integral_i.reshape( N2, N1 ).T

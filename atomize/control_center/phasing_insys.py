@@ -3590,7 +3590,7 @@ class Worker():
                     data_y = data[1].ravel()
 
                     if quad == 1:
-                        data_x, data_y = pb.digitizer_iq(data_x, data_y, 0, zero_order, first_order, second_order)
+                        data_x, data_y = pb.digitizer_demodulate(data_x, data_y, 0, zero_order, first_order, second_order)
                     else:
                         pass
 

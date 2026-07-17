@@ -174,7 +174,7 @@ not autonomous without them.
 ## Pending hardware validation
 - **Phase 2 primitives on the spectrometer** (all code-complete, dry-run
   clean; nothing has touched hardware): auto-phase round-trip (zero-order
-  sign: digitizer_iq rotates by exp(−i·z), so z_new = z_used − φ_residual —
+  sign: digitizer_demodulate rotates by exp(−i·z), so z_new = z_used − φ_residual —
   verify the corrected run comes out real-positive); pi_calibration amplitude
   sweep on `ampl_4s` (fit + rails on real compression); power_for_length vane
   loop (dB step direction, mechanical wait long enough, backlash approach);
@@ -281,7 +281,7 @@ not autonomous without them.
   encoded in code comments: Amplitude-sweep swept-pulse = nonzero st_inc
   (worker name_list criterion; acquire-then-step, so axis[j] = amplitude at
   point j); ampl_4s/rabi are inversion-detection ⇒ cos θ nutation;
-  digitizer_iq applies exp(−i·zero_order) ⇒ z_new = z_used − φ; exp_field
+  digitizer_demodulate applies exp(−i·zero_order) ⇒ z_new = z_used − φ; exp_field
   axis in G, POINTS = (end−start)/step + 1; Worker pre-flight forces
   sys.argv=['','test'] in-child (safe against live hardware); vane wait
   must be slept out locally (worker child owns a fresh Micran instance).

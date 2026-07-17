@@ -112,7 +112,7 @@ def _swept_slot(preset, mode):
 def auto_phase(session, preset, points=4, scans=1):
     """Acquire a short echo run, measure the residual signal phase
     (principal-axis auto_phase_zero) and store the corrected zero-order
-    (digitizer_iq rotates by exp(-i*zero_order), so the update is
+    (digitizer_demodulate rotates by exp(-i*zero_order), so the update is
     zero_order_new = zero_order_used - phi_residual)."""
     pre, wa = _build(session, preset, exp_name='AutoPhase',
                      points=points, scans=scans)

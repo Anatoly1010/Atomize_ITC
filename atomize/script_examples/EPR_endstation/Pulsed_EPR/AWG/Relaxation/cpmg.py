@@ -38,7 +38,7 @@ signal.signal(signal.SIGTERM, cleanup)
 # The whole CPMG train is generated once. The indirect dimension is the echo
 # index k (0 .. NPI-1): for every k only the DETECTION trigger is moved onto
 # echo k+1, so the spin system always sees the identical train and we sample a
-# different echo each time. digitizer_iq( integral = True ) collapses every
+# different echo each time. digitizer_demodulate( integral = True ) collapses every
 # captured echo to a single complex value, so the acquired row is directly the
 # T2 (CPMG) decay - echo amplitude vs time - which is what we plot live.
 NPI = 100                   # number of refocusing pi pulses = number of echoes
@@ -73,13 +73,13 @@ FREQ = '50 MHz'
 AMPL_90 = 20
 AMPL_180 = 40
 
-# IQ demodulation / phase correction (digitizer_iq).
+# IQ demodulation / phase correction (digitizer_demodulate).
 # The AWG pulses sit at a digital IF (FREQ), so the detected signal must be
 # digitally down-converted before integration. The demodulation frequency is the
 # NEGATIVE of the AWG frequency, exactly as awg_phasing_insys computes it.
 IQ_FREQ = -float(FREQ.split(' ')[0])    # MHz
 
-# Phase corrections passed to digitizer_iq (worker units: rad, rad/s, rad/s^2).
+# Phase corrections passed to digitizer_demodulate (worker units: rad, rad/s, rad/s^2).
 # By default they are read from digitizer_insys.param via digitizer_read_settings()
 # below, so they follow the phasing GUI even when no preset was saved. Set any of
 # these to a number to override the value coming from the file.
@@ -131,7 +131,7 @@ pb.digitizer_number_of_averages(AVERAGES)
 
 # Integration window (win_left / win_right), decimation and phase corrections are
 # taken from the live digitizer_insys.param written by the phasing GUI, so the
-# script integrates exactly the window the user phased on. digitizer_iq( integral
+# script integrates exactly the window the user phased on. digitizer_demodulate( integral
 # = True ) uses win_left / win_right internally.
 pb.digitizer_read_settings()
 points_window = pb.digitizer_window_points()
@@ -209,7 +209,7 @@ for k in general.scans(SCANS):
                 data[0], data[1] = a, b
                 # IQ demodulate + integrate the echo -> one complex value per echo,
                 # i.e. the whole CPMG decay curve at once.
-                integral_i, integral_q = pb.digitizer_iq(
+                integral_i, integral_q = pb.digitizer_demodulate(
                     data[0], data[1], IQ_FREQ,
                     zero_order, first_order, second_order, integral = True )
                 echo[0] = integral_i
