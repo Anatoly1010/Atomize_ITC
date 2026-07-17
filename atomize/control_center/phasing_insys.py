@@ -1359,8 +1359,28 @@ class MainWindow(QMainWindow):
         gridLayout.addWidget(self.Combo_link, 3, 1)
         gridLayout.addWidget(hline(), 4, 0, 1, 2)
 
+        # ---- Accumulation mode (preview readout) ----
+        accum_label = QLabel("Accumulation Mode")
+        accum_label.setFixedSize(170, 26)
+        accum_label.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
+        self.accum_box = QCheckBox("")
+        self.accum_box.setStyleSheet(CHECKBOX_STYLE)
+        self.accum_box.setFixedSize(170, 26)
+        self.accum_box.setToolTip(
+            "Preview readout mode. Off (default): live snapshot — every phase "
+            "step shows just the newest on-board average, so pulse edits show "
+            "up immediately. On: the digitizer keeps the phase-cycle-combined "
+            "running average of the whole preview, so a weak echo grows out "
+            "of the noise the longer it runs; the accumulated buffer is never "
+            "cleared, so any pulse edit needs a preview restart. Requires a "
+            "phase cycle (2+ steps). Applied on the next preview start.")
+        self.accum_box.stateChanged.connect(self.accumulation_toggle)
+        gridLayout.addWidget(accum_label, 5, 0)
+        gridLayout.addWidget(self.accum_box, 5, 1)
+        gridLayout.addWidget(hline(), 6, 0, 1, 2)
+
         gridLayout.setColumnStretch(2, 1)
-        gridLayout.setRowStretch(5, 1)
+        gridLayout.setRowStretch(7, 1)
 
         # All pulse spin-boxes now exist; snapshot their values so the first
         # linked edit computes the correct delta.
@@ -1380,6 +1400,34 @@ class MainWindow(QMainWindow):
 
     def link_param_changed(self, _text = None):
         self.link_param = self.Combo_link.currentText()
+
+    def accumulation_toggle(self):
+        """
+        Preview readout mode ('Accumulation Mode' in Settings). l_mode = 0
+        (default): live snapshot — each phase step shows the newest on-board
+        average only. l_mode = 1: the digitizer accumulates the phase-cycled
+        average across the whole preview (the exp-style readout), for pulling
+        a weak echo out of the noise.
+
+        The mode is baked into the worker at launch (dig_on's l_mode) and
+        the accumulation buffer is never cleared on a parameter change, so
+        it cannot switch under a running sequence: block the toggle during a
+        full experiment (revert the box) and stop a running preview so the
+        operator restarts in the new mode.
+        """
+        if getattr(self, 'is_experiment', False):
+            self.accum_box.blockSignals(True)
+            self.accum_box.setChecked(self.l_mode == 1)
+            self.accum_box.blockSignals(False)
+            self.message('Cannot change the preview readout mode while an experiment is running.')
+            return
+        self.l_mode = 1 if self.accum_box.isChecked() else 0
+        if self._live_run_alive():
+            self.dig_stop()
+        self.message('Accumulation mode: '
+                     + ('ON — the preview averages over its whole run; pulse '
+                        'edits need a preview restart'
+                        if self.l_mode == 1 else 'OFF (live snapshot)'))
 
     def update_link_factor(self, index):
         txt = getattr(self, f"P{index}_lk").currentText()
@@ -2591,6 +2639,16 @@ class MainWindow(QMainWindow):
             self.errors.appendPlainText(
                 'Live Edit rejected — ' + err
                 + ' Preview left running; fix the value.')
+            return
+
+        if self.l_mode == 1:
+            # Accumulation mode: the driver's running average is never
+            # cleared, so an in-place re-arm would mix old- and new-parameter
+            # shots into one buffer — restart for a fresh accumulation.
+            self.update()
+            self.errors.appendPlainText(
+                'Live Edit: Accumulation Mode is on — the accumulated average '
+                'cannot be re-armed in place; full restart performed.')
             return
 
         snap = self._live_snapshot()
