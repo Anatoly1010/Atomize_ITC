@@ -85,7 +85,7 @@ reproduces only the GUI's snapshot pipeline.
       axis, I, Q; axis s / % / G by sweep); dry-run = real per-preset
       engine pre-flight (Worker child forces test devices) + canned result
 
-## Phase 3 — Runner UX & autonomy — code DONE 2026-07-17 (review next session)
+## Phase 3 — Runner UX & autonomy — DONE 2026-07-17 (Opus-reviewed, fixes applied)
 - [x] Checkpoint gating completed: autonomous mode never pauses — checkpoints
       auto-approve with a notification, judges are the only brake; supervised /
       checkpointed keep the Phase 0 terminal prompt (GUI checkpoint = later)
@@ -93,12 +93,14 @@ reproduces only the GUI's snapshot pipeline.
       abort | skip | ask` reserved step keys (parsed like `checkpoint`);
       'ask' prompts retry/skip/abort (autonomous or no-tty ⇒ abort + notify)
 - [x] Rail-triggered fallback wired: StepFailure carries `rails` from the
-      failing amplitude_rails judge; the runner re-runs the protocol's
-      earlier tune.power_for_length (+ tune.auto_phase — the vane move
-      invalidated the phase) once per step and retries — automatic in
+      failing amplitude_rails judge; the runner re-runs the most recent
+      earlier tune.power_for_length (+ the tune.auto_phase steps after it —
+      the vane move invalidated the phase) once per step and retries, the
+      fallback retry granted on top of the retry budget — automatic in
       autonomous mode (with notification), y/n prompt otherwise; only
       available when the protocol declared the coarse step (its resolved
-      params define the stage)
+      params define the stage); re-runs recorded in the manifest, a chain
+      failure is recorded + surfaced in the abort message
 - [x] Adaptive scan channel: `run_worker(scan_control=(pct, elapsed_s) ->
       int|None)` sends 'SC<n>' on change (harness stub-tests the round
       trip). The judge/budget-driven POLICY consumer lands with the Phase 4
@@ -357,3 +359,29 @@ not autonomous without them.
   ARCHITECTURE decision table (three rows were stranded below the flip-angle
   section). Next: /code-review of Phase 3 (still pending), then Phase 5
   items or Phase 4 code.
+- **2026-07-17 (6)** — **Opus /code-review of Phase 3 `f45433c`** (workflow,
+  high effort, 19 agents): 8 findings confirmed, 3 refuted, **all 8 fixed**
+  (uncommitted). Correctness: (1) rail-fallback attempt consumed a configured
+  retry → `fallback_bonus` grants the fallback retry on top of the budget
+  (initial + fallback + retries); (2) non-StepFailure from the fallback
+  chain escaped run_protocol leaving manifest.json stuck at 'running' →
+  chain now catches Exception (logged traceback, recorded, clean abort);
+  (3) unknown `{field}` in the `output` template passed load + dry-run then
+  KeyError'd the live run at startup → load_protocol probes
+  `output.format(date=,sample=)` and rejects with a ProtocolError; (4) a
+  fallback coarse-stage failure was swallowed into a log line → recorded in
+  the manifest as 'failed (rail fallback)' and appended to the abort message
+  ('rail fallback blocked: …', e.g. vane end-stop now visible); (5) fallback
+  re-runs (vane moves!) were absent from the manifest → recorded as
+  'ok (rail fallback)' entries, failing step's own judges preserved via
+  save/restore of last_judges. Cleanups: (6) fallback picked the FIRST
+  power_for_length but re-ran EVERY auto_phase → most recent coarse before
+  the failing step + only the auto_phase steps after it; (7) retry log
+  off-by-one → 'retry N of M'; (8) prompt loop deduped into `_ask()`
+  (on_fail/rail/checkpoint; tty+autonomy guards stay per-site). Refuted:
+  skip stale-state, cli finally lock-release masking, hardcoded fallback
+  step names (intended). Verified: runner suite extended 8 → 13 cases
+  (budget-on-top, fallback-crash manifest, blocker surfacing, most-recent
+  coarse selection, template validation) ALL PASS; both protocol dry-runs;
+  gui_vs_engine ALL PASS (executor/snapshot untouched). Next: commit, then
+  Phase 5 items or Phase 4 exp.t1/t2.

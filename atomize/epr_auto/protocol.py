@@ -120,8 +120,17 @@ def load_protocol(path):
                             f"autonomy must be one of: {', '.join(AUTONOMY_MODES)}; got {autonomy!r}")
 
     output = doc.get('output')
-    if output is not None and not isinstance(output, str):
-        raise ProtocolError(path, top_line, f"'output' must be a string, got {output!r}")
+    if output is not None:
+        if not isinstance(output, str):
+            raise ProtocolError(path, top_line, f"'output' must be a string, got {output!r}")
+        try:  # session.run_dir only expands these two — catch typos at load,
+            # not at run start (a dry-run never evaluates the template)
+            output.format(date='', sample='')
+        except (KeyError, IndexError, ValueError) as e:
+            raise ProtocolError(
+                path, top_line,
+                "'output' template: only {date} and {sample} placeholders "
+                f'are supported ({e})') from None
 
     notify = doc.get('notify', 'none')
     if notify not in NOTIFY_MODES:

@@ -9,9 +9,11 @@ steps.py) are the only brake.
 Failure policy per step: `retries: n` re-runs a failed step up to n extra
 times; then `on_fail` decides — abort (default), skip (continue without the
 step), ask (operator prompt: retry / skip / abort). A StepFailure carrying
-`rails` additionally triggers the coarse fallback (once per step): re-run
-the protocol's earlier tune.power_for_length (+ tune.auto_phase, if
-present — the vane move invalidated the phase) and retry.
+`rails` additionally triggers the coarse fallback (once per step, its retry
+granted on top of the retry budget): re-run the most recent earlier
+tune.power_for_length (+ the tune.auto_phase steps that followed it — the
+vane move invalidated the phase) and retry; the re-runs are recorded in the
+manifest like ordinary steps.
 
 The manifest (manifest.json in the run directory, live runs only) is
 rewritten atomically after every step, so a crash still leaves a valid
@@ -137,6 +139,8 @@ def _run_step(protocol, session, manifest, step, index):
     attempts) or (None, 'failed-skipped', attempts); raises RunnerAbort."""
     attempts = 0
     fallback_used = False
+    fallback_bonus = 0          # a successful fallback grants one extra attempt
+    fallback_blocker = None     # what stopped the fallback chain, if anything
     while True:
         attempts += 1
         session.last_judges = []
@@ -159,12 +163,15 @@ def _run_step(protocol, session, manifest, step, index):
         # top of the retry budget (it re-tunes the power regime first)
         if getattr(error, 'rails', None) and not fallback_used:
             fallback_used = True
-            if _rail_fallback(protocol, session, index, error.rails):
+            ran, fallback_blocker = _rail_fallback(protocol, session, manifest,
+                                                   index, error.rails)
+            if ran:
+                fallback_bonus = 1
                 continue
 
-        if attempts <= step.retries:
-            session.log(f'      retrying ({attempts} of {step.retries} '
-                        'retries used)')
+        if attempts <= step.retries + fallback_bonus:
+            session.log(f'      retry {attempts - fallback_bonus} of '
+                        f'{step.retries}')
             continue
 
         decision = _on_fail_decision(session, step, error)
@@ -177,7 +184,10 @@ def _run_step(protocol, session, manifest, step, index):
             session.notify(f'step {step.name} failed ({error}) — skipped '
                            'per on_fail policy')
             return None, 'failed-skipped', attempts
-        raise RunnerAbort(f'step {step.name} failed: {error}')
+        msg = f'step {step.name} failed: {error}'
+        if fallback_blocker is not None:
+            msg += f' (rail fallback blocked: {fallback_blocker})'
+        raise RunnerAbort(msg)
 
 
 def _on_fail_decision(session, step, error):
@@ -194,32 +204,41 @@ def _on_fail_decision(session, step, error):
         session.notify(f'step {step.name} failed ({error}); on_fail: ask '
                        'with no operator — aborting')
         return 'abort'
+    return _ask(f'      step failed: {error}\n'
+                '      retry / skip / abort? [r/s/a] ',
+                {'r': 'retry', 'retry': 'retry', 's': 'skip', 'skip': 'skip',
+                 'a': 'abort', 'abort': 'abort', '': 'abort'},
+                on_eof='abort')
+
+
+def _ask(prompt, answers, on_eof):
+    """One operator prompt: re-ask until the reply matches a key in `answers`
+    (reply -> return value); EOF returns `on_eof`. The tty/autonomy guards
+    stay at the call sites — the policies differ per prompt."""
     while True:
         try:
-            answer = input(f'      step failed: {error}\n'
-                           '      retry / skip / abort? [r/s/a] ').strip().lower()
+            reply = input(prompt).strip().lower()
         except EOFError:
-            return 'abort'
-        if answer in ('r', 'retry'):
-            return 'retry'
-        if answer in ('s', 'skip'):
-            return 'skip'
-        if answer in ('a', 'abort', ''):
-            return 'abort'
+            return on_eof
+        if reply in answers:
+            return answers[reply]
 
 
-def _rail_fallback(protocol, session, index, rail):
-    """Re-run the coarse power stage (and auto-phase, which any vane move
-    invalidates) after an amplitude-rail failure. Only available when the
-    protocol itself declared a tune.power_for_length step earlier — its
-    resolved parameters define the coarse stage. Returns True when the
-    chain ran and the failed step should be retried."""
-    coarse = next((s for s in protocol.steps[:index]
-                   if s.name == 'tune.power_for_length'), None)
-    if coarse is None:
+def _rail_fallback(protocol, session, manifest, index, rail):
+    """Re-run the coarse power stage (and the auto-phase steps tuned after
+    it, which the vane move invalidates) after an amplitude-rail failure.
+    Only available when the protocol itself declared a tune.power_for_length
+    step earlier — the most recent one before the failing step defines the
+    coarse stage. The re-runs are recorded in the manifest. Returns
+    (ran, blocker): ran is True when the chain ran and the failed step
+    should be retried; blocker names what stopped the chain, if anything."""
+    coarse_idx = next((j for j in range(index - 1, -1, -1)
+                       if protocol.steps[j].name == 'tune.power_for_length'),
+                      None)
+    if coarse_idx is None:
         session.log(f'      amplitude rail ({rail}) hit, but the protocol has '
                     'no earlier tune.power_for_length step — no fallback')
-        return False
+        return False, None
 
     if session.test:
         session.log('      [rail fallback] would re-run the coarse stage — '
@@ -229,26 +248,42 @@ def _rail_fallback(protocol, session, index, rail):
                        'stage automatically')
     else:
         if not sys.stdin.isatty():
-            return False
-        try:
-            answer = input(f'      amplitude rail ({rail}): re-run '
-                           'tune.power_for_length (+ auto-phase) and retry? '
-                           '[y/n] ').strip().lower()
-        except EOFError:
-            return False
-        if answer not in ('y', 'yes'):
-            return False
+            return False, None
+        if not _ask(f'      amplitude rail ({rail}): re-run '
+                    'tune.power_for_length (+ auto-phase) and retry? [y/n] ',
+                    {'y': True, 'yes': True, 'n': False, 'no': False,
+                     '': False},
+                    on_eof=False):
+            return False, None
 
-    chain = [coarse] + [s for s in protocol.steps[:index]
-                        if s.name == 'tune.auto_phase']
-    for s in chain:
-        session.log(f'      [fallback] re-running {s.name}')
-        try:
-            session.state[s.name] = STEPS[s.name].func(session, **s.params)
-        except StepFailure as e:
-            session.log(f'      [fallback] {s.name} failed: {e}')
-            return False
-    return True
+    chain = [protocol.steps[coarse_idx]] + [
+        s for s in protocol.steps[coarse_idx + 1:index]
+        if s.name == 'tune.auto_phase']
+    failing_judges = session.last_judges  # keep the failing step's own judges
+    try:
+        for s in chain:
+            session.log(f'      [fallback] re-running {s.name}')
+            session.last_judges = []
+            try:
+                result = STEPS[s.name].func(session, **s.params)
+            except StepFailure as e:
+                session.log(f'      [fallback] {s.name} failed: {e}')
+                manifest.record(s, 'failed (rail fallback)', attempts=1,
+                                judges=session.last_judges, error=e)
+                return False, f'{s.name}: {e}'
+            except RunnerAbort:
+                raise
+            except Exception:
+                session.log(traceback.format_exc())
+                manifest.record(s, 'failed (rail fallback)', attempts=1,
+                                error='unexpected error (see log)')
+                return False, f'{s.name} raised an unexpected error (see log)'
+            session.state[s.name] = result
+            manifest.record(s, 'ok (rail fallback)', attempts=1, result=result,
+                            judges=session.last_judges)
+        return True, None
+    finally:
+        session.last_judges = failing_judges
 
 
 def _gate(session, step):
@@ -269,14 +304,13 @@ def _gate(session, step):
     if not sys.stdin.isatty():
         raise RunnerAbort('checkpoint reached with no terminal attached '
                           '(GUI checkpoint support is a later item)')
-    while True:
-        try:
-            answer = input('      [checkpoint] continue / skip / abort? [c/s/a] ').strip().lower()
-        except EOFError:
-            raise RunnerAbort('checkpoint prompt closed (EOF)') from None
-        if answer in ('c', 'continue', ''):
-            return 'run'
-        if answer in ('s', 'skip'):
-            return 'skip'
-        if answer in ('a', 'abort'):
-            raise RunnerAbort('aborted by operator at checkpoint')
+    answer = _ask('      [checkpoint] continue / skip / abort? [c/s/a] ',
+                  {'c': 'run', 'continue': 'run', '': 'run',
+                   's': 'skip', 'skip': 'skip',
+                   'a': 'abort', 'abort': 'abort'},
+                  on_eof='eof')
+    if answer == 'eof':
+        raise RunnerAbort('checkpoint prompt closed (EOF)')
+    if answer == 'abort':
+        raise RunnerAbort('aborted by operator at checkpoint')
+    return answer
