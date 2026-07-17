@@ -14,7 +14,14 @@ built on Atomize. Companion file: [ROADMAP.md](ROADMAP.md) (phases + session log
 | Tuning scope v1 | auto-phase, π/π₂ calibration, EDFS + field setup. Resonator tuning: out of scope |
 | π-calibration modes | **Amplitude sweep (default for AWG**, fixed length ⇒ fixed bandwidth, no time-grid quantization; preset `ampl_4s.phase_awg`) and length-increment nutation (`rabi_echo_4s.phase_awg`) — `mode: amplitude \| length` |
 | AWG timing grid | **3.2 ns default; opt-in 0.8 ns** (one DAC sample) via the preset's trailing `AWG grid:  0.8` line / GUI Settings toggle / `pb.awg_time_resolution('0.8 ns')`. TTL stays on 3.2 ns; sub-tick = zero samples in the DAC buffer; detection window residual corrected digitally at readout (use decimation ≤ 2). Plan: `docs/automation/AWG_FINE_STEP_PLAN.md` |
-| π-calibration strategy | **Two-stage** (agreed 2026-07-16): coarse = rotary vane sets the power regime ("power for desired length"), fine = per-pulse AWG amplitude sweep at fixed length. See "Flip-angle knobs" below |
+| π-calibration strategy | **Two-stage** (agreed 2026-07-16): coarse = rotary vane sets the power regime ("power for desired length"), fine = per-pulse AWG amplitude sweep at fixed length. Classical length nutation stays available as `mode: length` (see "Flip-angle knobs" and "Tune-up completeness" below) |
+| Experiments v1 | T1 (inversion recovery), T2/Tm (Hahn echo decay) |
+| Channel | **AWG first** (awg_phasing_insys path); RECT in a later phase |
+| Sequence source | Existing `*.phase_awg` presets + the sequence/acquisition machinery inside `atomize/control_center/awg_phasing_insys.py` |
+| Detection pulses during calibration | **Soft/selective pair at ~3–4× the target length** (target 22 ns ⇒ 60–90 ns) at **proportionally lower amplitude** — standard rule `amp_det = amp_cal · L_target/L_det` (amp nearly linear); optional one-shot refine re-run (agreed 2026-07-17, see "Tune-up completeness") |
+| Integration window | `tune.echo_window` primitive: echo-trace acquisition → auto window, stored relative to the DETECTION pulse start; runs before auto-phase (agreed 2026-07-17) |
+| Temperature | `temp.set` / `temp.wait` primitives mirroring temp_control's setter-waiter (band, hold count, wall-clock timeout) under the temp_param lock (agreed 2026-07-17) |
+| Initial signal search | `field.edfs range: auto` from synthesizer frequency + g (default 2.0023) with one widen-and-retry escalation; truly blind search stays human (agreed 2026-07-17) |
 
 ## Flip-angle knobs: length / AWG amplitude / rotary vane
 
@@ -56,9 +63,108 @@ long autonomous runs (position is dead-reckoned); (d) vane moves default to
 **RECT channel (later phase):** no per-pulse amplitude, so the modes are true
 alternatives there — power-for-length when bandwidth matters, plain length
 nutation otherwise.
-| Experiments v1 | T1 (inversion recovery), T2/Tm (Hahn echo decay) |
-| Channel | **AWG first** (awg_phasing_insys path); RECT in a later phase |
-| Sequence source | Existing `*.phase_awg` presets + the sequence/acquisition machinery inside `atomize/control_center/awg_phasing_insys.py` |
+
+## Tune-up completeness (agreed 2026-07-17)
+
+Five gaps identified in review of the Phase 2/3 plan; decisions fixed here,
+implementation items in ROADMAP Phase 5.
+
+### Length-nutation results must flow downstream (classical approach)
+
+`tune.pi_calibration(mode='length')` already measures π/π₂ **lengths**
+(`rabi_echo_4s.phase_awg`, nonzero Length Increment) — what's missing is the
+consumer: experiment presets never receive the calibrated values (neither
+lengths nor amplitudes; session state stores them, nothing reads them).
+Decision:
+
+- Session state (`pi_calibration`: pi/pi2 + unit + mode) is applied to later
+  builds through an explicit per-step mapping, e.g.
+  `apply_cal: {P2: pi2, P3: pi}` (slot → role) on `exp.*` steps.
+- Default when `apply_cal` is omitted: infer by coefficient ratio among the
+  active hard MW pulses (the preset's own two amplitude levels map to π and
+  π/2); ambiguity ⇒ validation error asking for the explicit map. Soft
+  detection pulses (see next section) are excluded by the length criterion.
+- Length-mode values are grid-quantized before patching (3.2 ns default; π/2
+  on the coarse grid is coarse — the opt-in 0.8 ns fine grid is the fix).
+  Amplitude-mode values patch the amplitude coefficient at fixed length.
+
+### Detection pulses inside the π/π₂ calibration sequences
+
+Lab convention (2026-07-17): the detection pair is **soft/selective** — about
+3–4× the target pulse length (target 22 ns ⇒ detection 60–90 ns). The presets
+already encode this: `ampl_4s` sweeps a 28.8 ns GAUSS and detects with an
+86.4 ns SINE pair at low amplitude coefficients (9/18 — linear regime).
+Selective detection watches only the on-resonance packet the hard pulse
+rotates, and its low amplitude keeps it out of amplifier compression.
+
+- **Never patch the detection pair with the target's calibrated amplitudes
+  directly** — longer pulse ⇒ certainly lower amplitude. The rule is
+  **proportional inverse-length scaling**:
+  `amp_det(θ) = amp_cal(θ) · L_target / L_det`. The amplifier is nearly
+  linear (lab measurement 2026-07-17), so this scaling is the *standard* way
+  the pair is set after every fine calibration, not an optional refinement.
+- Bootstrap (why the chicken-and-egg is soft): first pass runs the
+  preset-stored detection values as-is. The nutation extremum *position* is
+  first-order independent of detection-pair errors (they scale the echo, they
+  don't move the minimum), and the coarse vane stage keeps the global B₁
+  scale ≈right.
+- `refine: true` (default off): re-run the nutation once with the re-scaled
+  pair — worth it on a new sample where the preset's stored pair was far off.
+- Slot roles: swept pulse = nonzero st_inc/len_inc (existing worker
+  criterion); detection pair = the remaining active MW pulses, identified as
+  *soft* by length ≥ ~2× the swept pulse's.
+
+### Integration window (`tune.echo_window`)
+
+Today the preset's `Window left/right` is used verbatim (snapshot converts
+ns → points); nothing tunes it. New primitive:
+
+- Acquire the **averaged echo trace** at current settings — needs a new
+  engine capability: `executor.acquire_trace` reusing the Worker's preview
+  (dig_on-style) path; the engine currently speaks only the sweep-integral
+  protocol. **[F]** — Worker preview semantics are subtle.
+- Rotate by the current zero-order, echo center = max of smoothed |V(t)|,
+  width = FWHM × factor (default ≈ 2, configurable), snap to the ADC grid;
+  judge: echo fully inside the trace + SNR floor.
+- Store the window **relative to the DETECTION pulse start** (offset, width)
+  so it transfers across presets whose τ (hence absolute echo position)
+  differs; `_session_overrides` applies it to every later build. `exp.*`
+  steps get `window: auto | preset` (default auto once calibrated).
+- **Ordering rule:** echo_window runs *before* `tune.auto_phase` — auto-phase
+  integrates over the window, so a mis-set window degrades the phase
+  estimate. Canonical chain: power_for_length → field.edfs → echo_window →
+  auto_phase → pi_calibration.
+
+### Temperature (`temp.set` / `temp.wait`)
+
+Mirror the proven temp_control setter-waiter (memory
+`temperature-control-feature`): Lakeshore 335 via the session's lazy device;
+`temp.set {channel, setpoint, heater_range}`, `temp.wait {band, hold,
+timeout}` — per-channel band around the setpoint, consecutive in-band polls
+(hold default 3 at 1 s cadence — GPIB is slow), wall-clock timeout ⇒
+StepFailure so the `on_fail`/retry/notify policy applies. temp_param lock
+seized with source 'epr_auto' (already in session.ensure_hardware_locks).
+Temperature *series* (T1 vs T): v1 = explicit repeated steps in the YAML; a
+`foreach:` block is backlog — don't grow the schema early.
+
+### Initial signal search (`field.edfs range: auto`)
+
+Not user-only, but the ladder ends at the human:
+
+1. Protocol gives an explicit range (current behaviour, unchanged).
+2. `range: auto`: center = h·ν/(g·μ_B) from the synthesizer readout
+   (`mw_bridge_synthesizer`), `g:` param (default 2.0023), `span:` param
+   (default ±25 mT).
+3. On a failed echo-SNR judge: **one** automatic escalation — widen the span
+   ×2 and re-run — then stop escalating.
+4. Still nothing ⇒ StepFailure whose judge report distinguishes "flat
+   everywhere" (resonator / detection window / sample problem — human) from
+   "weak line found" (more scans might do); autonomy policy decides ask vs
+   notify+abort.
+
+A truly blind search (unknown g, mis-tuned resonator, wrong detection window)
+is out of scope by design — the failure report must say *which* precondition
+to check, not just "no signal".
 
 ## Layered design
 

@@ -119,6 +119,42 @@ reproduces only the GUI's snapshot pipeline.
 - [ ] `protocols/overnight_t2.yaml` full chain in `--test`
 - [ ] **Hardware**: full chain on the spectrometer, supervised mode
 
+## Phase 5 — Tune-up completeness (planned 2026-07-17; decisions in
+## ARCHITECTURE.md "Tune-up completeness")
+Gaps found reviewing the plan: classical length calibration had no consumer,
+detection-pulse convention was implicit, and window / temperature / signal
+search were missing entirely. `tune.echo_window` and the `apply_cal` hand-off
+should land **before** the Phase 4 overnight hardware run — the full chain is
+not autonomous without them.
+- [ ] Calibration hand-off `apply_cal`: session pi_calibration results
+      (amplitudes at fixed length, or grid-quantized lengths in the classical
+      `mode: length` path) patch experiment presets via an explicit
+      `{slot: role}` map; default inferred from the preset's own two
+      amplitude levels among hard pulses; ambiguity ⇒ validation error
+- [ ] Detection-pair handling in calibration: soft/selective pair (~3–4×
+      target length) at proportionally lower amplitude; preset-stored values
+      on the first pass, then the standard scaling rule
+      `amp_det = amp_cal · L_target/L_det` (amp nearly linear) after every
+      fine cal; `refine: true` = one self-consistency nutation re-run
+- [ ] **[F]** `executor.acquire_trace`: engine-side echo-trace acquisition
+      reusing the Worker's preview (dig_on-style) path — the engine only
+      speaks the sweep-integral protocol today
+- [ ] `tune.echo_window`: rotate trace by current zero-order, center = max of
+      smoothed |V(t)|, width = FWHM × factor, snap to ADC grid; stored
+      relative to the DETECTION pulse start; applied via _session_overrides;
+      `window: auto | preset` on exp steps; MUST run before tune.auto_phase
+- [ ] `temp.set` / `temp.wait` primitives (Lakeshore 335, temp_control
+      setter-waiter semantics: per-channel band, hold count, wall-clock
+      timeout ⇒ StepFailure; temp_param lock already in session);
+      temperature-series protocols = explicit repeated steps in v1
+- [ ] `field.edfs range: auto`: center from `mw_bridge_synthesizer` + `g:`
+      (default 2.0023) ± `span:` (default 25 mT); one span-×2 escalation on
+      a failed echo-SNR judge; failure report names the precondition to
+      check ("flat everywhere" vs "weak line found")
+- [ ] tune_up.yaml updated to the canonical chain: power_for_length →
+      field.edfs → echo_window → auto_phase → pi_calibration (+ optional
+      temp.set/wait prologue)
+
 ## Later phases (unordered backlog)
 - Resonator-correction overrides in the runner/protocol YAML (the ENGINE side
   is done 2026-07-17: WorkerArgs carries cor_model_cur/f0_cur/q_cur/
@@ -128,6 +164,8 @@ reproduces only the GUI's snapshot pipeline.
   loading outside the GUI)
 - RECT channel support for calibration + runners
 - ESEEM / DEER payload experiments (reuse ESEEM-avg + benchmark know-how)
+- `foreach:` protocol block (temperature/parameter series without repeating
+  steps by hand — v1 keeps the schema flat on purpose)
 - Autopilot GUI (control_center tool wrapping the runner)
 - Assistant layer (Claude emits/edits protocols, reacts at checkpoints)
 - Resonator tuning (needs actuation path assessment)
@@ -300,3 +338,22 @@ reproduces only the GUI's snapshot pipeline.
   retries. Committed+pushed: ITC `f45433c` (session-log line added post-
   commit). Next: /code-review (Phase 3), then Phase 4 exp.t1/t2 (wire
   max_duration -> scan_control policy there).
+- **2026-07-17 (5)** — Plan review with the user; five gaps closed as **Phase
+  5** (decisions in ARCHITECTURE.md "Tune-up completeness"): (1) classical
+  length nutation exists (`mode: length`) but had no downstream consumer →
+  `apply_cal` hand-off; (2) detection pulses in π/π₂ calibration are
+  **soft/selective at ~3–4× the target length** (lab convention: 22 ns target
+  ⇒ 60–90 ns detection; ampl_4s already encodes it, 28.8 ns GAUSS vs 86.4 ns
+  SINE pair) at proportionally lower amplitude — standard rule
+  `amp_det = amp_cal · L_target/L_det`, reliable because the amp is nearly
+  linear (user, 2026-07-17); optional `refine` re-run; (3) temperature was
+  missing → temp.set/temp.wait on the temp_control setter-waiter pattern;
+  (4) initial signal search was user-only → `range: auto` from synthesizer
+  frequency + g, one widen-×2 escalation, then human with a diagnostic
+  report; (5) integration window was taken verbatim from the preset →
+  tune.echo_window (needs new engine acquire_trace **[F]**), stored relative
+  to DETECTION start, must precede auto_phase. echo_window + apply_cal are
+  prerequisites for the Phase 4 overnight hardware run. Also fixed the
+  ARCHITECTURE decision table (three rows were stranded below the flip-angle
+  section). Next: /code-review of Phase 3 (still pending), then Phase 5
+  items or Phase 4 code.
