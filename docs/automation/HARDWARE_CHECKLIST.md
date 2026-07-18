@@ -1,9 +1,10 @@
 # Hardware checklist — what can be run on the spectrometer TODAY
 
 Everything below is implemented and dry-run-verified but has never touched
-the real instrument (epr_auto Phases 2/3/5). Ordered so that each item
-builds confidence for the next; items 1–3 are safe to interleave with
-normal lab work. Date of writing: 2026-07-17.
+the real instrument (epr_auto Phases 2/3/5, and Phase 4 — items 8–10).
+Ordered so that each item builds confidence for the next; items 1–3 are
+safe to interleave with normal lab work. Written 2026-07-17; Phase 4 items
+added 2026-07-18.
 
 ## Prerequisites (once per lab session)
 
@@ -86,8 +87,13 @@ Rules (`params.py:PresetFile`, `primitives/tune.py:_build`):
 - What runs is *not* the preset as saved: the step's own parameters
   (`points`, `scans`, …) plus the session's calibrations override it —
   `field.edfs` replaces the stored `Field:`, `tune.echo_window` replaces
-  `Window left/right`, `tune.auto_phase` replaces the zero-order. So the
-  preset supplies the pulse *geometry*; the run supplies the state.
+  `Window left/right` (consumed by exp.* via `window: auto`; `window:
+  preset` pins the stored values), `tune.auto_phase` replaces the
+  zero-order, and `tune.pi_calibration`'s result patches the exp.* pulse
+  amplitudes (`apply_cal`; `none` opts out). exp.t2 additionally re-anchors
+  the tau sweep (`tau_start`/`tau_step`) and exp.t1 the log axis
+  (`t_start`/`t_end`); both can override `rep_rate`. So the preset supplies
+  the pulse *geometry*; the run supplies the state.
 - Choosing a preset per step is rarely about the experiment: `tune.auto_phase`
   just needs an echo, so `hahn_echo_4s` serves. Override it only when that
   sequence does not suit the sample — e.g. its fixed 288 ns τ is too long for
@@ -268,28 +274,80 @@ real hardware:
 - Repeat once with `autonomy: autonomous` end-to-end: no prompts,
   checkpoints auto-approved with notifications.
 
-## Newly hardware-runnable (Phase 4, 2026-07-18 — needs its bench debut)
+## 8. exp.t2 — first real experiment on the engine path (Phase 4, NEW)
 
-- `exp.t2` — real acquisition on the acquire_1d path: linear tau sweep
-  re-anchored to `tau_start`/`tau_step` (all moving pulses shift in the
-  preset's own ratio; the axis is total evolution time), stretched-exp fit,
-  HARD `relaxation_fit` judge (dAICc vs the no-signal null >= 150,
-  calibrated on the 2026-07-03 oTP campaign) + `echo_snr`. Watch on the
-  bench: the fitted T2 against a manual run, and the pulse geometry on the
-  scope after re-anchoring (P3 = tau_start, DET = its preset offset + 2x).
-- `exp.t1` — Log Time sweep (`t_start`/`t_end` -> Log Start/End = log10 ns),
-  a − b·exp(−t/T1) fit with the characteristic-time initial guess. The
-  grid-rounded log axis deduplicates: expect `npoints` below `points`.
-  **rep_rate**: the sweep must fit one repetition period — the step
-  pre-checks and names the knob (`rep_rate:` on the step overrides the
-  preset), and physically the period must also exceed ~5x the expected T1.
-- `apply_cal` on a real acquisition — exp.t1/t2 acquire from the patched
-  preset now (`apply_cal: none` opts out).
-- `max_duration` on exp.t1/t2 — the scan_control policy: when the projected
-  wall-clock exceeds the budget, the scan count shrinks mid-run ('SC<n>',
-  ratchet-down only) and the run finishes with the data acquired so far.
-  Bench check: set a budget ~half the projected time and watch the log line
-  + early finish with a saved file.
+Needs a phased detection chain: run after item 1 (or inside a tuned
+protocol). The magnet stays wherever the session put it.
+
+```yaml
+sample: hw_check
+autonomy: supervised
+steps:
+  - tune.auto_phase
+  - exp.t2:
+      tau_start: 300 ns
+      tau_step: 12 ns
+      points: 400
+      scans: 4
+      checkpoint: true
+```
+
+The sweep is the preset's own, re-anchored: every moving pulse shifts in
+the preset's increment ratio, so P3 lands at `tau_start` and DETECTION at
+its preset offset + 2×; the time axis is total evolution time. First bench
+run: check the pulse geometry on the scope after re-anchoring, then compare
+the acquisition with a manual phasing-tool run of the same preset.
+
+Expect: `echo_snr` + `relaxation_fit` PASS (the latter gates on dAICc vs
+the no-signal null ≥ 150, calibrated on the 2026-07-03 oTP campaign;
+`adj_r2`/`rmse` are informational in the manifest), fitted `t2`/`beta`
+matching a manual fit of the saved CSV (Data Treatment). If
+`tune.pi_calibration` ran earlier in the protocol, the pulse amplitudes
+are patched first (log line `apply_cal -> ...`; `apply_cal: none` opts
+out, an explicit map like `{P2: pi2, P3: pi}` overrides the inference).
+Record: t2, beta, dAICc score, data file.
+
+## 9. exp.t1 — Log Time sweep (Phase 4, NEW; mind rep_rate)
+
+```yaml
+sample: hw_check
+autonomy: supervised
+steps:
+  - tune.auto_phase
+  - exp.t1:
+      t_start: 500 ns
+      t_end: 2 ms
+      points: 300
+      scans: 4
+      rep_rate: 100        # the sweep must fit one repetition period
+      checkpoint: true
+```
+
+`t_start`/`t_end` map to the preset's Log Start/End (log10 ns); the worker
+grid-rounds and deduplicates the log axis, so **`npoints` in the result is
+expected below `points`** — not a bug. The step pre-checks that the
+sequence at `t_end` fits one repetition period and names the knob in the
+error; physically the period must also exceed ~5× the expected T1 (the
+preset's 480 Hz suits sub-ms T1 only). Fit: a − b·exp(−t/T1) with a
+characteristic-time initial guess (validated against the oTP campaign
+data). Bench cross-check: T1 vs the manual run at matched (T, field) —
+the 2026-07-03 campaign values are the reference. Record: t1, npoints,
+dAICc score, data file.
+
+## 10. max_duration + the overnight chain
+
+The scan_control policy's bench debut: give exp.t2 a `max_duration` about
+half the projected run time and watch the log line (`max_duration ...:
+projected N s over budget M s -> scan limit k of K`) followed by an early
+finish with the data acquired so far saved and fitted (the scan count only
+ever shrinks — 'SC<n>' ratchet). Then the full unattended chain:
+
+```bash
+python -m atomize.epr_auto run protocols/overnight_t2.yaml   # checkpointed
+```
+
+tune-up steps → exp.t2, with `manifest.json` carrying per-step
+params/judges/fit results. This is the Phase 4 exit criterion.
 
 ## Other pending bench items (outside epr_auto)
 
