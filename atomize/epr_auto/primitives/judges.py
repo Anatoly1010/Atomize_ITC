@@ -90,15 +90,54 @@ def fit_quality(y, y_fit, n_params, min_adj_r2=0.9):
                        {'rmse': rmse, 'r2': float(r2), 'min_adj_r2': min_adj_r2})
 
 
-def relaxation_fit(y, y_fit, n_params, min_adj_r2=0.85):
-    """HARD gate for the exp.* relaxation fits — same statistics as
-    fit_quality but deliberately under a different name: fit_quality is in
-    steps._ADVISORY_JUDGES (the tuning fits derive their answers from
-    de-biased local estimates, so a mediocre global fit is only a warning
-    there), while a relaxation curve the model cannot describe IS a failed
-    experiment."""
-    rep = fit_quality(y, y_fit, n_params, min_adj_r2=min_adj_r2)
-    return JudgeReport('relaxation_fit', rep.passed, rep.score, rep.details)
+def _aicc(rss, n, k):
+    """Gaussian-likelihood AICc; k counts the noise sigma as fitted."""
+    k = k + 1
+    a = n * np.log(rss / n) + 2 * k
+    if n - k - 1 > 0:
+        a += 2 * k * (k + 1) / (n - k - 1)
+    return a
+
+
+def relaxation_fit(y, y_fit, n_params, min_delta_aicc=150.0):
+    """HARD gate for the exp.* relaxation fits — deliberately NOT named
+    'fit_quality' (which sits in steps._ADVISORY_JUDGES): a relaxation trace
+    with no believable decay IS a failed experiment.
+
+    Score = dAICc = AICc(constant-mean null) − AICc(model): the evidence
+    that a relaxation signal is present and described, in likelihood units.
+    Chosen over an adj-R² floor on the 2026-07-03 oTP campaign (56 real
+    T1/T2 traces): adj-R² punishes NOISE, not fit validity — 0.85 failed 3
+    real 280 K traces (SNR 12–27) whose fitted times were physically sound,
+    and 18/56 at 10x noise where the time constant was still recovered;
+    dAICc passed every real trace (min 321) at any noise level that still
+    held a signal. Threshold 150 ≈ the geometric midpoint between the real-
+    data floor (321) and the no-signal null tail (max 80 over 1120 shuffled
+    controls — a tiny-beta stretched exp latching onto extreme points).
+    Calibrated at N ~ 300–500 points; dAICc shrinks with N.
+
+    Deliberately NOT gated: residual structure. On this instrument even
+    correct fits carry structured residuals (ESEEM modulation on T2, the
+    mono-exponential T1 approximation), so a whiteness test would fail
+    good data — and both metrics score a wrong model highly when it tracks
+    the envelope; the gate answers 'is there a described relaxation
+    signal', not 'is the model exact'."""
+    y = np.asarray(y, float).ravel()
+    y_fit = np.asarray(y_fit, float).ravel()
+    n = len(y)
+    rss = float(np.sum((y - y_fit) ** 2))
+    null_rss = float(np.sum((y - y.mean()) ** 2))
+    if rss == 0 or null_rss == 0:
+        return JudgeReport('relaxation_fit', False, 0.0,
+                           {'note': 'degenerate residuals (flat data?)'})
+    delta = float(_aicc(null_rss, n, 1) - _aicc(rss, n, n_params))
+    r2 = 1 - rss / null_rss
+    dof = n - n_params - 1
+    adj_r2 = 1 - (1 - r2) * (n - 1) / dof if dof > 0 else r2
+    return JudgeReport('relaxation_fit', delta >= min_delta_aicc, delta,
+                       {'min_delta_aicc': min_delta_aicc,
+                        'adj_r2': float(adj_r2),
+                        'rmse': float(np.sqrt(rss / n))})
 
 
 def convergence(values, tol=0.02):

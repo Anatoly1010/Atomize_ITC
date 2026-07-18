@@ -688,6 +688,32 @@ not autonomous without them.
   **COMMITTED+PUSHED: ITC `cba862b`** (review fixes earlier this session:
   `3c492e4`).
 
+- **2026-07-18 (3)** — **relaxation_fit reworked: adj-R² floor -> dAICc gate**
+  (user suggestion "probably AIC is better", validated on the REAL
+  2026-07-03 oTP campaign, `~/Documents/OTP/2026_07_03_ap210_oTP_new`
+  t1/ + t2/, 56 traces, 80–280 K x 4 fields). Findings (harness: scratch
+  aic_investigation.py):
+  - adj-R² >= 0.85 punishes NOISE, not fit validity: it FAILED 3 real 280 K
+    traces (SNR 12–27) whose fitted T2s were physically sound (0.1–0.4 us —
+    an overnight run would have aborted on usable data), and 18/56 at 10x
+    noise where the time constant was still recovered on most.
+  - dAICc = AICc(constant-mean null) − AICc(model): every real trace >= 321
+    at any noise level that still held signal; no-signal null (shuffled
+    controls, n=1120) max 80, p99 13 — the tail comes from a tiny-beta
+    stretched exp latching onto extreme points. Threshold 150 = geometric
+    midpoint, ~2x margin both ways. Validation on the new judge: 56/56 real
+    PASS, 0/280 shuffled PASS.
+  - Wrong-model control: BOTH metrics score a T1 model on T2 data highly
+    (adj 0.94 / dAICc 1392) — and residual-structure tests cannot be the
+    gate either, because even CORRECT fits here have structured residuals
+    (ESEEM modulation on T2; the mono-exp T1 approximation, DW down to
+    0.01 with adj-R² 0.99). The gate's question is 'is there a described
+    relaxation signal', not 'is the model exact' — documented in the judge.
+  - Caveat pinned in the docstring: dAICc scales with N (calibrated at
+    N ~ 300–500); details now carry adj_r2 + rmse for the manifest.
+  Verified: 39-check Phase 4 suite + 30-check review suite + 13-case runner
+  suite + both dry-runs + gui_vs_engine ALL PASS after the rework.
+
   ### >>> NEXT SESSION, FIRST THING: /code-review of Phase 4 `cba862b` <<<
 
   Scope: the Phase 4 commit against the current tree (primitives/exp.py new;
@@ -708,7 +734,11 @@ not autonomous without them.
   - The T1 fit is mono-exponential a − b·exp(−t/T1); stretched/bi-exp
     recovery data will fail the relaxation_fit gate rather than mis-fit —
     intended, but worth confirming that is the desired failure mode.
-  - relaxation_fit min_adj_r2 = 0.85 is a guess (no step param to tune it).
+  - relaxation_fit was REWORKED same session (user suggestion, validated on
+    the real oTP campaign — see the 2026-07-18 (3) entry): gate = dAICc vs
+    the constant-mean null >= 150, not an adj-R² floor. The threshold and
+    the null-tail numbers are data-derived but from ONE campaign; second
+    opinion welcome on the 150 and on the N-dependence caveat.
   - `_duration_policy` trusts the worker's Status pct linearity; a strongly
     nonlinear progress rate (long per-point tails) could shrink too
     aggressively. Ratchet-down-only makes over-shrink permanent by design.

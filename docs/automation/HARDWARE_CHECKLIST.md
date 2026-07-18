@@ -273,7 +273,8 @@ real hardware:
 - `exp.t2` — real acquisition on the acquire_1d path: linear tau sweep
   re-anchored to `tau_start`/`tau_step` (all moving pulses shift in the
   preset's own ratio; the axis is total evolution time), stretched-exp fit,
-  HARD `relaxation_fit` judge (adj-R² >= 0.85) + `echo_snr`. Watch on the
+  HARD `relaxation_fit` judge (dAICc vs the no-signal null >= 150,
+  calibrated on the 2026-07-03 oTP campaign) + `echo_snr`. Watch on the
   bench: the fitted T2 against a manual run, and the pulse geometry on the
   scope after re-anchoring (P3 = tau_start, DET = its preset offset + 2x).
 - `exp.t1` — Log Time sweep (`t_start`/`t_end` -> Log Start/End = log10 ns),
