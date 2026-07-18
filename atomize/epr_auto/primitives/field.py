@@ -21,6 +21,21 @@ _G_PER_MHZ = 0.71447704
 _WEAK_LINE_SCORE = 1.5
 
 
+def _diagnose_weak(snr_judge, x, sig):
+    """Name what to check on a failed echo-SNR judge (details['diagnosis'])."""
+    peak_g = float(x[int(np.argmax(np.abs(sig)))])
+    if snr_judge.score >= _WEAK_LINE_SCORE:
+        snr_judge.details['diagnosis'] = (
+            f'weak line found near {peak_g:.1f} G (score '
+            f'{snr_judge.score:.2f}) — increase scans, or narrow the '
+            'range around it')
+    else:
+        snr_judge.details['diagnosis'] = (
+            'flat everywhere: no echo anywhere in the range — check the '
+            'resonator tuning, temperature, g-factor guess and sample '
+            'position')
+
+
 def _synth_mhz(session):
     ans = str(session.mw_bridge.mw_bridge_synthesizer())
     try:
@@ -52,6 +67,12 @@ def edfs(session, preset, range, points, scans, pick='max', value=None,
         session.log(f'      range auto: synthesizer {nu:.0f} MHz, g = {g}'
                     + (f', offset {off:+.1f} G' if off else '')
                     + f' -> center {center:.1f} G, span +/- {half:.0f} G')
+        if lo < 0:
+            # a span wider than the center (low nu / high g, or the x2
+            # escalation) would command a negative start the magnet cannot take
+            session.log(f'      span exceeds the center — clamping the sweep '
+                        f'start {lo:.1f} -> 0 G')
+            lo = 0.0
     else:
         lo, hi = (parse_field_g(v) for v in range)
     step = (hi - lo) / (points - 1)
@@ -82,29 +103,26 @@ def edfs(session, preset, range, points, scans, pick='max', value=None,
     sig = i + 1j * q
     snr_judge = echo_snr(sig)
 
-    if not snr_judge.passed and range == 'auto' and not _escalated:
-        wide = f'{2 * parse_field_g(span)} G'
-        session.log(f'      no echo above the SNR floor — widening the span '
-                    f'to +/- {parse_field_g(wide):.0f} G and re-running '
-                    '(one escalation)')
-        return edfs(session, preset, 'auto', points, scans, pick, value,
-                    g, wide, offset, _escalated=True)
     if not snr_judge.passed:
-        # the search ladder ends at the human: name the precondition to
-        # check, and do NOT move the magnet to a noise maximum
-        peak_g = float(x[int(np.argmax(np.abs(sig)))])
-        if snr_judge.score >= _WEAK_LINE_SCORE:
-            snr_judge.details['diagnosis'] = (
-                f'weak line found near {peak_g:.1f} G (score '
-                f'{snr_judge.score:.2f}) — increase scans, or narrow the '
-                'range around it')
-        else:
-            snr_judge.details['diagnosis'] = (
-                'flat everywhere: no echo anywhere in the range — check the '
-                'resonator tuning, temperature, g-factor guess and sample '
-                'position')
-        return ({'field': None, 'pick': pick, 'data_file': path},
-                [snr_judge])
+        _diagnose_weak(snr_judge, x, sig)
+        # pick='value' names a field independent of the echo, so the sweep's
+        # SNR neither helps nor blocks it: no escalation, and the magnet is
+        # still parked at the requested field below (the failed judge, with
+        # its diagnosis, surfaces through the step's judges as usual)
+        if pick != 'value':
+            if range == 'auto' and not _escalated:
+                wide = f'{2 * parse_field_g(span)} G'
+                session.log(f'      no echo above the SNR floor — widening '
+                            f'the span to +/- {parse_field_g(wide):.0f} G '
+                            'and re-running (one escalation)')
+                return edfs(session, preset, 'auto', points, scans, pick,
+                            value, g, wide, offset, _escalated=True)
+            # the search ladder ends at the human: name the precondition to
+            # check, and do NOT move the magnet to a noise maximum
+            return ({'field': None, 'pick': pick, 'data_file': path},
+                    [snr_judge])
+        session.log('      echo SNR below the floor — pick: value still '
+                    'sets the requested field')
 
     field_g = picked_g if pick == 'value' else \
         float(x[int(np.argmax(np.abs(sig)))])

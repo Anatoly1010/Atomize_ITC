@@ -72,12 +72,16 @@ power between temperatures):
 | zero-order | 215° | 207° | 192° | 160° | 80° | 25° |
 
 A monotonic 190° swing. Hence: (a) a setpoint move beyond `rephase_delta`
-(default 5 K) invalidates **auto-phase only** — `session.invalidate_phase`,
-checked in both `temp.set` and `temp.wait`; (b) the fine amplitude
-calibration **survives** a temperature change — only the vane moves B₁, and
-in practice the vane is re-set only after a large ΔT, to hold bandwidth;
-(c) `tune.auto_phase` stamps `temperature_k` on its result so the manifest
-records where each phase was taken.
+(default 1 K — the swing averages ~1°/K and is steeper at the warm end, so
+1 K keeps the carried error at the phase-noise level) invalidates
+**auto-phase only** — `session.invalidate_phase`, checked in both `temp.set`
+and `temp.wait`; (b) the fine amplitude calibration **survives** a
+temperature change — only the vane moves B₁, and in practice the vane is
+re-set only after a large ΔT, to hold bandwidth; (c) `tune.auto_phase`
+stamps `temperature_k` on its result so the manifest records where each
+phase was taken — before any temp step has run, the stamp is the measured
+channel-B temperature (None only if the Lakeshore is unreachable, which
+falls back to an unconditional drop on the first temp step).
 
 The same series also shows what zero-order does *not* depend on: it is
 identical for T1 and T2 at matched (T, field) in 25 of 26 pairs — despite
@@ -138,7 +142,10 @@ rotates, and its low amplitude keeps it out of amplifier compression.
   pair — worth it on a new sample where the preset's stored pair was far off.
 - Slot roles: swept pulse = nonzero st_inc/len_inc (existing worker
   criterion); detection pair = the remaining active MW pulses, identified as
-  *soft* by length ≥ ~2× the swept pulse's.
+  *soft* by length ≥ 2.5× the swept pulse's (`tune._SOFT_LEN_RATIO`, shared
+  with `apply_cal`'s role inference so the two primitives can never classify
+  the same pulse both ways; the cut must sit between 2 — a length-encoded π
+  is exactly 2× its π/2 — and ~3, where real detection pairs start).
 
 ### Integration window (`tune.echo_window`)
 

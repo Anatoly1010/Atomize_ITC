@@ -114,7 +114,7 @@ a property of the detection chain, not of the sequence — the same value
 serves T1, T2, ESEEM and DEER at a given (temperature, vane) state, so it is
 run once per state and *not* once per experiment. It does drift strongly with
 temperature (190° over 80–280 K on oTP), so a setpoint move beyond
-`rephase_delta` (default 5 K) drops it and the protocol must re-run
+`rephase_delta` (default 1 K) drops it and the protocol must re-run
 `tune.auto_phase` after the new temperature settles. The fine calibration is
 not dropped — temperature does not move B₁.
 

@@ -51,10 +51,6 @@ def points_from_ns( value, time_per_point ):
     Shared with the automation engine: atomize/epr_auto/engine/snapshot.py
     calls this function directly (as it does expand_phase_cycling) so that
     the two cannot drift.
-
-    Shared with the automation engine: atomize/epr_auto/engine/snapshot.py
-    calls this function directly (as it does expand_phase_cycling) so that
-    the two cannot drift.
     """
     return int( float( value ) / time_per_point + 1e-9 )
 

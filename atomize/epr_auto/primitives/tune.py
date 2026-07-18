@@ -33,6 +33,14 @@ from atomize.epr_auto.primitives.judges import (
 # not learn to expect the ideal value)
 _CANNED_PI, _CANNED_PI2 = 68.0, 33.5
 
+# hard/soft pulse cut, as a length ratio: soft/selective detection sits at
+# ~3-4x the shortest hard pulse (ampl_4s/rabi presets: 3x+), while a
+# length-encoded pi is exactly 2x its pi/2 (hahn style), so the cut must sit
+# between 2 and 3. Shared by _infer_cal_map (hard = below, vs the shortest MW
+# pulse) and _scale_detection_pair (pair = at/above, vs the swept pulse) so
+# the two primitives can never classify the same pulse both ways.
+_SOFT_LEN_RATIO = 2.5
+
 
 # --------------------------------------------------------------- plumbing
 
@@ -119,10 +127,21 @@ def _swept_slot(preset, mode):
 # ------------------------------------------------------------- auto-phase
 
 def _phase_temperature(session):
-    """Setpoint the phase is being measured at, or None when no temp step has
-    run. temp.set/temp.wait compare against this to decide re-phasing."""
+    """Temperature the phase is being measured at: the last temp step's
+    setpoint, or — before any temp step has run — the cryostat's measured
+    channel-B temperature, so the first temp.set/temp.wait still has a
+    reference to compare against (_rephase_check) instead of dropping the
+    phase unconditionally. None only when the Lakeshore is off/unreachable
+    (the check then keeps its conservative drop). Read here, at measurement
+    time, not in _rephase_check: temp.wait also covers external setpoints,
+    where the temperature may already be ramping by check time."""
     t = session.state.get('temperature')
-    return t.get('setpoint') if t else None
+    if t:
+        return t.get('setpoint')
+    try:
+        return float(session.temp_controller.tc_temperature('B'))
+    except Exception:
+        return None
 
 
 def auto_phase(session, preset, points=4, scans=1):
@@ -170,10 +189,8 @@ def _infer_cal_map(preset):
           if i > 0 and s.active and s.typ not in ('BLANK', 'LASER')]
     if not mw:
         raise ValueError('apply_cal: the preset has no active MW pulses to patch')
-    # soft/selective detection sits at ~3-4x the shortest pulse; a
-    # length-encoded pi is exactly 2x its pi/2, so cut between them
     min_len = min(s.length for _, s in mw)
-    hard = [(i, s) for i, s in mw if s.length < 2.5 * min_len]
+    hard = [(i, s) for i, s in mw if s.length < _SOFT_LEN_RATIO * min_len]
     amp_levels = sorted({s.coef for _, s in hard})
     if len(amp_levels) == 2:
         lo = amp_levels[0]
@@ -230,6 +247,14 @@ def apply_calibration(session, preset, mapping=None):
                 l_slot = snapshot._snap(s.length, grid)
                 value = round(value * float(l_cal) / l_slot, 2)
             if value > 100.0:
+                if cal.get('canned'):
+                    # dry-run: the canned pi/pi2 are placeholders, so an
+                    # over-rail scaling proves nothing about the real preset —
+                    # log and leave the slot unpatched instead of failing
+                    session.log(f'      apply_cal: {slot_name} would need '
+                                f'{value}% (> 100%) with the canned dry-run '
+                                'calibration — left unpatched')
+                    continue
                 raise ValueError(
                     f'apply_cal: {slot_name} would need {value}% (> 100%) at '
                     f'{s.length} ns — re-run the coarse power stage (more '
@@ -445,15 +470,16 @@ def _anchored_pi2(x, y, x_pi, popt):
 def _scale_detection_pair(pre, slot, pi_v, pi2_v, l_cal, log):
     """Soft/selective detection pair re-scaling after a fine amplitude cal
     (ARCHITECTURE.md 'Detection pulses'): pair = active MW pulses (not the
-    swept slot) at >= 2x the swept pulse's length, roles by relative
-    amplitude (lower = pi/2); the standard inverse-length rule
+    swept slot) at >= _SOFT_LEN_RATIO x the swept pulse's length, roles by
+    relative amplitude (lower = pi/2); the standard inverse-length rule
     amp_det(theta) = amp_cal(theta) * L_cal / L_det (the amp is nearly
     linear). Returns {slot_index: {role, amplitude, length_ns}}, empty when
     there is no recognizable pair (preset-stored values stay in force)."""
     swept_len = pre.slots[slot].length
     pair = [(i, s) for i, s in enumerate(pre.slots)
             if i > 0 and i != slot and s.active
-            and s.typ not in ('BLANK', 'LASER') and s.length >= 2 * swept_len]
+            and s.typ not in ('BLANK', 'LASER')
+            and s.length >= _SOFT_LEN_RATIO * swept_len]
     if not pair or l_cal is None:
         return {}
     coefs = sorted({s.coef for _, s in pair})

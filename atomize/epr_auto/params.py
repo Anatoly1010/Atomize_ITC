@@ -182,14 +182,18 @@ class PairOf(Param):
 class CalMap(Param):
     """apply_cal slot -> role mapping, e.g. {P2: pi2, P3: pi}: which pulse
     slots receive the calibrated pi / pi2 value (amplitude or grid-quantized
-    length, by the calibration's mode)."""
+    length, by the calibration's mode). The literal 'none' opts out: run the
+    preset's stored values even though a pi_calibration exists (omitting the
+    parameter means infer the map from the preset's amplitude levels)."""
 
-    typename = 'mapping {P2..P9: pi | pi2}'
+    typename = "mapping {P2..P9: pi | pi2} | 'none'"
     _SLOTS = tuple(f'P{i}' for i in range(2, 10))
 
     def validate(self, value, ctx):
+        if value == 'none':
+            return 'none'
         if not isinstance(value, dict) or not value:
-            raise ParamError('expected a non-empty mapping like '
+            raise ParamError("expected 'none' or a non-empty mapping like "
                              f'{{P2: pi2, P3: pi}}, got {value!r}')
         out = {}
         for k, v in value.items():

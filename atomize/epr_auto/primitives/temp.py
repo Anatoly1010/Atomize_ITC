@@ -13,7 +13,11 @@ from atomize.epr_auto.primitives.judges import JudgeReport
 
 _POLL_S = 1.0                 # keep slow: GPIB is slow
 HEATER_RANGES = ('Off', '0.5 W', '5 W', '50 W')
-REPHASE_DELTA_K = 5.0         # default 'rephase_delta'; see _rephase_check
+# default 'rephase_delta' (see _rephase_check): the oTP series showed ~190 deg
+# of zero-order swing over 200 K — ~1 deg/K on average, steeper at the warm
+# end — so 1 K keeps the carried error at the phase-noise level (~1-2 deg)
+# where 5 K could quietly carry ~5-10 deg (user decision 2026-07-18)
+REPHASE_DELTA_K = 1.0
 
 
 def _rephase_check(session, setpoint, delta, reason):
@@ -29,8 +33,10 @@ def _rephase_check(session, setpoint, delta, reason):
         return
     was = ap.get('temperature_k')
     if was is None:
-        # phased before any temp step ran: nothing to compare against, so the
-        # phase cannot be shown to still hold once a setpoint is commanded
+        # tune._phase_temperature stamps the measured cryostat temperature
+        # even before any temp step runs, so None means the Lakeshore was
+        # unreachable at auto_phase time: nothing to compare against ->
+        # conservative drop
         session.invalidate_phase(f'{reason} {setpoint} K, phase measured at an '
                                  'unrecorded temperature')
         return

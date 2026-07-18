@@ -581,3 +581,55 @@ not autonomous without them.
     either claim still asserted anywhere, that is a real defect.
   Next (AFTER that single review + its fixes): Phase 4 exp.t1/t2, then the
   hardware run per HARDWARE_CHECKLIST.md.
+
+- **2026-07-18** — **The single `3be399d..b9cbc66` code-review DONE** (Opus
+  18-agent workflow, high effort, range vs current tree; Accumulation-Mode
+  commit excluded per the brief). 15 candidates -> 11 verified -> 8 distinct
+  findings, ALL FIXED (uncommitted):
+  (1) field.py edfs: failed-SNR early return had no `pick=='value'` guard —
+  an explicitly-requested field was never set on a weak sweep (magnet left
+  stale, downstream steps at the wrong field). Now: pick='value' skips the
+  auto-escalation entirely (the requested field never depends on the echo)
+  and ALWAYS parks the magnet; the failed judge + diagnosis still surface.
+  pick='max' keeps the do-NOT-move-to-a-noise-argmax invariant (tested).
+  (2) steps.py exp.t1/t2 forced `_apply_cal` inference — a session
+  pi_calibration + a non-2-level preset (e.g. 4pdeer's 3 amp levels) meant
+  hard StepFailure with no opt-out, incl. --test dry-runs. **User decision:
+  `apply_cal: none`** (CalMap literal; YAML-safe — `none` is a string, only
+  `null`/`~` are YAML null) = run preset-stored values, logged; inference
+  failure without the opt-out stays hard.
+  (3) _check_edfs skipped lo>=hi for range='auto' -> `span: '0 G'` passed
+  config-check into a 200-point zero-width sweep; now `range: auto` requires
+  a positive span. (Related PLAUSIBLE) auto lo could go negative (low nu /
+  wide span; 'auto' literal short-circuits FieldStr validation) -> runtime
+  clamp to 0 G with a log line.
+  (4) temp.py `was is None` dropped an ambient auto_phase unconditionally on
+  the FIRST temp step. **User decision: stamp the real cryostat temperature**
+  — `tune._phase_temperature` now reads Lakeshore channel B when no temp
+  step has run (canned in test mode), so the delta rule applies uniformly;
+  None (=> conservative drop) only when the Lakeshore is unreachable. Read
+  at MEASUREMENT time, not check time — temp.wait's external-setpoint case
+  may already be ramping by check time.
+  **User decision: `rephase_delta` default 5 K -> 1 K** (swing ~1 deg/K
+  average, steeper warm; 1 K keeps carried error at phase-noise level).
+  (5) apply_calibration >100% inverse-length raise reachable from dry-runs
+  via the CANNED pi values -> canned cal now logs + leaves the slot
+  unpatched (real cal still raises — genuine physics).
+  (6) `_SOFT_LEN_RATIO = 2.5` shared constant unifies the hard/soft cut that
+  was 2.5x in _infer_cal_map vs 2x in _scale_detection_pair (the [2.0, 2.5)
+  band got opposite roles across the two primitives). Verified against every
+  repo preset: detection pairs sit at 3x+, hahn's length-encoded pi at
+  exactly 2x stays hard — no real preset changes classification.
+  (7) points_from_ns duplicated docstring paragraph removed (ITC-only file).
+  REFUTED by the review (design stands): double `_rephase_check` set+wait
+  (first pop empties the key — no double-report); points_from_ns import
+  direction (engine already hard-depends on awg_phasing_insys);
+  acquire_trace plot-per-step assumption (dig_args forces fft_flag=0);
+  script_test=False branch (run_main_experiment exercises it). Neither
+  retracted claim found re-asserted. ARCHITECTURE.md (rephase 1 K + stamp
+  semantics, 2.5x shared cut) + HARDWARE_CHECKLIST (1 K) updated.
+  Verified: 30-check fix suite (scratch test_review_fixes.py) ALL PASS,
+  13-case runner suite ALL PASS, tune_up (6/6) + overnight_t2 (4/4)
+  dry-runs clean, gui_vs_engine ALL PASS. Next: commit, then Phase 4
+  exp.t1/t2 (acquire_1d + max_duration -> scan_control + window/apply_cal
+  consumers), then the hardware run per HARDWARE_CHECKLIST.md.

@@ -187,6 +187,10 @@ def _check_edfs(params, ctx):
         lo, hi = (parse_field_g(v) for v in params['range'])
         if lo >= hi:
             raise ParamError(f"range must be [low, high], got {params['range']}")
+    elif parse_field_g(params['span']) <= 0:
+        # the auto range is center +/- span, so a zero span is the same
+        # degenerate lo == hi sweep the explicit-range check rejects above
+        raise ParamError(f"range: auto needs a positive span, got {params['span']!r}")
 
 
 @register('field.edfs',
@@ -281,6 +285,14 @@ def _apply_cal(session, preset, mapping):
     from atomize.epr_auto.engine import snapshot
     from atomize.epr_auto.primitives import tune
     pre = snapshot.load_preset(preset)
+    if mapping == 'none':
+        # deliberate opt-out: acquire with the preset's stored values even
+        # though a calibration exists (e.g. a preset whose roles can't be
+        # inferred and whose stored amplitudes are already trusted)
+        if session.state.get('pi_calibration'):
+            session.log('      apply_cal: none — pi_calibration deliberately '
+                        'not applied, preset-stored values in force')
+        return pre
     try:
         patched = tune.apply_calibration(session, pre, mapping)
     except ValueError as e:
@@ -302,8 +314,9 @@ def _apply_cal(session, preset, mapping):
               'scans': Int(min=1, default=1),
               'window': Choice('auto', 'preset', default='auto',
                                help='auto: tune.echo_window result; preset: stored values'),
-              'apply_cal': CalMap(help='slot -> pi/pi2 map; omitted = inferred '
-                                       'from the preset amplitude levels'),
+              'apply_cal': CalMap(help='slot -> pi/pi2 map; none = do not patch; '
+                                       'omitted = inferred from the preset '
+                                       'amplitude levels'),
           })
 def exp_t2(session, preset, tau_start, tau_step, points, scans, window,
            apply_cal):
@@ -328,8 +341,9 @@ def _check_t1(params, ctx):
               'scans': Int(min=1, default=1),
               'window': Choice('auto', 'preset', default='auto',
                                help='auto: tune.echo_window result; preset: stored values'),
-              'apply_cal': CalMap(help='slot -> pi/pi2 map; omitted = inferred '
-                                       'from the preset amplitude levels'),
+              'apply_cal': CalMap(help='slot -> pi/pi2 map; none = do not patch; '
+                                       'omitted = inferred from the preset '
+                                       'amplitude levels'),
           },
           check=_check_t1)
 def exp_t1(session, preset, t_start, t_end, points, scans, window, apply_cal):
