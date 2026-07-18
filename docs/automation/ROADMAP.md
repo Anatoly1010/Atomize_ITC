@@ -685,7 +685,10 @@ not autonomous without them.
   + scratch t1 protocol (exp.t1 + window: preset + apply_cal: none +
   max_duration + rep_rate 100) dry-runs clean, gui_vs_engine ALL PASS.
 
-  ### >>> NEXT SESSION, FIRST THING: /code-review of Phase 4 (this commit) <<<
+  **COMMITTED+PUSHED: ITC `cba862b`** (review fixes earlier this session:
+  `3c492e4`).
+
+  ### >>> NEXT SESSION, FIRST THING: /code-review of Phase 4 `cba862b` <<<
 
   Scope: the Phase 4 commit against the current tree (primitives/exp.py new;
   steps.py exp wiring; executor.acquire_1d + tune._acquire scan_control
