@@ -90,6 +90,17 @@ def fit_quality(y, y_fit, n_params, min_adj_r2=0.9):
                        {'rmse': rmse, 'r2': float(r2), 'min_adj_r2': min_adj_r2})
 
 
+def relaxation_fit(y, y_fit, n_params, min_adj_r2=0.85):
+    """HARD gate for the exp.* relaxation fits — same statistics as
+    fit_quality but deliberately under a different name: fit_quality is in
+    steps._ADVISORY_JUDGES (the tuning fits derive their answers from
+    de-biased local estimates, so a mediocre global fit is only a warning
+    there), while a relaxation curve the model cannot describe IS a failed
+    experiment."""
+    rep = fit_quality(y, y_fit, n_params, min_adj_r2=min_adj_r2)
+    return JudgeReport('relaxation_fit', rep.passed, rep.score, rep.details)
+
+
 def convergence(values, tol=0.02):
     """Relative change between the last two iterates of a calibration loop;
     pass when it is within ``tol``. ``values`` needs >= 2 entries."""

@@ -268,14 +268,27 @@ real hardware:
 - Repeat once with `autonomy: autonomous` end-to-end: no prompts,
   checkpoints auto-approved with notifications.
 
-## NOT yet hardware-runnable (do not try)
+## Newly hardware-runnable (Phase 4, 2026-07-18 — needs its bench debut)
 
-- `exp.t1` / `exp.t2` — Phase 4 stubs (they log and return canned values).
-- `apply_cal` on a real acquisition — the patch itself runs (and is
-  validated in the exp stubs' logs), but nothing acquires from the patched
-  preset until Phase 4.
-- `scan_control` / max_duration — the executor channel exists, no policy
-  calls it yet (Phase 4).
+- `exp.t2` — real acquisition on the acquire_1d path: linear tau sweep
+  re-anchored to `tau_start`/`tau_step` (all moving pulses shift in the
+  preset's own ratio; the axis is total evolution time), stretched-exp fit,
+  HARD `relaxation_fit` judge (adj-R² >= 0.85) + `echo_snr`. Watch on the
+  bench: the fitted T2 against a manual run, and the pulse geometry on the
+  scope after re-anchoring (P3 = tau_start, DET = its preset offset + 2x).
+- `exp.t1` — Log Time sweep (`t_start`/`t_end` -> Log Start/End = log10 ns),
+  a − b·exp(−t/T1) fit with the characteristic-time initial guess. The
+  grid-rounded log axis deduplicates: expect `npoints` below `points`.
+  **rep_rate**: the sweep must fit one repetition period — the step
+  pre-checks and names the knob (`rep_rate:` on the step overrides the
+  preset), and physically the period must also exceed ~5x the expected T1.
+- `apply_cal` on a real acquisition — exp.t1/t2 acquire from the patched
+  preset now (`apply_cal: none` opts out).
+- `max_duration` on exp.t1/t2 — the scan_control policy: when the projected
+  wall-clock exceeds the budget, the scan count shrinks mid-run ('SC<n>',
+  ratchet-down only) and the run finishes with the data acquired so far.
+  Bench check: set a budget ~half the projected time and watch the log line
+  + early finish with a saved file.
 
 ## Other pending bench items (outside epr_auto)
 

@@ -4,8 +4,7 @@ The tuning/field steps (Phase 2) delegate to atomize.epr_auto.primitives —
 imported lazily inside the step functions, never at module scope: the
 primitives pull in the engine (PyQt6 + general_functions via
 awg_phasing_insys), and this module must stay importable for headless
-validation before test/real mode is decided. The exp.* steps are still
-dry-run stubs until Phase 4.
+validation before test/real mode is decided.
 
 Judge policy: every primitive returns (result, judge_reports). In a live run
 any failed judge aborts the step (StepFailure) except the advisory ones
@@ -279,9 +278,9 @@ def temp_wait(session, band, channels, hold, timeout, setpoint, rephase_delta):
 
 def _apply_cal(session, preset, mapping):
     """Load the experiment preset and patch it with the session's
-    pi_calibration result (explicit {slot: role} map, or inferred from the
-    preset's own two amplitude levels). Returns the patched Preset — Phase 4
-    builds the WorkerArgs from it; the stubs only log the patch."""
+    pi_calibration result (explicit {slot: role} map, 'none' = deliberate
+    skip, or inferred from the preset's own two amplitude levels). Returns
+    the (possibly patched) Preset the exp primitive acquires with."""
     from atomize.epr_auto.engine import snapshot
     from atomize.epr_auto.primitives import tune
     pre = snapshot.load_preset(preset)
@@ -317,13 +316,21 @@ def _apply_cal(session, preset, mapping):
               'apply_cal': CalMap(help='slot -> pi/pi2 map; none = do not patch; '
                                        'omitted = inferred from the preset '
                                        'amplitude levels'),
+              'max_duration': TimeStr(help='wall-clock budget; the scan count '
+                                           'shrinks mid-run to finish inside it '
+                                           '(data acquired so far is kept)'),
+              'rep_rate': Float(min=0.1, max=100000,
+                                help='repetition rate in Hz (default: preset '
+                                     'value); the sweep must fit one period'),
           })
 def exp_t2(session, preset, tau_start, tau_step, points, scans, window,
-           apply_cal):
-    _apply_cal(session, preset, apply_cal)
-    session.log(f'      [stub] would acquire {points} pts x {scans} scans '
-                f'from {preset} (window: {window}) (Phase 4)')
-    return {'t2': '1.8 us', 'fit': 'stretched_exp', 'canned': True}
+           apply_cal, max_duration, rep_rate):
+    pre = _apply_cal(session, preset, apply_cal)
+    from atomize.epr_auto.primitives import exp as exp_primitives
+    return _run_primitive(session, exp_primitives.t2, preset=pre,
+                          tau_start=tau_start, tau_step=tau_step,
+                          points=points, scans=scans, window=window,
+                          max_duration=max_duration, rep_rate=rep_rate)
 
 
 def _check_t1(params, ctx):
@@ -344,10 +351,20 @@ def _check_t1(params, ctx):
               'apply_cal': CalMap(help='slot -> pi/pi2 map; none = do not patch; '
                                        'omitted = inferred from the preset '
                                        'amplitude levels'),
+              'max_duration': TimeStr(help='wall-clock budget; the scan count '
+                                           'shrinks mid-run to finish inside it '
+                                           '(data acquired so far is kept)'),
+              'rep_rate': Float(min=0.1, max=100000,
+                                help='repetition rate in Hz (default: preset '
+                                     'value); a T1 sweep needs 1/rep_rate '
+                                     'beyond t_end plus the sequence tail'),
           },
           check=_check_t1)
-def exp_t1(session, preset, t_start, t_end, points, scans, window, apply_cal):
-    _apply_cal(session, preset, apply_cal)
-    session.log(f'      [stub] would acquire log sweep {t_start} .. {t_end}, '
-                f'{points} pts x {scans} scans from {preset} (window: {window}) (Phase 4)')
-    return {'t1': '1.2 ms', 'fit': 'exp_recovery', 'canned': True}
+def exp_t1(session, preset, t_start, t_end, points, scans, window, apply_cal,
+           max_duration, rep_rate):
+    pre = _apply_cal(session, preset, apply_cal)
+    from atomize.epr_auto.primitives import exp as exp_primitives
+    return _run_primitive(session, exp_primitives.t1, preset=pre,
+                          t_start=t_start, t_end=t_end,
+                          points=points, scans=scans, window=window,
+                          max_duration=max_duration, rep_rate=rep_rate)

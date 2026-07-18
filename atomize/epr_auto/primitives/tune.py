@@ -82,8 +82,10 @@ def _build(session, preset_path, exp_name, slot_coef=None, **overrides):
     return preset, wa
 
 
-def _acquire(session, wa, sweep_type, tag, log=None):
-    """Pre-flight, then acquire. Returns (x, i, q, path) or None in test mode."""
+def _acquire(session, wa, sweep_type, tag, log=None, scan_control=None):
+    """Pre-flight, then acquire. Returns (x, i, q, path) or None in test mode.
+    scan_control is the executor's 'SC<n>' adaptive-scan callback (see
+    exp._duration_policy)."""
     if wa.iq_cor != 1:
         # check up front (not at acquire_1d time, after hardware may already
         # have moved) so the --test pre-flight rejects such a preset too
@@ -95,7 +97,8 @@ def _acquire(session, wa, sweep_type, tag, log=None):
     session.ensure_hardware_locks()
     path = session.save_path(tag)
     x, i, q = executor.acquire_1d(wa, sweep_type, path,
-                                  on_message=log and (lambda m: log(f'      worker: {m}')))
+                                  on_message=log and (lambda m: log(f'      worker: {m}')),
+                                  scan_control=scan_control)
     return x, i, q, path
 
 

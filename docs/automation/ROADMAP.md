@@ -114,12 +114,28 @@ reproduces only the GUI's snapshot pipeline.
       via general.bot_message (never raises, logged always, silent in
       dry-run) on autonomous checkpoints, on_fail skips/aborts, finish, abort
 
-## Phase 4 — T1/T2 end-to-end
-- [ ] `exp.t2` (hahn_echo preset, linear τ sweep) with fit + report
-- [ ] `exp.t1` (inversion_recovery log-time preset) with characteristic-time
-      initial guess fit
-- [ ] `protocols/overnight_t2.yaml` full chain in `--test`
-- [ ] **Hardware**: full chain on the spectrometer, supervised mode
+## Phase 4 — T1/T2 end-to-end — code DONE 2026-07-18 (primitives/exp.py)
+- [x] `exp.t2` (hahn_echo preset, linear τ sweep) with fit + report:
+      `_retau` re-anchors every moving pulse in the preset's own increment
+      ratio (hahn: π 1 unit, DETECTION 2 — axis = total evolution time,
+      starts at the new π start = the worker's f_delay rule);
+      stretched-exp fit on the principal-axis-rotated trace; HARD
+      `relaxation_fit` judge (fit_quality stats under a non-advisory name)
+      + `echo_snr`; `rep_rate` param + friendly period pre-check
+- [x] `exp.t1` (inversion_recovery log-time preset) with characteristic-time
+      initial-guess fit (1/e crossing anchor — a generic p0 degenerates on
+      log-spaced sweeps): t_start/t_end → Log Start/End = log10(ns); the
+      worker's grid-rounded log axis deduplicates ⇒ result `npoints` ≤
+      `points`; sign-blind rotation handled (bipolar + flipped validated)
+- [x] `max_duration` → scan_control policy (`_duration_policy`): projected
+      wall-clock over budget ⇒ shrink scans ('SC<n>', ratchet-down only,
+      5 % grace, ≥2 % progress + ≥10 s before trusting the projection);
+      `window: auto|preset` consumer (`preset` pins the preset's stored
+      window over the session echo_window override)
+- [x] `protocols/overnight_t2.yaml` full chain in `--test` (exp.t2 now runs
+      the real path: retau + apply_cal + pre-flight)
+- [ ] **Hardware**: full chain on the spectrometer, supervised mode (see
+      HARDWARE_CHECKLIST 'Newly hardware-runnable')
 
 ## Phase 5 — Tune-up completeness — code DONE 2026-07-17 (review folded into
 ## the single `3be399d..b9cbc66` review — see the end of the session log;
@@ -633,3 +649,70 @@ not autonomous without them.
   dry-runs clean, gui_vs_engine ALL PASS. Next: commit, then Phase 4
   exp.t1/t2 (acquire_1d + max_duration -> scan_control + window/apply_cal
   consumers), then the hardware run per HARDWARE_CHECKLIST.md.
+  **Review fixes committed+pushed ITC `3c492e4`.**
+
+- **2026-07-18 (2)** — **Phase 4 code-complete** (`primitives/exp.py`, new;
+  checklist details in the Phase 4 section above). Key discoveries encoded in
+  code comments:
+  - **Linear Time axis rule** (Worker.exp, xd==0 path): step = the DETECTION
+    start increment, f_delay = the first moving P2..P9 pulse's start ⇒ for
+    hahn the axis is tau_start + i·2·tau_step = total evolution time, the
+    correct T2 axis. `_retau` therefore re-anchors ALL moving pulses in the
+    preset's own st_inc ratio (units = st_inc / min st_inc): start +=
+    units·(tau_start − anchor), st_inc = units·tau_step; anchor = first
+    moving P2..P9 pulse (the axis start). Rejects a below-zero start.
+  - **Log Time**: the worker builds delays itself from Log Start/End
+    (10^linspace → grid-round → np.unique ⇒ POINTS CAN SHRINK), axis offset =
+    first moving pulse's start; the swept ADDED delay spans ~(t_end −
+    t_start) with t_start setting the log-density floor. exp.t1 only
+    overrides log_start/log_end = log10(ns) — no pulse mutation.
+  - Both fits run on t = x − x[0]: the constant axis offset (preset initial
+    geometry) folds into the amplitude, leaving T1/T2 exact.
+  - **Repetition-period gotcha found by the dry-run pre-flight** (the driver
+    assert fired on t_end 5 ms at the preset's 480 Hz): both steps gain a
+    `rep_rate` param (preset override) + `_period_check`, a friendly
+    pre-check that names the knob; the driver assert stays the authority.
+  - `max_duration` policy: don't trust projections before 2 % / 10 s; 5 %
+    grace band; ratchet-down only (never raise a sent limit).
+  Verified: scratch test_phase4.py, 39 checks ALL PASS — _retau geometry vs
+  the hahn preset numbers (601.6/25.6 DET), synthetic-truth fits (T2 1.8 µs
+  β 1.15 within 5 %, T1 1.2 ms log-spaced, both ALSO with flipped sign and
+  signal parked in Q), characteristic-time guess order-of-magnitude,
+  relaxation_fit pass/fail, duration-policy shrink/ratchet/grace, window
+  plumbing, end-to-end t2/t1 primitives over a stubbed _acquire incl.
+  garbage-data fit-failure path. Regression: 30-check review-fix suite,
+  13-case runner suite, tune_up 6/6 + overnight_t2 4/4 (exp.t2 real path)
+  + scratch t1 protocol (exp.t1 + window: preset + apply_cal: none +
+  max_duration + rep_rate 100) dry-runs clean, gui_vs_engine ALL PASS.
+
+  ### >>> NEXT SESSION, FIRST THING: /code-review of Phase 4 (this commit) <<<
+
+  Scope: the Phase 4 commit against the current tree (primitives/exp.py new;
+  steps.py exp wiring; executor.acquire_1d + tune._acquire scan_control
+  threading; judges.relaxation_fit; docs). Run it the usual way (Opus
+  agents, workflow, high effort — patch model:"opus" into the persisted
+  script if the Workflow tool still has no model param). Reviewer's brief —
+  the judgement calls worth a second opinion:
+  - `_retau`'s units rule (st_inc / min st_inc) assumes the preset's
+    increment ratios encode the geometry ratio. True for the hahn family;
+    check it does something sane (or fails loudly) for multi-pulse Linear
+    Time presets whose increments are NOT multiples (4pdeer has pump st_inc
+    negative — exp.t2 on such a preset is off-label but not rejected).
+  - `_period_check` estimates the sequence extent (t2 exact per-slot, t1
+    approx + documented overshoot ~t_start). It errs long: a borderline
+    LEGAL config could be rejected that the driver would accept. Decide if
+    the margin is acceptable or the check should soften to a warning.
+  - The T1 fit is mono-exponential a − b·exp(−t/T1); stretched/bi-exp
+    recovery data will fail the relaxation_fit gate rather than mis-fit —
+    intended, but worth confirming that is the desired failure mode.
+  - relaxation_fit min_adj_r2 = 0.85 is a guess (no step param to tune it).
+  - `_duration_policy` trusts the worker's Status pct linearity; a strongly
+    nonlinear progress rate (long per-point tails) could shrink too
+    aggressively. Ratchet-down-only makes over-shrink permanent by design.
+  - The e2e fit tests stub `exp_p._acquire` by module-attribute assignment —
+    fine for the scratch suite, but the reviewer should confirm the real
+    _acquire signature (scan_control kwarg) is exercised somewhere real
+    (gui_vs_engine does not cover exp.py).
+  Next (AFTER the review + fixes): the hardware run per
+  HARDWARE_CHECKLIST.md ('Newly hardware-runnable' section first), then
+  Phase 6 planning (2D/DEER experiments or GUI launcher).

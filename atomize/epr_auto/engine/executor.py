@@ -294,10 +294,11 @@ def load_1d(path):
 
 
 def acquire_1d(worker_args, sweep_type, save_path,
-               on_status=None, on_message=None):
+               on_status=None, on_message=None, scan_control=None):
     """Run a real experiment to completion and return its 1-D result
     (axis, i, q). The axis unit is the sweep's: seconds for the time sweeps,
-    % for Amplitude, Gauss for Field.
+    % for Amplitude, Gauss for Field. scan_control is run_worker's
+    adaptive-scan callback ('SC<n>' channel).
 
     Requires worker_args.iq_cor == 1 (preset 'IQ Correction:  2'), otherwise
     the worker writes the raw 2-D format this loader does not parse.
@@ -306,5 +307,6 @@ def acquire_1d(worker_args, sweep_type, save_path,
         raise EngineError("acquire_1d needs iq_cor == 1 "
                           "(preset 'IQ Correction:  2')")
     run_worker(worker_args, sweep_type, save_path=save_path,
-               on_status=on_status, on_message=on_message)
+               on_status=on_status, on_message=on_message,
+               scan_control=scan_control)
     return load_1d(save_path)
