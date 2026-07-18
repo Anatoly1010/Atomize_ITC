@@ -713,15 +713,23 @@ not autonomous without them.
     N ~ 300–500); details now carry adj_r2 + rmse for the manifest.
   Verified: 39-check Phase 4 suite + 30-check review suite + 13-case runner
   suite + both dry-runs + gui_vs_engine ALL PASS after the rework.
+  **COMMITTED+PUSHED: ITC `f7ebe93`**; HARDWARE_CHECKLIST restructured to
+  checklist-form Phase 4 items 8–10 + full session-state override list in
+  the Presets section, `ff90708`. Session total: `3c492e4` (review fixes),
+  `cba862b` (Phase 4), `6fdfe87`/`ff90708` (docs), `f7ebe93` (judge).
 
-  ### >>> NEXT SESSION, FIRST THING: /code-review of Phase 4 `cba862b` <<<
+  ### >>> NEXT SESSION, FIRST THING: ONE /code-review of `3c492e4..ff90708` <<<
 
-  Scope: the Phase 4 commit against the current tree (primitives/exp.py new;
-  steps.py exp wiring; executor.acquire_1d + tune._acquire scan_control
-  threading; judges.relaxation_fit; docs). Run it the usual way (Opus
-  agents, workflow, high effort — patch model:"opus" into the persisted
-  script if the Workflow tool still has no model param). Reviewer's brief —
-  the judgement calls worth a second opinion:
+  Scope = Phase 4 (`cba862b`) PLUS the same-session relaxation_fit dAICc
+  rework (`f7ebe93`, which rewrites the judge `cba862b` introduced — review
+  the RANGE against the current tree, not the commits separately; the two
+  docs commits in the range are hash records / checklist restructure).
+  Files: primitives/exp.py new; steps.py exp wiring; executor.acquire_1d +
+  tune._acquire scan_control threading; judges.relaxation_fit (dAICc form).
+  Run it the usual way (Opus agents, workflow, high effort — patch
+  model:"opus" into the persisted script if the Workflow tool still has no
+  model param). Reviewer's brief — the judgement calls worth a second
+  opinion:
   - `_retau`'s units rule (st_inc / min st_inc) assumes the preset's
     increment ratios encode the geometry ratio. True for the hahn family;
     check it does something sane (or fails loudly) for multi-pulse Linear
