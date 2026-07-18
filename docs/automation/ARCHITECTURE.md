@@ -177,8 +177,37 @@ timeout}` — per-channel band around the setpoint, consecutive in-band polls
 (hold default 3 at 1 s cadence — GPIB is slow), wall-clock timeout ⇒
 StepFailure so the `on_fail`/retry/notify policy applies. temp_param lock
 seized with source 'epr_auto' (already in session.ensure_hardware_locks).
-Temperature *series* (T1 vs T): v1 = explicit repeated steps in the YAML; a
-`foreach:` block is backlog — don't grow the schema early.
+Temperature *series* (T1 vs T): v1 = explicit repeated steps in the YAML; the
+`foreach:` block is Phase 6 (see "Series & SNR-driven scans" below).
+
+### Series & SNR-driven scans (`foreach:` / `target_snr:`) — Phase 6
+
+The motivating workflow is relaxation times at fixed T across several fields
+(the standard T1/T2-vs-position measurement). Two independent pieces:
+
+**`foreach:` block** — one loop variable, `$VAR` substitution into the
+repeated steps (field series: `field.set {value: $B}` + exp.*; temperature
+series: temp.set/temp.wait + exp.*). Manifest + CSV names stamp the loop
+value; a StepFailure inside one iteration records it and continues to the
+next value by default (a dead field position must not kill the series —
+unlike the global `on_fail`). **Field moves do NOT invalidate auto_phase**:
+measured on the 2026-07 oTP campaign (ED-sweep phase flat to ±3.5° across
+the line; raw per-field T2 curves ≤4.8° spread; exp.* re-rotates onto the
+principal axis before fitting anyway). Temperature moves keep
+`rephase_delta`. Tune once at the line max, then loop.
+
+**`target_snr:` on exp.t1/t2** — `scans` becomes the ceiling; a second
+scan_control consumer on the existing 'SC<n>' channel projects the needed
+count from √N scaling (after scan k: N ≈ k·(target/SNR_k)²) and ratchets
+down, composed with `max_duration` (min wins). Stop metric =
+`judges.echo_snr` on the rotated accumulated curve — same metric as the
+final judge; noise sigma stays MAD-of-diff, because fit-residual sigma is
+inflated by systematic misfit (ESEEM modulation) that more scans cannot
+reduce — a residual-based criterion would over-scan without bound. Needs an
+opt-in Worker scan-boundary data message (flag on WorkerArgs, default off ⇒
+GUI runs byte-identical; mirror rule + gui_vs_engine apply). Validation
+data + numbers: ROADMAP Phase 6; harness
+`~/epr_auto_dev/field_phase_snr_check.py`.
 
 ### Initial signal search (`field.edfs range: auto`)
 

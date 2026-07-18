@@ -199,6 +199,119 @@ not autonomous without them.
 - [x] tune_up.yaml = canonical chain: power_for_length → field.edfs (auto) →
       echo_window → auto_phase → pi_calibration (+ commented temp prologue)
 
+## Phase 6 — Field series (`foreach:`) + SNR-driven scans — planned 2026-07-18
+Motivating workflow (user): several relaxation times at fixed T, different
+magnetic fields — expressible today only by repeating field.set/exp.* blocks
+by hand. Design validated against the real 2026-07 oTP campaign (see the
+"Real-data validation" block below; harness `~/epr_auto_dev/field_phase_snr_check.py`).
+
+- [ ] `foreach:` protocol block (promoted from backlog; covers field AND
+      temperature series):
+      ```yaml
+      foreach:
+        var: B
+        values: ['3000 G', '3318 G', '3376 G', '3450 G']
+        steps:
+          - field.set: {value: $B}
+          - exp.t2: {...}
+          - exp.t1: {...}
+      ```
+      Decisions: (a) output naming — manifest entries and CSV filenames
+      stamp the loop variable/value; (b) per-iteration failure policy —
+      a StepFailure inside an iteration records it and CONTINUES to the
+      next value by default (unlike the global on_fail), overridable;
+      (c) **no auto_phase invalidation on field moves** — measured, not
+      assumed (validation below); temperature keeps `rephase_delta`.
+- [ ] `target_snr:` param on exp.t1/t2 — SNR-driven scan count. `scans`
+      becomes the ceiling; a second scan_control consumer (composed with
+      `_duration_policy`, min wins) projects the needed scan count from
+      sqrt(N) scaling — after scan k, N ≈ k·(target/SNR_k)² — and sends
+      'SC<n>' (ratchet-down only, same guards as the duration policy).
+      Stop metric = `judges.echo_snr` on the principal-axis-rotated
+      accumulated curve — the SAME metric as the final judge, so the
+      stopping rule and pass/fail agree. Noise sigma stays MAD-of-diff
+      (noise-only), NOT fit-residual sigma — misfit does not average down
+      (validation below).
+- [ ] Worker pipe extension the SNR policy needs: an opt-in scan-boundary
+      message carrying the accumulated data (flag on WorkerArgs, default
+      off ⇒ GUI-launched runs byte-identical). Touches
+      awg_phasing_insys.py's Worker ⇒ **mirror rule applies**:
+      engine/executor mirrored, gui_vs_engine re-run.
+
+**Real-data validation (2026-07-18,** `~/Documents/OTP/2026_07_02_ap210_oTerPhenyl`
+t1/+t2/ (24+24 traces, 80–280 K × 3000/3318/3376/3450 G) **+**
+`2026_07_03_ap210_oTP_new` **ED sweeps):**
+- Phase vs FIELD: ED sweeps show ±1–3.5° (amp-weighted std) across the whole
+  significant line region; local phase at 3318/3376/3450 G agrees within ~3°.
+  Raw T2 curves: max |Δφ| vs the 3318 G reference 0.9–4.8° per temperature
+  (worst Q-leak 8 %); T1 4.7–8.4° (bipolar, low-SNR — includes estimator
+  noise). And exp.* re-rotates every curve onto its principal axis before
+  fitting (`_to_real`), so a few degrees of demod drift costs nothing.
+  ⇒ auto_phase transfers across field moves; do NOT rephase per field.
+- Phase vs TEMPERATURE/retune: session-to-session weighted phase moved up to
+  ~40° (160 K ED: −38.8° vs +2.9° on the repeat) — temperature/retune
+  rephasing (`rephase_delta`) stays necessary; field rephasing does not.
+- echo_snr vs operator ground truth: the ONLY failing T2 trace (score 2.8
+  < 3.0) is 280 K/3000 G — exactly the trace the human analysis excluded
+  for SNR. And the operator already adapted scans per field by hand
+  (T2: 6 scans at the 3318 G line max vs 32–46 at the 3000 G shoulder) —
+  precisely the adaptation `target_snr` automates.
+- Noise sigma: MAD-of-diff vs fit-residual sigma on the 240 K extracted
+  curves — ratio 0.14–0.85; residual sigma is inflated by systematic model
+  misfit (ESEEM modulation etc.), which more scans cannot reduce. A
+  residual-based stop metric would over-scan forever; MAD-of-diff is the
+  right choice (and log-spacing does NOT inflate it: ratio 0.85 on the
+  log-T1 trace where slope-per-point is largest).
+
+## Phase 7 — Documentation (local MkDocs site) — planned 2026-07-18
+User manual for epr_auto as a LOCAL web page in the style of atomize_docs
+(`/home/anatoly/atomize_docs`, MkDocs Material). Audience split stays:
+`docs/automation/*.md` = internal design/session docs (this file);
+the site = the user manual.
+
+- [ ] Site skeleton: in-repo `docs/epr_auto_site/` (`mkdocs.yml` + `docs/`),
+      **mkdocs-material pinned to the same version as atomize_docs (9.7.6)**
+      and the same authoring conventions (nav in mkdocs.yml, admonitions,
+      title from first H1, relative links) — so pages lift into the public
+      atomize_docs verbatim once epr_auto is ported/public. Local-only:
+      `mkdocs serve -f docs/epr_auto_site/mkdocs.yml`; build output
+      git-ignored.
+- [ ] **Auto-generated step reference** from the STEPS registry — verified
+      2026-07-18: `steps.py` introspects headless (summary, param class,
+      default, required, min/max, Choice options, help). Generator script
+      (pre-build or mkdocs-gen-files) emits one page per family
+      (tune/field/temp/exp) ⇒ the reference CANNOT drift from code. Side
+      effect: empty `help=''` strings become visible gaps — fill them in
+      steps.py as part of this phase (preset/tau_start/t_end/... are blank
+      today).
+- [ ] Hand-written pages:
+      - Home — what epr_auto is (YAML protocol runner reusing the phasing
+        Worker), architecture sketch, relation to the GUI tools
+      - Quickstart — install (`pip install -e .`, epr-auto entry point),
+        `--test` dry-run first, real run with the GUI open (cwd=libs),
+        run directory / manifest.json / file naming (`NNN_tag.csv`)
+      - Writing protocols — top-level schema (sample/autonomy/output/
+        notify/steps), per-step retries/`on_fail: abort|skip|ask`, output
+        template `{date}/{sample}`, autonomy levels + checkpoint behaviour,
+        telegram notify
+      - Judges & gating — hard vs advisory, echo_snr (MAD-of-diff),
+        phase_coherence, relaxation_fit dAICc rationale, temperature_band,
+        amplitude_rails + rail fallback, edfs flat-vs-weak diagnoses
+      - Tune-up chain — annotated tune_up.yaml walkthrough
+        (power_for_length → field.edfs auto → echo_window → auto_phase →
+        pi_calibration), apply_cal + detection-pair rescaling rules
+      - Presets — what steps expect (`IQ Correction: 2`, phase_awg format
+        pointer), window/rep_rate/apply_cal overrides, session overrides
+      - Examples — overnight_t2.yaml annotated; field-series T1/T2 (update
+        when Phase 6 lands)
+      - Troubleshooting — common StepFailures verbatim + what they mean,
+        param locks vs open control-center GUIs, LivePlot behaviour of
+        engine runs
+- [ ] Maintenance rule (goes into CLAUDE.md when the site lands): step/param
+      changes regenerate the reference automatically at build; protocol
+      SCHEMA changes must touch the Writing-protocols page in the same
+      session.
+
 ## Later phases (unordered backlog)
 - Resonator-correction overrides in the runner/protocol YAML (the ENGINE side
   is done 2026-07-17: WorkerArgs carries cor_model_cur/f0_cur/q_cur/
@@ -208,8 +321,8 @@ not autonomous without them.
   loading outside the GUI)
 - RECT channel support for calibration + runners
 - ESEEM / DEER payload experiments (reuse ESEEM-avg + benchmark know-how)
-- `foreach:` protocol block (temperature/parameter series without repeating
-  steps by hand — v1 keeps the schema flat on purpose)
+- ~~`foreach:` protocol block~~ — promoted to Phase 6 (field/temperature
+  series)
 - Autopilot GUI (control_center tool wrapping the runner)
 - Assistant layer (Claude emits/edits protocols, reacts at checkpoints)
 - Resonator tuning (needs actuation path assessment)
@@ -717,6 +830,34 @@ not autonomous without them.
   checklist-form Phase 4 items 8–10 + full session-state override list in
   the Presets section, `ff90708`. Session total: `3c492e4` (review fixes),
   `cba862b` (Phase 4), `6fdfe87`/`ff90708` (docs), `f7ebe93` (judge).
+
+- **2026-07-18 (4)** — **Phase 6 planned** (user request: T1/T2 at fixed T
+  across several fields + SNR-controlled scan count). Field series is
+  possible today via repeated `field.set` blocks; `foreach:` promoted from
+  backlog to make it ergonomic. Both design questions answered from REAL
+  data (`~/epr_auto_dev/field_phase_snr_check.py` over the oTerPhenyl
+  t1/+t2/ 48-trace grid + oTP_new ED sweeps): (1) phase is
+  field-independent (≤5° across the line; up to ~40° across
+  temperature/retune) ⇒ foreach does NOT rephase on field moves;
+  (2) echo_snr reproduces the human SNR judgement (unique failing trace =
+  the one excluded from the published fits) and the operator already
+  hand-adapted scans per field 6→46 — the exact behaviour `target_snr`
+  automates; MAD-of-diff (not fit-residual sigma) confirmed as the stop
+  metric. Full numbers in the Phase 6 section; design decisions in
+  ARCHITECTURE.md "Series & SNR-driven scans". Nothing committed (docs
+  only, uncommitted). Next: implement foreach (no Worker/pipe changes)
+  first, then the target_snr policy + Worker scan-boundary message
+  (mirror rule + gui_vs_engine).
+
+- **2026-07-18 (5)** — **Phase 7 planned** (user request): epr_auto user
+  manual as a LOCAL MkDocs Material site (`docs/epr_auto_site/`), same
+  theme/version/conventions as `/home/anatoly/atomize_docs` so pages lift
+  into the public site verbatim later. Key decision: the step reference is
+  GENERATED from the STEPS registry (introspection verified headless this
+  session — summary/params/defaults/help all available), so it cannot
+  drift from code; empty param help strings get filled in steps.py as part
+  of the phase. Page outline in the Phase 7 section. Docs only,
+  uncommitted.
 
   ### >>> NEXT SESSION, FIRST THING: ONE /code-review of `3c492e4..ff90708` <<<
 
