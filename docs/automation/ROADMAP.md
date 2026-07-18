@@ -844,10 +844,11 @@ the site = the user manual.
   hand-adapted scans per field 6→46 — the exact behaviour `target_snr`
   automates; MAD-of-diff (not fit-residual sigma) confirmed as the stop
   metric. Full numbers in the Phase 6 section; design decisions in
-  ARCHITECTURE.md "Series & SNR-driven scans". Nothing committed (docs
-  only, uncommitted). Next: implement foreach (no Worker/pipe changes)
-  first, then the target_snr policy + Worker scan-boundary message
-  (mirror rule + gui_vs_engine).
+  ARCHITECTURE.md "Series & SNR-driven scans". Next: implement foreach
+  (no Worker/pipe changes) first, then the target_snr policy + Worker
+  scan-boundary message (mirror rule + gui_vs_engine).
+  **COMMITTED+PUSHED with the Phase 7 plan: ITC `b2c22c0`** (docs only —
+  does NOT extend the pending `3c492e4..ff90708` review range).
 
 - **2026-07-18 (5)** — **Phase 7 planned** (user request): epr_auto user
   manual as a LOCAL MkDocs Material site (`docs/epr_auto_site/`), same
@@ -856,8 +857,8 @@ the site = the user manual.
   GENERATED from the STEPS registry (introspection verified headless this
   session — summary/params/defaults/help all available), so it cannot
   drift from code; empty param help strings get filled in steps.py as part
-  of the phase. Page outline in the Phase 7 section. Docs only,
-  uncommitted.
+  of the phase. Page outline in the Phase 7 section. Committed with the
+  Phase 6 plan: `b2c22c0` (docs only).
 
   ### >>> NEXT SESSION, FIRST THING: ONE /code-review of `3c492e4..ff90708` <<<
 
