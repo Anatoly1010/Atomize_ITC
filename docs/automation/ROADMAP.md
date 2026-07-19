@@ -860,42 +860,57 @@ the site = the user manual.
   of the phase. Page outline in the Phase 7 section. Committed with the
   Phase 6 plan: `b2c22c0` (docs only).
 
-  ### >>> NEXT SESSION, FIRST THING: ONE /code-review of `3c492e4..ff90708` <<<
-
-  Scope = Phase 4 (`cba862b`) PLUS the same-session relaxation_fit dAICc
-  rework (`f7ebe93`, which rewrites the judge `cba862b` introduced — review
-  the RANGE against the current tree, not the commits separately; the two
-  docs commits in the range are hash records / checklist restructure).
-  Files: primitives/exp.py new; steps.py exp wiring; executor.acquire_1d +
-  tune._acquire scan_control threading; judges.relaxation_fit (dAICc form).
-  Run it the usual way (Opus agents, workflow, high effort — patch
-  model:"opus" into the persisted script if the Workflow tool still has no
-  model param). Reviewer's brief — the judgement calls worth a second
-  opinion:
-  - `_retau`'s units rule (st_inc / min st_inc) assumes the preset's
-    increment ratios encode the geometry ratio. True for the hahn family;
-    check it does something sane (or fails loudly) for multi-pulse Linear
-    Time presets whose increments are NOT multiples (4pdeer has pump st_inc
-    negative — exp.t2 on such a preset is off-label but not rejected).
-  - `_period_check` estimates the sequence extent (t2 exact per-slot, t1
-    approx + documented overshoot ~t_start). It errs long: a borderline
-    LEGAL config could be rejected that the driver would accept. Decide if
-    the margin is acceptable or the check should soften to a warning.
-  - The T1 fit is mono-exponential a − b·exp(−t/T1); stretched/bi-exp
-    recovery data will fail the relaxation_fit gate rather than mis-fit —
-    intended, but worth confirming that is the desired failure mode.
-  - relaxation_fit was REWORKED same session (user suggestion, validated on
-    the real oTP campaign — see the 2026-07-18 (3) entry): gate = dAICc vs
-    the constant-mean null >= 150, not an adj-R² floor. The threshold and
-    the null-tail numbers are data-derived but from ONE campaign; second
-    opinion welcome on the 150 and on the N-dependence caveat.
-  - `_duration_policy` trusts the worker's Status pct linearity; a strongly
-    nonlinear progress rate (long per-point tails) could shrink too
-    aggressively. Ratchet-down-only makes over-shrink permanent by design.
-  - The e2e fit tests stub `exp_p._acquire` by module-attribute assignment —
-    fine for the scratch suite, but the reviewer should confirm the real
-    _acquire signature (scan_control kwarg) is exercised somewhere real
-    (gui_vs_engine does not cover exp.py).
-  Next (AFTER the review + fixes): the hardware run per
-  HARDWARE_CHECKLIST.md ('Newly hardware-runnable' section first), then
-  Phase 6 planning (2D/DEER experiments or GUI launcher).
+- **2026-07-19** — **The `3c492e4..ff90708` Phase 4 code-review DONE** (Opus
+  workflow, 24 agents all pinned `model:"opus"` high-effort — 4 finder
+  dimensions → 10 candidates → 2-skeptic adversarial verify each → 8 survived
+  (3 were the same dAICc-N finding from 3 dims), **6 distinct, ALL FIXED**;
+  user chose every fix, all uncommitted):
+  (1) **HIGH — `_fit_stretched` dropped the axis origin.** The worker's saved
+  Linear-Time axis IS the total evolution time `2·tau`: f_delay = the
+  DETECTION start (`2·tau_start`; the P2..P9 loop tests `len_inc`, which is 0
+  for hahn, so it falls through to `rect1[1]` = DET start — NOT the pi
+  position, corrected after the user flagged it), step = the DETECTION
+  increment (`2·tau_step`); the manual-x0 branch (xd≠0) uses the preset's
+  x0/xdelta instead. So the old docstring's "total evolution time" was right;
+  the bug was purely that the fit rebased `t = x − x[0]`, dropping the nonzero
+  `x[0] = 2·tau_start` origin — which for a stretched exp does not fold into
+  the amplitude, so t2/beta came out 8–32% LOW for β≠1 (verified: β=1.5 Tm
+  2 µs → 1633 ns, matching the old code). **Fix:** fit the ABSOLUTE saved axis
+  (no rebase), identical to what Data Treatment already does; verified 0.00 %
+  recovery for β∈{1,1.5,1.8,2}. `_fit_recovery` (T1, single-exp) rebases
+  safely — the origin folds into b. **Data Treatment is fully correct** (it
+  fits the same absolute evolution-time axis, no residual bias) — §8 updated.
+  (2) **MEDIUM — dAICc fixed-150 gate is N-dependent** (found by 3 dims).
+  dAICc ~ n·ln(null_rss/rss) scales with n, so a valid fit at points=100 or a
+  dedup-shrunk T1 grid false-FAILED and aborted the run. **Fix:** gate on the
+  PER-POINT density dAICc/n ≥ 0.375 (N-invariant; = old 150 at n=400).
+  Re-validated N-invariant on synthetic (n=30..400 pass, flat noise rejected).
+  (3) **MEDIUM — echo_snr hard-gated the relaxation steps**, undoing the
+  f7ebe93 noise-tolerance design (a noisy-but-valid trace relaxation_fit
+  accepts still aborted on SNR<3). **Fix:** `_run_primitive` gained an
+  `advisory_extra` param; exp.t2/exp.t1 pass `('echo_snr',)` so echo_snr is
+  advisory THERE only — it stays a hard gate for tune.*/field.*.
+  (4) **MEDIUM — `_duration_policy` transient-stall ratchet.** One Status tick
+  during the per-scan temp-settle wait (~8 s, no pct advance) spiked the
+  projection and permanently cut scans. **Fix:** require the over-budget
+  condition to persist K=3 consecutive ticks (a sub-budget tick resets the
+  streak); still ratchet-down-only once committed.
+  (5) **LOW — exp.t2 accepted a fixed-echo preset.** `_retau` only required
+  some moving P2..P9, so a DEER-style preset (4pdeer: DET frozen, only pump
+  moves) produced a pump-position axis mislabeled T2. **Fix:** require the
+  DETECTION slot (index 0) to move, else raise. hahn still accepted.
+  (6) **LOW — `_apply_cal` load error escaped as RunnerAbort.** load_preset
+  ran outside `_run_primitive`'s try, so a corrupt `.phase_awg` aborted the
+  whole protocol ignoring retries/on_fail. **Fix:** wrap the load →
+  StepFailure. REFUTED (design stands): T1 mono-exp accepting stretched data
+  (intended failure mode); fit-failure dict "omits keys" (refuted 2×).
+  Verified: 13-check fix harness ALL PASS (scratch verify_fixes.py),
+  overnight_t2 4/4 + tune_up 6/6 dry-runs clean, gui_vs_engine ALL PASS
+  (incl. the SC scan-control channel). ARCHITECTURE unaffected;
+  HARDWARE_CHECKLIST §8/§9 updated (saved-axis-vs-fit-axis, per-point gate,
+  echo_snr advisory). **UNCOMMITTED — awaiting the go-ahead to commit.**
+  Next: commit, then the hardware run per HARDWARE_CHECKLIST.md ('Newly
+  hardware-runnable' first), then Phase 6 planning. **Bench follow-up flagged
+  by the review: the per-point 0.375 threshold is derived from ONE campaign —
+  re-validate dAICc/n on the next real T1/T2 series before trusting it as the
+  overnight abort gate.**

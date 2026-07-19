@@ -294,14 +294,26 @@ steps:
 
 The sweep is the preset's own, re-anchored: every moving pulse shifts in
 the preset's increment ratio, so P3 lands at `tau_start` and DETECTION at
-its preset offset + 2×; the time axis is total evolution time. First bench
-run: check the pulse geometry on the scope after re-anchoring, then compare
-the acquisition with a manual phasing-tool run of the same preset.
+its preset offset + 2×. The worker's saved time axis starts at the
+DETECTION start (`2·tau_start`) with the DETECTION increment (`2·tau_step`)
+as its step, so **the CSV time column IS the physical evolution time
+`2·tau`**. The T2 fit runs on this ABSOLUTE axis — it must NOT rebase to
+`x − x[0]`, because `x[0] = 2·tau_start` is a nonzero origin that, for a
+stretched exponential, does not fold into the amplitude (rebasing biased
+`t2`/`beta` 8–32% low for `beta ≠ 1`). First bench run: check the pulse
+geometry on the scope after re-anchoring, then compare the acquisition with
+a manual phasing-tool run of the same preset.
 
-Expect: `echo_snr` + `relaxation_fit` PASS (the latter gates on dAICc vs
-the no-signal null ≥ 150, calibrated on the 2026-07-03 oTP campaign;
-`adj_r2`/`rmse` are informational in the manifest), fitted `t2`/`beta`
-matching a manual fit of the saved CSV (Data Treatment). If
+Expect: `echo_snr` + `relaxation_fit` PASS. `relaxation_fit` gates on the
+PER-POINT evidence density dAICc/n ≥ 0.375 (N-invariant, so short or
+log-deduplicated sweeps are judged the same as the N~300–500 the 0.375 was
+calibrated to on the 2026-07-03 oTP campaign; equals the old absolute-150
+floor at n=400). `echo_snr` is ADVISORY here (it does not abort the step —
+`relaxation_fit` is the sole hard gate, so a noisy-but-valid decay is
+kept); `adj_r2`/`rmse`/`n`/`delta_aicc_per_pt` are informational in the
+manifest. Fitted `t2`/`beta` should match a manual Data-Treatment fit of
+the saved CSV exactly — Data Treatment fits the same absolute evolution-time
+axis (`a·exp(−(x/k)^β)+b`). If
 `tune.pi_calibration` ran earlier in the protocol, the pulse amplitudes
 are patched first (log line `apply_cal -> ...`; `apply_cal: none` opts
 out, an explicit map like `{P2: pi2, P3: pi}` overrides the inference).

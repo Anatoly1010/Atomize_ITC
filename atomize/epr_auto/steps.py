@@ -64,8 +64,12 @@ def register(name, summary, params=None, check=None):
 _ADVISORY_JUDGES = ('pi_ratio_linearity', 'fit_quality', 'convergence')
 
 
-def _run_primitive(session, func, **kwargs):
-    """Call a primitive, log its judge reports, gate on them (live only)."""
+def _run_primitive(session, func, advisory_extra=(), **kwargs):
+    """Call a primitive, log its judge reports, gate on them (live only).
+    advisory_extra names judges that are advisory for THIS step only (e.g. the
+    exp.* relaxation steps demote echo_snr: relaxation_fit is their hard gate,
+    and a noisy-but-valid decay must not also be aborted on SNR — echo_snr
+    stays a hard gate for tune.*/field.*)."""
     try:
         result, judge_reports = func(session, **kwargs)
     except StepFailure:
@@ -79,8 +83,9 @@ def _run_primitive(session, func, **kwargs):
     for j in judge_reports:
         session.log(f'      {j}')
     if not session.test:
+        advisory = _ADVISORY_JUDGES + tuple(advisory_extra)
         hard = [j for j in judge_reports
-                if not j.passed and j.name not in _ADVISORY_JUDGES]
+                if not j.passed and j.name not in advisory]
         if hard:
             rails = next((j.details.get('rail') for j in hard
                           if j.name == 'amplitude_rails'), None)
@@ -283,7 +288,14 @@ def _apply_cal(session, preset, mapping):
     the (possibly patched) Preset the exp primitive acquires with."""
     from atomize.epr_auto.engine import snapshot
     from atomize.epr_auto.primitives import tune
-    pre = snapshot.load_preset(preset)
+    try:
+        pre = snapshot.load_preset(preset)
+    except (ValueError, RuntimeError, IndexError) as e:
+        # a corrupt/truncated preset (PresetError is a ValueError; a malformed
+        # line can IndexError) is loaded here, OUTSIDE _run_primitive's try —
+        # convert it to StepFailure so retries/on_fail apply, matching how the
+        # sibling steps (which load inside the primitive) handle it
+        raise StepFailure(str(e)) from None
     if mapping == 'none':
         # deliberate opt-out: acquire with the preset's stored values even
         # though a calibration exists (e.g. a preset whose roles can't be
@@ -327,8 +339,8 @@ def exp_t2(session, preset, tau_start, tau_step, points, scans, window,
            apply_cal, max_duration, rep_rate):
     pre = _apply_cal(session, preset, apply_cal)
     from atomize.epr_auto.primitives import exp as exp_primitives
-    return _run_primitive(session, exp_primitives.t2, preset=pre,
-                          tau_start=tau_start, tau_step=tau_step,
+    return _run_primitive(session, exp_primitives.t2, advisory_extra=('echo_snr',),
+                          preset=pre, tau_start=tau_start, tau_step=tau_step,
                           points=points, scans=scans, window=window,
                           max_duration=max_duration, rep_rate=rep_rate)
 
@@ -364,7 +376,7 @@ def exp_t1(session, preset, t_start, t_end, points, scans, window, apply_cal,
            max_duration, rep_rate):
     pre = _apply_cal(session, preset, apply_cal)
     from atomize.epr_auto.primitives import exp as exp_primitives
-    return _run_primitive(session, exp_primitives.t1, preset=pre,
-                          t_start=t_start, t_end=t_end,
+    return _run_primitive(session, exp_primitives.t1, advisory_extra=('echo_snr',),
+                          preset=pre, t_start=t_start, t_end=t_end,
                           points=points, scans=scans, window=window,
                           max_duration=max_duration, rep_rate=rep_rate)

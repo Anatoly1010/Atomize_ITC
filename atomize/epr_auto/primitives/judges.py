@@ -99,7 +99,7 @@ def _aicc(rss, n, k):
     return a
 
 
-def relaxation_fit(y, y_fit, n_params, min_delta_aicc=150.0):
+def relaxation_fit(y, y_fit, n_params, min_delta_aicc_per_pt=0.375):
     """HARD gate for the exp.* relaxation fits — deliberately NOT named
     'fit_quality' (which sits in steps._ADVISORY_JUDGES): a relaxation trace
     with no believable decay IS a failed experiment.
@@ -110,11 +110,17 @@ def relaxation_fit(y, y_fit, n_params, min_delta_aicc=150.0):
     T1/T2 traces): adj-R² punishes NOISE, not fit validity — 0.85 failed 3
     real 280 K traces (SNR 12–27) whose fitted times were physically sound,
     and 18/56 at 10x noise where the time constant was still recovered;
-    dAICc passed every real trace (min 321) at any noise level that still
-    held a signal. Threshold 150 ≈ the geometric midpoint between the real-
-    data floor (321) and the no-signal null tail (max 80 over 1120 shuffled
-    controls — a tiny-beta stretched exp latching onto extreme points).
-    Calibrated at N ~ 300–500 points; dAICc shrinks with N.
+    dAICc passed every real trace at any noise level that still held a signal.
+
+    dAICc's dominant term is n·ln(null_rss/rss), so it grows ~linearly with
+    the point count n. The old ABSOLUTE floor (150, calibrated at n~300-500)
+    therefore false-FAILED a physically sound fit at a shorter axis — a normal
+    points=100 sweep, or a T1 whose log grid deduplicates well below `points`.
+    The gate is now the PER-POINT evidence density dAICc/n (n-invariant): the
+    real traces scored dAICc≥321 at n~300-500 ⇒ ≥0.64-1.07/pt; the no-signal
+    null tail maxed at 80 (over 1120 shuffled controls — a tiny-beta stretched
+    exp latching onto extreme points) ⇒ ≤0.16-0.27/pt. 0.375/pt sits at the
+    geometric midpoint and equals the old 150 at n=400.
 
     Deliberately NOT gated: residual structure. On this instrument even
     correct fits carry structured residuals (ESEEM modulation on T2, the
@@ -131,11 +137,13 @@ def relaxation_fit(y, y_fit, n_params, min_delta_aicc=150.0):
         return JudgeReport('relaxation_fit', False, 0.0,
                            {'note': 'degenerate residuals (flat data?)'})
     delta = float(_aicc(null_rss, n, 1) - _aicc(rss, n, n_params))
+    per_pt = delta / n
     r2 = 1 - rss / null_rss
     dof = n - n_params - 1
     adj_r2 = 1 - (1 - r2) * (n - 1) / dof if dof > 0 else r2
-    return JudgeReport('relaxation_fit', delta >= min_delta_aicc, delta,
-                       {'min_delta_aicc': min_delta_aicc,
+    return JudgeReport('relaxation_fit', per_pt >= min_delta_aicc_per_pt, delta,
+                       {'min_delta_aicc_per_pt': min_delta_aicc_per_pt,
+                        'delta_aicc_per_pt': float(per_pt), 'n': n,
                         'adj_r2': float(adj_r2),
                         'rmse': float(np.sqrt(rss / n))})
 

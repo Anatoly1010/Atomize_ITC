@@ -6,9 +6,14 @@ Sweep mechanics (mirrors the Worker's own axis rules):
 - Linear Time: the swept delay lives in the pulses — every slot with a
   nonzero start increment moves, in the fixed ratio the preset encodes
   (hahn: pi moves 1 unit/point, DETECTION 2). tau_start/tau_step re-anchor
-  and re-scale those increments (`_retau`); the worker's time axis then
-  starts at the first moving P2..P9 pulse's start with the DETECTION
-  increment as its step, i.e. total evolution time — the correct T2 axis.
+  and re-scale those increments (`_retau`); the worker's time axis starts at
+  the DETECTION start (= 2*tau_start for a re-anchored Hahn echo; a manual-x0
+  preset uses its own x0/xdelta instead) with the DETECTION increment
+  (2*tau_step) as its step, so the SAVED axis x IS the physical evolution
+  time 2*tau = 2*tau_start + i*2*tau_step — the correct T2 axis. The T2 fit
+  runs on this ABSOLUTE axis (see `_fit_stretched`): it must NOT rebase to
+  x - x[0], because x[0] = 2*tau_start is a nonzero origin that, for a
+  stretched exponential, does not fold into the amplitude.
 - Log Time: the worker builds the delays itself from Log Start/Log End
   (10^linspace, grid-rounded, deduplicated — the POINT COUNT MAY SHRINK),
   and offsets the axis by the first moving pulse's start. t_start/t_end map
@@ -71,6 +76,14 @@ def _retau(pre, tau_start_ns, tau_step_ns):
     g = pre.awg_grid
     moving = [(i, s) for i, s in enumerate(pre.slots)
               if s.active and s.st_inc != 0.0]
+    if not any(i == 0 for i, _ in moving):
+        # DETECTION (slot 0) frozen => the echo does not track the sweep, so
+        # the worker's axis is a pulse-POSITION sweep, not an evolution-time
+        # decay (e.g. 4pdeer, whose only moving slot is the pump). exp.t2 on
+        # such a preset would report a meaningless "T2"; reject it loudly.
+        raise ValueError(f'{pre.path}: the DETECTION pulse does not move '
+                         '(st_inc == 0) — not a moving-echo (Hahn) T2 preset; '
+                         'exp.t2 needs the echo to follow the tau sweep')
     anchor = next((s for i, s in moving if i > 0), None)
     if anchor is None:
         raise ValueError(f'{pre.path}: no swept pulse (active P2..P9 with a '
@@ -120,7 +133,13 @@ def _duration_policy(session, max_duration, scans):
         return None
     from atomize.epr_auto.params import parse_time_ns
     budget_s = parse_time_ns(max_duration) / 1e9
-    state = {'limit': None}
+    # A single Status tick can spike `projected` on a transient wall-clock
+    # stall (e.g. the per-scan temperature-settle wait, ~8 s with no pct
+    # advance); require the over-budget condition to persist K consecutive
+    # ticks before cutting, so a momentary spike is not made permanent by the
+    # ratchet. Still ratchet-DOWN only once a cut is committed.
+    OVER_TICKS = 3
+    state = {'limit': None, 'over': 0}
 
     def control(pct, elapsed_s):
         # wait for a stable projection: early Status ticks (setup, first
@@ -129,6 +148,10 @@ def _duration_policy(session, max_duration, scans):
             return state['limit']
         projected = elapsed_s * 100.0 / pct
         if projected <= budget_s * 1.05:      # 5% grace: don't cut for jitter
+            state['over'] = 0                 # transient over-run: reset streak
+            return state['limit']
+        state['over'] += 1
+        if state['over'] < OVER_TICKS:        # not yet a sustained over-run
             return state['limit']
         n = int(max(1, min(scans, scans * budget_s / projected)))
         if state['limit'] is None:
@@ -160,30 +183,40 @@ def _tail_mean(y):
 
 
 def _fit_stretched(x_s, y):
-    """y = a * exp(-(t/t2)^beta) + c on t = x - x[0] (the constant axis
-    offset — the preset's initial tau — folds into a, leaving t2 exact)."""
+    """y = a * exp(-(x/t2)^beta) + c fitted against the ABSOLUTE saved axis x,
+    which for a Hahn echo IS the total evolution time 2*tau (the worker's
+    Linear-Time axis starts at the DETECTION start = 2*tau_start with the
+    DETECTION increment 2*tau_step as its step; an xd!=0 preset uses its own
+    x0/xdelta — either way x is the physical evolution-time axis). Do NOT
+    rebase to x - x[0]: x[0] = 2*tau_start is a nonzero origin that, for a
+    stretched exponential (beta != 1), does NOT fold into the amplitude —
+    exp(-((x-x0)/t2)^beta) is not a rescaling of exp(-(x/t2)^beta) — so
+    dropping it biased t2 and beta 8-32% low. data_treatment fits this same
+    absolute-axis model."""
     x = np.asarray(x_s, float)
     y = np.asarray(y, float)
-    t = x - x[0]
     c0 = _tail_mean(y)
     a0 = float(y[0] - c0) or float(np.max(np.abs(y - c0))) or 1.0
-    t2_0 = _char_time(t, y, c0, a0)
-    span = float(t[-1]) if t[-1] > 0 else 1.0
+    t2_0 = _char_time(x, y, c0, a0)
+    span = float(x[-1]) if x[-1] > 0 else 1.0
     lo = [-np.inf, span * 1e-4, 0.3, -np.inf]
     hi = [np.inf, span * 100, 3.0, np.inf]
     p0 = [a0, min(max(t2_0, lo[1] * 2), hi[1] / 2), 1.0, c0]
 
-    def model(t, a, t2, beta, c):
-        return a * np.exp(-(t / t2) ** beta) + c
+    def model(x, a, t2, beta, c):
+        return a * np.exp(-(x / t2) ** beta) + c
 
-    p, _ = curve_fit(model, t, y, p0=p0, bounds=(lo, hi), maxfev=20000)
+    p, _ = curve_fit(model, x, y, p0=p0, bounds=(lo, hi), maxfev=20000)
     return {'t_s': float(p[1]), 'beta': round(float(p[2]), 3),
             'amplitude': float(p[0]), 'offset': float(p[3]),
-            'y_fit': model(t, *p), 'n_params': 4}
+            'y_fit': model(x, *p), 'n_params': 4}
 
 
 def _fit_recovery(x_s, y):
-    """y = a - b * exp(-t/t1) on t = x - x[0] (b absorbs the offset)."""
+    """y = a - b * exp(-t/t1) on t = x - x[0]. Unlike the stretched T2 fit,
+    this model is a single exponential, so the constant axis origin genuinely
+    folds into b (exp(-x0/t1) rescales b) and t1 is exact — rebasing is safe
+    here and keeps the fit well-conditioned."""
     x = np.asarray(x_s, float)
     y = np.asarray(y, float)
     t = x - x[0]
