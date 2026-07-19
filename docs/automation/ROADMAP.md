@@ -986,11 +986,12 @@ the site = the user manual.
     string. Fix: whole-name regex substitution + **unresolved `$name` is a
     load-time ProtocolError** naming the defined vars.
   Re-verified after the fixes: all suites + dry-runs + gui_vs_engine green.
-  UNCOMMITTED (commit next).
+  **COMMITTED+PUSHED: ITC `94481c7`** (review fixes earlier this session:
+  `eeea8ac`).
 
-  ### >>> NEXT SESSION, FIRST THING: ONE /code-review of Phase 6 <<<
+  ### >>> NEXT SESSION, FIRST THING: ONE Opus /code-review of Phase 6 `94481c7` <<<
 
-  Scope = this session's Phase 6 commit against the current tree. Files:
+  Scope = the Phase 6 commit `94481c7` against the current tree. Files:
   protocol.py (Foreach/_parse_foreach/_apply_subst), runner.py
   (_run_foreach/_do_step/_count_steps/loop stamping, rail-fallback getattr
   guards), session.py (loop_tag/loop_context/save_path), cli.py (validate),
