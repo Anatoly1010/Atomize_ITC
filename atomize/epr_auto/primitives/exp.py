@@ -165,6 +165,44 @@ def _duration_policy(session, max_duration, scans):
     return control
 
 
+def _snr_policy(session, target_snr, scans):
+    """on_scan_data consumer for the executor's opt-in 'ScanData' channel:
+    SNR-driven scan count. `scans` is the ceiling; after each completed scan k
+    the accumulated curve's SNR is measured with judges.echo_snr — the SAME
+    metric as the final judge, so the stopping rule and pass/fail agree
+    (MAD-of-diff noise sigma: fit-residual sigma is inflated by systematic
+    misfit that more scans cannot average down). sqrt(N) scaling projects the
+    needed total, N ~ k * (target/SNR_k)^2:
+    - SNR_k >= target: stop now ('SC k' — a direct measurement, any k);
+    - else shrink the ceiling to the projection, but only from k >= 2 (one
+      early noisy estimate must not cut the run) and never below k.
+    The executor's shared ratchet min-combines this with _duration_policy and
+    never re-raises a sent limit. None when no target is set."""
+    if target_snr is None:
+        return None
+    target = float(target_snr)
+    state = {'announced': False}
+
+    def control(k, i_arr, q_arr):
+        snr = echo_snr(np.asarray(i_arr, float) + 1j * np.asarray(q_arr, float))
+        if not np.isfinite(snr.score):      # canned/zero-noise guard
+            return None
+        if snr.score >= target:
+            session.log(f'      target_snr {target:g}: reached '
+                        f'{snr.score:.1f} after scan {k} of {scans} — stopping')
+            return k
+        if k < 2:
+            return None
+        needed = int(np.ceil(k * (target / snr.score) ** 2))
+        if needed < scans and not state['announced']:
+            state['announced'] = True
+            session.log(f'      target_snr {target:g}: SNR {snr.score:.1f} '
+                        f'after scan {k} -> projected {needed} of {scans} scans')
+        return max(k, needed) if needed < scans else None
+
+    return control
+
+
 def _char_time(x, y, asymptote, amplitude):
     """Initial guess for the fit's characteristic time: first x where
     |y - asymptote| decays below |amplitude|/e. A free fit from a generic p0
@@ -258,7 +296,7 @@ def _finish(session, acq, fit_func, key, fit_name, extra):
 
 
 def t2(session, preset, tau_start, tau_step, points, scans, window='auto',
-       max_duration=None, rep_rate=None):
+       max_duration=None, rep_rate=None, target_snr=None):
     """Hahn echo decay: linear tau sweep re-anchored to tau_start/tau_step,
     stretched-exponential fit. `preset` may be an already-loaded (e.g.
     apply_cal-patched) Preset."""
@@ -272,8 +310,11 @@ def t2(session, preset, tau_start, tau_step, points, scans, window='auto',
         for s in pre.slots if s.active), 'the tau sweep (tau_step x points)')
     pre, wa = _build(session, pre, exp_name='T2', points=points, scans=scans,
                      **_window_override(pre, window))
+    if target_snr is not None:
+        wa.scan_data_flag = 1      # opt into the worker's ScanData messages
     acq = _acquire(session, wa, pre.sweep_type, 't2', log=session.log,
-                   scan_control=_duration_policy(session, max_duration, scans))
+                   scan_control=_duration_policy(session, max_duration, scans),
+                   on_scan_data=_snr_policy(session, target_snr, scans))
     extra = {'tau_start_ns': tau_s, 'tau_step_ns': tau_st, 'window': window}
     if acq is None:
         return ({'t2': '1.8 us', 'fit': 'stretched_exp', 'canned': True,
@@ -284,7 +325,7 @@ def t2(session, preset, tau_start, tau_step, points, scans, window='auto',
 
 
 def t1(session, preset, t_start, t_end, points, scans, window='auto',
-       max_duration=None, rep_rate=None):
+       max_duration=None, rep_rate=None, target_snr=None):
     """Inversion recovery: log-time sweep (Log Start/End = log10 ns),
     a - b*exp(-t/T1) fit with the characteristic-time initial guess. The
     worker deduplicates the grid-rounded log axis, so the result's npoints
@@ -303,8 +344,11 @@ def t1(session, preset, t_start, t_end, points, scans, window='auto',
     pre, wa = _build(session, pre, exp_name='T1', points=points, scans=scans,
                      log_start=log_start, log_end=log_end,
                      **_window_override(pre, window))
+    if target_snr is not None:
+        wa.scan_data_flag = 1      # opt into the worker's ScanData messages
     acq = _acquire(session, wa, pre.sweep_type, 't1', log=session.log,
-                   scan_control=_duration_policy(session, max_duration, scans))
+                   scan_control=_duration_policy(session, max_duration, scans),
+                   on_scan_data=_snr_policy(session, target_snr, scans))
     extra = {'t_start': ' '.join(str(t_start).split()),
              't_end': ' '.join(str(t_end).split()), 'window': window}
     if acq is None:

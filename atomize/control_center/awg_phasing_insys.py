@@ -5395,6 +5395,16 @@ class Worker():
                     #if increment == 1:
                     pb.awg_pulse_reset()
 
+                    # Opt-in scan-boundary readout for the epr_auto engine's
+                    # SNR-driven scan policy (target_snr): hand the accumulated
+                    # IQ-corrected curve upstream after each completed scan.
+                    # Default off (attribute absent) — GUI-launched runs are
+                    # unchanged; the engine sets scan_data_flag on the worker
+                    # instance before Process start (like awg_grid_cur).
+                    if getattr(self, 'scan_data_flag', 0) and iq_cor == 1 \
+                            and not script_test and self.command != 'exit':
+                        conn.send( ('ScanData', (k, data_x.copy(), data_y.copy())) )
+
                 self.command = 'exit'
 
             if self.command == 'exit':
@@ -7088,6 +7098,12 @@ class Worker():
 
                     pb.pulser_pulse_reset()
                     pb.awg_pulse_reset()
+
+                    # Opt-in scan-boundary readout (see exp()): epr_auto's
+                    # target_snr policy; default off => GUI runs unchanged.
+                    if getattr(self, 'scan_data_flag', 0) and iq_cor == 1 \
+                            and not script_test and self.command != 'exit':
+                        conn.send( ('ScanData', (k, data_x.copy(), data_y.copy())) )
 
                 self.command = 'exit'
 

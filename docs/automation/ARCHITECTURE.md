@@ -180,7 +180,7 @@ seized with source 'epr_auto' (already in session.ensure_hardware_locks).
 Temperature *series* (T1 vs T): v1 = explicit repeated steps in the YAML; the
 `foreach:` block is Phase 6 (see "Series & SNR-driven scans" below).
 
-### Series & SNR-driven scans (`foreach:` / `target_snr:`) — Phase 6
+### Series & SNR-driven scans (`foreach:` / `target_snr:`) — Phase 6 (implemented 2026-07-19)
 
 The motivating workflow is relaxation times at fixed T across several fields
 (the standard T1/T2-vs-position measurement). Two independent pieces:
@@ -203,10 +203,14 @@ down, composed with `max_duration` (min wins). Stop metric =
 `judges.echo_snr` on the rotated accumulated curve — same metric as the
 final judge; noise sigma stays MAD-of-diff, because fit-residual sigma is
 inflated by systematic misfit (ESEEM modulation) that more scans cannot
-reduce — a residual-based criterion would over-scan without bound. Needs an
-opt-in Worker scan-boundary data message (flag on WorkerArgs, default off ⇒
-GUI runs byte-identical; mirror rule + gui_vs_engine apply). Validation
-data + numbers: ROADMAP Phase 6; harness
+reduce — a residual-based criterion would over-scan without bound. The Worker
+sends an opt-in scan-boundary `('ScanData', (k, data_x, data_y))` message
+from `exp`/`exp_log`, gated on the `scan_data_flag` worker ATTRIBUTE (set via
+`_hand_attrs` like awg_grid_cur; the GUI never sets it ⇒ GUI runs unchanged).
+run_worker's `on_scan_data(k, i, q)` consumes it; scan_control and
+on_scan_data share ONE downward-only resize ratchet (`_maybe_resize`), which
+is what "min wins" means mechanically: a resize is only ever sent below the
+lowest already sent. Validation data + numbers: ROADMAP Phase 6; harness
 `~/epr_auto_dev/field_phase_snr_check.py`.
 
 ### Initial signal search (`field.edfs range: auto`)

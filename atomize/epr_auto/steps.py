@@ -334,15 +334,22 @@ def _apply_cal(session, preset, mapping):
               'rep_rate': Float(min=0.1, max=100000,
                                 help='repetition rate in Hz (default: preset '
                                      'value); the sweep must fit one period'),
+              'target_snr': Float(min=1,
+                                  help='SNR-driven scan count: scans becomes '
+                                       'the ceiling; stop early once the '
+                                       'accumulated curve reaches this '
+                                       'echo_snr score (min wins vs '
+                                       'max_duration)'),
           })
 def exp_t2(session, preset, tau_start, tau_step, points, scans, window,
-           apply_cal, max_duration, rep_rate):
+           apply_cal, max_duration, rep_rate, target_snr):
     pre = _apply_cal(session, preset, apply_cal)
     from atomize.epr_auto.primitives import exp as exp_primitives
     return _run_primitive(session, exp_primitives.t2, advisory_extra=('echo_snr',),
                           preset=pre, tau_start=tau_start, tau_step=tau_step,
                           points=points, scans=scans, window=window,
-                          max_duration=max_duration, rep_rate=rep_rate)
+                          max_duration=max_duration, rep_rate=rep_rate,
+                          target_snr=target_snr)
 
 
 def _check_t1(params, ctx):
@@ -370,13 +377,20 @@ def _check_t1(params, ctx):
                                 help='repetition rate in Hz (default: preset '
                                      'value); a T1 sweep needs 1/rep_rate '
                                      'beyond t_end plus the sequence tail'),
+              'target_snr': Float(min=1,
+                                  help='SNR-driven scan count: scans becomes '
+                                       'the ceiling; stop early once the '
+                                       'accumulated curve reaches this '
+                                       'echo_snr score (min wins vs '
+                                       'max_duration)'),
           },
           check=_check_t1)
 def exp_t1(session, preset, t_start, t_end, points, scans, window, apply_cal,
-           max_duration, rep_rate):
+           max_duration, rep_rate, target_snr):
     pre = _apply_cal(session, preset, apply_cal)
     from atomize.epr_auto.primitives import exp as exp_primitives
     return _run_primitive(session, exp_primitives.t1, advisory_extra=('echo_snr',),
                           preset=pre, t_start=t_start, t_end=t_end,
                           points=points, scans=scans, window=window,
-                          max_duration=max_duration, rep_rate=rep_rate)
+                          max_duration=max_duration, rep_rate=rep_rate,
+                          target_snr=target_snr)

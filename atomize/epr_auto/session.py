@@ -30,6 +30,10 @@ class EPRSession:
         self._run_dir = None
         self._save_counter = 0
         self._locked = False
+        # foreach series context (runner sets/clears per iteration): loop_tag
+        # is stamped into save_path filenames, loop_context into the manifest.
+        self.loop_tag = None
+        self.loop_context = None
 
     def log(self, text):
         # Terminal-first output. When the runner gains a GUI launch path
@@ -84,8 +88,12 @@ class EPRSession:
         return self._run_dir
 
     def save_path(self, tag):
-        """A fresh CSV path in the run directory (counter-unique per session)."""
+        """A fresh CSV path in the run directory (counter-unique per session).
+        Inside a foreach iteration the loop tag (e.g. 'B_3318G') is stamped in
+        so a field/temperature series' files are self-identifying."""
         self._save_counter += 1
+        if self.loop_tag:
+            tag = f'{tag}_{self.loop_tag}'
         return str(self.run_dir / f'{self._save_counter:03d}_{tag}.csv')
 
     # ------------------------------------------------- cross-process locks

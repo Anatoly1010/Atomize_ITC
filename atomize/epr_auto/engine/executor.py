@@ -45,7 +45,7 @@ class EngineError(RuntimeError):
 
 def run_worker(worker_args, sweep_type, save_path=None, script_test=False,
                on_status=None, on_message=None, poll_s=0.2,
-               scan_control=None):
+               scan_control=None, on_scan_data=None):
     """Execute one experiment; blocks until the worker finishes.
 
     save_path answers the worker's 'Open' request (required for a real run —
@@ -54,6 +54,13 @@ def run_worker(worker_args, sweep_type, save_path=None, script_test=False,
     scan_control(pct, elapsed_s) is the adaptive-scan command channel: called
     on every Status tick; return an int to resize the worker's scan count
     ('SC<n>' — shrink to finish early with data intact), or None to leave it.
+    on_scan_data(k, i_arr, q_arr) receives the worker's opt-in scan-boundary
+    'ScanData' messages (worker_args.scan_data_flag must be set, e.g. by the
+    target_snr policy) with the accumulated IQ-corrected curve after scan k;
+    its int return resizes the scan count the same way. Both channels share
+    one ratchet: a resize is only ever sent DOWNWARD from the lowest value
+    already sent, so composed policies (duration + SNR) min-combine and a
+    later, larger projection can never re-raise a sent limit.
     Raises EngineError on a worker-side error; KeyboardInterrupt sends 'exit'
     and waits for the worker to read out and save, however long that takes
     (a second KeyboardInterrupt force-terminates the worker, losing the data).
@@ -78,7 +85,19 @@ def run_worker(worker_args, sweep_type, save_path=None, script_test=False,
     process.start()
 
     t_start = time.monotonic()
-    scans_sent = None            # last 'SC<n>' sent (send only on change)
+    scans_sent = None            # lowest 'SC<n>' sent (shared ratchet)
+
+    def _maybe_resize(new_scans):
+        # shared downward ratchet across scan_control + on_scan_data: never
+        # re-raise a sent limit (min-combines composed policies)
+        nonlocal scans_sent
+        if new_scans is None:
+            return
+        n = int(new_scans)
+        if scans_sent is None or n < scans_sent:
+            scans_sent = n
+            parent_conn.send(f'SC{n}')
+
     try:
         while True:
             if not parent_conn.poll(poll_s):
@@ -95,10 +114,11 @@ def run_worker(worker_args, sweep_type, save_path=None, script_test=False,
                 if on_status is not None:
                     on_status(payload)
                 if scan_control is not None:
-                    new_scans = scan_control(payload, time.monotonic() - t_start)
-                    if new_scans is not None and int(new_scans) != scans_sent:
-                        scans_sent = int(new_scans)
-                        parent_conn.send(f'SC{scans_sent}')
+                    _maybe_resize(scan_control(payload, time.monotonic() - t_start))
+            elif kind == 'ScanData':
+                if on_scan_data is not None:
+                    k, i_arr, q_arr = payload
+                    _maybe_resize(on_scan_data(k, i_arr, q_arr))
             elif kind == 'Message':
                 if on_message is not None:
                     on_message(payload)
@@ -142,6 +162,10 @@ def _hand_attrs(worker, worker_args):
     """Copy the launch-time worker attributes (grid + correction state) the
     GUI sets next to Process creation — shared by run_worker/acquire_trace."""
     worker.awg_grid_cur = getattr(worker_args, 'awg_grid', 3.2)
+    # opt-in scan-boundary data messages (target_snr policy); the GUI never
+    # sets this, so GUI-launched workers behave exactly as before
+    if getattr(worker_args, 'scan_data_flag', 0):
+        worker.scan_data_flag = 1
     for attr in CORRECTION_ATTRS:
         if hasattr(worker_args, attr):
             setattr(worker, attr, getattr(worker_args, attr))
@@ -294,11 +318,12 @@ def load_1d(path):
 
 
 def acquire_1d(worker_args, sweep_type, save_path,
-               on_status=None, on_message=None, scan_control=None):
+               on_status=None, on_message=None, scan_control=None,
+               on_scan_data=None):
     """Run a real experiment to completion and return its 1-D result
     (axis, i, q). The axis unit is the sweep's: seconds for the time sweeps,
-    % for Amplitude, Gauss for Field. scan_control is run_worker's
-    adaptive-scan callback ('SC<n>' channel).
+    % for Amplitude, Gauss for Field. scan_control / on_scan_data are
+    run_worker's adaptive-scan callbacks ('SC<n>' channel).
 
     Requires worker_args.iq_cor == 1 (preset 'IQ Correction:  2'), otherwise
     the worker writes the raw 2-D format this loader does not parse.
@@ -308,5 +333,5 @@ def acquire_1d(worker_args, sweep_type, save_path,
                           "(preset 'IQ Correction:  2')")
     run_worker(worker_args, sweep_type, save_path=save_path,
                on_status=on_status, on_message=on_message,
-               scan_control=scan_control)
+               scan_control=scan_control, on_scan_data=on_scan_data)
     return load_1d(save_path)

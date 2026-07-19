@@ -1,0 +1,42 @@
+# Example v1 protocol (Phase 6): tune once, then T2 + T1 at several fields.
+# Dry-run (no hardware, no GUI needed):
+#   python -m atomize.epr_auto run protocols/field_series_t1t2.yaml --test
+sample: field_series
+autonomy: checkpointed
+
+steps:
+  # Tune once at the line maximum; field moves do NOT invalidate the phase
+  # (measured on the 2026-07 oTP campaign) so the loop reuses this tune.
+  - field.edfs:
+      range: [338 mT, 352 mT]
+      pick: max
+      checkpoint: true
+  - tune.echo_window
+  - tune.auto_phase
+  - tune.pi_calibration:
+      mode: amplitude
+
+  # One T2 + T1 per field. A dead position records + continues to the next.
+  # target_snr: scans is the CEILING — the line max stops after a few scans,
+  # the weak shoulder runs the full budget (the 2026-07 oTP campaign operator
+  # hand-adapted 6 -> 46 scans across exactly this field set).
+  - foreach:
+      var: B
+      values: ['3000 G', '3318 G', '3376 G', '3450 G']
+      on_fail: continue
+      steps:
+        - field.set:
+            value: $B
+        - exp.t2:
+            tau_start: 300 ns
+            tau_step: 12 ns
+            points: 200
+            scans: 48
+            target_snr: 10
+        - exp.t1:
+            t_start: 500 ns
+            t_end: 2 ms
+            points: 200
+            scans: 48
+            target_snr: 10
+            rep_rate: 100

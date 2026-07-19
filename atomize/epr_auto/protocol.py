@@ -3,6 +3,7 @@
 Every validation error is a ProtocolError carrying '<file>:<line>: message',
 using line numbers attached to mappings/sequences at parse time.
 """
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -14,7 +15,11 @@ from atomize.epr_auto.steps import STEPS
 AUTONOMY_MODES = ('supervised', 'checkpointed', 'autonomous')
 NOTIFY_MODES = ('none', 'telegram')
 ON_FAIL_MODES = ('abort', 'skip', 'ask')
+FOREACH_FAIL_MODES = ('continue', 'abort')   # per-iteration policy of a foreach
 _TOP_KEYS = ('sample', 'autonomy', 'output', 'notify', 'steps')
+_FOREACH_KEYS = ('var', 'values', 'steps', 'on_fail')
+_VAR_RE = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
+_VAR_REF_RE = re.compile(r'\$([A-Za-z_][A-Za-z0-9_]*)')
 
 
 class ProtocolError(Exception):
@@ -81,13 +86,29 @@ class Step:
 
 
 @dataclass
+class Foreach:
+    """A series block: run `steps` once per value of `var`, with `$var`
+    substituted into the sub-steps' string parameters. Sub-steps are fully
+    parsed and validated per value at load time (one inner list per value), so
+    a typo in a substituted parameter is caught before the run. on_fail:
+    'continue' (default) records a failed iteration and moves to the next value
+    — a dead field/temperature position must not kill the series; 'abort'
+    propagates like the global policy."""
+    var: str
+    values: list                # loop values, as strings (stamped into names)
+    iterations: list            # list[list[Step]] — one validated group per value
+    line: int
+    on_fail: str = 'continue'
+
+
+@dataclass
 class Protocol:
     path: Path
     sample: str
     autonomy: str
     output: str | None          # run-dir template; {date} and {sample} expand
     notify: str = 'none'        # none | telegram (general.bot_message)
-    steps: list = field(default_factory=list)
+    steps: list = field(default_factory=list)   # Step | Foreach entries
 
 
 def load_protocol(path):
@@ -143,13 +164,85 @@ def load_protocol(path):
 
     ctx = {'protocol_dir': path.parent}
     item_lines = getattr(raw_steps, 'item_lines', [top_line] * len(raw_steps))
-    steps = [_parse_step(path, item, item_lines[i], ctx)
+    steps = [_parse_item(path, item, item_lines[i], ctx)
              for i, item in enumerate(raw_steps)]
     return Protocol(path=path, sample=sample, autonomy=autonomy, output=output,
                     notify=notify, steps=steps)
 
 
-def _parse_step(path, item, fallback_line, ctx):
+def _parse_item(path, item, fallback_line, ctx):
+    """A steps-list entry: either a foreach block or an ordinary step."""
+    line = getattr(item, 'line', fallback_line)
+    if isinstance(item, dict) and len(item) == 1 and next(iter(item)) == 'foreach':
+        return _parse_foreach(path, item['foreach'], line, ctx)
+    return _parse_step(path, item, fallback_line, ctx)
+
+
+def _apply_subst(raw, subst):
+    """Replace every `$var` reference in string leaves (recursing into
+    lists/mappings, so `range: [$LO, $HI]` and nested params substitute too);
+    non-strings pass through untouched. References are matched as whole names
+    (`$B` never fires inside `$Bank`), and an unmatched `$name` raises — a
+    typo'd variable must fail at load, not flow into validation as a literal
+    `$X` string."""
+    if isinstance(raw, str):
+        def repl(m):
+            name = m.group(1)
+            if name not in subst:
+                raise ParamError(
+                    f'unresolved ${name} (foreach defines: '
+                    f'{", ".join("$" + v for v in subst)})')
+            return subst[name]
+        return _VAR_REF_RE.sub(repl, raw)
+    if isinstance(raw, list):
+        return [_apply_subst(x, subst) for x in raw]
+    if isinstance(raw, dict):
+        return {k: _apply_subst(v, subst) for k, v in raw.items()}
+    return raw
+
+
+def _parse_foreach(path, spec, line, ctx):
+    if not isinstance(spec, dict):
+        raise ProtocolError(path, line, "foreach must be a mapping "
+                            "(var / values / steps [/ on_fail])")
+    for key in spec:
+        if key not in _FOREACH_KEYS:
+            raise ProtocolError(path, line, f"foreach: unknown key {key!r} "
+                                f"(allowed: {', '.join(_FOREACH_KEYS)})")
+    var = spec.get('var')
+    if not isinstance(var, str) or not _VAR_RE.match(var):
+        raise ProtocolError(path, line, "foreach 'var' must be a name "
+                            "(letters/digits/underscore, not starting with a digit)")
+    values = spec.get('values')
+    if not isinstance(values, list) or not values:
+        raise ProtocolError(path, line, "foreach 'values' (non-empty list) is required")
+    values = [v if isinstance(v, str) else _scalar_str(path, line, var, v)
+              for v in values]
+    on_fail = spec.get('on_fail', 'continue')
+    if on_fail not in FOREACH_FAIL_MODES:
+        raise ProtocolError(path, line, "foreach on_fail must be one of: "
+                            f"{', '.join(FOREACH_FAIL_MODES)}; got {on_fail!r}")
+    raw_sub = spec.get('steps')
+    if not isinstance(raw_sub, list) or not raw_sub:
+        raise ProtocolError(path, line, "foreach 'steps' (non-empty list) is required")
+    sub_lines = getattr(raw_sub, 'item_lines', [line] * len(raw_sub))
+    iterations = []
+    for val in values:
+        group = [_parse_step(path, it, sub_lines[i], ctx, subst={var: val})
+                 for i, it in enumerate(raw_sub)]
+        iterations.append(group)
+    return Foreach(var=var, values=values, iterations=iterations, line=line,
+                   on_fail=on_fail)
+
+
+def _scalar_str(path, line, var, v):
+    if isinstance(v, bool) or not isinstance(v, (int, float)):
+        raise ProtocolError(path, line, f"foreach 'values' must be scalars "
+                            f"(string/number); {var} got {v!r}")
+    return str(v)
+
+
+def _parse_step(path, item, fallback_line, ctx, subst=None):
     line = getattr(item, 'line', fallback_line)
     if isinstance(item, str):  # shorthand: "- tune.auto_phase"
         name, raw_params = item, {}
@@ -163,6 +256,9 @@ def _parse_step(path, item, fallback_line, ctx):
         raise ProtocolError(path, line,
                             'each step must be a single "name: {params}" mapping '
                             '(check the indentation of the parameters)')
+
+    if name == 'foreach':
+        raise ProtocolError(path, line, 'foreach cannot be nested')
 
     spec = STEPS.get(name)
     if spec is None:
@@ -191,7 +287,10 @@ def _parse_step(path, item, fallback_line, ctx):
     for key, param in spec.params.items():
         try:
             if key in raw_params:
-                params[key] = param.validate(raw_params[key], ctx)
+                raw = raw_params[key]
+                if subst:              # foreach: $var -> this iteration's value
+                    raw = _apply_subst(raw, subst)
+                params[key] = param.validate(raw, ctx)
             elif param.required:
                 raise ParamError('required parameter is missing')
             elif param.default is not None:

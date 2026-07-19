@@ -26,11 +26,32 @@ import sys
 import traceback
 from datetime import datetime
 
+from atomize.epr_auto.protocol import Foreach
 from atomize.epr_auto.steps import STEPS, StepFailure
 
 
 class RunnerAbort(Exception):
-    pass
+    """hard=True marks aborts a foreach on_fail:continue must NOT swallow:
+    explicit operator decisions (checkpoint abort/EOF/no-tty, an interactive
+    ask -> abort) and unexpected non-StepFailure errors (a code bug recurs
+    identically in every iteration — continuing the series just repeats the
+    traceback N times and then reports 'finished')."""
+
+    def __init__(self, msg, hard=False):
+        super().__init__(msg)
+        self.hard = hard
+
+
+def _count_steps(steps):
+    """Total ordinary steps, expanding foreach blocks (values x sub-steps)."""
+    return sum(sum(len(g) for g in it.iterations) if isinstance(it, Foreach)
+               else 1 for it in steps)
+
+
+def _loop_tag(var, val):
+    """Filename-safe loop stamp, e.g. ('B', '3318 G') -> 'B_3318G'."""
+    safe = ''.join(c for c in str(val) if c.isalnum() or c in '-_.')
+    return f'{var}_{safe}'
 
 
 class _Manifest:
@@ -63,6 +84,8 @@ class _Manifest:
         entry = {'name': step.name, 'line': step.line,
                  'params': {k: v for k, v in step.params.items() if v is not None},
                  'status': status, 'attempts': attempts}
+        if self.session.loop_context:      # foreach: stamp var/value/index
+            entry['loop'] = dict(self.session.loop_context)
         if result is not None:
             entry['result'] = result
         if judges:
@@ -88,36 +111,23 @@ class _Manifest:
 
 
 def run_protocol(protocol, session):
-    n = len(protocol.steps)
+    n = _count_steps(protocol.steps)
     mode = 'DRY-RUN (test mode)' if session.test else 'LIVE'
     session.log(f'=== {protocol.path.name} | sample: {protocol.sample} | '
                 f'autonomy: {protocol.autonomy} | {n} steps | {mode} ===')
     manifest = _Manifest(protocol, session)
 
     results = []
+    pos = 0
     try:
-        for i, step in enumerate(protocol.steps, 1):
-            session.log(f'[{i}/{n}] {step.name}  (line {step.line})')
-            for key, value in step.params.items():
-                if value is not None:
-                    session.log(f'      {key} = {value}')
-
-            if _gate(session, step) == 'skip':
-                session.log('      skipped by operator')
-                manifest.record(step, 'skipped-by-operator', attempts=0)
-                results.append((step, None))
-                continue
-
-            result, status, attempts = _run_step(protocol, session, manifest,
-                                                 step, i - 1)
-            if status != 'ok':
-                results.append((step, None))
-                continue
-            session.log('      -> ' + ', '.join(f'{k}={v}' for k, v in result.items()))
-            session.state[step.name] = result
-            manifest.record(step, 'ok', attempts, result=result,
-                            judges=session.last_judges)
-            results.append((step, result))
+        for struct_idx, item in enumerate(protocol.steps):
+            if isinstance(item, Foreach):
+                pos = _run_foreach(protocol, session, manifest, item, results,
+                                   pos, n)
+            else:
+                pos += 1
+                _do_step(protocol, session, manifest, item, struct_idx, results,
+                         f'[{pos}/{n}]')
     except RunnerAbort as e:
         manifest.finish(f'aborted: {e}')
         session.notify(f'{protocol.path.name}: ABORTED — {e}')
@@ -132,6 +142,66 @@ def run_protocol(protocol, session):
     manifest.finish('finished')
     session.notify(f'{protocol.path.name}: finished ({ran}/{n} steps ran)')
     return results
+
+
+def _do_step(protocol, session, manifest, step, index, results, header):
+    """Run one ordinary step: log, gate, execute, record, append to results.
+    Raises RunnerAbort on an abort decision (a foreach in on_fail:continue mode
+    catches it). Returns True if the step ran and produced a result."""
+    session.log(f'{header} {step.name}  (line {step.line})')
+    for key, value in step.params.items():
+        if value is not None:
+            session.log(f'      {key} = {value}')
+
+    if _gate(session, step) == 'skip':
+        session.log('      skipped by operator')
+        manifest.record(step, 'skipped-by-operator', attempts=0)
+        results.append((step, None))
+        return False
+
+    result, status, attempts = _run_step(protocol, session, manifest, step, index)
+    if status != 'ok':
+        results.append((step, None))
+        return False
+    session.log('      -> ' + ', '.join(f'{k}={v}' for k, v in result.items()))
+    session.state[step.name] = result
+    manifest.record(step, 'ok', attempts, result=result,
+                    judges=session.last_judges)
+    results.append((step, result))
+    return True
+
+
+def _run_foreach(protocol, session, manifest, block, results, pos, total):
+    """Run a foreach block: its sub-steps once per value, with the loop tag set
+    for save_path/manifest. A failed iteration (RunnerAbort from a sub-step)
+    is recorded and, in on_fail:continue mode, the series moves to the next
+    value; on_fail:abort re-raises. Sub-steps get index 0 (the rail fallback,
+    which scans protocol.steps for an earlier coarse stage, does not apply
+    inside a series — tune once before the loop). Returns the updated position
+    counter."""
+    nvals = len(block.values)
+    session.log(f'=== foreach {block.var}: {nvals} value(s) {block.values} '
+                f'(on_fail: {block.on_fail}) ===')
+    for vi, (val, group) in enumerate(zip(block.values, block.iterations), 1):
+        session.log(f'--- foreach {block.var} = {val}  ({vi}/{nvals}) ---')
+        session.loop_tag = _loop_tag(block.var, val)
+        session.loop_context = {'var': block.var, 'value': val, 'index': vi}
+        try:
+            for step in group:
+                pos += 1
+                _do_step(protocol, session, manifest, step, 0, results,
+                         f'[{pos}/{total}]')
+        except RunnerAbort as e:
+            if block.on_fail != 'continue' or getattr(e, 'hard', False):
+                raise          # policy abort, or an operator/unexpected abort
+            session.log(f'      foreach {block.var}={val}: iteration aborted '
+                        f'({e}) — continuing to next value')
+            session.notify(f'foreach {block.var}={val} failed ({e}) — '
+                           'continuing to next value')
+        finally:
+            session.loop_tag = None
+            session.loop_context = None
+    return pos
 
 
 def _run_step(protocol, session, manifest, step, index):
@@ -157,7 +227,7 @@ def _run_step(protocol, session, manifest, step, index):
             manifest.record(step, 'failed', attempts,
                             error='unexpected error (see log)')
             raise RunnerAbort(f'step {step.name} raised an unexpected error '
-                              '(see above)') from None
+                              '(see above)', hard=True) from None
 
         # rail-triggered coarse fallback: once per step, an extra attempt on
         # top of the retry budget (it re-tunes the power regime first)
@@ -187,11 +257,14 @@ def _run_step(protocol, session, manifest, step, index):
         msg = f'step {step.name} failed: {error}'
         if fallback_blocker is not None:
             msg += f' (rail fallback blocked: {fallback_blocker})'
-        raise RunnerAbort(msg)
+        # 'abort-op' = the operator chose abort interactively — hard, so a
+        # foreach on_fail:continue does not overrule the human
+        raise RunnerAbort(msg, hard=decision == 'abort-op')
 
 
 def _on_fail_decision(session, step, error):
-    """Map the step's on_fail policy to 'retry' / 'skip' / 'abort'."""
+    """Map the step's on_fail policy to 'retry' / 'skip' / 'abort' /
+    'abort-op' (an interactive operator abort — see RunnerAbort.hard)."""
     if step.on_fail == 'skip':
         return 'skip'
     if step.on_fail != 'ask':
@@ -207,8 +280,8 @@ def _on_fail_decision(session, step, error):
     return _ask(f'      step failed: {error}\n'
                 '      retry / skip / abort? [r/s/a] ',
                 {'r': 'retry', 'retry': 'retry', 's': 'skip', 'skip': 'skip',
-                 'a': 'abort', 'abort': 'abort', '': 'abort'},
-                on_eof='abort')
+                 'a': 'abort-op', 'abort': 'abort-op', '': 'abort-op'},
+                on_eof='abort-op')
 
 
 def _ask(prompt, answers, on_eof):
@@ -233,8 +306,8 @@ def _rail_fallback(protocol, session, manifest, index, rail):
     (ran, blocker): ran is True when the chain ran and the failed step
     should be retried; blocker names what stopped the chain, if anything."""
     coarse_idx = next((j for j in range(index - 1, -1, -1)
-                       if protocol.steps[j].name == 'tune.power_for_length'),
-                      None)
+                       if getattr(protocol.steps[j], 'name', None)
+                       == 'tune.power_for_length'), None)
     if coarse_idx is None:
         session.log(f'      amplitude rail ({rail}) hit, but the protocol has '
                     'no earlier tune.power_for_length step — no fallback')
@@ -258,7 +331,7 @@ def _rail_fallback(protocol, session, manifest, index, rail):
 
     chain = [protocol.steps[coarse_idx]] + [
         s for s in protocol.steps[coarse_idx + 1:index]
-        if s.name == 'tune.auto_phase']
+        if getattr(s, 'name', None) == 'tune.auto_phase']
     failing_judges = session.last_judges  # keep the failing step's own judges
     try:
         for s in chain:
@@ -303,14 +376,14 @@ def _gate(session, step):
         return 'run'
     if not sys.stdin.isatty():
         raise RunnerAbort('checkpoint reached with no terminal attached '
-                          '(GUI checkpoint support is a later item)')
+                          '(GUI checkpoint support is a later item)', hard=True)
     answer = _ask('      [checkpoint] continue / skip / abort? [c/s/a] ',
                   {'c': 'run', 'continue': 'run', '': 'run',
                    's': 'skip', 'skip': 'skip',
                    'a': 'abort', 'abort': 'abort'},
                   on_eof='eof')
     if answer == 'eof':
-        raise RunnerAbort('checkpoint prompt closed (EOF)')
+        raise RunnerAbort('checkpoint prompt closed (EOF)', hard=True)
     if answer == 'abort':
-        raise RunnerAbort('aborted by operator at checkpoint')
+        raise RunnerAbort('aborted by operator at checkpoint', hard=True)
     return answer

@@ -361,6 +361,31 @@ python -m atomize.epr_auto run protocols/overnight_t2.yaml   # checkpointed
 tune-up steps → exp.t2, with `manifest.json` carrying per-step
 params/judges/fit results. This is the Phase 4 exit criterion.
 
+## 11. foreach + target_snr — field series (Phase 6, NEW)
+
+```bash
+python -m atomize.epr_auto run protocols/field_series_t1t2.yaml   # checkpointed
+```
+
+Tune-once → foreach over 4 fields, T2 + T1 each, `target_snr: 10` with
+`scans: 48` as the ceiling. Bench checks:
+
+- CSV names carry the loop stamp (`NNN_t2_B_3318G.csv`); manifest entries
+  carry `loop: {var, value, index}`.
+- At the line max the log shows `target_snr 10: reached NN.N after scan k`
+  and an early stop after a FEW scans; at the 3000 G shoulder it runs to
+  (or near) the ceiling — compare against the operator's hand-adapted
+  6→46 range from the 2026-07 oTP campaign.
+- Deliberately mis-set one field (or unplug the BH-15) and confirm the
+  iteration records + the series CONTINUES to the next value
+  (`on_fail: continue`), then finishes.
+- With BOTH `target_snr` and `max_duration` set, confirm the scan count
+  only ever shrinks (shared downward ratchet — the log may show either
+  policy winning, never a raise).
+- GUI regression: launch the SAME preset from the phasing tool afterwards
+  and confirm normal behaviour (the ScanData path is opt-in; the GUI never
+  sets `scan_data_flag`).
+
 ## Other pending bench items (outside epr_auto)
 
 - **Insys swComp hybrid wait + acq/parse speedups** — ported byte-identical

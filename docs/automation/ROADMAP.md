@@ -205,8 +205,8 @@ magnetic fields — expressible today only by repeating field.set/exp.* blocks
 by hand. Design validated against the real 2026-07 oTP campaign (see the
 "Real-data validation" block below; harness `~/epr_auto_dev/field_phase_snr_check.py`).
 
-- [ ] `foreach:` protocol block (promoted from backlog; covers field AND
-      temperature series):
+- [x] `foreach:` protocol block (promoted from backlog; covers field AND
+      temperature series) — DONE 2026-07-19:
       ```yaml
       foreach:
         var: B
@@ -222,7 +222,7 @@ by hand. Design validated against the real 2026-07 oTP campaign (see the
       next value by default (unlike the global on_fail), overridable;
       (c) **no auto_phase invalidation on field moves** — measured, not
       assumed (validation below); temperature keeps `rephase_delta`.
-- [ ] `target_snr:` param on exp.t1/t2 — SNR-driven scan count. `scans`
+- [x] `target_snr:` param on exp.t1/t2 (DONE 2026-07-19) — SNR-driven scan count. `scans`
       becomes the ceiling; a second scan_control consumer (composed with
       `_duration_policy`, min wins) projects the needed scan count from
       sqrt(N) scaling — after scan k, N ≈ k·(target/SNR_k)² — and sends
@@ -232,11 +232,13 @@ by hand. Design validated against the real 2026-07 oTP campaign (see the
       stopping rule and pass/fail agree. Noise sigma stays MAD-of-diff
       (noise-only), NOT fit-residual sigma — misfit does not average down
       (validation below).
-- [ ] Worker pipe extension the SNR policy needs: an opt-in scan-boundary
-      message carrying the accumulated data (flag on WorkerArgs, default
-      off ⇒ GUI-launched runs byte-identical). Touches
-      awg_phasing_insys.py's Worker ⇒ **mirror rule applies**:
-      engine/executor mirrored, gui_vs_engine re-run.
+- [x] Worker pipe extension the SNR policy needs (DONE 2026-07-19): an
+      opt-in scan-boundary message carrying the accumulated data
+      (`scan_data_flag` worker ATTRIBUTE — like awg_grid_cur, not a method
+      arg — default absent ⇒ GUI-launched runs unchanged). Touches
+      awg_phasing_insys.py's Worker (`exp` + `exp_log` boundaries) ⇒
+      mirror rule applied: executor `_hand_attrs`/`run_worker` mirrored,
+      gui_vs_engine ALL PASS.
 
 **Real-data validation (2026-07-18,** `~/Documents/OTP/2026_07_02_ap210_oTerPhenyl`
 t1/+t2/ (24+24 traces, 80–280 K × 3000/3318/3376/3450 G) **+**
@@ -914,3 +916,124 @@ the site = the user manual.
   by the review: the per-point 0.375 threshold is derived from ONE campaign —
   re-validate dAICc/n on the next real T1/T2 series before trusting it as the
   overnight abort gate.**
+  **Review fixes committed+pushed ITC `eeea8ac`** (after a user correction:
+  the worker's Linear-Time f_delay is the DETECTION start = 2·tau_start, not
+  the pi position — the fix became fit-the-absolute-axis, matching
+  data_treatment, which is fully correct with no residual bias).
+
+- **2026-07-19 (2)** — **Phase 6 code-complete** (all three items, see the
+  Phase 6 section above). Implementation notes:
+  - **foreach** (protocol.py `Foreach` dataclass + `_parse_foreach`): keys
+    var/values/steps/on_fail; `$VAR` substitution recurses into list/mapping
+    params (`_apply_subst`), applied BEFORE `param.validate` so a bad
+    substituted value is a load-time ProtocolError per iteration; sub-steps
+    fully parsed per value at load (`iterations` = list of Step groups);
+    numeric scalar values allowed (stringified), nested foreach rejected.
+    Runner: `_run_foreach` sets `session.loop_tag` ('B_3318G' — stamped into
+    save_path CSV names) + `session.loop_context` (var/value/index — stamped
+    into each manifest entry as `loop`); per-iteration on_fail:
+    **continue (default)** catches the sub-step RunnerAbort, records, moves
+    to the next value; abort re-raises. `[i/n]` counters count EXPANDED
+    steps (`_count_steps`). Rail fallback scans `protocol.steps` with
+    getattr-guarded `.name` (Foreach has none); sub-steps pass index 0 so
+    the fallback never fires inside a series (tune before the loop).
+    cli.py validate prints `foreach[B]`.
+  - **target_snr** (steps.py param on exp.t2/t1 → exp.`_snr_policy`):
+    on_scan_data consumer; stop metric = judges.echo_snr on the accumulated
+    complex curve — the SAME metric as the final judge; SNR_k >= target →
+    'SC k' immediately (direct measurement, any k); else projection
+    needed = ceil(k·(target/SNR_k)²), acted on only from k >= 2 (one noisy
+    early estimate must not cut), never below k, None when >= the scans
+    ceiling.
+  - **Worker scan-boundary message** (mirror rule): `('ScanData',
+    (k, data_x.copy(), data_y.copy()))` sent after each completed scan in
+    `exp` AND `exp_log`, gated on `getattr(self, 'scan_data_flag', 0)` (a
+    worker ATTRIBUTE set via `_hand_attrs`, like awg_grid_cur — the GUI
+    never sets it, so GUI runs are behaviour-identical) `and iq_cor == 1
+    and not script_test and self.command != 'exit'`. Executor: run_worker
+    gains `on_scan_data(k, i, q)`; **both channels share one `_maybe_resize`
+    ratchet — a resize is only ever sent DOWNWARD from the lowest value
+    already sent**, which is how target_snr composes with max_duration
+    (min wins) and how a later larger projection can never re-raise a sent
+    limit. acquire_1d/tune._acquire thread it through.
+  - protocols/field_series_t1t2.yaml NEW: the motivating tune-once →
+    foreach-over-4-fields T2+T1 protocol with target_snr 10 / scans 48
+    (the oTP operator's hand-adapted 6→46 range).
+  Verified: 12-check foreach suite (parse/substitution/save_path/error
+  cases) + 13-check Phase-6 suite (_snr_policy stop/guard/shrink branches
+  incl. a real shrink projection 8→14-of-64; executor ScanData routing +
+  min-ratchet ['SC8','SC6','SC4'] and no-re-raise ['SC5' only] via stub
+  workers over the real pipe; _hand_attrs flag opt-in/default-off) +
+  on_fail continue-vs-abort dry-runs (2/3 ran vs ABORT) + field-series
+  16/16, overnight_t2 4/4, tune_up 6/6 dry-runs + Phase-4 13-check
+  regression harness + **gui_vs_engine ALL PASS** (Worker changed → mirror
+  rule exercised).
+
+  **Same-session self-check of the foreach paths (user request) found and
+  fixed TWO defects before commit:**
+  - **Operator aborts were swallowed by `on_fail: continue`** — the
+    iteration-level `except RunnerAbort` caught EVERYTHING, including an
+    operator abort at a checkpoint inside the iteration and
+    unexpected-error aborts (a code bug would recur every iteration → N
+    tracebacks, then status 'finished'). Fix: `RunnerAbort(hard=True)` for
+    operator decisions (checkpoint abort/EOF/no-tty, interactive
+    ask→'abort-op') and unexpected non-StepFailure errors; `_run_foreach`
+    re-raises hard aborts regardless of on_fail. StepFailure-driven aborts
+    (the designed case) still continue the series. Verified: TypeError bug
+    → re-raised hard=True; StepFailure → both iterations tried.
+  - **`$VAR` substitution was plain str.replace** — `$B` corrupted a
+    literal `$Bank`, and a typo'd `$C` flowed into validation as a literal
+    string. Fix: whole-name regex substitution + **unresolved `$name` is a
+    load-time ProtocolError** naming the defined vars.
+  Re-verified after the fixes: all suites + dry-runs + gui_vs_engine green.
+  UNCOMMITTED (commit next).
+
+  ### >>> NEXT SESSION, FIRST THING: ONE /code-review of Phase 6 <<<
+
+  Scope = this session's Phase 6 commit against the current tree. Files:
+  protocol.py (Foreach/_parse_foreach/_apply_subst), runner.py
+  (_run_foreach/_do_step/_count_steps/loop stamping, rail-fallback getattr
+  guards), session.py (loop_tag/loop_context/save_path), cli.py (validate),
+  steps.py + primitives/exp.py (target_snr/_snr_policy), engine/executor.py
+  (on_scan_data/_maybe_resize shared ratchet/_hand_attrs flag),
+  **awg_phasing_insys.py (Worker exp/exp_log ScanData sends — GUI-shared
+  file, review extra carefully)**, protocols/field_series_t1t2.yaml.
+  Run it the usual way (Opus agents pinned via model:'opus', workflow, high
+  effort). Reviewer's brief — judgement calls worth a second opinion:
+  - `_apply_subst` is now whole-name regex substitution with a load-time
+    error on unresolved `$name` (fixed same session — verify the fix and
+    whether a legitimate literal `$` in a param value can ever be needed;
+    there is currently NO escape syntax).
+  - `RunnerAbort.hard` semantics (added same session): operator decisions
+    + unexpected errors re-raise through `on_fail: continue`. Check every
+    RunnerAbort site is classified correctly — notably the unattended
+    ask→abort (no tty / autonomous) stays SOFT, so an unattended series
+    continues past it; is that right?
+  - foreach values are stringified scalars; a numeric 3318 becomes '3318'
+    (no unit) — FieldStr then rejects it. Intended (units belong in the
+    YAML), but the error message may confuse.
+  - `_run_foreach` gives sub-steps index 0 ⇒ rail fallback disabled inside
+    a series even when the protocol HAS an earlier coarse stage. Decision
+    was deliberate (vane move mid-series invalidates the series' premise);
+    second opinion welcome.
+  - The manifest's `loop` stamp relies on session.loop_context being reset
+    in a finally: — check crash paths (KeyboardInterrupt mid-iteration).
+  - `_snr_policy` k>=2 guard: scan 1 with SNR >= target STOPS at 1 (direct
+    measurement, no guard) — is one scan's MAD estimate trustworthy enough
+    to stop on, or should stop also require k >= 2?
+  - The sqrt(N) projection assumes noise-dominated accumulation; a drifty
+    system (phase drift across scans) breaks SNR ∝ sqrt(k) — the policy
+    would over- or under-project. Ratchet-down-only makes under-projection
+    permanent (same accepted trade as max_duration).
+  - Worker sends ScanData BETWEEN scans only when the command is not
+    'exit'; the arrays are .copy()'d — check pipe-volume (POINTS floats x
+    2 per scan) is negligible vs the Status traffic and that an engine
+    OLDER than this change (no on_scan_data) ignores the message (it does:
+    unknown kinds fall through) — but confirm no fork/GUI parent parses
+    the same pipe.
+  - Executor `_maybe_resize` shared DOWNWARD-only ratchet replaced the old
+    send-on-change semantics for scan_control too — confirm no existing
+    consumer relied on re-raising a limit (grep says only exp.* use it).
+  Next (AFTER the review + fixes): the hardware run per
+  HARDWARE_CHECKLIST.md (now including a field-series + target_snr bench
+  item), then Phase 7 (MkDocs manual) or the GUI launcher.

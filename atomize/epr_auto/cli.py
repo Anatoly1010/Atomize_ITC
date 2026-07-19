@@ -68,9 +68,11 @@ def _validate(protocol_path):
     except ProtocolError as e:
         print(f'INVALID: {e}', file=sys.stderr)
         return EXIT_INVALID
+    names = [f'foreach[{it.var}]' if hasattr(it, 'var') else it.name
+             for it in protocol.steps]
     print(f'OK: {protocol.path.name} — sample {protocol.sample!r}, '
-          f'autonomy {protocol.autonomy}, {len(protocol.steps)} steps '
-          f'({", ".join(s.name for s in protocol.steps)})')
+          f'autonomy {protocol.autonomy}, {len(protocol.steps)} entries '
+          f'({", ".join(names)})')
     return EXIT_OK
 
 
