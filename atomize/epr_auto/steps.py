@@ -98,10 +98,13 @@ def _run_primitive(session, func, advisory_extra=(), **kwargs):
 @register('tune.auto_phase',
           'Acquire an echo and zero the signal phase (principal-axis auto_phase_zero)',
           params={
-              'preset': PresetFile(default='hahn_echo_4s.phase_awg'),
+              'preset': PresetFile(default='hahn_echo_4s.phase_awg',
+                                   help='echo preset the phase is measured '
+                                        "on (saved with 'IQ Correction: 2')"),
               'points': Int(min=2, default=4,
                             help='sweep points for the quick phase acquisition'),
-              'scans': Int(min=1, default=1),
+              'scans': Int(min=1, default=1,
+                           help='scans for the quick acquisition'),
           })
 def tune_auto_phase(session, preset, points, scans):
     from atomize.epr_auto.primitives import tune
@@ -113,7 +116,9 @@ def tune_auto_phase(session, preset, points, scans):
           'Set the integration window from an averaged echo trace (center = '
           'smoothed |V| max, width = FWHM x factor); run BEFORE tune.auto_phase',
           params={
-              'preset': PresetFile(default='hahn_echo_4s.phase_awg'),
+              'preset': PresetFile(default='hahn_echo_4s.phase_awg',
+                                   help='echo preset the trace is taken with '
+                                        "(saved with 'IQ Correction: 2')"),
               'factor': Float(min=1, max=10, default=2.0,
                               help='window width as a multiple of the echo FWHM'),
               'sweeps': Int(min=1, default=3,
@@ -134,8 +139,13 @@ def tune_echo_window(session, preset, factor, sweeps):
                                  help='AWG amplitude (%) held during the vane scan'),
               'preset': PresetFile(default='rabi_echo_4s.phase_awg',
                                    help='length-nutation preset used to measure pi'),
-              'tolerance': TimeStr(default='3.2 ns'),
-              'max_iter': Int(min=1, default=4),
+              'tolerance': TimeStr(default='3.2 ns',
+                                   help='accept pi within this of '
+                                        'target_length'),
+              'max_iter': Int(min=1, default=4,
+                              help='vane iterations before giving up (the '
+                                   'reported state is the one the vane is '
+                                   'actually in)'),
               'rehome': Choice('no', 'limit', default='no',
                                help='limit: true re-home at the 60 dB switch first'),
           })
@@ -159,8 +169,12 @@ def _check_pi_calibration(params, ctx):
           'nutation; fit pi and pi/2 independently',
           params={
               'preset': PresetFile(help='defaults to ampl_4s / rabi_echo_4s by mode'),
-              'mode': Choice('amplitude', 'length', default='amplitude'),
-              'channel': Choice('AWG', default='AWG'),
+              'mode': Choice('amplitude', 'length', default='amplitude',
+                             help='amplitude: sweep AWG amplitude (%) at '
+                                  'fixed length; length: linear-time '
+                                  'nutation (ns)'),
+              'channel': Choice('AWG', default='AWG',
+                                help='AWG only (RECT is a later phase)'),
               'points': Int(min=2, help='sweep points (default: preset value)'),
               'scans': Int(min=1, help='scans (default: preset value)'),
               'step': Float(min=0.01, help='amplitude step in % (Amplitude mode; '
@@ -190,7 +204,10 @@ def _check_rep_rate(params, ctx):
           'fit A = A0*(1 - exp(-T/T1_eff)); stores the recommendation for '
           "the exp.* steps' rep_rate: auto",
           params={
-              'preset': PresetFile(default='hahn_echo_4s.phase_awg'),
+              'preset': PresetFile(default='hahn_echo_4s.phase_awg',
+                                   help='echo preset for the per-rate quick '
+                                        "acquisitions (saved with 'IQ "
+                                        "Correction: 2')"),
               'rate_min': Float(min=0.1, max=100000, default=20.0,
                                 help='slowest rate (Hz) — must reach the '
                                      'unsaturated plateau'),
@@ -201,7 +218,8 @@ def _check_rep_rate(params, ctx):
                            help='log-grid rates between rate_min and rate_max'),
               'points': Int(min=2, default=4,
                             help='sweep points per quick acquisition'),
-              'scans': Int(min=1, default=1),
+              'scans': Int(min=1, default=1,
+                           help='scans per quick acquisition'),
               'factor': Float(min=1, max=20, default=5.0,
                               help='quantitative-mode period = factor x T1_eff '
                                    '(5 -> <1% residual saturation)'),
@@ -243,12 +261,21 @@ def _check_edfs(params, ctx):
           'Echo-detected field sweep; pick the working field and set the magnet. '
           "range: auto centers on h*nu/(g*mu_B) from the synthesizer readout",
           params={
-              'preset': PresetFile(default='ed_4s.phase_awg'),
+              'preset': PresetFile(default='ed_4s.phase_awg',
+                                   help='field-sweep echo-detection preset '
+                                        "(saved with 'IQ Correction: 2')"),
               'range': AutoOr(PairOf(FieldStr()), required=True,
                               help="[start, end] field, or 'auto'"),
-              'points': Int(min=2, default=200),
-              'scans': Int(min=1, default=1),
-              'pick': Choice('max', 'marker', 'value', default='max'),
+              'points': Int(min=2, default=200,
+                            help='field points across the sweep range'),
+              'scans': Int(min=1, default=1,
+                           help='scan count (the ceiling when target_snr '
+                                'stops the sweep early)'),
+              'pick': Choice('max', 'marker', 'value', default='max',
+                             help='working field: max = magnitude maximum '
+                                  "of the sweep; value = the 'value' "
+                                  'parameter (marker needs the interactive '
+                                  'tools)'),
               'value': FieldStr(help='field to set when pick: value'),
               'g': Float(min=0.1, max=20, default=2.0023,
                          help='g-factor for the range: auto center'),
@@ -275,7 +302,8 @@ def field_edfs(session, preset, range, points, scans, pick, value, g, span,
 
 @register('field.set',
           'Set the magnetic field directly',
-          params={'value': FieldStr(required=True)})
+          params={'value': FieldStr(required=True,
+                                    help='field to set, e.g. "3318 G"')})
 def field_set(session, value):
     from atomize.epr_auto.primitives import field as field_primitives
     return _run_primitive(session, field_primitives.set_field, value=value)
@@ -290,10 +318,12 @@ def field_set(session, value):
               'setpoint': Float(min=0.1, max=400, required=True, help='kelvin'),
               'heater_range': Choice(*('Off', '0.5 W', '5 W', '50 W'),
                                      help='unchanged when omitted'),
-              'rephase_delta': Float(min=0, default=5.0,
+              'rephase_delta': Float(min=0, default=1.0,
                                      help='invalidate auto_phase once the setpoint '
                                           'moves this many K from where the phase '
-                                          'was measured (0 = any change)'),
+                                          'was measured (0 = any change; the oTP '
+                                          'series showed ~1 deg of zero-order '
+                                          'swing per K)'),
           })
 def temp_set(session, setpoint, heater_range, rephase_delta):
     from atomize.epr_auto.primitives import temp
@@ -307,16 +337,22 @@ def temp_set(session, setpoint, heater_range, rephase_delta):
           'setter-waiter semantics); timeout fails the step',
           params={
               'band': Float(min=0.01, default=0.2, help='+/- kelvin around the setpoint'),
-              'channels': Choice('A', 'B', 'AB', default='B'),
+              'channels': Choice('A', 'B', 'AB', default='B',
+                                 help='thermometer channel(s) that must '
+                                      'hold inside the band'),
               'hold': Int(min=1, default=3,
                           help='consecutive in-band polls (1 s cadence) required'),
-              'timeout': TimeStr(default='1800 s'),
+              'timeout': TimeStr(default='1800 s',
+                                 help='wall-clock limit; exceeding it fails '
+                                      'the step'),
               'setpoint': Float(min=0.1, max=400,
                                 help='default: the setpoint already on the device'),
-              'rephase_delta': Float(min=0, default=5.0,
+              'rephase_delta': Float(min=0, default=1.0,
                                      help='invalidate auto_phase once the setpoint '
                                           'moves this many K from where the phase '
-                                          'was measured (0 = any change)'),
+                                          'was measured (0 = any change; the oTP '
+                                          'series showed ~1 deg of zero-order '
+                                          'swing per K)'),
           })
 def temp_wait(session, band, channels, hold, timeout, setpoint, rephase_delta):
     from atomize.epr_auto.primitives import temp
@@ -365,11 +401,20 @@ def _apply_cal(session, preset, mapping):
 @register('exp.t2',
           'Hahn echo decay (T2/Tm), linear tau sweep, with fit',
           params={
-              'preset': PresetFile(default='hahn_echo_4s.phase_awg'),
-              'tau_start': TimeStr(default='300 ns'),
-              'tau_step': TimeStr(default='12 ns'),
-              'points': Int(min=2, required=True),
-              'scans': Int(min=1, default=1),
+              'preset': PresetFile(default='hahn_echo_4s.phase_awg',
+                                   help='Linear Time moving-echo (Hahn) '
+                                        "preset (saved with 'IQ "
+                                        "Correction: 2')"),
+              'tau_start': TimeStr(default='300 ns',
+                                   help='first tau; the saved axis is the '
+                                        'evolution time 2*tau'),
+              'tau_step': TimeStr(default='12 ns',
+                                  help='tau increment per point'),
+              'points': Int(min=2, required=True,
+                            help='sweep points'),
+              'scans': Int(min=1, default=1,
+                           help='scan count — the ceiling when target_snr '
+                                'or max_duration shrink the run'),
               'window': Choice('auto', 'preset', default='auto',
                                help='auto: tune.echo_window result; preset: stored values'),
               'apply_cal': CalMap(help='slot -> pi/pi2 map; none = do not patch; '
@@ -409,11 +454,22 @@ def _check_t1(params, ctx):
 @register('exp.t1',
           'Inversion recovery (T1), log-time sweep, with fit',
           params={
-              'preset': PresetFile(default='inversion_recovery_echo_4s_log.phase_awg'),
-              't_start': TimeStr(default='500 ns'),
-              't_end': TimeStr(default='5 ms'),
-              'points': Int(min=2, required=True),
-              'scans': Int(min=1, default=1),
+              'preset': PresetFile(default='inversion_recovery_echo_4s_log.phase_awg',
+                                   help='Log Time inversion-recovery preset '
+                                        "(saved with 'IQ Correction: 2')"),
+              't_start': TimeStr(default='500 ns',
+                                 help='shortest recovery delay; also sets '
+                                      'the log-spacing density'),
+              't_end': TimeStr(default='5 ms',
+                               help='longest recovery delay — physically '
+                                    'several times the expected T1'),
+              'points': Int(min=2, required=True,
+                            help='log-grid points; the worker deduplicates '
+                                 'the grid-rounded axis, so the saved curve '
+                                 'may hold fewer'),
+              'scans': Int(min=1, default=1,
+                           help='scan count — the ceiling when target_snr '
+                                'or max_duration shrink the run'),
               'window': Choice('auto', 'preset', default='auto',
                                help='auto: tune.echo_window result; preset: stored values'),
               'apply_cal': CalMap(help='slot -> pi/pi2 map; none = do not patch; '
