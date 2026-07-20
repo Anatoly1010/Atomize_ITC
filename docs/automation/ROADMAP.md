@@ -1038,3 +1038,118 @@ the site = the user manual.
   Next (AFTER the review + fixes): the hardware run per
   HARDWARE_CHECKLIST.md (now including a field-series + target_snr bench
   item), then Phase 7 (MkDocs manual) or the GUI launcher.
+
+- **2026-07-20** — **Phase 6 Opus code-review of `94481c7` DONE** (workflow,
+  3 Opus reviewers @ high effort over the briefed dimensions + adversarial
+  Opus verification of every non-note finding; 6 agents, ~417k tokens).
+  **1 confirmed minor, 2 findings refuted on verification, 3 notes, all 7
+  brief questions answered.**
+  - **CONFIRMED (minor, benign): target_snr stops one scan late.**
+    ScanData(k) is sent at the scan boundary (awg_phasing_insys.py ~5406 /
+    ~7106) but the worker only recv()s commands inside the per-point loop,
+    and `_scan_iter` re-checks `k <= SCANS` between scans WITHOUT polling —
+    so a stop-now `SC k` (or degenerate needed==k) is consumed at scan
+    k+1's first point and that scan runs to completion: exactly one extra
+    scan past the target. Verifier confirmed data correctness is unaffected
+    (digitizer_at_exit recomputes exact state; extra scan = strictly better
+    SNR); side effects are cosmetic (Status >100% on the trailing scan;
+    current_scan>total_scan skips the per-scan is_drain on that scan).
+    Genuine UPWARD projections (needed>k) are NOT affected — SC{needed} is
+    consumed during scan k+1 < needed and the run stops exactly at needed.
+    Same class as the pre-existing duration-SC boundary behaviour. Decision:
+    accept as-is (a fix means polling between scans in the GUI-shared
+    worker loop — not worth the risk for one bonus scan); documented here.
+  - **Refuted:** (1) "rail-fallback log misleads inside a series" —
+    unreachable: no foreach-body step (field.set/exp.*) can raise a
+    StepFailure carrying `rails`, so _rail_fallback never runs in-series;
+    (2) "unguarded on_scan_data/scan_control callback exception loses the
+    run" — mechanically true consequence but no reachable input makes the
+    callbacks raise (echo_snr degenerate cases all land in the
+    isfinite-score guard); optional hardening only.
+  - **Notes (no defects):** [pos/n] header drifts low after a soft-aborted
+    iteration (cosmetic; final ran/n summary stays honest); ScanData curve
+    is the lagging live-view accumulation, not the at_exit-exact curve
+    (bias is conservative — inflated MAD sigma → later stop, never a false
+    early-stop); scan_data_flag↔on_scan_data pairing is a hand-maintained
+    invariant outside gui_vs_engine coverage (degrades gracefully on
+    mismatch; consider an assert in _acquire).
+  - **Brief verdicts (all endorse the shipped design):** $-escape not
+    needed (regex only fires on $identifier; add '$$' later if ever
+    needed); unattended ask→abort staying SOFT is right for overnight
+    resilience (a per-iteration condition that must kill the series is
+    modelled as foreach on_fail:abort or a non-StepFailure raise —
+    document); stringified-scalar FieldStr error is adequate (optional:
+    append "(from foreach B = 3318)" context in _parse_step's except);
+    index-0 rail-fallback suppression in-series is correct physics;
+    k=1 direct-measurement stop is defensible (same metric as the final
+    judge; mild lean to add k>=2 for symmetry — and the one-scan-late
+    behaviour means the SAVED data has >=2 scans anyway whenever scans>1);
+    projection is scale-invariant under sqrt(N) noise (no oscillation, no
+    ceiling overshoot) but min-of-noisy-estimates biases the ratchet LOW →
+    systematic slight undershoot of target; if it matters on the bench,
+    require a sub-ceiling projection to persist 2 consecutive scans
+    (OVER_TICKS-style) before committing; attribute (_hand_attrs) transport
+    for scan_data_flag is the right channel (precedent: awg_grid_cur),
+    needs no harness change.
+  - **Candidate follow-ups (NOT applied, operator's call):** (a) assert
+    flag↔callback pairing in _acquire; (b) OVER_TICKS-style 2-scan
+    persistence for SNR projections; (c) k>=2 on the stop branch; (d)
+    substitution context in ParamError; (e) try/except around executor
+    callbacks. None are defects; (b) is the only one with a measurable
+    physics effect (target undershoot) — decide after the bench run.
+  Next: unchanged — hardware run per HARDWARE_CHECKLIST.md, then Phase 7
+  (MkDocs manual) or the GUI launcher.
+
+- **2026-07-20 (2)** — post-review Q&A + ScanData widened to the other
+  worker modes (user direction):
+  - **"Can a smaller SC value avoid the one-extra-scan?" — No.** The value
+    is irrelevant: by the time any SC is consumed (first poll inside scan
+    k+1's point loop), `_scan_iter` has already committed scan k+1; every
+    value <= k+1 means "finish after scan k+1". The only parent-side cure
+    is a PREDICTIVE stop (fire when SNR_k >= target*sqrt(k/(k+1)), letting
+    the unavoidable scan k+1 carry it to ~target) — rejected for now: it
+    trades the direct-measurement guarantee for a projection that can land
+    under target with no re-raise. Decision stands: accept the bonus scan.
+  - **ScanData added to exp_eseem + exp_field** (same gate:
+    `getattr(self,'scan_data_flag',0) and iq_cor==1 and not script_test
+    and command != 'exit'`; GUI untouched — flag default off).
+    exp_field: full parity with exp — SC honoured, so a future EDFS step
+    gets target_snr for free (sent before the settle wait/ramp-down).
+    exp_eseem: **monitor-only** — ESEEM Avg locks SCANS (SC acked but
+    ignored), and k = cycle*SCANS + k counts ALL accumulated scans across
+    tau-averaging cycles so a consumer sees a monotone count. Engine-side
+    consumers (an EDFS target_snr step) are future work; the worker side
+    is ready. **gui_vs_engine re-run: ALL PASS** (13/13). UNCOMMITTED.
+  - **exp.t1 detection tau is preset-only (confirmed):** the step exposes
+    only t_start/t_end (Log Start/End), rep_rate, window, apply_cal; the
+    pi/2–pi tau and all pulse geometry come from the preset (amplitudes
+    aside via apply_cal). If a `tau` param is ever wanted (ESEEM-blind
+    tau choice), it is a `_retau`-style re-anchor of the detection pair +
+    DETECTION — but changing tau invalidates tune.echo_window's stored
+    window, so it must force window='preset' or re-run echo_window.
+    Phase 7 candidate, not planned.
+  - **Auto rep-rate (Phase 7 candidate, sketched):** new `tune.rep_rate`
+    step — log-grid rep-rate sweep on the echo preset, fit amplitude vs
+    period to 1−exp(−t/T1_eff); store a session calibration like the pi
+    calibration; exp.* rep_rate gains 'auto' = 1/(5·T1_eff) (quantitative,
+    <1% saturation error) with a possible 'sensitivity' variant
+    (period ≈ 1.26·T1, max S/√time) for EDFS/tuning-only steps. Cheap
+    alternative: after a completed exp.t1, stamp T1 into the session and
+    let rep_rate: auto reuse it for subsequent steps at the same
+    field/temperature.
+  - **Full-2D scan control (deferred):** the automation stop metric stays
+    on the window-integrated 1D curve (iq_cor==1). For a future full-2D
+    protocol, do NOT ship the matrix over the pipe — add a worker-side
+    per-column window integral and send THAT as ScanData (reuses echo_snr
+    unchanged); save2d already captures the transients for offline use.
+    No concrete protocol needs it yet.
+  - **Follow-up decisions (implement after the hardware check):**
+    ADOPT (a) scan_data_flag↔on_scan_data pairing assert in _acquire;
+    ADOPT (d) foreach substitution context appended to ParamError;
+    ADOPT (e) try/except around executor scan_control/on_scan_data
+    callbacks (log + treat as no-resize) — insurance for the future
+    EDFS/2D policies; CONDITIONAL (b) OVER_TICKS-style 2-scan persistence
+    for SNR projections — decide from bench achieved-vs-target SNR;
+    DROP (c) k>=2 stop guard — redundant (boundary consumption already
+    gives >=2 accumulated scans whenever scans>1, and the stop metric
+    equals the final judge).

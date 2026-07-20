@@ -6023,6 +6023,17 @@ class Worker():
                     pb.pulser_pulse_reset()
                     pb.awg_pulse_reset()
 
+                    # Opt-in scan-boundary readout for the epr_auto engine
+                    # (mirror of exp/exp_log). ESEEM Avg holds SCANS fixed —
+                    # 'SC' is acknowledged but ignored above — so here the
+                    # channel is monitor-only: a resize sent in response can
+                    # never shrink the run. k counts ALL accumulated scans
+                    # across the tau-averaging cycles (cycle is 0-based).
+                    if getattr(self, 'scan_data_flag', 0) and iq_cor == 1 \
+                            and not script_test and self.command != 'exit':
+                        conn.send( ('ScanData',
+                            (cycle * SCANS + k, data_x.copy(), data_y.copy())) )
+
                 # Interrupted mid-cycle: `data` still holds a valid cumulative
                 # average (including the partial cycle), but it is not a complete
                 # cycle boundary, so don't record it as a snapshot.
@@ -6557,6 +6568,18 @@ class Worker():
 
                     pb.pulser_pulse_reset()
                     pb.awg_pulse_reset()
+
+                    # Opt-in scan-boundary readout for the epr_auto engine
+                    # (mirror of exp/exp_log): hand the accumulated IQ-corrected
+                    # field-sweep curve upstream after each completed scan, so a
+                    # future EDFS step can drive target_snr. 'SC' IS honoured in
+                    # this mode, so the resize ratchet composes exactly as in
+                    # exp. Sent before the settle wait / field ramp-down so the
+                    # parent evaluates the policy during them.
+                    if getattr(self, 'scan_data_flag', 0) and iq_cor == 1 \
+                            and not script_test and self.command != 'exit':
+                        conn.send( ('ScanData', (k, data_x.copy(), data_y.copy())) )
+
                     general.wait('1000 ms')
 
                     while field > START_FIELD:
