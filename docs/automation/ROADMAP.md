@@ -265,19 +265,31 @@ t1/+t2/ (24+24 traces, 80–280 K × 3000/3318/3376/3450 G) **+**
   right choice (and log-spacing does NOT inflate it: ratio 0.85 on the
   log-T1 trace where slope-per-point is largest).
 
-## Phase 7 — Documentation (local MkDocs site) — planned 2026-07-18
-User manual for epr_auto as a LOCAL web page in the style of atomize_docs
-(`/home/anatoly/atomize_docs`, MkDocs Material). Audience split stays:
-`docs/automation/*.md` = internal design/session docs (this file);
-the site = the user manual.
+## Phase 7 — Documentation (atomize_docs Projects section) — re-planned
+## 2026-07-20 (was: local in-repo MkDocs site; user direction)
+User manual for epr_auto published DIRECTLY on the public site
+(`/home/anatoly/atomize_docs` -> anatoly1010.github.io/atomize_docs) as a
+new subsection of the existing **Projects** nav tab, next to the
+spectrometer pages (`projects/endstation.md` IS Atomize_ITC's page).
+Audience split stays: `docs/automation/*.md` = internal design/session
+docs (this file); the site = the user manual.
 
-- [ ] Site skeleton: in-repo `docs/epr_auto_site/` (`mkdocs.yml` + `docs/`),
-      **mkdocs-material pinned to the same version as atomize_docs (9.7.6)**
-      and the same authoring conventions (nav in mkdocs.yml, admonitions,
-      title from first H1, relative links) — so pages lift into the public
-      atomize_docs verbatim once epr_auto is ported/public. Local-only:
-      `mkdocs serve -f docs/epr_auto_site/mkdocs.yml`; build output
-      git-ignored.
+- [ ] Pages live at `docs/projects/epr_auto/` in the atomize_docs repo;
+      nav gains, under `Projects:`, an `EPR automation (epr_auto):`
+      subsection listing them (same pattern as the Spectrometers block).
+      Existing authoring conventions apply (nav in mkdocs.yml, admonitions,
+      title from first H1, relative links).
+- [ ] The section must state up front that epr_auto ships with the
+      **Atomize_ITC endstation variant** (not plain Atomize): link the
+      landing page both ways — `projects/epr_auto/index.md` ->
+      `projects/endstation.md` + the Atomize_ITC repo, and a short
+      pointer paragraph on endstation.md -> the epr_auto section.
+- [ ] Generator placement: the auto-generated step reference's script
+      stays in Atomize_ITC (it imports the STEPS registry); it EMITS
+      markdown that is committed into atomize_docs (the site builds on
+      GitHub Pages without Atomize installed). Regeneration is a manual
+      step in the docs-update recipe — record the command on the page
+      footer or in atomize_docs/CLAUDE.md.
 - [ ] **Auto-generated step reference** from the STEPS registry — verified
       2026-07-18: `steps.py` introspects headless (summary, param class,
       default, required, min/max, Choice options, help). Generator script
@@ -1256,7 +1268,49 @@ clamp touched the Worker → mirror rule exercised).
     `on_scan_data=_snr_policy(...)` in primitives/field.py (threaded
     through the auto-span escalation re-run too), param in steps.py.
     Same echo_snr metric as the step's own hard judge.
-  All checks green (see the Phase 8 "Verified" block). **UNCOMMITTED**
-  (commit not requested for Phase 8). Next: hardware run per
-  HARDWARE_CHECKLIST.md + the Phase 8 bench items, then Phase 9
-  follow-ups / Phase 7 manual.
+  All checks green (see the Phase 8 "Verified" block).
+  **Phase 8 COMMITTED: ITC `e339240`** (same session, user request).
+  **Phase 7 re-planned** (user direction): the epr_auto manual goes
+  straight onto the public atomize_docs site as a Projects-tab
+  subsection (`docs/projects/epr_auto/` + nav), cross-linked with
+  `projects/endstation.md` (= Atomize_ITC's page) — see the rewritten
+  Phase 7 section.
+
+  ### >>> NEXT SESSION, FIRST THING: ONE Opus /code-review of `367b9bc..e339240` <<<
+
+  Scope = BOTH unreviewed commits of 2026-07-20 against the current tree:
+  `1c1432c` (exp_eseem/exp_field ScanData) + `e339240` (Phase 8). Files:
+  awg_phasing_insys.py (ScanData sends in exp_eseem/exp_field + the
+  4x Status min(100,...) clamp — GUI-shared file, review extra
+  carefully), primitives/tune.py (rep_rate + _recommend_rate + module
+  constants), primitives/exp.py (_resolve_rep_rate), primitives/field.py
+  (edfs target_snr threading), steps.py (tune.rep_rate registration,
+  AutoOr rep_rate, edfs target_snr). Run it the usual way (Opus agents
+  pinned via model:'opus', workflow, high effort). Reviewer's brief —
+  judgement calls worth a second opinion:
+  - Saturation model A(T) = A0*(1-exp(-T/T1_eff)) assumes the sequence
+    fully tips the magnetization every shot (echo preset). How wrong is
+    T1_eff if the operator points tune.rep_rate at a different preset
+    family, and should the step warn/enforce a preset type?
+  - Steady-state transient at each rate change: the first few shots of an
+    acquisition still carry the previous rate's saturation level (slowest-
+    first ordering + phase-cycle x points x scans averaging is the
+    mitigation). Is the residual bias negligible at points=4, scans=1?
+  - |mean(sig)| amplitude metric: |mean| of pure noise is positive
+    (Rayleigh floor) — does that bias the flat-curve detection or the fit
+    plateau at low SNR?
+  - _FLAT_SPREAD = 0.05 vs noise: a truly flat but NOISY curve (spread
+    just over 5%) falls through to the fit — trace what the fit + coverage
+    check recommend in that regime (clamp to rate_max is the belief).
+  - phase_coherence on the concatenation is amplitude-weighted: heavily
+    saturated (near-zero) points contribute little — confirm a real echo
+    that only appears at slow rates still passes, and pure noise still
+    fails, at steps=3 x points=2 minimum sizes.
+  - _resolve_rep_rate reuses the stored recommendation across later field/
+    temperature steps — T1 changes with both; should the session invalidate
+    'rep_rate' on field/temp moves like it does auto_phase?
+  - edfs target_snr with the default scans=1: policy no-ops (nothing to
+    shrink) — fine, or worth a load-time warning?
+  - The Status clamp also caps a mid-run GUI scans INCREASE case? (SC
+    upward: ratio drops below 100 anyway — confirm no path reads 100 as
+    'done'.)
