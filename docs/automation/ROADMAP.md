@@ -1383,3 +1383,28 @@ clamp touched the Worker → mirror rule exercised).
   - The Status clamp also caps a mid-run GUI scans INCREASE case? (SC
     upward: ratio drops below 100 anyway — confirm no path reads 100 as
     'done'.)
+
+- **2026-07-20 (6)** — **Doc-review fixes (user Q&A) + edfs IF-aware
+  auto-centering — committed & pushed both repos (ITC `1d1dc5b`, docs
+  `4b30fa2`; Opus agent did the edits).** From the user's read-through of
+  the new docs: (1) clarified why tune.rep_rate uses hahn_echo_4s — it
+  MEASURES T1_eff by the saturation method (echo amplitude vs log-spaced
+  rate), it does not consume exp.t1's T1; any echo preset serves (doc
+  answer only, no code change). (2) **field.edfs `range: auto` now
+  centers on the true observation frequency ν_eff = ν_LO − ν_IF**: new
+  `_detection_if_mhz` reads the preset DETECTION pulse's freq via
+  snapshot.load_preset (pure parse, --test-safe); lower-sideband LO−RF
+  sign confirmed from Insys_FPGA.awg_correction comments +
+  awg_phasing_insys `iq_freq = -freq`. `offset` now means
+  magnet-calibration shift ONLY — any bench-calibrated offset values
+  must have the IF contribution (~0.357·ν_IF/g·2 G) removed at the next
+  hardware session. Log line shows the arithmetic (`LO 9750 MHz - IF 50
+  MHz = ...`). tune_up.yaml dry-run 6/6 green. (3) Lock naming
+  normalized: files `field.param`/`temp.param`, modules
+  `field_param`/`temp_param`. (4) steps.py formula in typographic form
+  h·ν/(g·μ_B). (5) docgen: long filename defaults emitted as
+  `<code>stem<wbr>.ext</code>` so the step-reference table wraps only
+  when cramped; steps.md regenerated. **NOTE for the pending
+  `367b9bc..e339240` review: `1d1dc5b` touched primitives/field.py
+  (edfs centering) and steps.py after that range — review against the
+  current tree as planned.**
