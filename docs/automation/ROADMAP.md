@@ -314,6 +314,87 @@ the site = the user manual.
       SCHEMA changes must touch the Writing-protocols page in the same
       session.
 
+## Phase 8 — Progress cap + auto rep-rate + auto EDFS — code DONE 2026-07-20
+## (same session as planned; UNCOMMITTED — needs hardware)
+
+Three items (user request, post-Phase-6-review session):
+
+- [x] **Status never exceeds 100%** — including the SC-shrink trailing scan
+      (the Phase 6 review's confirmed minor: a stop-now `SC k` is consumed
+      during scan k+1, whose Status ticks read >100% because SCANS already
+      holds the lower ceiling). Worker-side clamp `min(100, ...)` on the
+      Status sends of every SC-honouring sweep loop (exp / exp_log /
+      exp_field / exp_amplitude — identical expression in all four;
+      exp_eseem holds SCANS fixed and provably cannot overshoot). GUI-shared
+      file ⇒ mirror rule: re-run gui_vs_engine. Side effect on the engine:
+      `_duration_policy`'s projection reads a capped pct during the trailing
+      scan only — the run is finishing either way.
+- [x] **Auto rep-rate: `tune.rep_rate` step** (design sketched 2026-07-20
+      session log). Log grid of repetition rates rate_min..rate_max (steps
+      points, geomspace, slowest first — each new rate settles into steady
+      state within a few shots), one quick echo acquisition per rate
+      (auto_phase style: points~4, |mean(sig)| — complex mean, phase-
+      robust), fit A(T=1/rate) = A0·(1 − exp(−T/T1_eff)) — the steady-
+      state saturation curve. Store `session.state['rep_rate']` =
+      {t1_eff_s, rep_rate_hz, mode}; recommended rate = 1/(factor·T1_eff)
+      (factor default 5, 'quantitative'; <1% residual saturation) or
+      1/(1.26·T1_eff) ('sensitivity', max S/√time — tuning/EDFS only),
+      never extrapolated above rate_max. Judges: **phase_coherence on ALL
+      acquisitions concatenated** (no echo at all must fail the step, not
+      recommend rate_max; NOT echo_snr — these curves are deliberately
+      FLAT, no peak-above-baseline, and a single points~4 trace is too few
+      samples for a reliable noise resultant, found by the unit suite) +
+      hard `rep_rate_fit` (fit converged AND the grid brackets the knee:
+      residual saturation exp(−T_max/T1_eff) < 0.15, else T1_eff is
+      extrapolated → fail with "extend rate_min", nothing stored) +
+      advisory fit_quality. Flat curve (spread < 5%) = no saturation
+      anywhere → T1_eff « fastest period, recommend rate_max, pass with
+      note. `rep_rate: auto` on exp.t1/t2 (AutoOr param) resolves from the
+      session result; StepFailure if tune.rep_rate has not run. Per-rate
+      curves + a rate/period/amplitude summary CSV land in the run dir.
+- [x] **Auto EDFS: `target_snr` on field.edfs** — the exp_field ScanData
+      path landed post-review (`1c1432c`); wire the consumer: param on the
+      step, `wa.scan_data_flag = 1` + `on_scan_data=_snr_policy(...)` in
+      the edfs primitive (threaded through the escalation re-run too).
+      Same metric as edfs's own hard echo_snr gate, so stop and verdict
+      agree; `scans` becomes the ceiling exactly as on exp.t1/t2.
+
+Bench items (fold into HARDWARE_CHECKLIST when implemented): rep-rate
+saturation curve on a real sample vs a hand-measured T1; EDFS target_snr
+early-stop on a strong line.
+
+Verified (2026-07-20, all offscreen): 22-check unit suite (fit recovery
+within 10% + 200 Hz recommendation on synthetic saturation, sensitivity
+794 Hz, flat→rate_max, saturated-grid fail + nothing stored, pure-noise
+phase_coherence fail, rate_max clamp, bad grid, auto-resolution paths,
+edfs flag/policy/pick-max/stop-on-strong-line, no-target passthrough) +
+new phase8 protocol dry-run 6/6 (canned T1_eff 1.2 ms → auto 166.7 Hz
+flows into exp.t2/t1) + regression dry-runs tune_up 6/6, overnight_t2
+4/4, field_series 16/16 + validate + **gui_vs_engine ALL PASS** (Status
+clamp touched the Worker → mirror rule exercised).
+
+## Phase 9 — Post-bench follow-ups + experiment breadth — planned 2026-07-20
+
+- [ ] **Review follow-ups** (decisions in the 2026-07-20 session log):
+      pairing assert in `_acquire`; foreach substitution context in
+      ParamError; try/except around executor scan_control/on_scan_data
+      callbacks; OVER_TICKS-style 2-scan persistence for SNR projections
+      **if** the bench shows the min-ratchet undershoot matters.
+- [ ] **exp.t1 with varied tau**: optional `tau` param — `_retau`-style
+      re-anchor of the pi/2–pi detection pair (+ DETECTION) at fixed sweep;
+      changing tau invalidates tune.echo_window's stored window ⇒ must
+      force window='preset' or re-run echo_window; use case: sitting the
+      detection tau on an ESEEM-blind point.
+- [ ] **Full-2D acquisitions**: keep the stop metric on the integrated 1-D
+      curve; for 2-D protocols add a worker-side per-column window integral
+      sent as ScanData (never the matrix over the pipe) + save2d for the
+      offline transients.
+- [ ] **Auto 3p-ESEEM with varied T and tau**: exp.eseem step on the
+      ESEEM-avg worker path (ScanData already in, monitor-only — SCANS is
+      locked there, so target_snr can only observe, not shrink); vary the
+      3-pulse T sweep preset's tau per iteration (foreach-able) with the
+      tau-averaging Cycles machinery for blind-spot suppression.
+
 ## Later phases (unordered backlog)
 - Resonator-correction overrides in the runner/protocol YAML (the ENGINE side
   is done 2026-07-17: WorkerArgs carries cor_model_cur/f0_cur/q_cur/
@@ -1153,3 +1234,29 @@ the site = the user manual.
     DROP (c) k>=2 stop guard — redundant (boundary consumption already
     gives >=2 accumulated scans whenever scans>1, and the stop metric
     equals the final judge).
+
+- **2026-07-20 (3)** — **ScanData commit + Phase 8/9 planned + Phase 8
+  code-complete** (user direction). Review fixes committed: ITC `1c1432c`
+  (exp_eseem/exp_field ScanData + the review record). Phase 8/9 sections
+  added above; Phase 8 implemented same session:
+  - **Status clamp** (awg_phasing_insys.py, GUI-shared): `min(100, ...)`
+    on the identical Status expression in exp/exp_log/exp_field/
+    exp_amplitude (one replace-all — the four SC-honouring loops;
+    exp_eseem holds SCANS fixed and cannot overshoot). Also caps the
+    same overshoot for a GUI-side live scans shrink.
+  - **tune.rep_rate** (primitives/tune.py `rep_rate` + steps.py):
+    details in the Phase 8 section. Judge lesson from the unit suite:
+    echo_snr mis-fails a flat 4-point echo curve (no peak above
+    baseline) and a SINGLE 4-point phase_coherence can pass pure noise
+    (resultant variance at N=4; one rng draw hit R=0.77 > 0.7) —
+    judged on all steps x points samples concatenated instead.
+    exp.py `_resolve_rep_rate` ('auto' → session, logs the resolution,
+    StepFailure when absent); steps.py exp.t1/t2 rep_rate → AutoOr.
+  - **field.edfs target_snr**: `wa.scan_data_flag = 1` +
+    `on_scan_data=_snr_policy(...)` in primitives/field.py (threaded
+    through the auto-span escalation re-run too), param in steps.py.
+    Same echo_snr metric as the step's own hard judge.
+  All checks green (see the Phase 8 "Verified" block). **UNCOMMITTED**
+  (commit not requested for Phase 8). Next: hardware run per
+  HARDWARE_CHECKLIST.md + the Phase 8 bench items, then Phase 9
+  follow-ups / Phase 7 manual.

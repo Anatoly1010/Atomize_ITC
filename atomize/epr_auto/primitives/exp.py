@@ -123,6 +123,22 @@ def _apply_rep_rate(pre, rep_rate):
         pre.rep_rate = float(rep_rate)
 
 
+def _resolve_rep_rate(session, rep_rate):
+    """'auto' -> the tune.rep_rate recommendation stored in the session
+    (quantitative or sensitivity, whichever mode that step ran)."""
+    if rep_rate != 'auto':
+        return rep_rate
+    rr = session.state.get('rep_rate')
+    if not rr or rr.get('rep_rate_hz') is None:
+        raise ValueError('rep_rate: auto — no tune.rep_rate result in the '
+                         'session (run tune.rep_rate first)')
+    session.log(f"      rep_rate auto -> {rr['rep_rate_hz']:g} Hz "
+                f"({rr['mode']}, T1_eff "
+                + (_fmt_s(rr['t1_eff_s']) if rr.get('t1_eff_s') else 'below the grid')
+                + ')')
+    return rr['rep_rate_hz']
+
+
 def _duration_policy(session, max_duration, scans):
     """scan_control consumer for the executor's 'SC<n>' channel (the Phase 3
     adaptive-scan hook): when the projected wall-clock time exceeds the
@@ -304,7 +320,7 @@ def t2(session, preset, tau_start, tau_step, points, scans, window='auto',
     pre = _load(preset, 'Linear Time')
     tau_s, tau_st = _retau(pre, parse_time_ns(tau_start),
                            parse_time_ns(tau_step))
-    _apply_rep_rate(pre, rep_rate)
+    _apply_rep_rate(pre, _resolve_rep_rate(session, rep_rate))
     _period_check(pre, snapshot.AWG_OUTPUT_SHIFT_NS + max(
         s.start + s.length + (points - 1) * s.st_inc
         for s in pre.slots if s.active), 'the tau sweep (tau_step x points)')
@@ -337,7 +353,7 @@ def t1(session, preset, t_start, t_end, points, scans, window='auto',
     t_end_ns = parse_time_ns(t_end)
     log_start = float(np.log10(t_start_ns))
     log_end = float(np.log10(t_end_ns))
-    _apply_rep_rate(pre, rep_rate)
+    _apply_rep_rate(pre, _resolve_rep_rate(session, rep_rate))
     _period_check(pre, snapshot.AWG_OUTPUT_SHIFT_NS + (t_end_ns - t_start_ns)
                   + max(s.start + s.length for s in pre.slots if s.active),
                   't_end')

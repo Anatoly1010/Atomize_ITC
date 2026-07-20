@@ -347,6 +347,164 @@ def echo_window(session, preset, factor=2.0, sweeps=3):
     return result, judges
 
 
+# ---------------------------------------------------------- auto rep-rate
+
+# canned dry-run T1_eff (seconds); deliberately not a round number
+_CANNED_T1_EFF = 1.2e-3
+
+# 'sensitivity' mode period, in units of T1_eff: maximizing the echo
+# amplitude per unit sqrt(time), A(T)/sqrt(T) with A = A0*(1-exp(-T/T1)),
+# gives the classic T ~= 1.26*T1 optimum (partial saturation accepted —
+# fine for tuning/EDFS, NOT for quantitative relaxation runs)
+_SENSITIVITY_PERIODS = 1.26
+
+# residual saturation exp(-T_slowest/T1_eff) above this means the whole grid
+# is still saturated: T1_eff is an extrapolation, not a measurement
+_COVERAGE_RESIDUAL = 0.15
+
+# amplitude spread below this fraction of the maximum = flat curve: no
+# saturation observed anywhere, T1_eff is far below the fastest period
+_FLAT_SPREAD = 0.05
+
+
+def _recommend_rate(t1_eff_s, factor, mode, rate_max, log):
+    """Recommended repetition rate from T1_eff: period = factor*T1_eff
+    ('quantitative', <1% residual saturation at factor 5) or 1.26*T1_eff
+    ('sensitivity'). Never above the tested grid's fastest rate — beyond it
+    the saturation model is extrapolation."""
+    periods = float(factor) if mode == 'quantitative' else _SENSITIVITY_PERIODS
+    rate = 1.0 / (periods * t1_eff_s)
+    if rate > rate_max:
+        log(f'      recommended {rate:.4g} Hz exceeds the tested grid — '
+            f'clamping to rate_max {rate_max:g} Hz')
+        rate = float(rate_max)
+    return float(f'{max(rate, 0.1):.4g}')
+
+
+def rep_rate(session, preset, rate_min=20.0, rate_max=2000.0, steps=6,
+             points=4, scans=1, factor=5.0, mode='quantitative'):
+    """Repetition-rate saturation scan -> T1_eff -> recommended rate.
+
+    One quick echo acquisition per rate on a log grid, slowest first (each
+    new rate settles into its steady-state saturation within a few shots,
+    and every acquisition spans many: points x phase cycle x scans). The
+    echo amplitude is |mean(sig)| of the integrated complex curve — the
+    complex mean is phase-robust, so no per-rate rotation is needed.
+    Steady-state saturation of a sequence repeated every T = 1/rate follows
+    A(T) = A0 * (1 - exp(-T/T1_eff)); the fitted T1_eff is the recovery
+    time the sequence actually sees. The result is stored in
+    session.state['rep_rate'] for the exp.* steps' `rep_rate: auto`."""
+    rate_min, rate_max = float(rate_min), float(rate_max)
+    if rate_min >= rate_max:
+        raise ValueError(f'rate_min must be < rate_max, '
+                         f'got {rate_min:g} .. {rate_max:g} Hz')
+    rates = np.geomspace(rate_min, rate_max, int(steps))   # slowest first
+    periods = 1.0 / rates
+
+    amps = []
+    sigs = []
+    for rate in rates:
+        pre = snapshot.load_preset(preset)     # fresh parse per rate
+        pre.rep_rate = float(rate)
+        pre, wa = _build(session, pre, exp_name='RepRate',
+                         points=points, scans=scans)
+        acq = _acquire(session, wa, pre.sweep_type,
+                       f'rep_rate_{rate:.4g}Hz', log=session.log)
+        if acq is None:                        # dry-run: canned after the
+            rec = _recommend_rate(_CANNED_T1_EFF, factor, mode,   # pre-flight
+                                  rate_max, session.log)
+            result = {'t1_eff': '1.2 ms', 't1_eff_s': _CANNED_T1_EFF,
+                      'rep_rate_hz': rec, 'mode': mode, 'canned': True}
+            session.state['rep_rate'] = {'t1_eff_s': _CANNED_T1_EFF,
+                                         'rep_rate_hz': rec, 'mode': mode}
+            return result, [JudgeReport('rep_rate_fit', True, float('inf'),
+                                        {'note': 'dry-run, not judged'})]
+        x, i, q, path = acq
+        sig = i + 1j * q
+        sigs.append(sig)
+        amps.append(float(np.abs(np.mean(sig))))
+        session.log(f'      {rate:.4g} Hz (period {periods[len(amps) - 1] * 1e3:.3g} ms): '
+                    f'echo amplitude {amps[-1]:.4g}')
+
+    amps = np.asarray(amps)
+    # no echo anywhere = no signal at all: fail here instead of
+    # "recommending" rate_max off a flat noise curve. phase_coherence, not
+    # echo_snr: these are short, deliberately FLAT echo curves — no
+    # peak-above-baseline for the MAD-of-diff metric (same reason
+    # auto_phase judges with it). Judged on ALL acquisitions concatenated:
+    # a real echo shares one phase across rates (amplitude may vary), while
+    # steps x points noise samples push a noise resultant well below the
+    # floor — a single points-long trace is too few for a reliable verdict.
+    judges = [phase_coherence(np.concatenate(sigs))]
+    curve_path = session.save_path('rep_rate_curve')
+    np.savetxt(curve_path, np.column_stack((rates, periods, amps)),
+               delimiter=',', header='rate_hz,period_s,amplitude')
+
+    a_max = float(amps.max())
+    spread = (a_max - float(amps.min())) / a_max if a_max > 0 else 0.0
+    if spread < _FLAT_SPREAD:
+        # flat within noise: even the fastest tested rate does not saturate
+        rec = float(f'{rate_max:.4g}')
+        session.state['rep_rate'] = {'t1_eff_s': None, 'rep_rate_hz': rec,
+                                     'mode': mode}
+        judges.append(JudgeReport(
+            'rep_rate_fit', True, 0.0,
+            {'note': f'flat within {spread:.1%} — no saturation across the '
+                     f'grid; T1_eff << {periods.min() * 1e3:.3g} ms, the '
+                     'fastest rate is safe'}))
+        return ({'t1_eff': None, 't1_eff_s': None, 'rep_rate_hz': rec,
+                 'mode': mode, 'data_file': curve_path}, judges)
+
+    def model(T, a0, t1):
+        return a0 * (1.0 - np.exp(-T / t1))
+
+    # characteristic-time seed: shortest period already at (1 - 1/e) of the
+    # plateau (periods[] is descending — sort ascending for the scan)
+    order = np.argsort(periods)
+    knee = (1.0 - 1.0 / np.e) * a_max
+    above = np.nonzero(amps[order] >= knee)[0]
+    t1_0 = float(periods[order][above[0]]) if above.size else float(periods.max() / 3)
+    try:
+        p, _ = curve_fit(model, periods, amps, p0=[a_max, t1_0],
+                         bounds=([0, periods.min() * 1e-3],
+                                 [np.inf, periods.max() * 1e3]),
+                         maxfev=20000)
+    except (RuntimeError, ValueError) as e:
+        judges.append(JudgeReport('rep_rate_fit', False, 0.0,
+                                  {'note': f'saturation fit failed: {e}'}))
+        return ({'t1_eff': None, 't1_eff_s': None, 'rep_rate_hz': None,
+                 'mode': mode, 'data_file': curve_path}, judges)
+    a0, t1_eff = float(p[0]), float(p[1])
+    judges.append(fit_quality(amps, model(periods, *p), n_params=2))
+
+    residual = math.exp(-periods.max() / t1_eff)
+    covered = residual < _COVERAGE_RESIDUAL
+    if not covered:
+        # the slowest rate is itself still saturated: T1_eff extrapolates
+        # beyond the grid — do NOT store a recommendation off it
+        judges.append(JudgeReport(
+            'rep_rate_fit', False, t1_eff,
+            {'note': f'grid fully saturated — the slowest period '
+                     f'{periods.max() * 1e3:.3g} ms still holds '
+                     f'{residual:.0%} residual saturation at T1_eff '
+                     f'{t1_eff * 1e3:.3g} ms; extend rate_min lower'}))
+        return ({'t1_eff': None, 't1_eff_s': t1_eff, 'rep_rate_hz': None,
+                 'mode': mode, 'data_file': curve_path}, judges)
+
+    rec = _recommend_rate(t1_eff, factor, mode, rate_max, session.log)
+    from atomize.epr_auto.primitives.exp import _fmt_s   # lazy: exp imports tune
+    session.state['rep_rate'] = {'t1_eff_s': t1_eff, 'rep_rate_hz': rec,
+                                 'mode': mode}
+    judges.append(JudgeReport('rep_rate_fit', True, t1_eff,
+                              {'residual_at_slowest': round(residual, 4),
+                               'rep_rate_hz': rec}))
+    result = {'t1_eff': _fmt_s(t1_eff), 't1_eff_s': t1_eff,
+              'rep_rate_hz': rec, 'amplitude_plateau': round(a0, 4),
+              'mode': mode, 'data_file': curve_path}
+    session.log(f'      T1_eff {_fmt_s(t1_eff)} -> rep_rate {rec:g} Hz ({mode})')
+    return result, judges
+
+
 # --------------------------------------------------------- pi calibration
 
 def _nutation_model(x, a, b, s, k, c0):

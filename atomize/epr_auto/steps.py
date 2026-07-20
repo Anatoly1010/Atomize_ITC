@@ -179,6 +179,48 @@ def tune_pi_calibration(session, preset, mode, channel, points, scans, step,
                           refine=refine)
 
 
+def _check_rep_rate(params, ctx):
+    if params['rate_min'] >= params['rate_max']:
+        raise ParamError(f"rate_min must be < rate_max, got "
+                         f"{params['rate_min']:g} .. {params['rate_max']:g} Hz")
+
+
+@register('tune.rep_rate',
+          'Repetition-rate saturation scan: quick echo per rate on a log grid, '
+          'fit A = A0*(1 - exp(-T/T1_eff)); stores the recommendation for '
+          "the exp.* steps' rep_rate: auto",
+          params={
+              'preset': PresetFile(default='hahn_echo_4s.phase_awg'),
+              'rate_min': Float(min=0.1, max=100000, default=20.0,
+                                help='slowest rate (Hz) — must reach the '
+                                     'unsaturated plateau'),
+              'rate_max': Float(min=0.1, max=100000, default=2000.0,
+                                help='fastest rate (Hz); recommendations are '
+                                     'never extrapolated above it'),
+              'steps': Int(min=3, max=20, default=6,
+                           help='log-grid rates between rate_min and rate_max'),
+              'points': Int(min=2, default=4,
+                            help='sweep points per quick acquisition'),
+              'scans': Int(min=1, default=1),
+              'factor': Float(min=1, max=20, default=5.0,
+                              help='quantitative-mode period = factor x T1_eff '
+                                   '(5 -> <1% residual saturation)'),
+              'mode': Choice('quantitative', 'sensitivity',
+                             default='quantitative',
+                             help='sensitivity: period = 1.26 x T1_eff, max '
+                                  'S/sqrt(time) — tuning/EDFS only, NOT for '
+                                  'quantitative relaxation runs'),
+          },
+          check=_check_rep_rate)
+def tune_rep_rate(session, preset, rate_min, rate_max, steps, points, scans,
+                  factor, mode):
+    from atomize.epr_auto.primitives import tune
+    return _run_primitive(session, tune.rep_rate,
+                          preset=preset, rate_min=rate_min, rate_max=rate_max,
+                          steps=steps, points=points, scans=scans,
+                          factor=factor, mode=mode)
+
+
 # ---------------------------------------------------------------- field
 
 def _check_edfs(params, ctx):
@@ -215,15 +257,20 @@ def _check_edfs(params, ctx):
               'offset': FieldStr(signed=True, default='0 G',
                                  help='known magnet-calibration shift added to '
                                       'the range: auto center'),
+              'target_snr': Float(min=1,
+                                  help='SNR-driven scan count: scans becomes '
+                                       'the ceiling; stop early once the '
+                                       'accumulated sweep reaches this '
+                                       'echo_snr score'),
           },
           check=_check_edfs)
 def field_edfs(session, preset, range, points, scans, pick, value, g, span,
-               offset):
+               offset, target_snr):
     from atomize.epr_auto.primitives import field as field_primitives
     return _run_primitive(session, field_primitives.edfs,
                           preset=preset, range=range, points=points,
                           scans=scans, pick=pick, value=value, g=g, span=span,
-                          offset=offset)
+                          offset=offset, target_snr=target_snr)
 
 
 @register('field.set',
@@ -331,9 +378,11 @@ def _apply_cal(session, preset, mapping):
               'max_duration': TimeStr(help='wall-clock budget; the scan count '
                                            'shrinks mid-run to finish inside it '
                                            '(data acquired so far is kept)'),
-              'rep_rate': Float(min=0.1, max=100000,
-                                help='repetition rate in Hz (default: preset '
-                                     'value); the sweep must fit one period'),
+              'rep_rate': AutoOr(Float(min=0.1, max=100000),
+                                 help='repetition rate in Hz (default: preset '
+                                      "value); 'auto' = the tune.rep_rate "
+                                      'recommendation; the sweep must fit '
+                                      'one period'),
               'target_snr': Float(min=1,
                                   help='SNR-driven scan count: scans becomes '
                                        'the ceiling; stop early once the '
@@ -373,10 +422,12 @@ def _check_t1(params, ctx):
               'max_duration': TimeStr(help='wall-clock budget; the scan count '
                                            'shrinks mid-run to finish inside it '
                                            '(data acquired so far is kept)'),
-              'rep_rate': Float(min=0.1, max=100000,
-                                help='repetition rate in Hz (default: preset '
-                                     'value); a T1 sweep needs 1/rep_rate '
-                                     'beyond t_end plus the sequence tail'),
+              'rep_rate': AutoOr(Float(min=0.1, max=100000),
+                                 help='repetition rate in Hz (default: preset '
+                                      "value); 'auto' = the tune.rep_rate "
+                                      'recommendation; a T1 sweep needs '
+                                      '1/rep_rate beyond t_end plus the '
+                                      'sequence tail'),
               'target_snr': Float(min=1,
                                   help='SNR-driven scan count: scans becomes '
                                        'the ceiling; stop early once the '

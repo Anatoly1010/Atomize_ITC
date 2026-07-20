@@ -45,7 +45,8 @@ def _synth_mhz(session):
 
 
 def edfs(session, preset, range, points, scans, pick='max', value=None,
-         g=2.0023, span='250 G', offset='0 G', _escalated=False):
+         g=2.0023, span='250 G', offset='0 G', target_snr=None,
+         _escalated=False):
     """Echo-detected field sweep over range=[start, end] ('<x> G/mT/T'
     strings); pick the working field ('max' = magnitude maximum of the
     sweep, 'value' = the given field) and set the magnet to it.
@@ -90,7 +91,14 @@ def edfs(session, preset, range, points, scans, pick='max', value=None,
     pre, wa = _build(session, preset, exp_name='EDFS',
                      start_field=lo, end_field=hi, step_field=step,
                      scans=scans)
-    acq = _acquire(session, wa, pre.sweep_type, 'edfs', log=session.log)
+    if target_snr is not None:
+        # SNR-driven scan ceiling on the exp_field ScanData channel — the
+        # stop metric is the same echo_snr this step's hard judge uses below,
+        # so an early stop can never deliver a sweep the judge then rejects
+        wa.scan_data_flag = 1
+    from atomize.epr_auto.primitives.exp import _snr_policy
+    acq = _acquire(session, wa, pre.sweep_type, 'edfs', log=session.log,
+                   on_scan_data=_snr_policy(session, target_snr, scans))
 
     if acq is None:
         field_g = picked_g if pick == 'value' else (lo + hi) / 2
@@ -116,7 +124,8 @@ def edfs(session, preset, range, points, scans, pick='max', value=None,
                             f'the span to +/- {parse_field_g(wide):.0f} G '
                             'and re-running (one escalation)')
                 return edfs(session, preset, 'auto', points, scans, pick,
-                            value, g, wide, offset, _escalated=True)
+                            value, g, wide, offset, target_snr,
+                            _escalated=True)
             # the search ladder ends at the human: name the precondition to
             # check, and do NOT move the magnet to a noise maximum
             return ({'field': None, 'pick': pick, 'data_file': path},

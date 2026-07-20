@@ -5378,7 +5378,10 @@ class Worker():
                         pb.pulser_increment()
 
                         if not script_test:
-                            conn.send( ('Status', int( 100 * (( k - 1 ) * POINTS + j + 1) / POINTS / SCANS)) )
+                            # min(): an 'SC' shrink below the running scan k
+                            # (adaptive-scan early stop) makes the raw ratio
+                            # exceed 100 during the one trailing scan
+                            conn.send( ('Status', min( 100, int( 100 * (( k - 1 ) * POINTS + j + 1) / POINTS / SCANS))) )
 
                         # check our polling data
                         if self.command[0:2] == 'SC':
@@ -6553,7 +6556,10 @@ class Worker():
                         #pb.awg_pulse_reset()
 
                         if not script_test:
-                            conn.send( ('Status', int( 100 * (( k - 1 ) * POINTS + j + 1) / POINTS / SCANS)) )
+                            # min(): an 'SC' shrink below the running scan k
+                            # (adaptive-scan early stop) makes the raw ratio
+                            # exceed 100 during the one trailing scan
+                            conn.send( ('Status', min( 100, int( 100 * (( k - 1 ) * POINTS + j + 1) / POINTS / SCANS))) )
 
                         # check our polling data
                         if self.command[0:2] == 'SC':
@@ -7106,7 +7112,10 @@ class Worker():
                         pb.awg_shift()
 
                         if not script_test:
-                            conn.send( ('Status', int( 100 * (( k - 1 ) * POINTS + j + 1) / POINTS / SCANS)) )
+                            # min(): an 'SC' shrink below the running scan k
+                            # (adaptive-scan early stop) makes the raw ratio
+                            # exceed 100 during the one trailing scan
+                            conn.send( ('Status', min( 100, int( 100 * (( k - 1 ) * POINTS + j + 1) / POINTS / SCANS))) )
 
                         # check our polling data
                         if self.command[0:2] == 'SC':
@@ -7623,7 +7632,10 @@ class Worker():
                         pb.awg_redefine_amplitude(name = name_list, amplitude = ampl_list_cur )
 
                         if not script_test:
-                            conn.send( ('Status', int( 100 * (( k - 1 ) * POINTS + j + 1) / POINTS / SCANS)) )
+                            # min(): an 'SC' shrink below the running scan k
+                            # (adaptive-scan early stop) makes the raw ratio
+                            # exceed 100 during the one trailing scan
+                            conn.send( ('Status', min( 100, int( 100 * (( k - 1 ) * POINTS + j + 1) / POINTS / SCANS))) )
 
                         # check our polling data
                         if self.command[0:2] == 'SC':
