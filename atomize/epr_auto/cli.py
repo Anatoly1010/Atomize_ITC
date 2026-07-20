@@ -1,11 +1,12 @@
 """Command-line entry point.
 
     python -m atomize.epr_auto run <protocol.yaml> --test   # dry-run, no hardware
+    python -m atomize.epr_auto run <protocol.yaml>           # live (GUI open first)
     python -m atomize.epr_auto validate <protocol.yaml>
     python -m atomize.epr_auto steps                         # list available steps
 
 Ordering inside run() is load-bearing:
-  1. sys.argv is rewritten to ['...', 'test'] BEFORE anything imports
+  1. sys.argv is rewritten to ['...', 'test'|'None'] BEFORE anything imports
      atomize.general_modules or a device module (both read argv[1] to pick
      test mode) — cli/protocol/steps deliberately never import them.
   2. The protocol is loaded (resolving preset paths) BEFORE chdir.
@@ -77,12 +78,11 @@ def _validate(protocol_path):
 
 
 def _run(protocol_path, test):
-    if not test:
-        print('Live execution is not implemented yet (Phase 1+); use --test for a dry-run.',
-              file=sys.stderr)
-        return EXIT_UNSUPPORTED
-
-    sys.argv = [sys.argv[0], 'test']
+    # argv[1] is the framework-wide mode flag: general_functions and every
+    # device module read it at import/instantiation time. 'test' selects the
+    # canned-device branch; 'None' mirrors their own no-argument fallback and
+    # selects live hardware. Must be set before those imports happen below.
+    sys.argv = [sys.argv[0], 'test' if test else 'None']
 
     try:
         protocol = load_protocol(protocol_path)

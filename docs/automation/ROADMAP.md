@@ -284,12 +284,24 @@ docs (this file); the site = the user manual.
       landing page both ways — `projects/epr_auto/index.md` ->
       `projects/endstation.md` + the Atomize_ITC repo, and a short
       pointer paragraph on endstation.md -> the epr_auto section.
-- [ ] Generator placement: the auto-generated step reference's script
-      stays in Atomize_ITC (it imports the STEPS registry); it EMITS
-      markdown that is committed into atomize_docs (the site builds on
-      GitHub Pages without Atomize installed). Regeneration is a manual
-      step in the docs-update recipe — record the command on the page
-      footer or in atomize_docs/CLAUDE.md.
+- [x] Generator placement: `atomize/epr_auto/docgen.py` (imports the STEPS
+      registry; refuses to emit if a step family is missing from its
+      FAMILIES map). Emits `docs/projects/epr_auto/steps.md` into
+      atomize_docs; the page carries the do-not-edit banner + the
+      regeneration command:
+      `python3 -m atomize.epr_auto.docgen <atomize_docs>/docs/projects/epr_auto/steps.md`.
+      Regeneration is manual — still to record in atomize_docs/CLAUDE.md.
+- [x] **First five pages LIVE in the atomize_docs tree (2026-07-20,
+      Opus-authored, uncommitted there):** index (overview), quickstart,
+      protocols (Writing protocols), steps (generated), tuning (The
+      tune-up chain) + nav subsection + endstation.md cross-section.
+      `mkdocs build --strict` passes. Empty `help=''` gaps in steps.py
+      all filled (26 params) as planned.
+- [ ] Remaining pages: presets (what steps expect of a `.phase_awg`),
+      examples (annotated overnight_t2 + field-series), troubleshooting
+      (StepFailures verbatim + locks + LivePlot behaviour); judges got a
+      compact treatment inside protocols.md/tuning.md — decide if a
+      dedicated page is still wanted.
 - [ ] **Auto-generated step reference** from the STEPS registry — verified
       2026-07-18: `steps.py` introspects headless (summary, param class,
       default, required, min/max, Choice options, help). Generator script
@@ -1276,6 +1288,57 @@ clamp touched the Worker → mirror rule exercised).
   `projects/endstation.md` (= Atomize_ITC's page) — see the rewritten
   Phase 7 section.
 
+- **2026-07-20 (4)** — **Phase 7 first tranche: five manual pages live in
+  atomize_docs** (user request; 4 parallel Opus authors + my scaffolding,
+  NO code review this round). In atomize_docs (separate repo,
+  UNCOMMITTED there): `docs/projects/epr_auto/{index,quickstart,
+  protocols,steps,tuning}.md`, the `EPR automation (epr_auto)` nav
+  subsection under Projects, and an "Automated tune-up and measurement"
+  section on `projects/endstation.md`; `mkdocs build --strict` passes.
+  In Atomize_ITC (also UNCOMMITTED): `atomize/epr_auto/docgen.py`
+  (step-reference generator, FAMILIES-coverage guard) + steps.py help
+  strings filled for all 26 blank params.
+  **Two real findings surfaced by the docs pass:**
+  - **rephase_delta default bug (FIXED in steps.py): the 2026-07-18 user
+    decision "5 K -> 1 K" was implemented only as temp.py's
+    REPHASE_DELTA_K constant, but steps.py still carried default=5.0 on
+    temp.set/temp.wait — and the step layer ALWAYS passes its default, so
+    the decided 1 K never took effect through protocols.** Both step
+    defaults now 1.0 (help cites the ~1 deg/K oTP evidence); steps.md
+    regenerated; tune_up dry-run green. Fold into the next review's scope.
+  - **cli.py live-run gate is stale**: `epr-auto run` without --test still
+    exits 3 with "Live execution is not implemented yet (Phase 1+)" — a
+    Phase 0 leftover, while HARDWARE_CHECKLIST documents the live command.
+    NOT changed (execution-gating; needs a deliberate decision) — lift it
+    as the first act of the hardware session. The published pages carry a
+    "Commissioning status" warning admonition stating live CLI execution
+    is disabled pending hardware validation, so the docs are honest today.
+  Fact-fixes applied to the Opus drafts during my review: Telegram-
+  credentials link retargeted endstation.md -> usage.md config section +
+  bot_message reference; "quoted unit strings" wording (YAML plain
+  scalars); tuning.md's rephase paragraph corrected — invalidation DROPS
+  the stored phase (fallback = preset zero-order), it does not auto-rerun
+  auto_phase; the protocol must declare the fresh tune.auto_phase.
+  All other checked claims (protocol_ copy name, DRY-RUN banner,
+  checkpoint auto-continue line, failed-skipped manifest status, output-
+  template error text, brd.ini/exam_adc.ini cwd rationale, rail-fallback
+  chain incl. auto-phase re-runs) verified against code.
+
+- **2026-07-20 (5)** — **Live CLI execution ENABLED (user decision) +
+  both repos committed & pushed.** cli.py `_run`: the Phase 0 refuse
+  branch removed; argv is now `[argv[0], 'test' if test else 'None']` —
+  'None' mirrors the no-argument fallback both general_functions and the
+  device modules use, so live device instantiation takes its normal
+  branch. Verified: a live invocation now reaches the protocol loader
+  (INVALID/exit 1 on a bad path, previously the exit-3 gate message);
+  tune_up dry-run 6/6 green; EXIT_UNSUPPORTED kept as a documented
+  constant. The five site pages' "Commissioning status" admonitions
+  updated to match: enabled but NOT hardware-validated — dry-run first,
+  first live sessions in supervised autonomy. `mkdocs build --strict`
+  passes. **The next bench session is the first true live exercise of
+  the runner — start with HARDWARE_CHECKLIST items 1-3 in supervised
+  mode.**
+
   ### >>> NEXT SESSION, FIRST THING: ONE Opus /code-review of `367b9bc..e339240` <<<
 
   Scope = BOTH unreviewed commits of 2026-07-20 against the current tree:
@@ -1285,8 +1348,14 @@ clamp touched the Worker → mirror rule exercised).
   carefully), primitives/tune.py (rep_rate + _recommend_rate + module
   constants), primitives/exp.py (_resolve_rep_rate), primitives/field.py
   (edfs target_snr threading), steps.py (tune.rep_rate registration,
-  AutoOr rep_rate, edfs target_snr). Run it the usual way (Opus agents
-  pinned via model:'opus', workflow, high effort). Reviewer's brief —
+  AutoOr rep_rate, edfs target_snr). ALSO include the docs session's code
+  (committed after this marker was first written): steps.py rephase_delta
+  defaults 5.0 -> 1.0 + 26 filled help strings, docgen.py, and the cli.py
+  live-gate lift (`sys.argv = [argv[0], 'test' if test else 'None']` — the
+  'None' live flag mirrors the device modules' own no-argument fallback;
+  check nothing downstream keys on argv length or a specific live value).
+  Run it the usual way (Opus agents pinned via model:'opus', workflow,
+  high effort). Reviewer's brief —
   judgement calls worth a second opinion:
   - Saturation model A(T) = A0*(1-exp(-T/T1_eff)) assumes the sequence
     fully tips the magnetization every shot (echo preset). How wrong is
