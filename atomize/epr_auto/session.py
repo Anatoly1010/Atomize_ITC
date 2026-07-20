@@ -99,7 +99,7 @@ class EPRSession:
     # ------------------------------------------------- cross-process locks
 
     def ensure_hardware_locks(self):
-        """Seize the field.param / temp_param locks (same discipline as the
+        """Seize the field.param / temp.param locks (same discipline as the
         four experiment-runner GUIs: seize at run start so the interactive
         field/temperature tools stay off the GPIB devices). Idempotent;
         no-op in test mode — a dry-run must not touch the real lock files."""

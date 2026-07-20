@@ -58,7 +58,17 @@ def _default_of(param):
         return '*required*'
     if param.default is None:
         return '—'
-    return f'`{param.default}`'
+    d = param.default
+    if isinstance(d, str) and len(d) > 25 and '.' in d:
+        stem, _, ext = d.rpartition('.')
+        if stem and ext:
+            # A long filename default (e.g. inversion_recovery_echo_4s_log
+            # .phase_awg) makes the table cell too wide. Emit raw HTML with a
+            # <wbr> break OPPORTUNITY at the extension: the name wraps only
+            # when the cell is cramped and still copies as one intact string.
+            # _cell touches only '|' and newlines, so this HTML survives it.
+            return f'<code>{stem}<wbr>.{ext}</code>'
+    return f'`{d}`'
 
 
 def _cell(text):

@@ -259,7 +259,8 @@ def _check_edfs(params, ctx):
 
 @register('field.edfs',
           'Echo-detected field sweep; pick the working field and set the magnet. '
-          "range: auto centers on h*nu/(g*mu_B) from the synthesizer readout",
+          'range: auto centers on h·ν/(g·μ_B) at ν = ν_LO − ν_IF (the LO '
+          "readout minus the preset's AWG intermediate frequency)",
           params={
               'preset': PresetFile(default='ed_4s.phase_awg',
                                    help='field-sweep echo-detection preset '

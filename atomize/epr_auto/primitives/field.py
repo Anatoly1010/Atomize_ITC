@@ -44,6 +44,23 @@ def _synth_mhz(session):
         raise RuntimeError(f'cannot parse synthesizer answer {ans!r}') from None
 
 
+def _detection_if_mhz(preset_path):
+    """AWG intermediate frequency (MHz) of the preset's DETECTION pulse.
+
+    snapshot.load_preset is pure file parsing (no hardware), so this is safe
+    on the --test dry-run path. The DETECTION slot's freq is the observation
+    / demod frequency that feeds the digitizer demod (iq_freq) — the correct
+    IF to reference here. (For adiabatic WURST/SECH *excitation* pulses the
+    excitation centre is the chirp centre (freq+sweep)/2, but the echo is
+    observed at the DETECTION frequency, so that is what centres the sweep.)
+    """
+    from atomize.epr_auto.engine import snapshot
+    preset = snapshot.load_preset(preset_path)
+    det = next((s for s in preset.slots if s.typ == 'DETECTION'),
+               preset.slots[0])
+    return float(det.freq)
+
+
 def edfs(session, preset, range, points, scans, pick='max', value=None,
          g=2.0023, span='250 G', offset='0 G', target_snr=None,
          _escalated=False):
@@ -51,21 +68,31 @@ def edfs(session, preset, range, points, scans, pick='max', value=None,
     strings); pick the working field ('max' = magnitude maximum of the
     sweep, 'value' = the given field) and set the magnet to it.
 
-    range='auto' is the initial signal search: center = h*nu/(g*mu_B) from
-    the synthesizer readout + offset (the magnet is not absolutely
-    calibrated — pass the setup's known shift; the result's shift_g reports
-    the measured line-minus-center distance to feed back in). +/- span
-    around that. On a failed echo-SNR judge the span widens x2 and the
-    sweep re-runs ONCE; a second failure surfaces with a diagnosis ('flat
-    everywhere' vs 'weak line found') naming what to check."""
+    range='auto' is the initial signal search: center = h·ν/(g·μ_B) where
+    ν = ν_LO − ν_IF is the true observation frequency — the synthesizer/LO
+    readout minus the preset DETECTION pulse's AWG intermediate frequency
+    (this bridge is lower-sideband, LO − RF). offset is the magnet-calibration
+    shift only (the magnet is not absolutely calibrated — pass the setup's
+    known shift; the result's shift_g reports the measured line-minus-center
+    distance to feed back in). +/- span around that. On a failed echo-SNR
+    judge the span widens x2 and the sweep re-runs ONCE; a second failure
+    surfaces with a diagnosis ('flat everywhere' vs 'weak line found') naming
+    what to check."""
     center = None
     if range == 'auto':
-        nu = _synth_mhz(session)
+        nu_lo = _synth_mhz(session)
+        # the pulses are generated at the AWG intermediate frequency and
+        # upconverted; this bridge is lower-sideband (LO − RF, confirmed by
+        # Insys_FPGA.awg_correction and awg_phasing_insys.py's
+        # iq_freq = -freq), so the true observation frequency is ν_LO − ν_IF
+        nu_if = _detection_if_mhz(preset)
+        nu_eff = nu_lo - nu_if
         half = parse_field_g(span)
         off = parse_field_g(offset)
-        center = _G_PER_MHZ * nu / float(g) + off
+        center = _G_PER_MHZ * nu_eff / float(g) + off
         lo, hi = center - half, center + half
-        session.log(f'      range auto: synthesizer {nu:.0f} MHz, g = {g}'
+        session.log(f'      range auto: LO {nu_lo:.0f} MHz - IF {nu_if:.0f} MHz'
+                    f' = {nu_eff:.0f} MHz, g = {g}'
                     + (f', offset {off:+.1f} G' if off else '')
                     + f' -> center {center:.1f} G, span +/- {half:.0f} G')
         if lo < 0:

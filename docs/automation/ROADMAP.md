@@ -75,7 +75,7 @@ reproduces only the GUI's snapshot pipeline.
       reported as `rails: high` with x[-1] as a lower bound. Automatic
       re-run of the coarse stage = Phase 3 runner policy (retry framework)
 - [x] `field.edfs` (exp_field run → pick max/value → BH_15 via the session,
-      field.param + temp_param locks seized with source 'epr_auto', atexit
+      field.param + temp.param locks seized with source 'epr_auto', atexit
       release; pick=marker rejected at validation until Phase 3) + `field.set`
 - [x] `judges.py`: echo SNR (MAD-of-diff sigma, extreme-value ceiling —
       pure noise scores ~1), fit RMSE/adj-R², convergence, π-ratio linearity
@@ -442,7 +442,7 @@ clamp touched the Worker → mirror rule exercised).
   verify the corrected run comes out real-positive); pi_calibration amplitude
   sweep on `ampl_4s` (fit + rails on real compression); power_for_length vane
   loop (dB step direction, mechanical wait long enough, backlash approach);
-  edfs pick=max lands on the line; field.param/temp_param locks vs an open
+  edfs pick=max lands on the line; field.param/temp.param locks vs an open
   field_control/temp_control GUI.
 - LivePlot behaviour of engine-run Workers (plots go to the open GUI exactly
   like GUI-launched runs — expected but unverified).

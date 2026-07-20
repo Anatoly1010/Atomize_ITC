@@ -20,7 +20,7 @@ built on Atomize. Companion file: [ROADMAP.md](ROADMAP.md) (phases + session log
 | Sequence source | Existing `*.phase_awg` presets + the sequence/acquisition machinery inside `atomize/control_center/awg_phasing_insys.py` |
 | Detection pulses during calibration | **Soft/selective pair at ~3–4× the target length** (target 22 ns ⇒ 60–90 ns) at **proportionally lower amplitude** — standard rule `amp_det = amp_cal · L_target/L_det` (amp nearly linear); optional one-shot refine re-run (agreed 2026-07-17, see "Tune-up completeness") |
 | Integration window | `tune.echo_window` primitive: echo-trace acquisition → auto window, stored relative to the DETECTION pulse start; runs before auto-phase (agreed 2026-07-17) |
-| Temperature | `temp.set` / `temp.wait` primitives mirroring temp_control's setter-waiter (band, hold count, wall-clock timeout) under the temp_param lock (agreed 2026-07-17) |
+| Temperature | `temp.set` / `temp.wait` primitives mirroring temp_control's setter-waiter (band, hold count, wall-clock timeout) under the temp.param lock (agreed 2026-07-17) |
 | Initial signal search | `field.edfs range: auto` from synthesizer frequency + g (default 2.0023) with one widen-and-retry escalation; truly blind search stays human (agreed 2026-07-17) |
 
 ## Flip-angle knobs: length / AWG amplitude / rotary vane
@@ -175,7 +175,7 @@ Mirror the proven temp_control setter-waiter (memory
 `temp.set {channel, setpoint, heater_range}`, `temp.wait {band, hold,
 timeout}` — per-channel band around the setpoint, consecutive in-band polls
 (hold default 3 at 1 s cadence — GPIB is slow), wall-clock timeout ⇒
-StepFailure so the `on_fail`/retry/notify policy applies. temp_param lock
+StepFailure so the `on_fail`/retry/notify policy applies. temp.param lock
 seized with source 'epr_auto' (already in session.ensure_hardware_locks).
 Temperature *series* (T1 vs T): v1 = explicit repeated steps in the YAML; the
 `foreach:` block is Phase 6 (see "Series & SNR-driven scans" below).
@@ -218,9 +218,10 @@ lowest already sent. Validation data + numbers: ROADMAP Phase 6; harness
 Not user-only, but the ladder ends at the human:
 
 1. Protocol gives an explicit range (current behaviour, unchanged).
-2. `range: auto`: center = h·ν/(g·μ_B) from the synthesizer readout
-   (`mw_bridge_synthesizer`), `g:` param (default 2.0023), `span:` param
-   (default ±25 mT).
+2. `range: auto`: center = h·ν/(g·μ_B) with ν = ν_LO − ν_IF — the
+   synthesizer/LO readout (`mw_bridge_synthesizer`) minus the preset
+   DETECTION pulse's AWG intermediate frequency (lower-sideband LO − RF
+   bridge); `g:` param (default 2.0023), `span:` param (default ±25 mT).
 3. On a failed echo-SNR judge: **one** automatic escalation — widen the span
    ×2 and re-run — then stop escalating.
 4. Still nothing ⇒ StepFailure whose judge report distinguishes "flat
@@ -320,7 +321,7 @@ later steps see them via the session state and presets are patched accordingly.
 - **TRIGGER_AWG pulses have a hidden same-named `+'AWG'` amp-gate partner**
   (see memory `eseem-averaging-feature` / `live-edit-no-restart`): shifting/
   redefining MW pulses must keep the partner in sync.
-- Respect the cross-process GPIB locks (`temp_param`, `field.param`) when
+- Respect the cross-process GPIB locks (`temp.param`, `field.param`) when
   touching Lakeshore/BH_15 — same discipline as the four experiment runners.
 - Buffer forcing order: `streamBufSizeKb` only after `pulser_repetition_rate`
   (memory `insys-benchmark-automation`).

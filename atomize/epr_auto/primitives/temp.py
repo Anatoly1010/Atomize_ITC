@@ -2,7 +2,7 @@
 
 Mirrors the temp_control tool's proven setter-waiter semantics: consecutive
 in-band polls (hold count) at a slow cadence — GPIB is slow — inside a
-wall-clock timeout. The session's temp_param lock (source 'epr_auto')
+wall-clock timeout. The session's temp.param lock (source 'epr_auto')
 already keeps the interactive tool off the bus during a run; the waiter
 mirrors its readings into temp.param so an open temp_control window keeps
 displaying live values.

@@ -11,7 +11,7 @@ added 2026-07-18.
 - Launch the main Atomize GUI first — the Worker child pushes live plots to
   its LivePlot server; a real run dies without it. Keep it open.
 - Close the interactive field / temperature tools (or expect the runner to
-  refuse: it seizes the `field.param` / `temp_param` locks as `epr_auto`
+  refuse: it seizes the `field.param` / `temp.param` locks as `epr_auto`
   and releases them in `finally` + `atexit`).
 - Run from the repo root. The CLI chdirs to `libs/` itself (Insys driver
   requirement) and pre-flights every step in test mode before touching
