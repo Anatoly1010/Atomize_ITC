@@ -160,7 +160,8 @@ def tune_power_for_length(session, target_length, amplitude, preset,
 def _check_pi_calibration(params, ctx):
     if params['preset'] is None:
         default = 'ampl_4s.phase_awg' if params['mode'] == 'amplitude' else 'rabi_echo_4s.phase_awg'
-        params['preset'] = PresetFile().validate(default, ctx)
+        # resolve as a step default: shipped set only + integrity check
+        params['preset'] = PresetFile().validate(default, {**ctx, 'is_default': True})
 
 
 @register('tune.pi_calibration',
@@ -321,9 +322,10 @@ def field_set(session, value):
                                      help='invalidate auto_phase and the '
                                           'tune.rep_rate recommendation once the '
                                           'setpoint moves this many K from where '
-                                          'each was measured (0 = any change; the '
-                                          'oTP series showed ~1 deg of zero-order '
-                                          'swing per K, and T1 itself is strongly '
+                                          'each was measured (0 = any change; a '
+                                          'measured temperature series showed ~1 deg '
+                                          'of zero-order swing per K, and T1 itself '
+                                          'is strongly '
                                           'temperature-dependent)'),
           })
 def temp_set(session, setpoint, heater_range, rephase_delta):
@@ -352,9 +354,10 @@ def temp_set(session, setpoint, heater_range, rephase_delta):
                                      help='invalidate auto_phase and the '
                                           'tune.rep_rate recommendation once the '
                                           'setpoint moves this many K from where '
-                                          'each was measured (0 = any change; the '
-                                          'oTP series showed ~1 deg of zero-order '
-                                          'swing per K, and T1 itself is strongly '
+                                          'each was measured (0 = any change; a '
+                                          'measured temperature series showed ~1 deg '
+                                          'of zero-order swing per K, and T1 itself '
+                                          'is strongly '
                                           'temperature-dependent)'),
           })
 def temp_wait(session, band, channels, hold, timeout, setpoint, rephase_delta):

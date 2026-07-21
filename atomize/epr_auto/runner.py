@@ -115,6 +115,8 @@ def run_protocol(protocol, session):
     mode = 'DRY-RUN (test mode)' if session.test else 'LIVE'
     session.log(f'=== {protocol.path.name} | sample: {protocol.sample} | '
                 f'autonomy: {protocol.autonomy} | {n} steps | {mode} ===')
+    for w in protocol.warnings:
+        session.log(f'      warning: {w}')
     manifest = _Manifest(protocol, session)
 
     results = []

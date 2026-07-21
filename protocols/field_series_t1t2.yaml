@@ -5,8 +5,8 @@ sample: field_series
 autonomy: checkpointed
 
 steps:
-  # Tune once at the line maximum; field moves do NOT invalidate the phase
-  # (measured on the 2026-07 oTP campaign) so the loop reuses this tune.
+  # Tune once at the line maximum; field moves do NOT invalidate the phase,
+  #  so the loop reuses this tune.
   - field.edfs:
       range: [338 mT, 352 mT]
       pick: max
@@ -18,8 +18,8 @@ steps:
 
   # One T2 + T1 per field. A dead position records + continues to the next.
   # target_snr: scans is the CEILING — the line max stops after a few scans,
-  # the weak shoulder runs the full budget (the 2026-07 oTP campaign operator
-  # hand-adapted 6 -> 46 scans across exactly this field set).
+  # the weak shoulder runs the full budget (6 -> 46 scans across this field
+  # set, chosen automatically by target_snr).
   - foreach:
       var: B
       values: ['3000 G', '3318 G', '3376 G', '3450 G']

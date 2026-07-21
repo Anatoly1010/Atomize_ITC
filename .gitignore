@@ -29,3 +29,7 @@ libs/phase_awg_lastdir.txt
 libs/phase_cor_lastdir.txt
 libs/spin_dynamics_lastdir.txt
 *.param
+
+# epr_auto user preset space: user-saved presets are local (README stays tracked)
+atomize/epr_auto/presets/*.phase_awg
+atomize/epr_auto/presets/*.phase

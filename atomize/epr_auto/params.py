@@ -4,11 +4,22 @@ Self-contained on purpose: no atomize.general_modules / device imports, so
 protocol validation runs headless before test/real mode is decided.
 Time and field values follow the framework-wide '<float> <unit>' string form.
 """
+import hashlib
+import json
 from pathlib import Path
 
 import atomize
 
 PRESET_DIR = Path(atomize.__file__).resolve().parent / 'control_center' / 'experiments'
+# User preset space: presets a protocol author saves for themselves. Bare names
+# in a protocol resolve here (after the protocol's own dir, before the shipped
+# experiments set); step DEFAULTS always come from the shipped set only.
+USER_PRESET_DIR = Path(__file__).resolve().parent / 'presets'
+# sha256 fingerprints of the shipped default presets, so a GUI edit of one that
+# automation relies on is flagged at load time. Regenerate with
+#   python3 -m atomize.epr_auto.preset_hash --update
+_HASH_MANIFEST = Path(__file__).resolve().parent / 'default_preset_hashes.json'
+_MISSING = object()
 
 _TIME_NS = {'ps': 1e-3, 'ns': 1.0, 'us': 1e3, 'ms': 1e6, 's': 1e9, 'ks': 1e12}
 _FIELD_G = {'G': 1.0, 'mT': 10.0, 'T': 1e4}
@@ -207,9 +218,22 @@ class CalMap(Param):
 
 
 class PresetFile(Param):
-    """A pulse-sequence preset. Bare names resolve against the protocol's
-    directory first, then atomize/control_center/experiments/. Returns the
-    resolved absolute path."""
+    """A pulse-sequence preset. Returns the resolved absolute path.
+
+    Resolution depends on whether the value is user-supplied or a step
+    *default* (signalled by ctx['is_default'], set by protocol.py when it
+    falls back to the parameter's default):
+
+    - a user-supplied bare name resolves against the protocol's directory
+      first, then the user preset space (atomize/epr_auto/presets/), then the
+      shipped set (atomize/control_center/experiments/);
+    - a step default resolves against the shipped set ONLY, so a user preset
+      dropped into presets/ can never shadow the preset automation falls back
+      to. When a shipped default's bytes differ from the recorded fingerprint
+      (a GUI save overwrote it), a warning is queued on ctx['warnings'].
+
+    An absolute path is taken as-is.
+    """
 
     typename = 'preset file'
 
@@ -223,9 +247,63 @@ class PresetFile(Param):
         p = Path(value)
         if p.suffix not in self.extensions:
             raise ParamError(f"preset {value!r} must have extension {' or '.join(self.extensions)}")
-        candidates = [p] if p.is_absolute() else [ctx['protocol_dir'] / p, PRESET_DIR / p]
+        is_default = ctx.get('is_default')
+        if p.is_absolute():
+            candidates = [p]
+        elif is_default:
+            candidates = [PRESET_DIR / p]
+        else:
+            candidates = [ctx['protocol_dir'] / p, USER_PRESET_DIR / p, PRESET_DIR / p]
         for c in candidates:
             if c.is_file():
-                return str(c.resolve())
+                resolved = c.resolve()
+                if is_default:
+                    _check_default_integrity(resolved, ctx)
+                return str(resolved)
         looked = ' , '.join(str(c) for c in candidates)
         raise ParamError(f'preset file {value!r} not found (looked in: {looked})')
+
+
+def _sha256_of(path):
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def _load_hash_manifest():
+    try:
+        return json.loads(_HASH_MANIFEST.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return None   # missing/corrupt manifest -> integrity check is a no-op
+
+
+def _check_default_integrity(resolved, ctx):
+    """Queue a warning if a shipped default preset differs from its recorded
+    sha256. Warn once per protocol per preset name. A missing manifest, a
+    missing entry, or an unreadable file is silently skipped — an integrity
+    check must never break validation."""
+    warnings = ctx.get('warnings')
+    if warnings is None:
+        return
+    fname = Path(resolved).name
+    warned = ctx.setdefault('_warned_presets', set())
+    if fname in warned:
+        return
+    manifest = ctx.get('_preset_hashes', _MISSING)
+    if manifest is _MISSING:
+        manifest = _load_hash_manifest()
+        ctx['_preset_hashes'] = manifest
+    if not manifest:
+        return
+    expected = manifest.get(fname)
+    if expected is None:
+        return
+    try:
+        actual = _sha256_of(resolved)
+    except OSError:
+        return
+    if actual != expected:
+        warned.add(fname)
+        warnings.append(
+            f"default preset {fname!r} differs from the shipped version "
+            "(edited in the GUI?) — the run will use the modified file; "
+            "restore it with git, or save custom presets into "
+            "atomize/epr_auto/presets/ under a new name")

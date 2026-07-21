@@ -109,6 +109,7 @@ class Protocol:
     output: str | None          # run-dir template; {date} and {sample} expand
     notify: str = 'none'        # none | telegram (general.bot_message)
     steps: list = field(default_factory=list)   # Step | Foreach entries
+    warnings: list = field(default_factory=list)  # non-fatal load-time advisories
 
 
 def load_protocol(path):
@@ -162,12 +163,39 @@ def load_protocol(path):
     if not isinstance(raw_steps, list) or not raw_steps:
         raise ProtocolError(path, top_line, "'steps' (non-empty list) is required")
 
-    ctx = {'protocol_dir': path.parent}
+    # ctx threads through every step's validation. 'warnings' collects
+    # non-fatal advisories (default-preset integrity, step-order lint);
+    # '_warned_presets' dedupes the integrity warning to once per name.
+    ctx = {'protocol_dir': path.parent, 'warnings': [], '_warned_presets': set()}
     item_lines = getattr(raw_steps, 'item_lines', [top_line] * len(raw_steps))
     steps = [_parse_item(path, item, item_lines[i], ctx)
              for i, item in enumerate(raw_steps)]
+    _lint_step_order(steps, ctx['warnings'])
     return Protocol(path=path, sample=sample, autonomy=autonomy, output=output,
-                    notify=notify, steps=steps)
+                    notify=notify, steps=steps, warnings=ctx['warnings'])
+
+
+def _lint_step_order(steps, warnings):
+    """Warn when a phase/amplitude tuning step runs before any field.* step:
+    on a cold start there is no echo to tune on unless the magnet was already
+    parked on the line. Walks execution order; a foreach block's body is
+    walked in place (once — every iteration has the same step order)."""
+    field_seen = [False]
+
+    def walk(items):
+        for it in items:
+            if isinstance(it, Foreach):
+                walk(it.iterations[0] if it.iterations else [])
+            elif it.name.startswith('field.'):
+                field_seen[0] = True
+            elif it.name in ('tune.auto_phase', 'tune.pi_calibration') \
+                    and not field_seen[0]:
+                warnings.append(
+                    f'{it.name} (line {it.line}) runs before any field.* step '
+                    '— on a cold start there may be no echo to phase on; make '
+                    'sure the magnet is already parked on the line')
+
+    walk(steps)
 
 
 def _parse_item(path, item, fallback_line, ctx):
@@ -294,7 +322,9 @@ def _parse_step(path, item, fallback_line, ctx, subst=None):
             elif param.required:
                 raise ParamError('required parameter is missing')
             elif param.default is not None:
-                params[key] = param.validate(param.default, ctx)
+                # a step default preset resolves from the shipped set only
+                # (is_default), never the user preset dir
+                params[key] = param.validate(param.default, {**ctx, 'is_default': True})
             else:
                 params[key] = None
         except ParamError as e:

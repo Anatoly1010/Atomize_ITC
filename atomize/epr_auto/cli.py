@@ -74,6 +74,8 @@ def _validate(protocol_path):
     print(f'OK: {protocol.path.name} — sample {protocol.sample!r}, '
           f'autonomy {protocol.autonomy}, {len(protocol.steps)} entries '
           f'({", ".join(names)})')
+    for w in protocol.warnings:
+        print(f'warning: {w}')
     return EXIT_OK
 
 

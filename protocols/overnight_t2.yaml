@@ -5,12 +5,12 @@ sample: test_sample
 autonomy: checkpointed        # supervised | checkpointed | autonomous
 
 steps:
-  - tune.auto_phase
-
   - field.edfs:
       range: [338 mT, 352 mT]
       pick: max
       checkpoint: true        # confirm the chosen field before continuing
+
+  - tune.auto_phase           # phase on the echo at the working field
 
   - tune.pi_calibration:
       mode: amplitude         # fine stage; amplitude sweep at fixed length

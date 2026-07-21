@@ -1,0 +1,7 @@
+{
+  "ampl_4s.phase_awg": "d52292e7c8da9c198c1eb234307f8f5d3c9113838c4633d3016300a7a458d8c9",
+  "ed_4s.phase_awg": "bd08da9df1403a7fb34f0349fdf047a14736a59b9165b4b553a27c2ba69a652e",
+  "hahn_echo_4s.phase_awg": "4123b47661f83e142e6f1abab75dc65fe7fc0712dd1eeabfd2a9ae0cca267989",
+  "inversion_recovery_echo_4s_log.phase_awg": "0ffd50dfb52748c2d491fd99ff6beb44039b4590cd40798da50fb4a64cdee8aa",
+  "rabi_echo_4s.phase_awg": "b8ab818f8ac1ec60a8ef02d6a5b10327f9622818a28bd181d9132767824e9f9b"
+}
