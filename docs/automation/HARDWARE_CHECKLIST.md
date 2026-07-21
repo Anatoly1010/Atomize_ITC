@@ -78,9 +78,10 @@ Rules (`params.py:PresetFile`, `primitives/tune.py:_build`):
   `atomize/control_center/experiments/`; an absolute path also works. A name
   that resolves nowhere is a load-time error with a file:line, not a
   surprise at the bench.
-- The preset must be saved with **`IQ Correction:  2`** (IQ-corrected 1-D
-  data) or the step is rejected at pre-flight — checked up front, before any
-  hardware moves.
+- The preset's **Shift Offset** checkbox state (`IQ Correction:` line) no
+  longer matters: the automation always needs the demodulated 1-D mode, so
+  `_build` force-enables `iq_cor = 1` (with a log line) when the preset was
+  saved with the box off. The checkbox only affects interactive GUI runs.
 - `python -m atomize.epr_auto steps` prints every step's parameters and
   defaults, and `validate` resolves each preset to its absolute path without
   running anything. Use both before a bench session.

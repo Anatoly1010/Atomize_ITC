@@ -325,12 +325,15 @@ def acquire_1d(worker_args, sweep_type, save_path,
     % for Amplitude, Gauss for Field. scan_control / on_scan_data are
     run_worker's adaptive-scan callbacks ('SC<n>' channel).
 
-    Requires worker_args.iq_cor == 1 (preset 'IQ Correction:  2'), otherwise
-    the worker writes the raw 2-D format this loader does not parse.
+    Requires worker_args.iq_cor == 1 (the demodulated 1-D format this loader
+    parses); otherwise the worker writes raw 2-D. The primitives' _build
+    force-enables this mode on every WorkerArgs, so this guard is defensive
+    depth — unreachable from the primitives, catching only a hand-built
+    WorkerArgs that bypassed _build.
     """
     if worker_args.iq_cor != 1:
-        raise EngineError("acquire_1d needs iq_cor == 1 "
-                          "(preset 'IQ Correction:  2')")
+        raise EngineError('acquire_1d needs iq_cor == 1 (the demodulated 1-D '
+                          'format); WorkerArgs violated that internal invariant')
     run_worker(worker_args, sweep_type, save_path=save_path,
                on_status=on_status, on_message=on_message,
                scan_control=scan_control, on_scan_data=on_scan_data)

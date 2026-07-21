@@ -100,8 +100,7 @@ def _run_primitive(session, func, advisory_extra=(), **kwargs):
           'Acquire an echo and zero the signal phase (principal-axis auto_phase_zero)',
           params={
               'preset': PresetFile(default='hahn_echo_4s.phase_awg',
-                                   help='echo preset the phase is measured '
-                                        "on (saved with 'IQ Correction: 2')"),
+                                   help='echo preset the phase is measured on'),
               'points': Int(min=2, default=4,
                             help='sweep points for the quick phase acquisition'),
               'scans': Int(min=1, default=1,
@@ -118,8 +117,7 @@ def tune_auto_phase(session, preset, points, scans):
           'smoothed |V| max, width = FWHM x factor); run BEFORE tune.auto_phase',
           params={
               'preset': PresetFile(default='hahn_echo_4s.phase_awg',
-                                   help='echo preset the trace is taken with '
-                                        "(saved with 'IQ Correction: 2')"),
+                                   help='echo preset the trace is taken with'),
               'factor': Float(min=1, max=10, default=2.0,
                               help='window width as a multiple of the echo FWHM'),
               'sweeps': Int(min=1, default=3,
@@ -206,9 +204,7 @@ def _check_rep_rate(params, ctx):
           "the exp.* steps' rep_rate: auto",
           params={
               'preset': PresetFile(default='hahn_echo_4s.phase_awg',
-                                   help='echo preset for the per-rate quick '
-                                        "acquisitions (saved with 'IQ "
-                                        "Correction: 2')"),
+                                   help='echo preset for the per-rate quick acquisitions'),
               'rate_min': Float(min=0.1, max=100000, default=20.0,
                                 help='slowest rate (Hz) — must reach the '
                                      'unsaturated plateau'),
@@ -264,8 +260,7 @@ def _check_edfs(params, ctx):
           "readout minus the preset's AWG intermediate frequency)",
           params={
               'preset': PresetFile(default='ed_4s.phase_awg',
-                                   help='field-sweep echo-detection preset '
-                                        "(saved with 'IQ Correction: 2')"),
+                                   help='field-sweep echo-detection preset'),
               'range': AutoOr(PairOf(FieldStr()), required=True,
                               help="[start, end] field, or 'auto'"),
               'points': Int(min=2, default=200,
@@ -410,9 +405,7 @@ def _apply_cal(session, preset, mapping):
           'Hahn echo decay (T2/Tm), linear tau sweep, with fit',
           params={
               'preset': PresetFile(default='hahn_echo_4s.phase_awg',
-                                   help='Linear Time moving-echo (Hahn) '
-                                        "preset (saved with 'IQ "
-                                        "Correction: 2')"),
+                                   help='Linear Time moving-echo (Hahn) preset'),
               'tau_start': TimeStr(default='300 ns',
                                    help='first tau; the saved axis is the '
                                         'evolution time 2*tau'),
@@ -463,8 +456,7 @@ def _check_t1(params, ctx):
           'Inversion recovery (T1), log-time sweep, with fit',
           params={
               'preset': PresetFile(default='inversion_recovery_echo_4s_log.phase_awg',
-                                   help='Log Time inversion-recovery preset '
-                                        "(saved with 'IQ Correction: 2')"),
+                                   help='Log Time inversion-recovery preset'),
               't_start': TimeStr(default='500 ns',
                                  help='shortest recovery delay; also sets '
                                       'the log-spacing density'),

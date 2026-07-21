@@ -69,7 +69,17 @@ def _build(session, preset_path, exp_name, slot_coef=None, **overrides):
     pairs — overrides pulse amplitude coefficients (a nested field
     build_worker_args overrides can't reach). Accepts a path or an
     already-loaded Preset (which is mutated — pass a fresh parse, never a
-    cached one)."""
+    cached one).
+
+    The automation consumes 1-D demodulated integrals only (the worker routes
+    readouts through Insys_FPGA.digitizer_demodulate(..., integral=True) when
+    iq_cor == 1). The preset's 'Shift Offset' checkbox ('IQ Correction:  2' ->
+    iq_cor 1) is a GUI display preference, not an acquisition capability, and
+    everything the demodulated mode needs (DETECTION iq_freq, integration
+    window, zero-order phase) is threaded regardless — so we FORCE iq_cor = 1
+    here rather than reject a preset saved with the box off. WorkerArgs packs
+    its arg tuples lazily (exp_args/dig_args read self.iq_cor at call time), so
+    this post-build set reaches both the exp and dig paths."""
     preset = preset_path if isinstance(preset_path, snapshot.Preset) \
         else snapshot.load_preset(preset_path)
     if slot_coef is not None:
@@ -79,6 +89,10 @@ def _build(session, preset_path, exp_name, slot_coef=None, **overrides):
     ov = _session_overrides(session)
     ov.update({k: v for k, v in overrides.items() if v is not None})
     wa = snapshot.build_worker_args(preset, exp_name=exp_name, **ov)
+    if wa.iq_cor != 1:
+        session.log('      preset saved with Shift Offset off — enabling the '
+                    'demodulated 1-D mode (iq_cor 1) for the automation run')
+        wa.iq_cor = 1
     return preset, wa
 
 
@@ -86,12 +100,9 @@ def _acquire(session, wa, sweep_type, tag, log=None, scan_control=None,
              on_scan_data=None):
     """Pre-flight, then acquire. Returns (x, i, q, path) or None in test mode.
     scan_control / on_scan_data are the executor's 'SC<n>' adaptive-scan
-    callbacks (see exp._duration_policy / exp._snr_policy)."""
-    if wa.iq_cor != 1:
-        # check up front (not at acquire_1d time, after hardware may already
-        # have moved) so the --test pre-flight rejects such a preset too
-        raise ValueError("preset must be saved with 'IQ Correction:  2' "
-                         '(IQ-corrected 1-D data) for automation acquisitions')
+    callbacks (see exp._duration_policy / exp._snr_policy). _build has already
+    forced wa.iq_cor == 1 (the demodulated 1-D mode the automation consumes),
+    so no per-acquisition IQ-correction check is needed here."""
     executor.run_worker(wa, sweep_type, script_test=True)
     if session.test:
         return None
@@ -288,10 +299,7 @@ def echo_window(session, preset, factor=2.0, sweeps=3):
     factor = float(factor)
     if factor < 1.0:
         raise ValueError(f'factor must be >= 1 (got {factor})')
-    pre, wa = _build(session, preset, exp_name='EchoWindow')
-    if wa.iq_cor != 1:
-        raise ValueError("preset must be saved with 'IQ Correction:  2' "
-                         '(IQ-corrected 1-D data) for automation acquisitions')
+    pre, wa = _build(session, preset, exp_name='EchoWindow')  # forces iq_cor 1
     executor.acquire_trace(wa, script_test=True)
     if session.test:
         result = {'win_left_ns': pre.win_left_ns,

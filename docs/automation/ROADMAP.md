@@ -274,34 +274,47 @@ spectrometer pages (`projects/endstation.md` IS Atomize_ITC's page).
 Audience split stays: `docs/automation/*.md` = internal design/session
 docs (this file); the site = the user manual.
 
-- [ ] Pages live at `docs/projects/epr_auto/` in the atomize_docs repo;
+- [x] Pages live at `docs/projects/epr_auto/` in the atomize_docs repo;
       nav gains, under `Projects:`, an `EPR automation (epr_auto):`
       subsection listing them (same pattern as the Spectrometers block).
       Existing authoring conventions apply (nav in mkdocs.yml, admonitions,
       title from first H1, relative links).
-- [ ] The section must state up front that epr_auto ships with the
+      Verified 2026-07-21: nav subsection present (`EPR automation:`) with all
+      eight pages listed; conventions followed.
+- [x] The section must state up front that epr_auto ships with the
       **Atomize_ITC endstation variant** (not plain Atomize): link the
       landing page both ways — `projects/epr_auto/index.md` ->
       `projects/endstation.md` + the Atomize_ITC repo, and a short
       pointer paragraph on endstation.md -> the epr_auto section.
+      Verified 2026-07-21: index.md links to the Atomize_ITC repo +
+      endstation.md; endstation.md's "Automated tune-up and measurement"
+      section points back to epr_auto/index.md.
 - [x] Generator placement: `atomize/epr_auto/docgen.py` (imports the STEPS
       registry; refuses to emit if a step family is missing from its
       FAMILIES map). Emits `docs/projects/epr_auto/steps.md` into
       atomize_docs; the page carries the do-not-edit banner + the
       regeneration command:
       `python3 -m atomize.epr_auto.docgen <atomize_docs>/docs/projects/epr_auto/steps.md`.
-      Regeneration is manual — still to record in atomize_docs/CLAUDE.md.
+      Regeneration is manual — recorded in atomize_docs/CLAUDE.md
+      (2026-07-21, "EPR automation (epr_auto) pages" section).
 - [x] **First five pages LIVE in the atomize_docs tree (2026-07-20,
       Opus-authored, uncommitted there):** index (overview), quickstart,
       protocols (Writing protocols), steps (generated), tuning (The
       tune-up chain) + nav subsection + endstation.md cross-section.
       `mkdocs build --strict` passes. Empty `help=''` gaps in steps.py
       all filled (26 params) as planned.
-- [ ] Remaining pages: presets (what steps expect of a `.phase_awg`),
+- [x] Remaining pages: presets (what steps expect of a `.phase_awg`),
       examples (annotated overnight_t2 + field-series), troubleshooting
       (StepFailures verbatim + locks + LivePlot behaviour); judges got a
       compact treatment inside protocols.md/tuning.md — decide if a
       dedicated page is still wanted.
+      DONE 2026-07-21: presets.md, examples.md, troubleshooting.md written +
+      in nav + cross-linked; `mkdocs build --strict` passes. Judges decision:
+      NO dedicated page — the reader need is covered by protocols.md (hard vs
+      advisory gating) + tuning.md (per-step physics) + troubleshooting.md §(b)
+      (every judge's verbatim FAIL line, LO-leak note, rail fallback, edfs
+      flat-vs-weak). Presets rule updated for the auto-enable of the
+      demodulated 1-D mode (no longer a hard "IQ Correction: 2" requirement).
 - [x] **Auto-generated step reference** from the STEPS registry — verified
       2026-07-18; DONE 2026-07-20 (4) via `docgen.py` (see the checked
       "Generator placement" item above — implemented as a single
@@ -310,7 +323,9 @@ docs (this file); the site = the user manual.
       min/max, Choice options, help) ⇒ the reference CANNOT drift from
       code. Side effect handled: the empty `help=''` strings (26 params)
       were filled in steps.py as part of this pass.
-- [ ] Hand-written pages:
+- [x] Hand-written pages (DONE 2026-07-21 — all written except the standalone
+      "Judges & gating" page, deliberately folded into protocols.md +
+      tuning.md + troubleshooting.md §(b), see the judges decision above):
       - Home — what epr_auto is (YAML protocol runner reusing the phasing
         Worker), architecture sketch, relation to the GUI tools
       - Quickstart — install (`pip install -e .`, epr-auto entry point),
@@ -333,10 +348,16 @@ docs (this file); the site = the user manual.
       - Troubleshooting — common StepFailures verbatim + what they mean,
         param locks vs open control-center GUIs, LivePlot behaviour of
         engine runs
-- [ ] Maintenance rule (goes into CLAUDE.md when the site lands): step/param
+- [x] Maintenance rule (goes into CLAUDE.md when the site lands): step/param
       changes regenerate the reference automatically at build; protocol
       SCHEMA changes must touch the Writing-protocols page in the same
       session.
+      DONE 2026-07-21: recorded in atomize_docs/CLAUDE.md ("EPR automation
+      (epr_auto) pages" section). Correction to the original wording —
+      steps.md regeneration is MANUAL (a `docgen` command run by hand), NOT
+      automatic at build; the CLAUDE.md rule states it that way. The
+      schema-change rule (touch protocols.md in the same session) is recorded
+      as written.
 
 ## Phase 8 — Progress cap + auto rep-rate + auto EDFS — code DONE 2026-07-20
 ## (same session as planned; committed `e339240` — hardware still pending)
@@ -1575,3 +1596,74 @@ clamp touched the Worker → mirror rule exercised).
     (scans=1 -> warn+None, scans=8 -> live policy; Log Time preset ->
     warn, hahn -> silent), field_series_t1t2 (scans: 48) stays
     warning-free, all 3 protocol dry-runs green (6/6, 4/4, 16/16).
+
+- **2026-07-21 (4)** — **Phase 7 documentation COMPLETE (Opus agent) +
+  iq_cor auto-enable (Opus agent; user decision)** — both UNCOMMITTED.
+  - **iq_cor auto-enable.** Investigating the user's question "can we use
+    digitizer_demodulation + shift offset instead of the strange
+    IQ Correction: 2 rule" revealed they are the SAME mechanism: the
+    preset line `IQ Correction:  2` is the saved Qt checkState of the
+    checkbox the GUI labels "Shift Offset" (label_fft1 <-> IQ_corr,
+    checked -> iq_cor=1), and iq_cor==1 IS the worker's
+    digitizer_demodulate(iq_freq, ph0, ph1, ph2, integral=True) path
+    producing the 1-D integrals the engine consumes. Decision (user):
+    stop rejecting — tune._build now FORCES wa.iq_cor = 1 with a log
+    line ('preset saved with Shift Offset off — enabling the demodulated
+    1-D mode (iq_cor 1) for the automation run') since everything the
+    mode needs (DETECTION iq_freq, window, zero-order) is threaded
+    regardless; the checkbox is a GUI display preference. Dead
+    ValueError removed from _acquire AND from echo_window (a duplicate
+    guard); acquire_1d's EngineError kept as defensive depth, reworded
+    to name the internal invariant. snapshot.py + GUI untouched ->
+    gui_vs_engine unaffected. Verified: IQ Correction: 0 preset copy
+    runs canned through auto_phase + rep_rate with the log line exactly
+    once per _build; unmodified preset silent; 3 dry-runs green.
+  - **Stale-prose sweep** (user-reported): all six steps.py preset help
+    strings dropped "(saved with 'IQ Correction: 2')" (two were
+    line-break-split — grep undercounts), HARDWARE_CHECKLIST.md bullet
+    rewritten to the auto-enable behavior, quickstart.md steps-quote
+    re-taken from fresh output, steps.md regenerated (post-help-edit),
+    every surviving "IQ Correction" mention now describes the new
+    semantics.
+  - **Phase 7 done** (see the ticked checklist): three new pages
+    presets.md / examples.md (annotated overnight_t2 +
+    field_series_t1t2) / troubleshooting.md (verbatim error strings
+    harvested from code; 4 sections: load-time, judges, environment/
+    locks/LivePlot, non-error warnings); judges page decision = NOT
+    needed (covered by protocols.md + tuning.md + troubleshooting (b));
+    mkdocs.yml nav + index.md table + cross-links; maintenance rules
+    recorded in atomize_docs/CLAUDE.md (manual docgen regeneration +
+    schema-change-touches-protocols.md). mkdocs build --strict passes.
+  - **Post-agent fix (this session):** tuning.md's range-auto paragraph
+    still described the centre as raw synthesizer readout — updated to
+    the edfs IF-aware formula (nu_eff = nu_LO - nu_IF, offset =
+    magnet-calibration only; matches 1d1dc5b's code). Agent-flagged nav
+    label is 'EPR automation:' (vs the plan's 'EPR automation
+    (epr_auto):') — accepted as-is.
+  - Next: hardware run per HARDWARE_CHECKLIST.md (now includes verifying
+    the auto-enable log on a Shift-Offset-off preset at the bench).
+
+  ### >>> NEXT SESSION, FIRST THING: FULL-CODEBASE Opus review of atomize/epr_auto/ <<<
+
+  User directive 2026-07-21: before the hardware campaign, ONE large code
+  review of ALL completed epr_auto code — holistic, not incremental. All
+  prior reviews were per-phase diffs; this one reads the whole package
+  (~4.6k lines: cli/protocol/params/steps/runner/session/docgen +
+  engine/{snapshot,executor} + primitives/{tune,field,temp,exp,judges})
+  as one system, against the current tree. Usual harness scaled up:
+  Opus reviewers @ high effort, dimensions split by CONCERN not by file
+  (suggested: (1) cross-module state flow — session.state keys, who
+  writes/invalidates/consumes each, stale-value paths the per-phase
+  reviews could not see; (2) error/abort paths — every raise/StepFailure/
+  judge gate end-to-end incl. runner retry/fallback/manifest; (3) engine
+  vs GUI contract — snapshot/executor vs awg_phasing_insys Worker + pipe
+  protocol + the accumulated post-review patches (iq_cor force, ScanData,
+  SC ratchet); (4) physics/numerics — fits, judges, thresholds,
+  unit/grid conversions; (5) protocol/CLI surface — YAML parsing,
+  validation completeness, foreach, locks, test-mode purity) +
+  adversarial verification of every non-note finding. Include the
+  accumulated candidate-follow-up list and the hardware checklist's
+  assumptions in scope. gui_vs_engine must be re-run as part of the
+  review evidence (it mutates control_center *.param files — git
+  checkout them after). After fixes: the hardware run per
+  HARDWARE_CHECKLIST.md.
