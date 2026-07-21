@@ -1546,8 +1546,8 @@ clamp touched the Worker → mirror rule exercised).
     per-family pages). Chronological per-entry "(uncommitted)" markers
     that self-resolve later in the log were deliberately left as history.
   - Remaining candidates from the review: (c) warn on target_snr with
-    scans<=1; (d) preset-family warn in tune.rep_rate. **UNCOMMITTED:
-    everything from both 2026-07-21 entries (ITC: judges/tune/temp/
-    session/steps/field + ARCHITECTURE + this file; atomize_docs:
-    steps.md + tuning.md).** Next: hardware run per
+    scans<=1; (d) preset-family warn in tune.rep_rate. **Both 2026-07-21
+    entries committed+pushed: ITC `cf9d118` (judges/tune/temp/session/
+    steps/field + ARCHITECTURE + this file), atomize_docs `2a3dbb9`
+    (steps.md + tuning.md).** Next: hardware run per
     HARDWARE_CHECKLIST.md.
