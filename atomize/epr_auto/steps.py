@@ -20,6 +20,7 @@ from atomize.epr_auto.params import (
     AutoOr, Bool, CalMap, Choice, FieldStr, Float, Int, PairOf, ParamError,
     PresetFile, TimeStr, parse_field_g, parse_time_ns,
 )
+from atomize.epr_auto.primitives.judges import SNR_FLOOR
 
 
 class StepFailure(RuntimeError):
@@ -285,11 +286,13 @@ def _check_edfs(params, ctx):
               'offset': FieldStr(signed=True, default='0 G',
                                  help='known magnet-calibration shift added to '
                                       'the range: auto center'),
-              'target_snr': Float(min=1,
+              'target_snr': Float(min=SNR_FLOOR,
                                   help='SNR-driven scan count: scans becomes '
                                        'the ceiling; stop early once the '
                                        'accumulated sweep reaches this '
-                                       'echo_snr score'),
+                                       'echo_snr score (min = the judge pass '
+                                       'floor: a lower target would stop on a '
+                                       'sweep the hard judge then rejects)'),
           },
           check=_check_edfs)
 def field_edfs(session, preset, range, points, scans, pick, value, g, span,
@@ -320,11 +323,13 @@ def field_set(session, value):
               'heater_range': Choice(*('Off', '0.5 W', '5 W', '50 W'),
                                      help='unchanged when omitted'),
               'rephase_delta': Float(min=0, default=1.0,
-                                     help='invalidate auto_phase once the setpoint '
-                                          'moves this many K from where the phase '
-                                          'was measured (0 = any change; the oTP '
-                                          'series showed ~1 deg of zero-order '
-                                          'swing per K)'),
+                                     help='invalidate auto_phase and the '
+                                          'tune.rep_rate recommendation once the '
+                                          'setpoint moves this many K from where '
+                                          'each was measured (0 = any change; the '
+                                          'oTP series showed ~1 deg of zero-order '
+                                          'swing per K, and T1 itself is strongly '
+                                          'temperature-dependent)'),
           })
 def temp_set(session, setpoint, heater_range, rephase_delta):
     from atomize.epr_auto.primitives import temp
@@ -349,11 +354,13 @@ def temp_set(session, setpoint, heater_range, rephase_delta):
               'setpoint': Float(min=0.1, max=400,
                                 help='default: the setpoint already on the device'),
               'rephase_delta': Float(min=0, default=1.0,
-                                     help='invalidate auto_phase once the setpoint '
-                                          'moves this many K from where the phase '
-                                          'was measured (0 = any change; the oTP '
-                                          'series showed ~1 deg of zero-order '
-                                          'swing per K)'),
+                                     help='invalidate auto_phase and the '
+                                          'tune.rep_rate recommendation once the '
+                                          'setpoint moves this many K from where '
+                                          'each was measured (0 = any change; the '
+                                          'oTP series showed ~1 deg of zero-order '
+                                          'swing per K, and T1 itself is strongly '
+                                          'temperature-dependent)'),
           })
 def temp_wait(session, band, channels, hold, timeout, setpoint, rephase_delta):
     from atomize.epr_auto.primitives import temp

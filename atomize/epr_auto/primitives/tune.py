@@ -366,6 +366,14 @@ _COVERAGE_RESIDUAL = 0.15
 # saturation observed anywhere, T1_eff is far below the fastest period
 _FLAT_SPREAD = 0.05
 
+# spread above this = the deviations from the median are dominated by the
+# real saturation structure, not by amplitude noise — enough to also demand
+# collinear deviations from phase_coherence (require_structure), which a
+# constant LO-leakage phasor cannot fake. Between _FLAT_SPREAD and this the
+# deviations may be mostly noise, so the structure gate would false-fail a
+# real low-SNR echo
+_STRUCTURED_SPREAD = 0.15
+
 
 def _recommend_rate(t1_eff_s, factor, mode, rate_max, log):
     """Recommended repetition rate from T1_eff: period = factor*T1_eff
@@ -416,7 +424,8 @@ def rep_rate(session, preset, rate_min=20.0, rate_max=2000.0, steps=6,
             result = {'t1_eff': '1.2 ms', 't1_eff_s': _CANNED_T1_EFF,
                       'rep_rate_hz': rec, 'mode': mode, 'canned': True}
             session.state['rep_rate'] = {'t1_eff_s': _CANNED_T1_EFF,
-                                         'rep_rate_hz': rec, 'mode': mode}
+                                         'rep_rate_hz': rec, 'mode': mode,
+                                         'temperature_k': _phase_temperature(session)}
             return result, [JudgeReport('rep_rate_fit', True, float('inf'),
                                         {'note': 'dry-run, not judged'})]
         x, i, q, path = acq
@@ -427,6 +436,12 @@ def rep_rate(session, preset, rate_min=20.0, rate_max=2000.0, steps=6,
                     f'echo amplitude {amps[-1]:.4g}')
 
     amps = np.asarray(amps)
+    curve_path = session.save_path('rep_rate_curve')
+    np.savetxt(curve_path, np.column_stack((rates, periods, amps)),
+               delimiter=',', header='rate_hz,period_s,amplitude')
+
+    a_max = float(amps.max())
+    spread = (a_max - float(amps.min())) / a_max if a_max > 0 else 0.0
     # no echo anywhere = no signal at all: fail here instead of
     # "recommending" rate_max off a flat noise curve. phase_coherence, not
     # echo_snr: these are short, deliberately FLAT echo curves — no
@@ -435,18 +450,20 @@ def rep_rate(session, preset, rate_min=20.0, rate_max=2000.0, steps=6,
     # a real echo shares one phase across rates (amplitude may vary), while
     # steps x points noise samples push a noise resultant well below the
     # floor — a single points-long trace is too few for a reliable verdict.
-    judges = [phase_coherence(np.concatenate(sigs))]
-    curve_path = session.save_path('rep_rate_curve')
-    np.savetxt(curve_path, np.column_stack((rates, periods, amps)),
-               delimiter=',', header='rate_hz,period_s,amplitude')
-
-    a_max = float(amps.max())
-    spread = (a_max - float(amps.min())) / a_max if a_max > 0 else 0.0
+    # A strongly saturating curve must ALSO show collinear deviations
+    # (require_structure): a constant LO-leakage phasor can fake the
+    # resultant but not the structure. A flat curve cannot be gated that
+    # way — leak and a genuinely rate-insensitive echo are
+    # indistinguishable in-band; the exp steps' echo_snr judge is the
+    # backstop if there is no echo at all.
+    judges = [phase_coherence(np.concatenate(sigs),
+                              require_structure=spread >= _STRUCTURED_SPREAD)]
     if spread < _FLAT_SPREAD:
         # flat within noise: even the fastest tested rate does not saturate
         rec = float(f'{rate_max:.4g}')
         session.state['rep_rate'] = {'t1_eff_s': None, 'rep_rate_hz': rec,
-                                     'mode': mode}
+                                     'mode': mode,
+                                     'temperature_k': _phase_temperature(session)}
         judges.append(JudgeReport(
             'rep_rate_fit', True, 0.0,
             {'note': f'flat within {spread:.1%} — no saturation across the '
@@ -494,7 +511,8 @@ def rep_rate(session, preset, rate_min=20.0, rate_max=2000.0, steps=6,
     rec = _recommend_rate(t1_eff, factor, mode, rate_max, session.log)
     from atomize.epr_auto.primitives.exp import _fmt_s   # lazy: exp imports tune
     session.state['rep_rate'] = {'t1_eff_s': t1_eff, 'rep_rate_hz': rec,
-                                 'mode': mode}
+                                 'mode': mode,
+                                 'temperature_k': _phase_temperature(session)}
     judges.append(JudgeReport('rep_rate_fit', True, t1_eff,
                               {'residual_at_slowest': round(residual, 4),
                                'rep_rate_hz': rec}))

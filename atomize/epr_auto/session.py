@@ -158,6 +158,13 @@ class EPRSession:
         'Temperature rules'). Drop auto_phase only."""
         self._drop(('auto_phase',), reason)
 
+    def invalidate_rep_rate(self, reason):
+        """T1 — the basis of the tune.rep_rate recommendation — is strongly
+        temperature-dependent, so a temperature move makes the stored rate
+        stale. Field moves deliberately do NOT drop it: the field effect on
+        T1 is minor and appears only in systems with two different spins."""
+        self._drop(('rep_rate',), reason)
+
     def _drop(self, keys, reason):
         dropped = [k for k in keys if self.state.pop(k, None)]
         if dropped:

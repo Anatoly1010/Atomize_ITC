@@ -74,14 +74,20 @@ power between temperatures):
 A monotonic 190° swing. Hence: (a) a setpoint move beyond `rephase_delta`
 (default 1 K — the swing averages ~1°/K and is steeper at the warm end, so
 1 K keeps the carried error at the phase-noise level) invalidates
-**auto-phase only** — `session.invalidate_phase`, checked in both `temp.set`
-and `temp.wait`; (b) the fine amplitude calibration **survives** a
+**auto-phase and the rep-rate recommendation** —
+`session.invalidate_phase` + `session.invalidate_rep_rate` (T₁, the basis
+of `tune.rep_rate`, is strongly temperature-dependent), checked in both
+`temp.set` and `temp.wait`, each against its **own** measurement
+temperature; field moves deliberately invalidate neither (the field effect
+on T₁ is minor and appears only in systems with two different spins);
+(b) the fine amplitude calibration **survives** a
 temperature change — only the vane moves B₁, and in practice the vane is
 re-set only after a large ΔT, to hold bandwidth; (c) `tune.auto_phase`
-stamps `temperature_k` on its result so the manifest records where each
-phase was taken — before any temp step has run, the stamp is the measured
-channel-B temperature (None only if the Lakeshore is unreachable, which
-falls back to an unconditional drop on the first temp step).
+and `tune.rep_rate` stamp `temperature_k` on their results so the manifest
+records where each was taken — before any temp step has run, the stamp is
+the measured channel-B temperature (None only if the Lakeshore is
+unreachable, which falls back to an unconditional drop on the first temp
+step).
 
 The same series also shows what zero-order does *not* depend on: it is
 identical for T1 and T2 at matched (T, field) in 25 of 26 pairs — despite

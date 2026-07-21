@@ -121,6 +121,7 @@ def edfs(session, preset, range, points, scans, pick='max', value=None,
     if target_snr is not None:
         # SNR-driven scan ceiling on the exp_field ScanData channel — the
         # stop metric is the same echo_snr this step's hard judge uses below,
+        # and the step registration floors target_snr at judges.SNR_FLOOR,
         # so an early stop can never deliver a sweep the judge then rejects
         wa.scan_data_flag = 1
     from atomize.epr_auto.primitives.exp import _snr_policy

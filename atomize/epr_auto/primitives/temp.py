@@ -24,25 +24,29 @@ def _rephase_check(session, setpoint, delta, reason):
     """Cooling/warming detunes the resonator, so the demod zero-order drifts:
     the 2026-07-03 oTP series measured a monotonic 215 deg -> 25 deg swing
     over 80..280 K at constant B1 (pulse amplitudes untouched throughout).
-    Drop auto_phase once the setpoint moves more than `delta` K from where it
-    was measured, so the run re-phases instead of silently carrying a stale
-    zero-order. pi_calibration survives on purpose — temperature does not
+    The tune.rep_rate recommendation is temperature-stale for the same
+    trigger — T1 itself changes strongly with temperature. Each is checked
+    against its OWN measurement temperature (they may have been tuned at
+    different points of a series) and dropped once the setpoint moves more
+    than `delta` K from it, so the run re-tunes instead of silently carrying
+    a stale value. pi_calibration survives on purpose — temperature does not
     move B1; only a vane move does (invalidate_fine_calibrations)."""
-    ap = session.state.get('auto_phase')
-    if not ap:
-        return
-    was = ap.get('temperature_k')
-    if was is None:
-        # tune._phase_temperature stamps the measured cryostat temperature
-        # even before any temp step runs, so None means the Lakeshore was
-        # unreachable at auto_phase time: nothing to compare against ->
-        # conservative drop
-        session.invalidate_phase(f'{reason} {setpoint} K, phase measured at an '
-                                 'unrecorded temperature')
-        return
-    if abs(float(setpoint) - float(was)) > float(delta):
-        session.invalidate_phase(f'{reason} {was} K -> {setpoint} K '
-                                 f'(> {delta} K)')
+    for key, what, invalidate in (
+            ('auto_phase', 'phase', session.invalidate_phase),
+            ('rep_rate', 'rep rate', session.invalidate_rep_rate)):
+        entry = session.state.get(key)
+        if not entry:
+            continue
+        was = entry.get('temperature_k')
+        if was is None:
+            # tune._phase_temperature stamps the measured cryostat temperature
+            # even before any temp step runs, so None means the Lakeshore was
+            # unreachable at measurement time: nothing to compare against ->
+            # conservative drop
+            invalidate(f'{reason} {setpoint} K, {what} measured at an '
+                       'unrecorded temperature')
+        elif abs(float(setpoint) - float(was)) > float(delta):
+            invalidate(f'{reason} {was} K -> {setpoint} K (> {delta} K)')
 
 
 def set_temperature(session, setpoint, heater_range=None, rephase_delta=REPHASE_DELTA_K):

@@ -28,7 +28,13 @@ class JudgeReport:
                 'score': self.score, **self.details}
 
 
-def echo_snr(y, min_snr=3.0):
+# default pass floor of echo_snr; steps that stop a sweep early on the same
+# metric (field.edfs target_snr) must not accept a target below this, or the
+# early stop hands the final hard judge a curve it is guaranteed to reject
+SNR_FLOOR = 3.0
+
+
+def echo_snr(y, min_snr=SNR_FLOOR):
     """SNR of a 1-D echo/sweep trace, robust to the smooth signal underneath:
     noise sigma from the median absolute point-to-point difference
     (MAD-of-diff), score = peak deviation from the median baseline in units
@@ -53,21 +59,42 @@ def echo_snr(y, min_snr=3.0):
                        {'min_snr': min_snr, 'noise_sigma': sigma})
 
 
-def phase_coherence(sig, min_r=0.7):
+def phase_coherence(sig, min_r=0.7, require_structure=False):
     """Resultant length R = |sum sig| / sum|sig| of a complex trace: 1.0 when
     every point shares one phase, ~1/sqrt(N) for pure noise. This is the
     right 'is the echo there, with a well-defined phase' gate for the SHORT
     traces auto_phase acquires — echo_snr's MAD-of-diff sigma has too few
     point-to-point differences to work with there. Unipolar traces only
-    (sign flips cancel in the resultant)."""
+    (sign flips cancel in the resultant).
+
+    R alone cannot tell a real echo from a constant instrumental phasor
+    (LO leakage surviving the phase cycle / residual IQ offset): both share
+    one phase. On a trace with real amplitude STRUCTURE the median-subtracted
+    deviations discriminate — an echo's amplitude moves along its one phase
+    axis, so the sign-blind principal-axis collinearity
+    R2 = |sum d^2| / sum|d|^2 (the auto_phase_zero trick: squaring folds the
+    +/- sign flips onto one axis) -> 1, while a constant phasor leaves only
+    isotropic noise deviations, R2 ~ 1/sqrt(N). `require_structure` gates on
+    R2 as well; leave it off for deliberately flat traces (auto_phase, a
+    flat rep-rate curve), where the two cases are indistinguishable in-band
+    and only the raw resultant is judged. R2 is always reported in the
+    details as `structure_r` for diagnostics."""
     sig = np.asarray(sig).ravel()
     denom = float(np.sum(np.abs(sig)))
     if denom == 0:
         return JudgeReport('phase_coherence', False, 0.0,
                            {'note': 'zero signal — no echo acquired'})
     r = float(np.abs(np.sum(sig)) / denom)
-    return JudgeReport('phase_coherence', r >= min_r, r,
-                       {'min_r': min_r, 'n': int(sig.size)})
+    d = sig - (np.median(sig.real) + 1j * np.median(sig.imag))
+    d2 = float(np.sum(np.abs(d) ** 2))
+    r2 = float(np.abs(np.sum(d ** 2)) / d2) if d2 > 0 else 0.0
+    details = {'min_r': min_r, 'n': int(sig.size), 'structure_r': round(r2, 4)}
+    passed = r >= min_r
+    if require_structure and passed and r2 < min_r:
+        passed = False
+        details['note'] = ('coherent resultant but structureless deviations '
+                           '— a constant offset (LO leakage), not an echo?')
+    return JudgeReport('phase_coherence', passed, r, details)
 
 
 def fit_quality(y, y_fit, n_params, min_adj_r2=0.9):

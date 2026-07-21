@@ -199,7 +199,7 @@ not autonomous without them.
 - [x] tune_up.yaml = canonical chain: power_for_length → field.edfs (auto) →
       echo_window → auto_phase → pi_calibration (+ commented temp prologue)
 
-## Phase 6 — Field series (`foreach:`) + SNR-driven scans — planned 2026-07-18
+## Phase 6 — Field series (`foreach:`) + SNR-driven scans — code DONE 2026-07-19, committed `94481c7` (planned 2026-07-18)
 Motivating workflow (user): several relaxation times at fixed T, different
 magnetic fields — expressible today only by repeating field.set/exp.* blocks
 by hand. Design validated against the real 2026-07 oTP campaign (see the
@@ -302,14 +302,14 @@ docs (this file); the site = the user manual.
       (StepFailures verbatim + locks + LivePlot behaviour); judges got a
       compact treatment inside protocols.md/tuning.md — decide if a
       dedicated page is still wanted.
-- [ ] **Auto-generated step reference** from the STEPS registry — verified
-      2026-07-18: `steps.py` introspects headless (summary, param class,
-      default, required, min/max, Choice options, help). Generator script
-      (pre-build or mkdocs-gen-files) emits one page per family
-      (tune/field/temp/exp) ⇒ the reference CANNOT drift from code. Side
-      effect: empty `help=''` strings become visible gaps — fill them in
-      steps.py as part of this phase (preset/tau_start/t_end/... are blank
-      today).
+- [x] **Auto-generated step reference** from the STEPS registry — verified
+      2026-07-18; DONE 2026-07-20 (4) via `docgen.py` (see the checked
+      "Generator placement" item above — implemented as a single
+      generated `steps.md`, not one page per family): `steps.py`
+      introspects headless (summary, param class, default, required,
+      min/max, Choice options, help) ⇒ the reference CANNOT drift from
+      code. Side effect handled: the empty `help=''` strings (26 params)
+      were filled in steps.py as part of this pass.
 - [ ] Hand-written pages:
       - Home — what epr_auto is (YAML protocol runner reusing the phasing
         Worker), architecture sketch, relation to the GUI tools
@@ -339,7 +339,7 @@ docs (this file); the site = the user manual.
       session.
 
 ## Phase 8 — Progress cap + auto rep-rate + auto EDFS — code DONE 2026-07-20
-## (same session as planned; UNCOMMITTED — needs hardware)
+## (same session as planned; committed `e339240` — hardware still pending)
 
 Three items (user request, post-Phase-6-review session):
 
@@ -767,7 +767,7 @@ clamp touched the Worker → mirror rule exercised).
   `- tune.auto_phase` snippets read as if no preset were involved at all.
   **COMMITTED: ITC `b9cbc66`** (+ hash record `6cdeaa0`).
 
-  ### >>> NEXT SESSION, FIRST THING: ONE code-review of `3be399d..b9cbc66` <<<
+  ### Review brief (DONE 2026-07-18, see that entry): ONE code-review of `3be399d..b9cbc66`
 
   **Scope = the whole unreviewed backlog, as ONE review, not three.** Three
   commits are unreviewed and they OVERLAP, so reviewing them separately would
@@ -1094,7 +1094,7 @@ clamp touched the Worker → mirror rule exercised).
   **COMMITTED+PUSHED: ITC `94481c7`** (review fixes earlier this session:
   `eeea8ac`).
 
-  ### >>> NEXT SESSION, FIRST THING: ONE Opus /code-review of Phase 6 `94481c7` <<<
+  ### Review brief (DONE 2026-07-20, see that entry): ONE Opus /code-review of Phase 6 `94481c7`
 
   Scope = the Phase 6 commit `94481c7` against the current tree. Files:
   protocol.py (Foreach/_parse_foreach/_apply_subst), runner.py
@@ -1295,9 +1295,10 @@ clamp touched the Worker → mirror rule exercised).
   protocols,steps,tuning}.md`, the `EPR automation (epr_auto)` nav
   subsection under Projects, and an "Automated tune-up and measurement"
   section on `projects/endstation.md`; `mkdocs build --strict` passes.
-  In Atomize_ITC (also UNCOMMITTED): `atomize/epr_auto/docgen.py`
-  (step-reference generator, FAMILIES-coverage guard) + steps.py help
-  strings filled for all 26 blank params.
+  In Atomize_ITC (committed `a3147f4` — see the 2026-07-20 (5) review
+  brief below): `atomize/epr_auto/docgen.py` (step-reference generator,
+  FAMILIES-coverage guard) + steps.py help strings filled for all 26
+  blank params.
   **Two real findings surfaced by the docs pass:**
   - **rephase_delta default bug (FIXED in steps.py): the 2026-07-18 user
     decision "5 K -> 1 K" was implemented only as temp.py's
@@ -1339,7 +1340,7 @@ clamp touched the Worker → mirror rule exercised).
   the runner — start with HARDWARE_CHECKLIST items 1-3 in supervised
   mode.**
 
-  ### >>> NEXT SESSION, FIRST THING: ONE Opus /code-review of `367b9bc..e339240` <<<
+  ### Review brief (DONE 2026-07-21, see that entry): ONE Opus /code-review of `367b9bc..e339240`
 
   Scope = BOTH unreviewed commits of 2026-07-20 against the current tree:
   `1c1432c` (exp_eseem/exp_field ScanData) + `e339240` (Phase 8). Files:
@@ -1408,3 +1409,145 @@ clamp touched the Worker → mirror rule exercised).
   `367b9bc..e339240` review: `1d1dc5b` touched primitives/field.py
   (edfs centering) and steps.py after that range — review against the
   current tree as planned.**
+
+- **2026-07-21** — **The `367b9bc..HEAD` Phase 8 code-review DONE** (the
+  usual harness: workflow, 3 Opus reviewers @ high effort over the briefed
+  dimensions + adversarial Opus verification of every non-note finding;
+  7 agents, ~428k tokens). **1 confirmed minor (FIXED), 2 downgraded to
+  notes on verification, 1 refuted, 4 reviewer notes, all brief questions
+  answered clean.**
+  - **CONFIRMED (minor) + FIXED: edfs target_snr below the judge floor
+    abandons a real line.** steps.py declared `target_snr: Float(min=1)`
+    while the final hard judge uses echo_snr's pass floor 3.0 — same
+    metric, different thresholds. A target in [1,3) stops the sweep early
+    at SNR ~2, the judge then rejects the same curve, edfs widens the span
+    x2 and ultimately returns field:None — abandoning a line that reaches
+    SNR>=3 at the full scan budget. The field.py comment's invariant
+    ("an early stop can never deliver a sweep the judge then rejects")
+    held only for target>=3. **Fix:** named constant `judges.SNR_FLOOR =
+    3.0` (echo_snr's default now references it), edfs registration
+    `Float(min=SNR_FLOOR)` + help states why, field.py comment notes the
+    enforced floor. exp.t1/t2 deliberately KEEP min=1 — their echo_snr
+    judge is advisory (`advisory_extra`), so a sub-3 target there is a
+    knowing "stop early, accept the warn", not a wrong outcome. Verified:
+    validate(2) raises / validate(3) passes, tune_up.yaml --test 6/6
+    green, docgen steps.md regenerated in atomize_docs (target_snr row:
+    `>= 3` + new help).
+  - **Downgraded to notes on verification (real observations, not
+    defects):** (1) 'rep_rate' is never invalidated on temp/field moves
+    (nothing ever drops it; T1_eff is strongly T-dependent) — but this is
+    the documented scope ("subsequent steps at the same field/
+    temperature") and the destructive case is exp.t1, not t2 (for a
+    fixed-rate tau sweep, saturation is a near-uniform amplitude
+    prefactor: SNR loss, not a Tm bias), and echo_snr/fit judges
+    partially catch it; (2) rep_rate has no preset-family check (unlike
+    pi_calibration) — a bipolar inversion-recovery preset cancels the
+    |mean| metric, BUT the phase_coherence hard judge (carried into
+    every return path incl. the flat-spread branch) catches exactly that
+    case; only an effectively-unipolar trace fits, and that is a
+    legitimate measurement.
+  - **Refuted:** "iq_cor==0 preset makes target_snr a silent no-op" —
+    unreachable: tune._acquire raises ValueError('preset must be saved
+    with IQ Correction: 2') up front in both --test and live before any
+    sweep; the worker's iq_cor==1 gate on ScanData is defensive
+    redundancy.
+  - **Notes (no action taken):** phase_coherence does no baseline
+    subtraction (echo_snr does) — a constant DC/LO-leakage offset gives
+    R=1.0 and can walk rep_rate's flat branch to rate_max with no real
+    echo; the flat-but-noisy (>5% spread) path clamps to rate_max via the
+    fit->over-rail route in the typical case but is fit-dependent, a
+    chance-monotone arrangement hard-fails coverage instead (fail-safe);
+    target_snr with the default scans=1 is silently inert (ceiling-only
+    policy, k<2 guard) — candidate load-time warning in _check_edfs/
+    _check_t1; docgen's "cannot drift from the code" header overstates —
+    only a NEW step family is caught (SystemExit), param/help drift needs
+    the manual re-run (banner mitigates).
+  - **Brief verdicts (all endorse shipped code):** ScanData sends
+    byte-consistent across all 4 sites, exp_eseem's `cycle*SCANS+k` index
+    correct, GUI-launched runs bit-identical (flag short-circuits before
+    the copies); Status min(100,...) clamp — nothing reads 100 as done
+    (GUI only setValue's; engine waits for the '' 'finished' message;
+    executor.py:273 `>=100 -> exit` is the separate dig_on preview path;
+    exp_eseem correctly left unclamped); mirror rule satisfied (executor
+    already unpacks ScanData generically in all modes; no worker-arg/
+    dig_start_exp change, gui_vs_engine re-run not load-bearing for this
+    range); cli.py live-gate 'None' flag is byte-equal to what the GUI
+    produces (main.py launches with no argv[1] -> same 'None' fallback;
+    nothing keys on len(sys.argv) or the literal; workers inherit via
+    fork); edfs nu_eff = nu_LO - nu_IF sign confirmed against
+    awg_correction's lower-sideband comments + iq_freq=-freq;
+    _detection_if_mhz --test-safe (pure parse), fallback harmless; all 26
+    help strings truthful; temp.py/session.py one-liners are the
+    'temp_param' -> 'temp.param' lock-file naming prose fix; saturation
+    transient at points=4/scans=1 negligible (slight fast bias — one more
+    reason the step is documented as not-for-quantitative-relaxation);
+    |mean| Rayleigh floor benign (the real hazard is the DC-offset note
+    above).
+  - **Candidate follow-ups (operator's call, none applied):** (a) drop
+    'rep_rate' in session invalidation on temperature (and maybe field)
+    moves; (b) median-subtract in phase_coherence before computing R;
+    (c) load-time warning when target_snr is set with scans<=1; (d) a
+    preset-family warn in tune.rep_rate mirroring pi_calibration's check.
+  - **UNCOMMITTED: the fix (judges.py/steps.py/field.py) + this log in
+    ITC; regenerated steps.md in atomize_docs.** Next: unchanged —
+    hardware run per HARDWARE_CHECKLIST.md.
+
+- **2026-07-21 (2)** — follow-ups (a) and (b) APPLIED per user direction,
+  plus an Opus ROADMAP cleanup pass (stale status markers).
+  - **(a) 'rep_rate' invalidated on TEMPERATURE moves — NOT field**
+    (user physics call: T1 is surely different at different T; the field
+    effect is minor and exists only in systems with two different spins —
+    rationale recorded in session.invalidate_rep_rate's docstring). All
+    THREE `session.state['rep_rate']` sites in tune.py now stamp
+    `temperature_k` via _phase_temperature (the flat branch had no stamp
+    at all); temp._rephase_check loops auto_phase AND rep_rate, each
+    against its OWN measurement temperature under the same rephase_delta
+    — this closes the gap a naive invalidate_phase piggyback would have
+    left (the old check early-returned when auto_phase was already gone,
+    so a stale rep_rate could outlive it; and in a series the two can be
+    measured at different temperatures). Vane moves still keep rep_rate
+    (T1 does not depend on B1). Verified: unit checks (within-delta keeps
+    both / big move drops both / rep_rate-alone dropped / independent
+    anchors), canned stamp temperature_k=200.0.
+  - **(b) phase_coherence corrected — NOT via the reviewer's naive
+    median-subtract**, which would have been a regression: auto_phase and
+    rep_rate traces are deliberately FLAT coherent traces, so subtracting
+    the median leaves pure noise and every genuine echo would fail the
+    judge. Correct discriminator = the auto_phase_zero sign-blind
+    principal-axis trick on the median-subtracted deviations:
+    R2 = |sum d^2|/sum|d|^2 (a real echo's amplitude moves along ONE
+    phase axis so squaring folds the +/- flips together, R2 -> 1; a
+    constant LO-leakage phasor leaves isotropic noise deviations,
+    R2 ~ 1/sqrt(N)). Always reported as `structure_r` in the details;
+    hard-gated only via new `require_structure=True`, which rep_rate sets
+    when spread >= _STRUCTURED_SPREAD = 0.15 (deviations then
+    signal-dominated — between 0.05 and 0.15 the gate would false-fail a
+    real low-SNR echo, so it stays off). Judge computation moved after
+    the spread is known. Flat curves keep the plain gate: leak vs a
+    genuinely rate-insensitive echo is INDISTINGUISHABLE in-band (both
+    are one constant phasor + noise) — documented in the code, exp
+    steps' echo_snr judge named as the backstop. Numeric checks: flat
+    echo passes plain, structured echo passes gated, DC leak fails gated
+    with a naming note, pure noise fails; all 3 protocol dry-runs green
+    (6/6, 4/4, 16/16) + direct rep_rate canned run.
+  - Docs synced: rephase_delta help strings (both temp registrations),
+    ARCHITECTURE.md "Temperature rules" (rep_rate row + independent
+    anchors + field-exemption rationale), tuning.md invalidation table
+    (three-column Kept incl. vane keeps rep_rate) + a leak-guard
+    paragraph in its tune.rep_rate section, steps.md regenerated.
+  - **ROADMAP cleanup (Opus agent, git-verified):** stale "UNCOMMITTED"
+    /"NEXT SESSION" markers corrected in place — Phase 8 header now
+    "committed `e339240` — hardware still pending" (the user's example),
+    three old ">>> NEXT SESSION <<<" review banners de-fanged to "Review
+    brief (DONE <date>, see that entry)" keeping the briefed content,
+    Phase 6 header now "code DONE 2026-07-19, committed `94481c7`",
+    docgen/help-strings clause now "committed `a3147f4`", Phase 7
+    step-reference checklist item ticked (single generated steps.md, not
+    per-family pages). Chronological per-entry "(uncommitted)" markers
+    that self-resolve later in the log were deliberately left as history.
+  - Remaining candidates from the review: (c) warn on target_snr with
+    scans<=1; (d) preset-family warn in tune.rep_rate. **UNCOMMITTED:
+    everything from both 2026-07-21 entries (ITC: judges/tune/temp/
+    session/steps/field + ARCHITECTURE + this file; atomize_docs:
+    steps.md + tuning.md).** Next: hardware run per
+    HARDWARE_CHECKLIST.md.
