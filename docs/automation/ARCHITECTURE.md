@@ -11,7 +11,7 @@ built on Atomize. Companion file: [ROADMAP.md](ROADMAP.md) (phases + session log
 | Protocol format | **YAML** for sequence/parameters; custom logic as named Python step plugins |
 | Execution context | Terminal process **with the Atomize GUI open** (deer_bench.py pattern: LivePlot socket reachable, cwd = `libs/`); also launchable through the GUI Start button (argv-compatible) |
 | Autonomy | Policy knob per protocol: `supervised` (pause every step) / `checkpointed` (pause at `checkpoint: true` steps) / `autonomous` (judges auto-approve, Telegram notify) |
-| Tuning scope v1 | auto-phase, π/π₂ calibration, EDFS + field setup. Resonator tuning: out of scope |
+| Tuning scope v1 | auto-phase, π and π/2 calibration, EDFS + field setup. Resonator tuning: out of scope |
 | π-calibration modes | **Amplitude sweep (default for AWG**, fixed length ⇒ fixed bandwidth, no time-grid quantization; preset `ampl_4s.phase_awg`) and length-increment nutation (`rabi_echo_4s.phase_awg`) — `mode: amplitude \| length` |
 | AWG timing grid | **3.2 ns default; opt-in 0.8 ns** (one DAC sample) via the preset's trailing `AWG grid:  0.8` line / GUI Settings toggle / `pb.awg_time_resolution('0.8 ns')`. TTL stays on 3.2 ns; sub-tick = zero samples in the DAC buffer; detection window residual corrected digitally at readout (use decimation ≤ 2). Plan: `docs/automation/AWG_FINE_STEP_PLAN.md` |
 | π-calibration strategy | **Two-stage** (agreed 2026-07-16): coarse = rotary vane sets the power regime ("power for desired length"), fine = per-pulse AWG amplitude sweep at fixed length. Classical length nutation stays available as `mode: length` (see "Flip-angle knobs" and "Tune-up completeness" below) |
@@ -107,7 +107,7 @@ implementation items in ROADMAP Phase 5.
 
 ### Length-nutation results must flow downstream (classical approach)
 
-`tune.pi_calibration(mode='length')` already measures π/π₂ **lengths**
+`tune.pi_calibration(mode='length')` already measures π and π/2 **lengths**
 (`rabi_echo_4s.phase_awg`, nonzero Length Increment) — what's missing is the
 consumer: experiment presets never receive the calibrated values (neither
 lengths nor amplitudes; session state stores them, nothing reads them).
@@ -124,7 +124,7 @@ Decision:
   on the coarse grid is coarse — the opt-in 0.8 ns fine grid is the fix).
   Amplitude-mode values patch the amplitude coefficient at fixed length.
 
-### Detection pulses inside the π/π₂ calibration sequences
+### Detection pulses inside the π and π/2 calibration sequences
 
 Lab convention (2026-07-17): the detection pair is **soft/selective** — about
 3–4× the target pulse length (target 22 ns ⇒ detection 60–90 ns). The presets
@@ -351,7 +351,11 @@ saves — treat operator stop as "finish early", not "discard".
   cycling, sweep types (incl. log-time for T1), digitizer handling to extract.
 - `atomize/script_examples/EPR_endstation/Pulsed_EPR/AWG/Relaxation/T2.py`,
   `cpmg*.py` — existing relaxation acquisition scripts.
-- `atomize/control_center/experiments/*.phase_awg` — preset library
-  (ed_4s, rabi_echo_4s, hahn_echo_4s, inversion_recovery_echo_4s_log, ...).
+- `atomize/control_center/experiments/*.phase_awg` — shipped preset library
+  (ed_4s, rabi_echo_4s, hahn_echo_4s, inversion_recovery_echo_4s_log, ...);
+  step DEFAULTS resolve here only (sha256-checked against
+  `epr_auto/default_preset_hashes.json`).
+- `atomize/epr_auto/presets/` — USER preset space; explicitly named presets
+  resolve protocol_dir → here → the shipped library.
 - `atomize/math_modules/fft.py` `auto_phase_zero` (principal-axis, sign-blind)
   — the auto-phase math; relaxation fits in the data-treatment math.

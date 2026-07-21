@@ -1643,6 +1643,67 @@ clamp touched the Worker → mirror rule exercised).
   - Next: hardware run per HARDWARE_CHECKLIST.md (now includes verifying
     the auto-enable log on a Shift-Offset-off preset at the bench).
 
+- **2026-07-21 (5)** — **Doc-review round 2 (user Q&A; Opus agent) +
+  overnight_t2 step-order fix** — UNCOMMITTED in both repos.
+  - **User-reported doc nits.** tuning.md field formula `(nu_LO -
+    nu_IF)` -> ν (the prose above already defines ν = ν_LO − ν_IF);
+    `π₂` -> "π and π/2" (presets.md, examples.md x2, ARCHITECTURE.md
+    x3); campaign-provenance prose stripped from all USER-FACING
+    material: examples.md x4 (incl. the token-less "adaptation the
+    campaign operator did by hand" phrase the grep gates missed),
+    field_series_t1t2.yaml comments x2, both steps.py rephase_delta
+    help strings ("a measured temperature series showed ~1 deg of
+    zero-order swing per K" — matches tuning.md's invalidation table),
+    steps.md regenerated via docgen. Internal provenance deliberately
+    KEPT: ROADMAP (history), ARCHITECTURE/HARDWARE_CHECKLIST oTP
+    mentions, judges.py code comment.
+  - **overnight_t2.yaml reordered** (user challenge upheld):
+    tune.auto_phase ran BEFORE field.edfs, so a cold start with the
+    magnet off-resonance phases on pure noise — phase_coherence on the
+    4-point trace fails the run at step 1 or randomly passes
+    (R ~ 1/sqrt(4)) and stores a garbage zero-order. The old prose's
+    "phase is field-independent" argument only covers not RE-phasing
+    after field moves; it presumes an echo exists at the parked field.
+    New order field.edfs -> auto_phase -> pi_calibration -> exp.t2
+    (matches tune_up/field_series); dry-run 4/4 green; examples.md
+    walkthrough + CSV numbering (001_edfs...), protocols.md minimal
+    example, quickstart.md transcript (re-taken from real dry-run
+    output) all updated.
+  - **Default-preset protection + step-order lint IMPLEMENTED (user
+    decision, Opus agent; UNCOMMITTED).** Motivation: the phasing
+    GUI's Save dialog writes into control_center/experiments/ — the
+    same dir PresetFile resolves step defaults from — so one user
+    save silently redefines hahn_echo_4s & co for every protocol that
+    omits `preset:`. User-chosen layout (INVERTED from the first
+    proposal): experiments/ STAYS the shipped/default folder (it is
+    the GUI's folder); NEW atomize/epr_auto/presets/ is the USER
+    space (README tracked, *.phase_awg git-ignored). PresetFile:
+    explicit bare names resolve protocol_dir -> presets/ ->
+    experiments/; DEFAULTS (ctx['is_default'], set by protocol.py's
+    default fallback AND pi_calibration's mode-dependent default in
+    steps.py) resolve experiments/ ONLY — a user file can never
+    shadow a default. Defense = sha256 integrity check:
+    default_preset_hashes.json (5 shipped defaults; regen/verify via
+    `python3 -m atomize.epr_auto.preset_hash [--update]`, list
+    derived from the STEPS registry) -> one deduped "differs from the
+    shipped version (edited in the GUI?)" warning per protocol.
+    New validation-warning channel: Protocol.warnings, printed by the
+    runner after the === header (dry-run AND live) and by `validate`
+    after the OK: line. Lint: tune.auto_phase / tune.pi_calibration
+    before any field.* step (foreach bodies walked in place) ->
+    "on a cold start there may be no echo to phase on" warning, never
+    an error (tuning at a manually parked field stays legitimate).
+    Docs: presets.md (resolution order + user dir + warning),
+    troubleshooting.md (both warnings verbatim), protocols.md (lint
+    note); steps.md unchanged (no help-text change). No
+    control_center/ or engine/ files touched -> gui_vs_engine
+    unaffected. Verified: 3 shipped protocols green with ZERO
+    warnings (4/4, 6/6, 16/16); lint fires in validate + dry-run on a
+    scratch auto_phase-first protocol; integrity warning fires
+    exactly once on an edited hahn_echo_4s (restored, git clean);
+    user-dir resolution + no-shadow-of-defaults confirmed;
+    preset_hash verify all five OK.
+
   ### >>> NEXT SESSION, FIRST THING: FULL-CODEBASE Opus review of atomize/epr_auto/ <<<
 
   User directive 2026-07-21: before the hardware campaign, ONE large code
