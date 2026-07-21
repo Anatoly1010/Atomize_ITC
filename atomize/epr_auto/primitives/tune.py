@@ -409,6 +409,20 @@ def rep_rate(session, preset, rate_min=20.0, rate_max=2000.0, steps=6,
     rates = np.geomspace(rate_min, rate_max, int(steps))   # slowest first
     periods = 1.0 / rates
 
+    # echo-family sanity (warn, not enforce — unlike pi_calibration's hard
+    # sweep-type check): |mean(sig)| assumes the preset's own sweep does not
+    # modulate the echo. A Log Time (inversion-recovery) or Amplitude
+    # (nutation) sweep flips the echo sign across the points, the complex
+    # mean cancels toward zero at every rate, and the saturation curve is
+    # meaningless — phase_coherence then rejects the run, but the warning
+    # names the actual mistake up front
+    family = snapshot.load_preset(preset).sweep_type
+    if family in ('Log Time', 'Amplitude'):
+        session.log(f'      warning: {family!r} preset — its sweep flips the '
+                    'echo sign across the points, so the |mean| amplitude '
+                    'metric cancels; use a plain echo preset (Linear Time '
+                    'tau sweep) for rep_rate')
+
     amps = []
     sigs = []
     for rate in rates:

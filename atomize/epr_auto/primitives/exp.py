@@ -193,8 +193,16 @@ def _snr_policy(session, target_snr, scans):
     - else shrink the ceiling to the projection, but only from k >= 2 (one
       early noisy estimate must not cut the run) and never below k.
     The executor's shared ratchet min-combines this with _duration_policy and
-    never re-raises a sent limit. None when no target is set."""
+    never re-raises a sent limit. None when no target is set; a target with
+    scans <= 1 is announced as inert (the policy only ever LOWERS the scan
+    ceiling — with one scan there is nothing to shrink, and it never raises
+    the count to chase the target)."""
     if target_snr is None:
+        return None
+    if int(scans) <= 1:
+        session.log(f'      warning: target_snr {float(target_snr):g} has no '
+                    f'effect with scans: {scans} — it only lowers the scan '
+                    'ceiling; set scans to the acceptable time budget')
         return None
     target = float(target_snr)
     state = {'announced': False}

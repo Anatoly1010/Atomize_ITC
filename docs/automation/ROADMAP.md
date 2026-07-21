@@ -1551,3 +1551,27 @@ clamp touched the Worker → mirror rule exercised).
     steps/field + ARCHITECTURE + this file), atomize_docs `2a3dbb9`
     (steps.md + tuning.md).** Next: hardware run per
     HARDWARE_CHECKLIST.md.
+
+- **2026-07-21 (3)** — candidates (c) + (d) APPLIED (user direction);
+  review round fully closed, no candidates remain.
+  - **(c) inert-target_snr warning** lives in exp._snr_policy — ONE site
+    covers all three consumers (field.edfs, exp.t1, exp.t2), not the
+    per-step check hooks the review suggested: load-time checks can only
+    raise ParamError (no warning channel at parse time), while
+    _snr_policy is evaluated before every acquisition, so the warning
+    shows in the --test pre-flight (the de-facto load-time gate) AND in
+    live runs. target_snr with scans <= 1 logs 'has no effect ... only
+    lowers the scan ceiling' and returns None (no callback).
+  - **(d) preset-family warn in tune.rep_rate** — warn, NOT enforce
+    (unlike pi_calibration's hard sweep-type check, deliberately):
+    sweep_type in ('Log Time', 'Amplitude') logs that the preset's own
+    sweep flips the echo sign across the points so the |mean| metric
+    cancels — names the actual mistake up front instead of leaving the
+    operator to decode the downstream phase_coherence rejection.
+    'Linear Time'/'ESEEM Avg'/'Field' sweeps stay silent (unipolar).
+  - Docs: tuning.md rep_rate section (family sentence), protocols.md
+    target_snr section (inert-at-scans-1 paragraph). No param changes ->
+    steps.md unchanged. Verified: both warnings fire in dry mode
+    (scans=1 -> warn+None, scans=8 -> live policy; Log Time preset ->
+    warn, hahn -> silent), field_series_t1t2 (scans: 48) stays
+    warning-free, all 3 protocol dry-runs green (6/6, 4/4, 16/16).
