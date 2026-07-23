@@ -30,6 +30,8 @@ All heavy routines need scipy (the `math` extra: pip install -e .[math]); scipy
 is imported lazily so importing this module never fails on a minimal install.
 """
 
+import warnings
+
 import numpy as np
 
 # scipy is an optional dependency (pip install -e .[math]) and slow to import
@@ -198,10 +200,34 @@ def background_fit(t, V, bg_start, bg_end=None, dim=3.0, fit_dim=False):
         d = dim
     lam = 1.0 - A
     B = np.exp(-(k*np.abs(t))**(d/3.0))
-    if abs(lam) < 1e-6:
-        lam = 1e-6
+    # A is bounded above at 1.5, so a degenerate tail fit (short trace whose form
+    # factor has not reached its asymptote, especially with fit_dim=True) can drive
+    # A > 1 and hence lam < 0.  F = (V/B - (1-lam))/lam would then divide by a
+    # negative number and hand a SIGN-FLIPPED form factor to the non-negative
+    # inversion, which returns garbage pinned at the r grid edge.  Clip positive,
+    # as _no_background and background_general already do.
+    lam_raw = lam
+    if lam < 0.02:
+        lam = 0.02
+    elif lam > 1.0:
+        lam = 1.0
+    # Clipping stops the sign flip but does NOT rescue the fit: a raw lam <= 0 means
+    # the tail window was degenerate, and the clipped result is merely wrong in a
+    # different way (P(r) pinned at the far r edge).  Flag it so the caller can say
+    # so instead of presenting a confident distance.
+    degenerate = not (0.02 <= lam_raw <= 1.0)
+    if degenerate:
+        warnings.warn(
+            'DEER background fit is degenerate: raw modulation depth lambda = '
+            '%.3f is outside (0, 1] (A = %.3f hit its bound). The tail window '
+            '[bg_start, bg_end] is probably too short or the trace has not '
+            'reached its asymptote; try fit_dim=False or a later bg_start. '
+            'lambda was clipped to %.3f and the resulting P(r) is unreliable.'
+            % (lam_raw, A, lam), RuntimeWarning, stacklevel=2)
     F = (V/B - (1 - lam))/lam
-    return {'lambda': lam, 'k': float(k), 'dim': float(d), 'A': float(A),
+    return {'lambda': lam, 'lambda_raw': float(lam_raw),
+            'lambda_degenerate': bool(degenerate),
+            'k': float(k), 'dim': float(d), 'A': float(A),
             'B': B, 'form_factor': F, 'V_norm': V, 't': t,
             'bg_start': float(bg_start),
             'bg_end': (None if bg_end is None else float(bg_end)), 'mask': mask}
@@ -291,6 +317,27 @@ def background_general(t, V, bg_start, bg_end=None,
 # --------------------------------------------------------------------------- #
 #  Tikhonov regularization + non-negativity
 # --------------------------------------------------------------------------- #
+def _crop_pre_zero(t, V):
+    """Drop samples recorded BEFORE the dipolar zero time.
+
+    `dipolar_kernel` evaluates |w*t|, so a sample at t < 0 is modelled as ordinary
+    dipolar evolution at +|t|. But the data there is the echo RISING EDGE, which
+    V(t) = B(t)[(1-lam) + lam*(K P)(t)] cannot reproduce -- the non-negative
+    inversion instead piles P(r) mass at short r to manufacture the fast decay,
+    dragging the reported distance down (~2.7 nm for a true ~5 nm pair on real
+    Bruker traces).
+
+    Every engine entry point crops here so the guarantee holds however the caller
+    arrived -- the GUI passes the full trace after shifting t0 into it, and the
+    benchmark harnesses crop themselves, which is why this never showed up there.
+    """
+    t = np.asarray(t, float); V = np.asarray(V, float)
+    m = t >= 0.0
+    if m.all():
+        return t, V, 0
+    return t[m], V[m], int((~m).sum())
+
+
 def regularization_matrix(n, order=2):
     """Discrete derivative operator L for Tikhonov smoothing (default 2nd order)."""
     if order == 0:
@@ -492,8 +539,7 @@ def deer_invert(t, V, r=None, bg_start=None, bg_end=None, dim=3.0, fit_dim=False
                                  dim=dim, fit_dim=fit_dim, nu_dd=nu_dd,
                                  bg_params=bg_params, **kwargs)
     _require_scipy()
-    t = np.asarray(t, float)
-    V = np.asarray(V, float)
+    t, V, _n_pre = _crop_pre_zero(t, V)
     r = default_r_axis() if r is None else np.asarray(r, float)
     if bg_start is None:
         bg_start = t[0] + 0.5*(t[-1] - t[0])
@@ -561,8 +607,7 @@ def deer_invert_joint(t, V, r=None, bg_start=None, bg_end=None, dim=3.0,
     return dict as `deer_invert`, with engine='joint'.
     """
     _require_scipy()
-    t = np.asarray(t, float)
-    V = np.asarray(V, float)
+    t, V, _n_pre = _crop_pre_zero(t, V)
     r = default_r_axis() if r is None else np.asarray(r, float)
     K = dipolar_kernel(t, r, nu_dd=nu_dd)
     L = regularization_matrix(len(r), reg_order)
@@ -1175,8 +1220,7 @@ def deer_invert_mellin(t, V, r=None, bg_start=None, bg_end=None, dim=3.0,
     are None then.
     """
     _require_scipy()
-    t = np.asarray(t, float)
-    V = np.asarray(V, float)
+    t, V, _n_pre = _crop_pre_zero(t, V)
     r = default_r_axis() if r is None else np.asarray(r, float)
     if bg_start is None:
         bg_start = t[0] + 0.5*(t[-1] - t[0])
@@ -1831,8 +1875,7 @@ def deer_invert_gauss(t, V, r=None, bg_start=None, bg_end=None, dim=3.0,
     """
     _require_scipy()
     from scipy.optimize import least_squares
-    t = np.asarray(t, float)
-    V = np.asarray(V, float)
+    t, V, _n_pre = _crop_pre_zero(t, V)
     r = default_r_axis() if r is None else np.asarray(r, float)
     if bg_start is None:
         bg_start = t[0] + 0.5*(t[-1] - t[0])
@@ -2264,9 +2307,22 @@ def _parabolic_zero_time(t, V, drop=0.15, smooth_w=5, search_frac=0.30):
     if n < 7:
         return None
     w = int(max(1, smooth_w))
-    Vs = np.convolve(V, np.ones(w)/w, mode='same') if w > 1 else V
+    # Edge-PRESERVING smoothing: mode='same' zero-pads, which depresses the first
+    # and last w//2 samples enough to move the argmax off a true peak sitting at
+    # the very start of the trace (the "trace already begins at t0" case).  Pad
+    # with the edge value instead so the ends are not artificially pulled down.
+    if w > 1:
+        Vs = np.convolve(np.pad(V, w//2, mode='edge'), np.ones(w)/w,
+                         mode='same')[w//2:w//2 + n]
+    else:
+        Vs = V
     ns = max(5, int(search_frac*n))
     i0 = int(np.argmax(Vs[:ns]))
+    if i0 >= ns - 1 and ns < n:
+        # The maximum is at the edge of the search window, i.e. the trace is still
+        # rising where we stopped looking: the echo top lies beyond search_frac and
+        # any parabola fitted here is extrapolation.  Let the caller fall back.
+        return None
     vpk = float(Vs[i0]); vmin = float(np.min(Vs)); amp = max(vpk - vmin, 1e-12)
     thr = vpk - drop*amp
     lo = i0
@@ -2277,13 +2333,24 @@ def _parabolic_zero_time(t, V, drop=0.15, smooth_w=5, search_frac=0.30):
         hi += 1
     lo = max(min(lo, i0 - 3), 0)
     hi = min(max(hi, i0 + 3), n - 1)
+    # Make the window SYMMETRIC about the peak, as the docstring promises.  The two
+    # threshold walks above are independent, and the echo's rising edge is far
+    # steeper than the dipolar+background decay after it, so the raw window can run
+    # many times further right than left (measured up to 22x on real Bruker data)
+    # and drag the least-squares vertex right out of the echo region.
+    half = max(3, min(i0 - lo, hi - i0))
+    lo = max(i0 - half, 0)
+    hi = min(i0 + half, n - 1)
     if hi - lo < 4:
         return None
     tt = t[lo:hi + 1]; vv = V[lo:hi + 1]
     a, b, _c = np.polyfit(tt - tt.mean(), vv, 2)
     if a >= 0:                                          # not concave -> no echo max
         return None
-    return float(tt.mean() - b/(2.0*a))
+    t0 = float(tt.mean() - b/(2.0*a))
+    if not (t[lo] <= t0 <= t[hi]):       # vertex extrapolated outside its own window
+        return None
+    return t0
 
 
 def fit_zero_time(t, V, bg_start=None, bg_end=None, n_grid=16, search_frac=0.15,
@@ -2454,8 +2521,7 @@ def deer_validate(t, V, r=None, bg_start=None, bg_starts=None, bg_end=None,
     for display).
     """
     _require_scipy()
-    t = np.asarray(t, float)
-    V = np.asarray(V, float)
+    t, V, _n_pre = _crop_pre_zero(t, V)
     r = default_r_axis() if r is None else np.asarray(r, float)
     if bg_starts is None:
         bg_starts = _bg_start_grid(t, bg_start)
