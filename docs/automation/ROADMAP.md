@@ -1728,3 +1728,206 @@ clamp touched the Worker → mirror rule exercised).
   review evidence (it mutates control_center *.param files — git
   checkout them after). After fixes: the hardware run per
   HARDWARE_CHECKLIST.md.
+
+  #### Status 2026-07-22: that review was STARTED and ABORTED mid-run — a
+  #### partial result is saved and a continuation script is ready.
+
+  Workflow `epr-auto-full-review`, run `wf_ef0c3f4c-385`: 33 agents spawned,
+  killed after ~19 min / 550k tokens. Everything is saved OUTSIDE the repo in
+  `~/epr_auto_dev/review_wf_ef0c3f4c/` — start from `RUNME.md`.
+
+  Completed: 4 of the 5 dimensions above — (1) state-flow, (2) error-paths,
+  (3) engine-contract, (5) protocol-surface — 16 bug/risk + 16 notes. Of the
+  verification fan-out only 2 skeptics finished, both on the SAME finding:
+  `power_for_length` leaks its length-mode probe into
+  `state['pi_calibration']` (primitives/tune.py:908) — BOTH CONFIRMED, one
+  adjusted bug -> risk. So the other 15 findings are UNVERIFIED single-reviewer
+  claims; do not act on them as-is.
+
+  Missing: dimension (4) physics/numerics entirely, and the verification of
+  everything else. To finish:
+
+      Workflow({scriptPath: '/home/anatoly/epr_auto_dev/review_wf_ef0c3f4c/finish.js'})
+
+  That is a CONTINUATION (physics reviewer + verification of the 13 deduped
+  outstanding findings; the 4 completed reviews are baked in as literals since
+  workflow scripts cannot read files). The 13 break down as state-flow 6,
+  error-paths 3, engine-contract 2, protocol-surface 2. Cost at the default
+  2 skeptics: 1 reviewer + 13x2 + physics' own findings x2 = ~35 agents,
+  roughly 500-700k tokens; `args:{skeptics:1}` -> ~18, `{physics:false}` -> 26,
+  both -> 13. Do NOT re-run the
+  original `workflow_script.js` saved beside it — it redoes all five dimensions
+  from scratch. Same-session `resumeFromRunId` is dead (that session is gone).
+  Gotcha: `run_state.json`'s `logs`/`workflowProgress` are stale snapshots —
+  `agent_transcripts/journal.jsonl` is the authoritative record.
+
+## Session 2026-07-23 — FULL-CODEBASE REVIEW COMPLETE (all 5 dimensions)
+
+Two runs, both 2-independent-adversarial-skeptics per bug/risk finding:
+- `wf_a3b140b7-f5b` — verification of the 13 findings from dimensions 1/2/3/5
+  (26 agents / 1.19M tokens). Ran `finish.js` with the physics reviewer removed.
+- `wf_c7db7a27-537` — dimension 4 (physics/numerics), the one the aborted run
+  never did, via the new `~/epr_auto_dev/review_wf_ef0c3f4c/physics.js`
+  (13 agents / 1.11M tokens). The reviewer was pointed at the already-written
+  report so it would not duplicate; the boundary given was "a state-flow or
+  error-path defect is theirs, a wrong NUMBER is yours — even in the same
+  function". Reviewer + skeptics were allowed throwaway numerical scripts
+  outside the repo and used them heavily (null distributions at 20k trials,
+  Monte-Carlo of the pi/pi2 chain, re-scoring of the 71-trace oTerPhenyl
+  campaign) — that empirical work is what makes these findings decisive.
+
+**Full report: [REVIEW_2026-07-23.md](REVIEW_2026-07-23.md)** — every finding
+with evidence chain, scenario, suggested fix and both skeptics verbatim;
+dimensions 1/2/3/5 first half, physics second half (findings P1-P7).
+
+Totals: **13 CONFIRMED, 4 PLAUSIBLE, 2 REFUTED, 20 notes.**
+
+The physics dimension also recorded the formulas it checked and found CORRECT
+(nu_eff = nu_LO - nu_IF, _G_PER_MHZ, the zero_order sign convention, the dB
+vane step, the 2-tau Hahn axis, _log_snap vs TimeLogSpinBox, ...) — read that
+list before re-deriving any of them.
+
+### >>> NEXT SESSION: FIX THE CONFIRMED FINDINGS <<<
+
+**Physics first — these are wrong NUMBERS reaching hardware, and two of them
+invalidate campaign data rather than merely risking it.**
+
+- [ ] **[F]** `primitives/tune.py:264` **bug** (P1) — the amplitude-transfer rule
+      `amp_slot = amp_cal * L_cal/L_slot` ignores the pulse ENVELOPE, but flip
+      angle is amp x L x <envelope>. The shipped default amplitude-cal preset
+      `ampl_4s.phase_awg` sweeps a GAUSS (28.8 ns, sigma 6.4) whose area factor
+      is 0.5434, and every shipped experiment preset it is applied to uses SINE
+      -> **pulses driven 1.84x too hard**. Reproduced in `run --test` on
+      overnight_t2: `apply_cal -> P2: 43.07 %` where the correct value is
+      23.41 %; the "pi/2" is a 166 deg rotation, the "pi" 331 deg, Hahn echo
+      amplitude 1.000 -> 0.0153 (~65x signal loss). Same error in
+      `_scale_detection_pair` (tune.py:699). ARCHITECTURE.md:131-140 states the
+      length-ratio rule and even names the shape mismatch, so this is not
+      blessed — the linearity argument it gives is a different (correct) point.
+      Fix: carry a shape factor with the calibration; minimum stop-gap is to
+      refuse/warn when `cal_slot.typ != target_slot.typ`.
+- [ ] **[F]** `primitives/judges.py:52` **bug** (P2) — `echo_snr` uses the REAL-
+      Gaussian MAD constant 0.6745 on COMPLEX traces (all five production
+      callers pass `i + 1j*q`). For complex noise |diff| is Rayleigh, median
+      1.17741, so sigma is over-estimated 1.746x and every score is under-
+      reported by the same factor; measured pure-noise median 0.59 against the
+      docstring's promised ~1.0. **Severity was disputed** — one skeptic
+      downgraded to note arguing SNR_FLOOR=3.0 was calibrated through the same
+      path, so the factors cancel. That premise is FALSE and I verified the
+      disproof by hand: the calibration harness
+      `~/epr_auto_dev/field_phase_snr_check.py:141-142` scores the ROTATED REAL
+      curve, ROADMAP.md:256-259 records the 3.0 validation off that run, and
+      both ARCHITECTURE.md:208 and ROADMAP.md:230 say the metric is "echo_snr on
+      the principal-axis-rotated accumulated curve" while the code passes the raw
+      complex trace. `exp.py:305-306` even computes `y = _to_real(sig)` and then
+      calls `echo_snr(sig)` — the rotated curve sits there unused, which reads
+      like the original intent. On the operator-blessed oTerPhenyl dataset the
+      shipped path **rejects 13 real traces the calibration deemed good**
+      (FAIL@3.0: 8 -> 21 of 71). Fix the constant AND re-check SNR_FLOOR
+      together — either alone shifts every gate 1.7x.
+- [ ] **[F]** `primitives/tune.py:799` **risk** (P3) — `_refine_minimum`'s de-bias
+      is itself biased: the observed minimum of `a*cos(theta)*exp(-k*x)` sits
+      before theta = pi, so the refinement trades the fit's unbiased root for a
+      biased one and `_anchored_pi2` propagates it. Noiseless synthetic: pi low
+      by 0.9 / 2.4 / 4.8 / 11.2 % as the envelope at pi falls 0.87 -> 0.26; pi/2
+      low by up to 12 %. Routine B1 inhomogeneity on a powder sample is enough.
+      Fix: refine on the envelope-corrected trace `(y-c0)*exp(+k*x)` — keeps the
+      variance reduction ROADMAP.md:573-575 wanted, removes the bias.
+- [ ] `primitives/tune.py:830` **risk** (P4) — pi/2 is never rail- or range-
+      checked (only pi is), and the rails JUDGE is emitted for amplitude mode
+      only, so a length-mode calibration can rail with no hard judge at all.
+      Monte-Carlo hit a degenerate basin returning pi2 = 1726 ns on a sweep
+      ending at 211 ns while echo_snr PASSED and every other judge is advisory;
+      `apply_calibration`'s length branch has no upper bound. Fix: guard pi2 like
+      pi, add a `length_rails` hard judge, and make apply_calibration reject a
+      result carrying `rails`.
+- [ ] `primitives/judges.py:62` **risk** (P5) — `phase_coherence`'s fixed
+      `min_r=0.7` is meaningless at `tune.auto_phase`'s default 4 points: measured
+      pure-noise pass rate **21.5 %** at n=4 (0.1 % at n=16). It is auto_phase's
+      ONLY judge and a hard one, so one cold-start run in five accepts a phase
+      derived from noise and `_session_overrides` rotates every subsequent build
+      in the campaign. Fix: N-aware floor `R >= max(min_r, C/sqrt(n))`, or raise
+      the default `points` to >= 16.
+
+Then the eight from dimensions 1/2/3/5, hardware-hazard first:
+
+Fix list, hardware-hazard first (details + suggested fixes in the report):
+
+- [ ] **[F]** `engine/executor.py:133` **bug** — terminal Ctrl-C also SIGINTs the
+      forked Worker child (same process group); the child dies via its blanket
+      `except BaseException` WITHOUT `digitizer_at_exit`/save, so the parent's
+      documented 'exit' handshake never gets the chance and the operator's
+      interrupt arrives as a RETRYABLE StepFailure — `retries: 1` re-runs the
+      acquisition, `foreach on_fail: continue` marches on for hours. Fix: shield
+      the child (`signal.signal(SIGINT, SIG_IGN)` / `os.setpgrp` as its first
+      action) so the save path runs, then let the interrupt abort the protocol.
+      NB this SUPERSEDES the refuted "single Ctrl-C swallowed" finding — same
+      defect, correct diagnosis; the `return`-in-`except` at :148 still wants
+      fixing as part of it.
+- [ ] **[F]** `engine/executor.py:155` **risk** — `finally: terminate()` SIGTERMs a
+      HEALTHY mid-scan worker, so `pulser_close()` never runs and the FPGA card
+      is left open for every later run. Fix: send 'exit' + drain with the
+      Open->FL handling before terminating as last resort. Folds in candidate (e).
+- [ ] `primitives/tune.py:853` **risk** — auto_phase/echo_window/pi_calibration
+      commit `session.state` BEFORE the caller-side judge gate; with
+      `on_fail: skip` a railed calibration reaches hardware via `_apply_cal`
+      (`'rails'` is never read by `apply_calibration`). Fix: stage the write,
+      commit only after the gate — mirror field.edfs/rep_rate.
+- [ ] `primitives/tune.py:908` **risk** — `power_for_length` discards the internal
+      nutation's judges: up to `max_iter-1` REAL vane moves computed from noise,
+      possibly toward 0 dB. Fix: gate each iteration on echo_snr, log cal_judges,
+      extend the step-order lint to power_for_length.
+- [ ] `primitives/temp.py:107` **risk** — `temp.set`/`temp.wait` never call
+      `ensure_hardware_locks()`, so a temp-prologue or temp-only protocol talks to
+      the Lakeshore with `temp.param` Lock='Off' while temp_control polls the same
+      GPIB session. Fix: seize the locks at the top of both (or once in `cli._run`);
+      then correct temp.py's docstring + checklist claims.
+- [ ] `session.py:86` **bug** — same-day re-run reuses the run dir; `manifest.json`
+      and `NNN_tag.csv` silently overwritten, defeating the crash-safety promise.
+      Fix: run-unique component (HHMMSS) or refuse when manifest.json exists.
+- [ ] `primitives/tune.py:444` **risk** — dry-run pre-flights only the SLOWEST
+      rep_rate grid point; a `rate_max` shorter than the sequence passes `--test`
+      and aborts live. Fix: pre-flight the whole grid in test mode.
+- [ ] `session.py:83` **note** (downgraded) — relative `output:` template resolves
+      against `libs/` (cwd after cli's chdir). Fix: resolve against the pre-chdir
+      CWD, or reject relative templates at load time.
+
+The 4 PLAUSIBLE ones are operator's-call — read both skeptics in the report
+before touching them; two were downgraded to note by the dissenting skeptic
+(`field.py:159` edfs magnet-parking, `field.py:123` projection undershoot),
+`exp.py:130` (sensitivity-mode rep_rate consumed by quantitative exp.t1/t2) is
+a cheap warning if you want it, and `exp.py:220` is candidate (b) below.
+
+### Deferred candidates — FINAL dispositions (all five now decided)
+
+- (a) flag<->callback pairing assert — **retire**; gate the flag on the policy instead.
+- (b) OVER_TICKS persistence for SNR projections — **retire the proposed fix, adopt
+  a margin.** The physics dimension showed the parked fix does not address the
+  actual mechanism: the undershoot is a SYSTEMATIC bias (echo_snr's `max|y|`
+  numerator is inflated at low k), not transient noise, so `SNR_k/sqrt(k)` runs
+  1.17 at k=1 down to 0.92 at k=64. Persistence barely helps (undershoot 0.81 ->
+  0.79 -> 0.71 for persist 1/2/3); a 1.15-1.2x margin on the target, or
+  calibrating out the low-k bias, is what works. Interacts with P2 — both are
+  echo_snr biases; land the constant fix first.
+- (c) k>=2 guard on the SNR stop branch — **retire**, now confirmed statistically
+  by the physics dimension as well as by dimensions 2 and 3.
+- (d) substitution context in ParamError — **retire**.
+- (e) try/except around executor callbacks — **upgraded**, folded into the
+  executor.py:155 fix above.
+
+### Still outstanding after the fixes
+
+1. Re-run `~/epr_auto_dev/gui_vs_engine.py` as review evidence (it mutates
+   `control_center/*.param` — `git checkout` them after).
+2. Then the hardware run per [HARDWARE_CHECKLIST.md](HARDWARE_CHECKLIST.md).
+
+Note P1/P2 change what the bench will SHOW: until the shape factor and the
+echo_snr constant are fixed, a weak echo on the bench is as likely to be one of
+these two defects as a real hardware problem. Fix them before trusting a
+tune-up result. Neither is in engine/ or control_center/, so gui_vs_engine is
+unaffected by the physics fixes.
+
+Review scripts kept at `~/epr_auto_dev/review_wf_ef0c3f4c/`: `finish.js`
+(dimensions 1/2/3/5 verification, physics stripped out) and `physics.js`
+(dimension 4 + verification). Both re-runnable; `physics.js` takes
+`args:{skeptics:N}`.
