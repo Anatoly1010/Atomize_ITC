@@ -124,3 +124,4 @@ The per-instrument function reference is markdown in `atomize/documentation/` (r
 - `test_flag = sys.argv[1]` is the standard way modules detect test mode. Preserve the `argv[1] == 'test'` branch when adding code that touches hardware.
 - Don't introduce `print()` statements in scripts launched by the GUI — use `general.message(...)`. Bare `print` to stdout is interpreted by the parent's line-parser and either dropped or shown raw.
 - `.param`, `.csv` temp files, `libs/status`, `libs/exam_adc.ini`, `libs/exam_edac.ini`, and `Metrolab_PT2025*` are git-ignored on purpose (see `.gitignore`). Don't commit local edits to them.
+- **Comments: never multi-line.** Omit the comment entirely when the code is obvious; otherwise one short line. Explain a fix in the commit message and the review/roadmap docs, not in the source. Docstrings are exempt (long explanatory docstrings are house style) but keep new ones tight.

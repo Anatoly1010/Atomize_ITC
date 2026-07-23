@@ -200,21 +200,13 @@ def background_fit(t, V, bg_start, bg_end=None, dim=3.0, fit_dim=False):
         d = dim
     lam = 1.0 - A
     B = np.exp(-(k*np.abs(t))**(d/3.0))
-    # A is bounded above at 1.5, so a degenerate tail fit (short trace whose form
-    # factor has not reached its asymptote, especially with fit_dim=True) can drive
-    # A > 1 and hence lam < 0.  F = (V/B - (1-lam))/lam would then divide by a
-    # negative number and hand a SIGN-FLIPPED form factor to the non-negative
-    # inversion, which returns garbage pinned at the r grid edge.  Clip positive,
-    # as _no_background and background_general already do.
+    # A > 1 on a degenerate tail fit flips the sign of F; clip as the siblings do
     lam_raw = lam
     if lam < 0.02:
         lam = 0.02
     elif lam > 1.0:
         lam = 1.0
-    # Clipping stops the sign flip but does NOT rescue the fit: a raw lam <= 0 means
-    # the tail window was degenerate, and the clipped result is merely wrong in a
-    # different way (P(r) pinned at the far r edge).  Flag it so the caller can say
-    # so instead of presenting a confident distance.
+    # clipping stops the sign flip but the fit is still degenerate -- say so
     degenerate = not (0.02 <= lam_raw <= 1.0)
     if degenerate:
         warnings.warn(
@@ -318,18 +310,12 @@ def background_general(t, V, bg_start, bg_end=None,
 #  Tikhonov regularization + non-negativity
 # --------------------------------------------------------------------------- #
 def _crop_pre_zero(t, V):
-    """Drop samples recorded BEFORE the dipolar zero time.
+    """Drop samples before the dipolar zero time.
 
-    `dipolar_kernel` evaluates |w*t|, so a sample at t < 0 is modelled as ordinary
-    dipolar evolution at +|t|. But the data there is the echo RISING EDGE, which
-    V(t) = B(t)[(1-lam) + lam*(K P)(t)] cannot reproduce -- the non-negative
-    inversion instead piles P(r) mass at short r to manufacture the fast decay,
-    dragging the reported distance down (~2.7 nm for a true ~5 nm pair on real
-    Bruker traces).
-
-    Every engine entry point crops here so the guarantee holds however the caller
-    arrived -- the GUI passes the full trace after shifting t0 into it, and the
-    benchmark harnesses crop themselves, which is why this never showed up there.
+    `dipolar_kernel` evaluates |w*t|, so a t < 0 sample is modelled as evolution at
+    +|t|; the inversion then piles P(r) mass at short r to fit the echo rising edge
+    (a 5 nm pair reads ~2.7 nm). Called from every engine entry point: the GUI
+    passes the full trace, only the benchmark harnesses crop themselves.
     """
     t = np.asarray(t, float); V = np.asarray(V, float)
     m = t >= 0.0
@@ -2307,10 +2293,7 @@ def _parabolic_zero_time(t, V, drop=0.15, smooth_w=5, search_frac=0.30):
     if n < 7:
         return None
     w = int(max(1, smooth_w))
-    # Edge-PRESERVING smoothing: mode='same' zero-pads, which depresses the first
-    # and last w//2 samples enough to move the argmax off a true peak sitting at
-    # the very start of the trace (the "trace already begins at t0" case).  Pad
-    # with the edge value instead so the ends are not artificially pulled down.
+    # edge-pad: mode='same' zero-pads and pulls the argmax off a peak at t[0]
     if w > 1:
         Vs = np.convolve(np.pad(V, w//2, mode='edge'), np.ones(w)/w,
                          mode='same')[w//2:w//2 + n]
@@ -2319,9 +2302,7 @@ def _parabolic_zero_time(t, V, drop=0.15, smooth_w=5, search_frac=0.30):
     ns = max(5, int(search_frac*n))
     i0 = int(np.argmax(Vs[:ns]))
     if i0 >= ns - 1 and ns < n:
-        # The maximum is at the edge of the search window, i.e. the trace is still
-        # rising where we stopped looking: the echo top lies beyond search_frac and
-        # any parabola fitted here is extrapolation.  Let the caller fall back.
+        # still rising at the window edge -- echo top is beyond search_frac
         return None
     vpk = float(Vs[i0]); vmin = float(np.min(Vs)); amp = max(vpk - vmin, 1e-12)
     thr = vpk - drop*amp
@@ -2333,11 +2314,7 @@ def _parabolic_zero_time(t, V, drop=0.15, smooth_w=5, search_frac=0.30):
         hi += 1
     lo = max(min(lo, i0 - 3), 0)
     hi = min(max(hi, i0 + 3), n - 1)
-    # Make the window SYMMETRIC about the peak, as the docstring promises.  The two
-    # threshold walks above are independent, and the echo's rising edge is far
-    # steeper than the dipolar+background decay after it, so the raw window can run
-    # many times further right than left (measured up to 22x on real Bruker data)
-    # and drag the least-squares vertex right out of the echo region.
+    # symmetric, as documented: the raw walks run up to 22x wider on the decay side
     half = max(3, min(i0 - lo, hi - i0))
     lo = max(i0 - half, 0)
     hi = min(i0 + half, n - 1)
