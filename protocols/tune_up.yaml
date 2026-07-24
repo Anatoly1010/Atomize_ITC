@@ -5,7 +5,7 @@
 sample: test_sample
 autonomy: checkpointed
 notify: none                  # telegram: bot_message on checkpoint/finish/abort
-# output: ~/epr_data/{date}_{sample}   # run-dir template (default shown)
+# output: ~/epr_data/epr_auto_{date}_{sample}   # run-dir template (default shown)
 
 steps:
   # optional temperature prologue (uncomment for a cryostat run)

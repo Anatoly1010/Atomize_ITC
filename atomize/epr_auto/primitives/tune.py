@@ -26,7 +26,7 @@ from scipy.optimize import curve_fit
 from atomize.epr_auto.engine import executor, snapshot
 from atomize.epr_auto.primitives.judges import (
     JudgeReport, amplitude_rails, convergence, echo_snr, fit_quality,
-    phase_coherence, pi_ratio_linearity,
+    length_rails, phase_coherence, pi_ratio_linearity,
 )
 
 # canned dry-run numbers (ratio deliberately != 2: the linearity judge must
@@ -150,9 +150,12 @@ def _phase_temperature(session):
     phase unconditionally. None only when the Lakeshore is off/unreachable
     (the check then keeps its conservative drop). Read here, at measurement
     time, not in _rephase_check: temp.wait also covers external setpoints,
-    where the temperature may already be ramping by check time."""
+    where the temperature may already be ramping by check time. A setpoint
+    that temp.wait never confirmed ('reached' False) is not trusted — fall
+    through to the measured channel so a failed/skipped wait can't anchor a
+    later re-phase test at a temperature the cryostat never reached."""
     t = session.state.get('temperature')
-    if t:
+    if t and t.get('reached'):
         return t.get('setpoint')
     try:
         return float(session.temp_controller.tc_temperature('B'))
@@ -160,7 +163,7 @@ def _phase_temperature(session):
         return None
 
 
-def auto_phase(session, preset, points=4, scans=1):
+def auto_phase(session, preset, points=16, scans=1):
     """Acquire a short echo run, measure the residual signal phase
     (principal-axis auto_phase_zero) and store the corrected zero-order
     (digitizer_demodulate rotates by exp(-i*zero_order), so the update is
@@ -173,8 +176,8 @@ def auto_phase(session, preset, points=4, scans=1):
     if acq is None:
         result = {'phase_deg': 0.0, 'zero_order_deg': pre.zero_order_deg,
                   'temperature_k': at_k, 'canned': True}
-        session.state['auto_phase'] = {'zero_order_deg': pre.zero_order_deg,
-                                       'temperature_k': at_k}
+        session.stage_state('auto_phase', {'zero_order_deg': pre.zero_order_deg,
+                                           'temperature_k': at_k})
         return result, [JudgeReport('phase_coherence', True, float('inf'),
                                     {'note': 'dry-run, not judged'})]
 
@@ -184,8 +187,8 @@ def auto_phase(session, preset, points=4, scans=1):
     used = pre.zero_order_deg          # post-build: includes session override
     new_zero = round((used - phi) % 360.0, 2)
 
-    session.state['auto_phase'] = {'zero_order_deg': new_zero,
-                                   'temperature_k': at_k}
+    session.stage_state('auto_phase', {'zero_order_deg': new_zero,
+                                       'temperature_k': at_k})
     result = {'phase_deg': round(phi, 2), 'zero_order_deg': new_zero,
               'temperature_k': at_k, 'data_file': path}
     # phase_coherence, not echo_snr: a `points`-long trace has too few
@@ -194,6 +197,29 @@ def auto_phase(session, preset, points=4, scans=1):
 
 
 # ------------------------------------------------- calibration hand-off
+
+def _envelope_area(typ, length, sigma):
+    """Mean of the AWG envelope over the pulse, peak-referenced (the driver
+    generates amp * envelope with envelope peak 1, so the on-resonance flip
+    angle goes as amp * length * area — Insys_FPGA define_buffer shapes).
+    SINC uses the signed mean: its negative lobes subtract rotation. None
+    for shapes the linear rule cannot model (adiabatic WURST/SECH)."""
+    if typ == 'SINE':
+        return 1.0
+    if typ in ('GAUSS', 'SINC') and sigma > 0 and length > 0:
+        t = (np.arange(4096) + 0.5) * (float(length) / 4096)
+        if typ == 'GAUSS':
+            env = np.exp(-0.5 * ((t - length / 2) / float(sigma)) ** 2)
+        else:
+            env = np.sinc(2 * (t - length / 2) / float(sigma))
+        return float(np.mean(env))
+    return None
+
+
+def _slot_area(s, grid):
+    return _envelope_area(s.typ, snapshot._snap(s.length, grid),
+                          snapshot._snap(s.sigma, grid))
+
 
 def _infer_cal_map(preset):
     """Default apply_cal mapping (ARCHITECTURE.md 'Tune-up completeness'):
@@ -241,6 +267,10 @@ def apply_calibration(session, preset, mapping=None):
     if cal.get('pi') is None or cal.get('pi2') is None:
         raise ValueError('apply_cal: the pi_calibration result is incomplete '
                          f"(pi={cal.get('pi')}, pi2={cal.get('pi2')})")
+    if cal.get('rails'):
+        raise ValueError(f"apply_cal: the pi_calibration result railed "
+                         f"({cal['rails']}) — not a valid calibration; "
+                         're-run the coarse power stage')
     if mapping is None:
         mapping = _infer_cal_map(preset)
 
@@ -254,14 +284,22 @@ def apply_calibration(session, preset, mapping=None):
                              f'{preset.path}')
         value = float(cal['pi' if role == 'pi' else 'pi2'])
         if cal['mode'] == 'amplitude':
-            # standard inverse-length scaling (the amp is nearly linear, lab
-            # fact 2026-07-17): the calibration measured amp(theta) at its own
-            # swept-pulse length, so a slot of a different length needs
-            # amp * L_cal / L_slot. Equal lengths -> the value verbatim.
+            # flip angle ~ amp * L * <envelope>: the area factor rides along with the length ratio
             l_cal = cal.get('length_ns')
             if l_cal:
                 l_slot = snapshot._snap(s.length, grid)
-                value = round(value * float(l_cal) / l_slot, 2)
+                f_cal = cal.get('shape_factor')
+                f_slot = _slot_area(s, grid)
+                if f_cal is None or f_slot is None:
+                    if s.typ == cal.get('shape_typ') and l_slot == float(l_cal):
+                        f_cal = f_slot = 1.0   # identical envelope: cancels
+                    else:
+                        raise ValueError(
+                            'apply_cal: cannot transfer the calibration from '
+                            f"a {cal.get('shape_typ')} pulse to {slot_name} "
+                            f'({s.typ}) — no envelope area factor for this '
+                            'shape; calibrate with a matching preset')
+                value = round(value * float(l_cal) * f_cal / (l_slot * f_slot), 2)
             if value > 100.0:
                 if cal.get('canned'):
                     # dry-run: the canned pi/pi2 are placeholders, so an
@@ -306,8 +344,8 @@ def echo_window(session, preset, factor=2.0, sweeps=3):
                   'win_right_ns': pre.win_right_ns,
                   'center_ns': round((pre.win_left_ns + pre.win_right_ns) / 2, 1),
                   'fwhm_ns': None, 'canned': True}
-        session.state['echo_window'] = {'win_left_ns': pre.win_left_ns,
-                                        'win_right_ns': pre.win_right_ns}
+        session.stage_state('echo_window', {'win_left_ns': pre.win_left_ns,
+                                            'win_right_ns': pre.win_right_ns})
         return result, [JudgeReport('echo_in_trace', True, float('inf'),
                                     {'note': 'dry-run, not judged'})]
 
@@ -317,7 +355,8 @@ def echo_window(session, preset, factor=2.0, sweeps=3):
         on_message=lambda m: session.log(f'      worker: {m}'))
     t = t_s * 1e9                      # dig_on plots the trace axis in seconds
     sig = i + 1j * q
-    mag = _smooth(np.abs(sig))
+    tpp = 0.4 * pre.decimation         # ADC grid after decimation
+    mag = _smooth(np.abs(sig), max(3, round(3.0 / tpp)) | 1)  # ~3 ns box, not trace-scaled
 
     c_idx = int(np.argmax(mag))
     peak = float(mag[c_idx])
@@ -333,7 +372,6 @@ def echo_window(session, preset, factor=2.0, sweeps=3):
     # trace boundary means the echo is cut by the acquisition window
     resolved = below_l.size > 0 and below_r.size > 0
 
-    tpp = 0.4 * pre.decimation         # ADC grid after decimation
     t_end = float(t[-1])
     win_l = max(0.0, math.floor((center - fwhm * factor / 2) / tpp) * tpp)
     win_r = min(t_end, math.ceil((center + fwhm * factor / 2) / tpp) * tpp)
@@ -343,7 +381,8 @@ def echo_window(session, preset, factor=2.0, sweeps=3):
     np.savetxt(path, np.column_stack((t, i, q)), delimiter=',',
                header='time_ns,i_mv,q_mv')
 
-    session.state['echo_window'] = {'win_left_ns': win_l, 'win_right_ns': win_r}
+    session.stage_state('echo_window', {'win_left_ns': win_l,
+                                        'win_right_ns': win_r})
     result = {'win_left_ns': win_l, 'win_right_ns': win_r,
               'center_ns': round(center, 1), 'fwhm_ns': round(fwhm, 1),
               'data_file': path}
@@ -440,22 +479,25 @@ def rep_rate(session, preset, rate_min=20.0, rate_max=2000.0, steps=6,
                          points=points, scans=scans)
         acq = _acquire(session, wa, pre.sweep_type,
                        f'rep_rate_{rate:.4g}Hz', log=session.log)
-        if acq is None:                        # dry-run: canned after the
-            rec = _recommend_rate(_CANNED_T1_EFF, factor, mode,   # pre-flight
-                                  rate_max, session.log)
-            result = {'t1_eff': '1.2 ms', 't1_eff_s': _CANNED_T1_EFF,
-                      'rep_rate_hz': rec, 'mode': mode, 'canned': True}
-            session.state['rep_rate'] = {'t1_eff_s': _CANNED_T1_EFF,
-                                         'rep_rate_hz': rec, 'mode': mode,
-                                         'temperature_k': _phase_temperature(session)}
-            return result, [JudgeReport('rep_rate_fit', True, float('inf'),
-                                        {'note': 'dry-run, not judged'})]
+        if acq is None:
+            continue          # dry-run: still pre-flight every grid rate
         x, i, q, path = acq
         sig = i + 1j * q
         sigs.append(sig)
         amps.append(float(np.abs(np.mean(sig))))
         session.log(f'      {rate:.4g} Hz (period {periods[len(amps) - 1] * 1e3:.3g} ms): '
                     f'echo amplitude {amps[-1]:.4g}')
+
+    if session.test:          # every rate pre-flighted above; canned result
+        rec = _recommend_rate(_CANNED_T1_EFF, factor, mode,
+                              rate_max, session.log)
+        result = {'t1_eff': '1.2 ms', 't1_eff_s': _CANNED_T1_EFF,
+                  'rep_rate_hz': rec, 'mode': mode, 'canned': True}
+        session.stage_state('rep_rate', {'t1_eff_s': _CANNED_T1_EFF,
+                                         'rep_rate_hz': rec, 'mode': mode,
+                                         'temperature_k': _phase_temperature(session)})
+        return result, [JudgeReport('rep_rate_fit', True, float('inf'),
+                                    {'note': 'dry-run, not judged'})]
 
     amps = np.asarray(amps)
     curve_path = session.save_path('rep_rate_curve')
@@ -483,9 +525,10 @@ def rep_rate(session, preset, rate_min=20.0, rate_max=2000.0, steps=6,
     if spread < _FLAT_SPREAD:
         # flat within noise: even the fastest tested rate does not saturate
         rec = float(f'{rate_max:.4g}')
-        session.state['rep_rate'] = {'t1_eff_s': None, 'rep_rate_hz': rec,
-                                     'mode': mode,
-                                     'temperature_k': _phase_temperature(session)}
+        session.stage_state('rep_rate',
+                            {'t1_eff_s': None, 'rep_rate_hz': rec,
+                             'mode': mode,
+                             'temperature_k': _phase_temperature(session)})
         judges.append(JudgeReport(
             'rep_rate_fit', True, 0.0,
             {'note': f'flat within {spread:.1%} — no saturation across the '
@@ -532,9 +575,9 @@ def rep_rate(session, preset, rate_min=20.0, rate_max=2000.0, steps=6,
 
     rec = _recommend_rate(t1_eff, factor, mode, rate_max, session.log)
     from atomize.epr_auto.primitives.exp import _fmt_s   # lazy: exp imports tune
-    session.state['rep_rate'] = {'t1_eff_s': t1_eff, 'rep_rate_hz': rec,
-                                 'mode': mode,
-                                 'temperature_k': _phase_temperature(session)}
+    session.stage_state('rep_rate',
+                        {'t1_eff_s': t1_eff, 'rep_rate_hz': rec, 'mode': mode,
+                         'temperature_k': _phase_temperature(session)})
     judges.append(JudgeReport('rep_rate_fit', True, t1_eff,
                               {'residual_at_slowest': round(residual, 4),
                                'rep_rate_hz': rec}))
@@ -551,8 +594,10 @@ def _nutation_model(x, a, b, s, k, c0):
     return a * np.cos(b * x + s * x ** 2) * np.exp(-k * x) + c0
 
 
-def _smooth(y):
-    w = max(3, len(y) // 20) | 1
+def _smooth(y, w=None):
+    if w is None:
+        w = max(3, len(y) // 20)
+    w = max(1, int(w)) | 1
     return np.convolve(y, np.ones(w) / w, mode='same')
 
 
@@ -674,10 +719,11 @@ def _scale_detection_pair(pre, slot, pi_v, pi2_v, l_cal, log):
     """Soft/selective detection pair re-scaling after a fine amplitude cal
     (ARCHITECTURE.md 'Detection pulses'): pair = active MW pulses (not the
     swept slot) at >= _SOFT_LEN_RATIO x the swept pulse's length, roles by
-    relative amplitude (lower = pi/2); the standard inverse-length rule
-    amp_det(theta) = amp_cal(theta) * L_cal / L_det (the amp is nearly
-    linear). Returns {slot_index: {role, amplitude, length_ns}}, empty when
-    there is no recognizable pair (preset-stored values stay in force)."""
+    relative amplitude (lower = pi/2); flip angle ~ amp * L * <envelope>, so
+    amp_det(theta) = amp_cal(theta) * (L*f)_cal / (L*f)_det with f the
+    envelope area factor (the amp is nearly linear). Returns
+    {slot_index: {role, amplitude, length_ns}}, empty when there is no
+    recognizable pair (preset-stored values stay in force)."""
     swept_len = pre.slots[slot].length
     pair = [(i, s) for i, s in enumerate(pre.slots)
             if i > 0 and i != slot and s.active
@@ -685,6 +731,7 @@ def _scale_detection_pair(pre, slot, pi_v, pi2_v, l_cal, log):
             and s.length >= _SOFT_LEN_RATIO * swept_len]
     if not pair or l_cal is None:
         return {}
+    f_cal = _slot_area(pre.slots[slot], pre.awg_grid)
     coefs = sorted({s.coef for _, s in pair})
     if len(pair) == 1:
         roles = {pair[0][0]: 'pi'}          # single refocusing pulse
@@ -696,8 +743,15 @@ def _scale_detection_pair(pre, slot, pi_v, pi2_v, l_cal, log):
         return {}
     out = {}
     for i, s in pair:
+        f_det = _slot_area(s, pre.awg_grid)
+        if f_cal is None or f_det is None:
+            log(f'      detection pair: no envelope area factor for '
+                f'{pre.slots[slot].typ} -> P{i + 1} ({s.typ}) — '
+                'preset-stored values left in force')
+            return {}
         amp = ((pi_v if roles[i] == 'pi' else pi2_v)
-               * float(l_cal) / snapshot._snap(s.length, pre.awg_grid))
+               * float(l_cal) * f_cal
+               / (snapshot._snap(s.length, pre.awg_grid) * f_det))
         if amp > 100.0:
             log(f'      detection pair: P{i + 1} would need {round(amp, 2)}% '
                 '(> 100%) — preset-stored values left in force')
@@ -709,7 +763,7 @@ def _scale_detection_pair(pre, slot, pi_v, pi2_v, l_cal, log):
 
 def pi_calibration(session, preset, mode='amplitude', channel='AWG',
                    points=None, scans=None, step=None, hold_amplitude=None,
-                   refine=False, _pair_override=None):
+                   refine=False, _pair_override=None, _stage=True):
     """Fine stage: nutation curve of the swept pulse -> amp/length of pi and
     pi/2, extracted independently through the theta(x) = b*x + s*x^2 fit.
 
@@ -723,7 +777,9 @@ def pi_calibration(session, preset, mode='amplitude', channel='AWG',
     pass always runs the preset-stored pair — the nutation extremum position
     is first-order independent of pair errors). refine=True re-runs the
     nutation once with the re-scaled pair patched in (_pair_override is that
-    recursion's internal channel)."""
+    recursion's internal channel). _stage=False (power_for_length's internal
+    probe) skips the session-state staging so the probe never leaks into
+    state['pi_calibration']."""
     if channel != 'AWG':
         raise ValueError('only the AWG channel is supported (RECT is a later phase)')
 
@@ -748,8 +804,11 @@ def pi_calibration(session, preset, mode='amplitude', channel='AWG',
     # the swept pulse's fixed quantity, needed to transfer the calibration to
     # pulses of a different length (apply_cal's inverse-length amplitude scaling)
     if mode == 'amplitude':
+        f_cal = _slot_area(pre.slots[slot], pre.awg_grid)
         context = {'length_ns': snapshot._snap(pre.slots[slot].length,
-                                               pre.awg_grid)}
+                                               pre.awg_grid),
+                   'shape_typ': pre.slots[slot].typ,
+                   'shape_factor': round(f_cal, 6) if f_cal is not None else None}
     else:
         context = {'held_amplitude': pre.slots[slot].coef}
 
@@ -763,7 +822,8 @@ def pi_calibration(session, preset, mode='amplitude', channel='AWG',
         if det:
             result['detection_pair'] = {f'P{i + 1}': dict(v)
                                         for i, v in det.items()}
-        session.state['pi_calibration'] = result
+        if _stage:
+            session.stage_state('pi_calibration', result)
         judges = [pi_ratio_linearity(pi_v, pi2_v)]
         if mode == 'amplitude':
             judges.append(amplitude_rails(pi_v))
@@ -775,7 +835,8 @@ def pi_calibration(session, preset, mode='amplitude', channel='AWG',
             return pi_calibration(session, preset, mode, channel, points,
                                   scans, step, hold_amplitude, refine=False,
                                   _pair_override={i: v['amplitude']
-                                                  for i, v in det.items()})
+                                                  for i, v in det.items()},
+                                  _stage=_stage)
         return result, judges
 
     x, i, q, path = acq
@@ -786,18 +847,17 @@ def pi_calibration(session, preset, mode='amplitude', channel='AWG',
     judges = [echo_snr(sig)]
     y, popt, y_fit = _oriented_fit(x, _to_real(sig))
     if popt is not None:
-        _, b, s, _, _ = popt
+        a_f, b, s, k_f, c0_f = popt
         judges.append(fit_quality(y, y_fit, n_params=5))
         pi_v = _theta_root(b, s, math.pi)
         pi2_v = _theta_root(b, s, math.pi / 2)
-        # de-bias against the fit's s/k degeneracy: pi from the model-free
-        # parabola vertex at the observed minimum, pi/2 from a re-fit with
-        # theta anchored at that measured pi
+        # de-bias vertex/anchor on the envelope-corrected trace: the raw damped cosine's minimum sits before theta = pi
         if pi_v is not None and pi_v <= x[-1]:
+            yc = (y - c0_f) * np.exp(k_f * x)
             w = (math.pi / 2) / (b + 2 * s * pi_v) if (b + 2 * s * pi_v) > 0 else 0
             if w > 0:
-                pi_v = _refine_minimum(x, y, pi_v, w)
-            anchored = _anchored_pi2(x, y, pi_v, popt)
+                pi_v = _refine_minimum(x, yc, pi_v, w)
+            anchored = _anchored_pi2(x, yc, pi_v, (a_f, b, s, 0.0, 0.0))
             if anchored is not None:
                 pi2_v = anchored
     else:
@@ -820,11 +880,16 @@ def pi_calibration(session, preset, mode='amplitude', channel='AWG',
         # pi not reached within the sweep: x[-1] is a lower bound (still
         # usable as a direction for the coarse-stage vane math)
         rails, pi_v = 'high', float(x[-1])
+    if pi2_v is not None and pi2_v > x[-1]:
+        # a pi/2 root beyond the sweep is extrapolation, not a measurement
+        rails, pi2_v = rails or 'high', None
     if mode == 'amplitude':
         rail_judge = amplitude_rails(100.0 if rails == 'high' else pi_v)
-        judges.append(rail_judge)
-        if not rail_judge.passed:
-            rails = rails or rail_judge.details.get('rail')
+    else:
+        rail_judge = length_rails(pi_v, float(x[0]), float(x[-1]))
+    judges.append(rail_judge)
+    if not rail_judge.passed:
+        rails = rails or rail_judge.details.get('rail')
 
     pi_v = round(float(pi_v), 2) if pi_v is not None else None
     pi2_v = round(float(pi2_v), 2) if pi2_v is not None else None
@@ -842,15 +907,18 @@ def pi_calibration(session, preset, mode='amplitude', channel='AWG',
             result['detection_pair'] = {f'P{i + 1}': dict(v)
                                         for i, v in det.items()}
             if refine and _pair_override is None:
-                session.state['pi_calibration'] = result
+                if _stage:
+                    session.stage_state('pi_calibration', result)
                 session.log('      refine: re-running the nutation with the '
                             're-scaled detection pair')
                 return pi_calibration(session, preset, mode, channel, points,
                                       scans, step, hold_amplitude,
                                       refine=False,
                                       _pair_override={i: v['amplitude']
-                                                      for i, v in det.items()})
-    session.state['pi_calibration'] = result
+                                                      for i, v in det.items()},
+                                      _stage=_stage)
+    if _stage:
+        session.stage_state('pi_calibration', result)
     return result, judges
 
 
@@ -903,10 +971,11 @@ def power_for_length(session, target_length, amplitude=95.0,
         time.sleep(8.0)
         session.invalidate_fine_calibrations('vane re-home')
 
-    lengths, atten_history = [], [_vane_db(mw)]
+    lengths, atten_history, last_cal_judges = [], [_vane_db(mw)], []
     for it in range(1, max_iter + 1):
         result, cal_judges = pi_calibration(
-            session, preset, mode='length', hold_amplitude=amplitude)
+            session, preset, mode='length', hold_amplitude=amplitude,
+            _stage=False)
         if result.get('canned'):
             # dry-run: pretend the first measurement already hit the target
             res = {'attenuation_db': atten_history[-1],
@@ -915,6 +984,14 @@ def power_for_length(session, target_length, amplitude=95.0,
             return res, [JudgeReport('pi_length_target', True, target_ns,
                                      {'note': 'dry-run, not judged'})]
 
+        last_cal_judges = list(cal_judges)
+        for j in cal_judges:
+            session.log(f'        nutation {j}')
+        snr_j = next((j for j in cal_judges if j.name == 'echo_snr'), None)
+        if snr_j is not None and not snr_j.passed:
+            # no echo: an argmin-of-noise pi must never command a vane move
+            raise RuntimeError(f'no echo in the length nutation (iteration '
+                               f'{it}): {snr_j} — not moving the vane on noise')
         measured = result['pi']
         if measured is None:
             raise RuntimeError('length nutation did not yield a pi length '
@@ -936,13 +1013,15 @@ def power_for_length(session, target_length, amplitude=95.0,
 
     final = lengths[-1]
     on_target = abs(final - target_ns) <= tol_ns
+    # the last nutation's judges ride along: the manifest records the evidence
     judges = [JudgeReport('pi_length_target', on_target, final,
-                          {'target_ns': target_ns, 'tol_ns': tol_ns})]
+                          {'target_ns': target_ns, 'tol_ns': tol_ns})] \
+        + last_cal_judges
     if not on_target and len(lengths) >= 2:
         # diagnostic for the failure only: on success the target judge is the
         # gate (a single large-but-correct vane jump is not a defect)
         judges.append(convergence(lengths, tol=tol_ns / target_ns))
     result = {'attenuation_db': atten_history[-1], 'pi_length': f'{final} ns',
               'target_length': target_length, 'iterations': len(lengths)}
-    session.state['power_for_length'] = result
+    session.stage_state('power_for_length', result)
     return result, judges

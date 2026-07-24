@@ -49,47 +49,44 @@ Any **live** `epr-auto run` (no `--test`). In particular:
   and report. A bench session is not the time to patch the engine.
 - Raise a power, amplitude, or attenuation limit to get a signal.
 - Run a protocol you have not first dry-run and read the output of.
-- Use **Ctrl-C** to stop a live run (see *Stopping*, below — it is broken).
+- Kill the terminal / SIGHUP a live run — it skips `pulser_close` and strands
+  the FPGA card. Ctrl-C is the clean stop (see *Stopping*, below).
 - Start a run when you cannot see the outcome (no manifest path, no plot, operator away).
 
 ---
 
-## Known-broken things — read before diagnosing anything
+## Review status — read before diagnosing anything
 
-The full-codebase review (2026-07-23) confirmed 13 defects. These are **not yet
-fixed**; check `docs/automation/ROADMAP.md` for current status before every session,
-and read `docs/automation/REVIEW_2026-07-23.md` for the evidence.
+The 2026-07-23 full-codebase review confirmed 13 defects; **all 13 were fixed on
+2026-07-24** (details in the ROADMAP 2026-07-24 session entry; the full report is
+in git history — `docs/automation/REVIEW_2026-07-23.md` at commit `be42789`).
+Check `docs/automation/ROADMAP.md` for anything newer before every session.
 
-**These change what the bench shows you. Until fixed, a weak or absent echo is at
-least as likely to be one of these as a real hardware fault.**
+What the fixes mean at the bench:
 
-1. **`tune.py:264` — pulses driven 1.84× too hard.** The amplitude transfer ignores
-   pulse envelope shape; the shipped amplitude-cal preset sweeps a GAUSS, the
-   experiment presets use SINE. A calibrated "π/2" is really ~166°. Predicted Hahn
-   echo loss ~65×. **If echoes are far weaker than expected after `pi_calibration`,
-   suspect this first.** Cross-check: compute the expected amplitude by hand and
-   compare against the `apply_cal ->` line in the log.
-2. **`judges.py:52` — `echo_snr` under-reports 1.746×.** Real-Gaussian MAD constant
-   applied to complex traces. `SNR_FLOOR = 3.0` was calibrated in *rotated-real*
-   units, so the shipped gate is ~1.7× too strict: **genuine echoes fail the judge**
-   and `field.edfs` escalates to a span-×2 re-run for no reason. On the reference
-   oTerPhenyl dataset it rejects 13 traces the operator kept.
-3. **`tune.py:799`** — π biased low up to 11 % by the nutation envelope.
-4. **`tune.py:830`** — π/2 never rail-checked; a degenerate fit can emit a π/2 far
-   outside the swept range (1726 ns on a sweep ending at 211 ns) with all judges passing.
-   **Sanity-check every π/2 against the sweep range yourself.**
-5. **`judges.py:62`** — `phase_coherence` at `auto_phase`'s default 4 points passes
-   pure noise **21.5 % of the time**. A passing auto_phase on a cold start is weak
-   evidence. Raise `points` to ≥16 in your protocols.
-6. **`tune.py:908`** — `power_for_length` ignores its internal echo judges; with no
-   echo it iterates the **vane on noise**, possibly toward full power. **This is the
-   most dangerous confirmed defect.** Do not run it without a confirmed echo first,
-   and watch every iteration.
-7. **`session.py:86`** — a same-day re-run **silently overwrites** the previous run
-   directory, manifest and CSVs. Always set an explicit unique `output:` (below).
-8. **`executor.py:133`/`:155`** — Ctrl-C kills the worker child without saving, and
-   a parent-side error SIGTERMs a healthy worker so `pulser_close()` never runs,
-   **stranding the FPGA card**. See *Stopping*.
+1. **Flip angles are now shape-corrected.** `apply_cal ->` on the shipped presets
+   should read ~23.41 % (π/2) / 23.75 % (π) for hahn_echo_4s, detection pair
+   6.07/12.32. When you compute expected amplitudes by hand, include the envelope
+   area factor (`amp ∝ (L·f)_cal/(L·f)_slot`; GAUSS ampl_4s f = 0.5434, SINE
+   f = 1). **A weak echo is evidence about the hardware again, not a known bug.**
+2. **`echo_snr` is unit-correct on complex traces** (pure noise ≈ 1; floor 3.0
+   is in the calibrated units).
+3. **`auto_phase` defaults to 16 points**; `phase_coherence`'s floor is N-aware
+   (max(0.7, 3/√n)) — fewer than 10 points can never pass, so don't lower `points`.
+4. **π/2 is rail-checked** and `apply_cal` refuses a railed calibration; a
+   length-mode rail is a hard `length_rails` judge and triggers the coarse fallback.
+   First bench occurrence of that fallback is worth watching end-to-end.
+5. **`power_for_length` hard-gates every iteration on the nutation's `echo_snr`**
+   — it aborts rather than iterate the vane on noise. Still confirm an echo exists
+   before running it, and still watch every iteration (first bench run of the gate).
+6. **Same-day re-runs no longer overwrite**: the run dir gets a `_run2`… suffix
+   when a `manifest.json` already exists. An explicit `output:` is still good
+   practice for traceability.
+7. **A failed-but-skipped tuning step no longer poisons session state** (results
+   commit only after the judge gate), and `power_for_length`'s internal probe no
+   longer leaks into `pi_calibration`.
+8. **Ctrl-C is now the clean stop** (saves, then aborts the protocol) — see
+   *Stopping*. Terminal kill / SIGHUP still strands the card; never do that.
 
 ---
 
@@ -144,10 +141,9 @@ and for **preparation plus post-hoc analysis** on 5 and 8–11.
 Follow `docs/automation/HARDWARE_CHECKLIST.md` *Prerequisites*. Confirm each:
 
 - Main Atomize GUI running (a live run dies without its LivePlot server).
-- Interactive field **and temperature** tools closed. The runner seizes
-  `field.param`/`temp.param` — but note defect: **`temp.set`/`temp.wait` never
-  seize the temp lock**, so an open `temp_control` will contend over GPIB with no
-  refusal. Close it yourself.
+- Interactive field **and temperature** tools closed. Every hardware-touching
+  primitive (including `temp.set`/`temp.wait` since 2026-07-24) seizes the
+  `field.param`/`temp.param` locks and refuses if another tool holds them.
 - Invoked from the repo root.
 
 ### Supervised mode does not work for you — use one-step autonomous protocols
@@ -172,20 +168,20 @@ sample, and only with explicit approval for the whole chain.
 
 ### Protocol template
 
-Always set a unique `output:` (defect 7) — never rely on the default:
+Set an explicit `output:` per run for traceability (the default now auto-suffixes
+`_run2`… instead of overwriting, but a named dir is easier to report on):
 
 ```yaml
 sample: <operator-supplied name>
 autonomy: autonomous
-output: ~/epr_data/agent_{date}_{sample}_<step>_<HHMMSS>   # unique per run
+output: ~/epr_data/agent_{date}_{sample}_<step>   # explicit, absolute
 steps:
-  - tune.auto_phase:
-      points: 16          # not the default 4 — see defect 5
+  - tune.auto_phase: {}          # points defaults to 16
 ```
 
 Write protocols outside the repo tree (e.g. `~/epr_auto_dev/bench/`) unless the
-operator wants them versioned. Never write into `libs/` — the CLI chdirs there and
-a relative `output:` lands in the repo (defect: `session.py:83`).
+operator wants them versioned. Prefer absolute `output:` paths; a relative one
+resolves against the directory you invoked from (not `libs/`, since 2026-07-24).
 
 ### The loop, per step
 
@@ -205,14 +201,18 @@ a relative `output:` lands in the repo (defect: `session.py:83`).
 
 ### Stopping a live run
 
-Ctrl-C is **broken** (defect 8): it kills the worker child mid-acquisition without
-saving, then surfaces as a retryable `StepFailure` — a `retries: 1` step will
-silently *re-run*, and a `foreach` with `on_fail: continue` marches on.
+Ctrl-C is the **clean stop** (fixed 2026-07-24): the worker child ignores the
+signal, the parent sends 'exit', the worker reads out and **saves**, closes the
+card, and the protocol aborts (`aborted: operator interrupt` in the manifest) —
+never a retryable StepFailure. A second Ctrl-C stops the indefinite wait but
+still grants a 60 s wind-down; a third terminates immediately (data lost). This
+path has **not yet been exercised on hardware** — the first time it is used,
+verify the CSV was written and a follow-up run can open the board.
 
 - Prefer letting a step finish; they are bounded by `scans`/`max_duration`.
 - To stop early by design, use `target_snr`/`max_duration`, not a signal.
-- If you must kill: tell the operator **first**, expect the scan's data to be lost,
-  and expect the **FPGA card may be left open** — a later run failing to open the
+- **Never kill the terminal (SIGHUP)**: no Python unwinding runs, `pulser_close`
+  is skipped and the FPGA card is left open — a later run failing to open the
   board is this, not new hardware trouble. Recovery is the operator's call.
 
 ---
@@ -224,12 +224,14 @@ Every report, whether it worked or not:
 - What ran, the exact command, the manifest path.
 - Prediction vs measurement, side by side, with numbers.
 - Every judge: name, pass/fail, score — including advisory ones.
-- Your read: hardware, sample, or **one of the known defects above**.
+- Your read: hardware, sample, or a suspected code regression (check the
+  *Review status* section above and the ROADMAP for anything newer).
 - Explicitly: what you are *not* sure of.
 
-Never report a step as good because judges passed. Several judges are advisory,
-`phase_coherence` passes noise 21.5 % of the time at default points, and
-`echo_snr` is mis-scaled. **Judges are evidence, not verdicts.**
+Never report a step as good because judges passed. Several judges are advisory
+(`pi_ratio_linearity`, `fit_quality`, `convergence`; `echo_snr` for `exp.*`),
+and a passing hard judge is one measurement, not a verdict. **Judges are
+evidence, not verdicts.**
 
 Log anything surprising for the ROADMAP session log — the operator maintains it
 each session, and a bench observation that contradicts a documented assumption is

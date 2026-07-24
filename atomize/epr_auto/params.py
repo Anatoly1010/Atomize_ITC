@@ -105,6 +105,11 @@ class Int(Param):
         self.min, self.max = min, max
 
     def validate(self, value, ctx):
+        if isinstance(value, str):
+            try:                            # foreach $var leaves arrive as strings
+                value = int(value)
+            except ValueError:
+                raise ParamError(f'expected an integer, got {value!r}')
         if not isinstance(value, int) or isinstance(value, bool):
             raise ParamError(f'expected an integer, got {value!r}')
         if self.min is not None and value < self.min:
@@ -122,6 +127,11 @@ class Float(Param):
         self.min, self.max = min, max
 
     def validate(self, value, ctx):
+        if isinstance(value, str):
+            try:                            # foreach $var leaves arrive as strings
+                value = float(value)
+            except ValueError:
+                raise ParamError(f'expected a number, got {value!r}')
         if not isinstance(value, (int, float)) or isinstance(value, bool):
             raise ParamError(f'expected a number, got {value!r}')
         value = float(value)

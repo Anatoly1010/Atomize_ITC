@@ -181,6 +181,10 @@ def _duration_policy(session, max_duration, scans):
     return control
 
 
+# cuts the measured projection undershoot from ~50-80% of runs to ~25% at ~15% extra scans (2026-07-23 review, P6)
+_PROJECTION_MARGIN = 1.15
+
+
 def _snr_policy(session, target_snr, scans):
     """on_scan_data consumer for the executor's opt-in 'ScanData' channel:
     SNR-driven scan count. `scans` is the ceiling; after each completed scan k
@@ -217,7 +221,8 @@ def _snr_policy(session, target_snr, scans):
             return k
         if k < 2:
             return None
-        needed = int(np.ceil(k * (target / snr.score) ** 2))
+        # margin: echo_snr grows slower than sqrt(k) (max|y| is noise-inflated at low k), so a raw projection undershoots the target
+        needed = int(np.ceil(k * (_PROJECTION_MARGIN * target / snr.score) ** 2))
         if needed < scans and not state['announced']:
             state['announced'] = True
             session.log(f'      target_snr {target:g}: SNR {snr.score:.1f} '
@@ -334,11 +339,12 @@ def t2(session, preset, tau_start, tau_step, points, scans, window='auto',
         for s in pre.slots if s.active), 'the tau sweep (tau_step x points)')
     pre, wa = _build(session, pre, exp_name='T2', points=points, scans=scans,
                      **_window_override(pre, window))
-    if target_snr is not None:
+    snr_policy = _snr_policy(session, target_snr, scans)
+    if snr_policy is not None:
         wa.scan_data_flag = 1      # opt into the worker's ScanData messages
     acq = _acquire(session, wa, pre.sweep_type, 't2', log=session.log,
                    scan_control=_duration_policy(session, max_duration, scans),
-                   on_scan_data=_snr_policy(session, target_snr, scans))
+                   on_scan_data=snr_policy)
     extra = {'tau_start_ns': tau_s, 'tau_step_ns': tau_st, 'window': window}
     if acq is None:
         return ({'t2': '1.8 us', 'fit': 'stretched_exp', 'canned': True,
@@ -368,11 +374,12 @@ def t1(session, preset, t_start, t_end, points, scans, window='auto',
     pre, wa = _build(session, pre, exp_name='T1', points=points, scans=scans,
                      log_start=log_start, log_end=log_end,
                      **_window_override(pre, window))
-    if target_snr is not None:
+    snr_policy = _snr_policy(session, target_snr, scans)
+    if snr_policy is not None:
         wa.scan_data_flag = 1      # opt into the worker's ScanData messages
     acq = _acquire(session, wa, pre.sweep_type, 't1', log=session.log,
                    scan_control=_duration_policy(session, max_duration, scans),
-                   on_scan_data=_snr_policy(session, target_snr, scans))
+                   on_scan_data=snr_policy)
     extra = {'t_start': ' '.join(str(t_start).split()),
              't_end': ' '.join(str(t_end).split()), 'window': window}
     if acq is None:

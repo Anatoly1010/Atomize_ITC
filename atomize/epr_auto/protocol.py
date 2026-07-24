@@ -176,24 +176,36 @@ def load_protocol(path):
 
 
 def _lint_step_order(steps, warnings):
-    """Warn when a phase/amplitude tuning step runs before any field.* step:
-    on a cold start there is no echo to tune on unless the magnet was already
-    parked on the line. Walks execution order; a foreach block's body is
-    walked in place (once — every iteration has the same step order)."""
+    """Warn on statically dead step orders. (1) a phase/amplitude tuning step
+    before any field.* step: on a cold start there is no echo to tune on
+    unless the magnet was already parked on the line. (2) rep_rate: auto with
+    no earlier tune.rep_rate: exp.* resolves it at run time and aborts. Walks
+    execution order; a foreach block's body is walked in place (once — every
+    iteration has the same step order)."""
     field_seen = [False]
+    rep_rate_seen = [False]
 
     def walk(items):
         for it in items:
             if isinstance(it, Foreach):
                 walk(it.iterations[0] if it.iterations else [])
-            elif it.name.startswith('field.'):
+                continue
+            if it.name == 'tune.rep_rate':
+                rep_rate_seen[0] = True
+            if it.name.startswith('field.'):
                 field_seen[0] = True
-            elif it.name in ('tune.auto_phase', 'tune.pi_calibration') \
+            elif it.name in ('tune.auto_phase', 'tune.pi_calibration',
+                             'tune.power_for_length') \
                     and not field_seen[0]:
                 warnings.append(
                     f'{it.name} (line {it.line}) runs before any field.* step '
-                    '— on a cold start there may be no echo to phase on; make '
+                    '— on a cold start there may be no echo to tune on; make '
                     'sure the magnet is already parked on the line')
+            if it.params.get('rep_rate') == 'auto' and not rep_rate_seen[0]:
+                warnings.append(
+                    f'{it.name} (line {it.line}) uses rep_rate: auto with no '
+                    'earlier tune.rep_rate step — the run will abort resolving '
+                    'it; add a tune.rep_rate first or set an explicit rate')
 
     walk(steps)
 

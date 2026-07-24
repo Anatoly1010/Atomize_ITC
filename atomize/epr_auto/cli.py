@@ -104,13 +104,15 @@ def _run(protocol_path, test):
         print(f'Cannot find the libs/ directory (looked at {libs}); '
               'the Insys driver needs cwd=libs.', file=sys.stderr)
         return EXIT_ABORTED
+    invoke_dir = Path.cwd()   # relative output templates resolve against this
     os.chdir(libs)
 
     from atomize.epr_auto.runner import RunnerAbort, run_protocol
     from atomize.epr_auto.session import EPRSession
 
     session = EPRSession(sample=protocol.sample, autonomy=protocol.autonomy,
-                         test=test, output=protocol.output, notify=protocol.notify)
+                         test=test, output=protocol.output, notify=protocol.notify,
+                         base_dir=invoke_dir)
     try:
         run_protocol(protocol, session)
     except RunnerAbort as e:

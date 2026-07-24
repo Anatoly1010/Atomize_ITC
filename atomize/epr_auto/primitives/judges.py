@@ -41,15 +41,18 @@ def echo_snr(y, min_snr=SNR_FLOOR):
     of the tallest excursion noise ALONE would produce on a trace this long
     (sigma * sqrt(2 ln N), extreme-value scaling). Pure noise scores ~1;
     min_snr=3 means the signal peak stands 3x above that ceiling. Works on
-    real or complex input."""
+    real or complex input (the MAD constant branches: |diff| is half-normal
+    for real noise but Rayleigh for complex, median 1.17741 vs 0.6745)."""
     y = np.asarray(y).ravel()
     if np.iscomplexobj(y):
         y = y - (np.median(y.real) + 1j * np.median(y.imag))
         dev = np.abs(y)
+        mad_c = 1.17741            # Rayleigh median = sqrt(2 ln 2)
     else:
         dev = np.abs(y - np.median(y))
+        mad_c = 0.6745
     peak = float(np.max(dev))
-    sigma = float(np.median(np.abs(np.diff(y))) / (np.sqrt(2) * 0.6745))
+    sigma = float(np.median(np.abs(np.diff(y))) / (np.sqrt(2) * mad_c))
     if sigma == 0:            # canned/test data — report as passing but mark it
         return JudgeReport('echo_snr', True, float('inf'),
                            {'noise': 0.0, 'note': 'zero noise (test data?)'})
@@ -59,13 +62,19 @@ def echo_snr(y, min_snr=SNR_FLOOR):
                        {'min_snr': min_snr, 'noise_sigma': sigma})
 
 
+# null R ~ 1/sqrt(N): a C/sqrt(n) floor keeps the false-pass rate ~exp(-C^2)
+_COHERENCE_C = 3.0
+
+
 def phase_coherence(sig, min_r=0.7, require_structure=False):
     """Resultant length R = |sum sig| / sum|sig| of a complex trace: 1.0 when
     every point shares one phase, ~1/sqrt(N) for pure noise. This is the
     right 'is the echo there, with a well-defined phase' gate for the SHORT
     traces auto_phase acquires — echo_snr's MAD-of-diff sigma has too few
     point-to-point differences to work with there. Unipolar traces only
-    (sign flips cancel in the resultant).
+    (sign flips cancel in the resultant). The pass floor is N-aware:
+    max(min_r, _COHERENCE_C/sqrt(n)) — see _COHERENCE_C; traces shorter
+    than ~2*C^2 points cannot pass and should be acquired longer.
 
     R alone cannot tell a real echo from a constant instrumental phasor
     (LO leakage surviving the phase cycle / residual IQ offset): both share
@@ -88,9 +97,15 @@ def phase_coherence(sig, min_r=0.7, require_structure=False):
     d = sig - (np.median(sig.real) + 1j * np.median(sig.imag))
     d2 = float(np.sum(np.abs(d) ** 2))
     r2 = float(np.abs(np.sum(d ** 2)) / d2) if d2 > 0 else 0.0
-    details = {'min_r': min_r, 'n': int(sig.size), 'structure_r': round(r2, 4)}
-    passed = r >= min_r
-    if require_structure and passed and r2 < min_r:
+    floor = max(float(min_r), _COHERENCE_C / np.sqrt(sig.size))
+    details = {'min_r': round(floor, 4), 'n': int(sig.size),
+               'structure_r': round(r2, 4)}
+    if floor > 1.0:
+        details['note'] = (f'{sig.size} points cannot reach the '
+                           f'{_COHERENCE_C}/sqrt(n) noise floor — '
+                           'acquire more points')
+    passed = r >= floor
+    if require_structure and passed and r2 < floor:
         passed = False
         details['note'] = ('coherent resultant but structureless deviations '
                            '— a constant offset (LO leakage), not an echo?')
@@ -111,7 +126,7 @@ def fit_quality(y, y_fit, n_params, min_adj_r2=0.9):
         return JudgeReport('fit_quality', False, 0.0,
                            {'rmse': rmse, 'note': 'flat data, R2 undefined'})
     r2 = 1 - ss_res / ss_tot
-    dof = n - n_params - 1
+    dof = n - n_params          # n_params already counts the intercept
     adj_r2 = 1 - (1 - r2) * (n - 1) / dof if dof > 0 else r2
     return JudgeReport('fit_quality', adj_r2 >= min_adj_r2, float(adj_r2),
                        {'rmse': rmse, 'r2': float(r2), 'min_adj_r2': min_adj_r2})
@@ -166,7 +181,7 @@ def relaxation_fit(y, y_fit, n_params, min_delta_aicc_per_pt=0.375):
     delta = float(_aicc(null_rss, n, 1) - _aicc(rss, n, n_params))
     per_pt = delta / n
     r2 = 1 - rss / null_rss
-    dof = n - n_params - 1
+    dof = n - n_params          # n_params already counts the intercept
     adj_r2 = 1 - (1 - r2) * (n - 1) / dof if dof > 0 else r2
     return JudgeReport('relaxation_fit', per_pt >= min_delta_aicc_per_pt, delta,
                        {'min_delta_aicc_per_pt': min_delta_aicc_per_pt,
@@ -219,3 +234,23 @@ def amplitude_rails(amp_pi, low=30.0, high=99.0):
                            {'rail': 'low', 'low': low,
                             'hint': 'pi too low on the DAC scale: add vane attenuation'})
     return JudgeReport('amplitude_rails', True, amp_pi, {'low': low, 'high': high})
+
+
+def length_rails(pi_ns, sweep_lo, sweep_hi):
+    """Rail check for the length nutation (ns), the length-mode counterpart
+    of amplitude_rails: pi at/above the sweep end means the sweep never
+    reached pi (underpowered at the held amplitude) — the runner's trigger
+    for the coarse-stage fallback."""
+    pi_ns = float(pi_ns)
+    if pi_ns >= sweep_hi:
+        return JudgeReport('length_rails', False, pi_ns,
+                           {'rail': 'high', 'high': sweep_hi,
+                            'hint': 'cannot reach pi within the sweep: reduce '
+                                    'vane attenuation or extend the sweep'})
+    if pi_ns <= sweep_lo:
+        return JudgeReport('length_rails', False, pi_ns,
+                           {'rail': 'low', 'low': sweep_lo,
+                            'hint': 'pi at the first sweep point: add vane '
+                                    'attenuation or start the sweep shorter'})
+    return JudgeReport('length_rails', True, pi_ns,
+                       {'low': sweep_lo, 'high': sweep_hi})

@@ -13,7 +13,9 @@ scan_control callback below is the channel for judge/budget-driven
 early finish; a count at or below the scans already done makes the
 worker finish after the current scan, still reading out and saving).
 """
+import signal
 import time
+import traceback
 from multiprocessing import Pipe, Process
 
 import numpy as np
@@ -43,6 +45,65 @@ class EngineError(RuntimeError):
     pass
 
 
+def _shielded(target, *args):
+    """Child entry point: ignore SIGINT so a terminal Ctrl-C reaches only the
+    parent — the parent then commands 'exit' and the worker reads out, saves
+    and closes the card instead of dying mid-scan in its BaseException
+    handler (the whole process group receives the terminal's SIGINT)."""
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
+    return target(*args)
+
+
+def _safe_call(cb, *args):
+    """Progress/policy callbacks must never kill a live worker: a raising
+    callback (e.g. session.log on a closed stdout) degrades to a logged
+    no-op / no-resize instead of reaching the wind-down terminate."""
+    if cb is None:
+        return None
+    try:
+        return cb(*args)
+    except Exception:
+        try:
+            print('epr_auto executor: callback error (ignored):\n'
+                  + traceback.format_exc(), flush=True)
+        except Exception:
+            pass
+        return None
+
+
+# generous grace for a mid-scan readout+save before terminate is considered
+_WIND_DOWN_S = 60.0
+
+
+def _wind_down(conn, process, save_path, poll_s):
+    """Shared last-resort cleanup: never SIGTERM a healthy worker outright —
+    its own finally (pulser_close) is the only thing that frees the FPGA
+    card. A still-alive worker is sent 'exit' and its stop protocol (incl.
+    the Open->FL save handshake) is served for up to _WIND_DOWN_S; terminate
+    only when it will not die (or on a further Ctrl-C)."""
+    try:
+        if process.is_alive():
+            try:
+                conn.send('exit')
+            except (BrokenPipeError, OSError):
+                pass
+            deadline = time.monotonic() + _WIND_DOWN_S
+            while process.is_alive() and time.monotonic() < deadline:
+                try:
+                    if conn.poll(poll_s):
+                        kind, payload = conn.recv()
+                        if kind == 'Open' and save_path is not None:
+                            conn.send(f'FL{save_path}')
+                except (EOFError, BrokenPipeError, OSError):
+                    break
+    except KeyboardInterrupt:
+        pass
+    process.join(timeout=10)
+    if process.is_alive():
+        process.terminate()
+        process.join()
+
+
 def run_worker(worker_args, sweep_type, save_path=None, script_test=False,
                on_status=None, on_message=None, poll_s=0.2,
                scan_control=None, on_scan_data=None):
@@ -61,9 +122,12 @@ def run_worker(worker_args, sweep_type, save_path=None, script_test=False,
     one ratchet: a resize is only ever sent DOWNWARD from the lowest value
     already sent, so composed policies (duration + SNR) min-combine and a
     later, larger projection can never re-raise a sent limit.
-    Raises EngineError on a worker-side error; KeyboardInterrupt sends 'exit'
-    and waits for the worker to read out and save, however long that takes
-    (a second KeyboardInterrupt force-terminates the worker, losing the data).
+    Raises EngineError on a worker-side error. The child ignores SIGINT
+    (_shielded), so a terminal Ctrl-C reaches only this parent: 'exit' is
+    sent, the worker reads out and saves however long that takes, and the
+    KeyboardInterrupt is then re-raised so the interrupt aborts the protocol
+    (a second Ctrl-C stops the wait; the wind-down still allows _WIND_DOWN_S
+    of grace before terminating, a third Ctrl-C terminates immediately).
     """
     if sweep_type not in SWEEP_METHOD:
         raise EngineError(f'sweep type {sweep_type!r} is not runnable '
@@ -80,8 +144,9 @@ def run_worker(worker_args, sweep_type, save_path=None, script_test=False,
     # dig_start_exp / _hand_correction_to_worker.
     _hand_attrs(worker, worker_args)
     parent_conn, child_conn = Pipe()
-    process = Process(target=getattr(worker, method_name),
-                      args=(child_conn, *args, script_test))
+    process = Process(target=_shielded,
+                      args=(getattr(worker, method_name),
+                            child_conn, *args, script_test))
     process.start()
 
     t_start = time.monotonic()
@@ -111,17 +176,16 @@ def run_worker(worker_args, sweep_type, save_path=None, script_test=False,
             if kind == 'Error':
                 raise EngineError(f'worker error:\n{payload}')
             if kind == 'Status':
-                if on_status is not None:
-                    on_status(payload)
+                _safe_call(on_status, payload)
                 if scan_control is not None:
-                    _maybe_resize(scan_control(payload, time.monotonic() - t_start))
+                    _maybe_resize(_safe_call(scan_control, payload,
+                                             time.monotonic() - t_start))
             elif kind == 'ScanData':
                 if on_scan_data is not None:
                     k, i_arr, q_arr = payload
-                    _maybe_resize(on_scan_data(k, i_arr, q_arr))
+                    _maybe_resize(_safe_call(on_scan_data, k, i_arr, q_arr))
             elif kind == 'Message':
-                if on_message is not None:
-                    on_message(payload)
+                _safe_call(on_message, payload)
             elif kind == 'Open':
                 parent_conn.send(f'FL{save_path}')
             elif kind == 'test':
@@ -131,31 +195,24 @@ def run_worker(worker_args, sweep_type, save_path=None, script_test=False,
             # anything else ('Count', ...) is preview-only chatter — ignore
 
     except KeyboardInterrupt:
-        parent_conn.send('exit')
-        # Let the worker read out + save, however long that takes — the GUI
-        # stop path never hard-kills a saving worker either. A second
-        # KeyboardInterrupt gives up (data is lost: the finally block
-        # terminates the still-running child).
+        # drain until the worker saved, then ALWAYS re-raise (see docstring)
         try:
+            parent_conn.send('exit')
             while True:
                 if parent_conn.poll(poll_s):
                     kind, payload = parent_conn.recv()
                     if kind == 'Open':
                         parent_conn.send(f'FL{save_path}')
-                    elif kind == 'Error':
-                        raise EngineError(f'worker error during stop:\n{payload}')
-                    elif kind == 'test' or (kind == '' and str(payload).endswith('finished')):
-                        return {'status': 'stopped', 'file': save_path}
+                    elif kind == 'Error' or kind == 'test' or \
+                            (kind == '' and str(payload).endswith('finished')):
+                        break
                 elif not process.is_alive():
                     break
-        except KeyboardInterrupt:
+        except (KeyboardInterrupt, BrokenPipeError, OSError, EOFError):
             pass
         raise
     finally:
-        process.join(timeout=10)
-        if process.is_alive():
-            process.terminate()
-            process.join()
+        _wind_down(parent_conn, process, save_path, poll_s)
 
 
 def _hand_attrs(worker, worker_args):
@@ -182,6 +239,7 @@ def _trace_child(worker, conn, args, phases, n_sweeps, script_test):
     last completed cycle's trace goes back as ('Trace', (t, i, q)). With
     l_mode=1 the digitizer accumulates across cycles, so that final trace
     is the phase-cycled average of everything acquired."""
+    signal.signal(signal.SIGINT, signal.SIG_IGN)   # see _shielded
     import atomize.general_modules.general_functions as general
     state = {'calls': 0, 'cycles': 0, 'done': None}
     orig_plot = general.plot_1d
@@ -253,11 +311,12 @@ def acquire_trace(worker_args, n_sweeps=1, script_test=False,
                       args=(worker, child_conn, args, phases,
                             max(1, int(n_sweeps)), script_test))
     process.start()
-    parent_conn.send('start')
 
     trace = None
     exit_sent = False
     try:
+        # inside the try: a send failure must still reach the wind-down
+        parent_conn.send('start')
         while True:
             if not parent_conn.poll(poll_s):
                 if not process.is_alive():
@@ -268,8 +327,7 @@ def acquire_trace(worker_args, n_sweeps=1, script_test=False,
             if kind == 'Error':
                 raise EngineError(f'worker error:\n{payload}')
             if kind == 'Status':
-                if on_status is not None:
-                    on_status(payload)
+                _safe_call(on_status, payload)
                 if payload >= 100 and not exit_sent and not script_test:
                     # 'exit' is the ONLY command this loop may ever send:
                     # anything else is a live edit, which corrupts the
@@ -280,8 +338,10 @@ def acquire_trace(worker_args, n_sweeps=1, script_test=False,
                     except (BrokenPipeError, OSError):
                         pass
             elif kind == 'Message':
-                if on_message is not None:
-                    on_message(payload)
+                _safe_call(on_message, payload)
+            elif kind == 'test':
+                if payload:                # dig_on script_test warning; empty is chatter
+                    _safe_call(on_message, payload)
             elif kind == 'Trace':
                 trace = payload
             elif kind == 'TraceEnd':
@@ -301,10 +361,7 @@ def acquire_trace(worker_args, n_sweeps=1, script_test=False,
             pass
         raise
     finally:
-        process.join(timeout=10)
-        if process.is_alive():
-            process.terminate()
-            process.join()
+        _wind_down(parent_conn, process, None, poll_s)
 
 
 def load_1d(path):

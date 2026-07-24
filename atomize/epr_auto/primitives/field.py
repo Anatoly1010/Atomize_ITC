@@ -103,7 +103,7 @@ def edfs(session, preset, range, points, scans, pick='max', value=None,
             lo = 0.0
     else:
         lo, hi = (parse_field_g(v) for v in range)
-    step = (hi - lo) / (points - 1)
+    step = (hi - lo) / (points - 1) * (1.0 - 1e-9)  # guard worker's int() POINTS recompute
     # validate the pick BEFORE the (multi-minute) sweep, so --test and the
     # live run both reject a bad configuration up front
     if pick == 'value':
@@ -118,15 +118,16 @@ def edfs(session, preset, range, points, scans, pick='max', value=None,
     pre, wa = _build(session, preset, exp_name='EDFS',
                      start_field=lo, end_field=hi, step_field=step,
                      scans=scans)
-    if target_snr is not None:
+    from atomize.epr_auto.primitives.exp import _snr_policy
+    snr_policy = _snr_policy(session, target_snr, scans)
+    if snr_policy is not None:
         # SNR-driven scan ceiling on the exp_field ScanData channel — the
         # stop metric is the same echo_snr this step's hard judge uses below,
         # and the step registration floors target_snr at judges.SNR_FLOOR,
         # so an early stop can never deliver a sweep the judge then rejects
         wa.scan_data_flag = 1
-    from atomize.epr_auto.primitives.exp import _snr_policy
     acq = _acquire(session, wa, pre.sweep_type, 'edfs', log=session.log,
-                   on_scan_data=_snr_policy(session, target_snr, scans))
+                   on_scan_data=snr_policy)
 
     if acq is None:
         field_g = picked_g if pick == 'value' else (lo + hi) / 2

@@ -166,7 +166,6 @@ def _do_step(protocol, session, manifest, step, index, results, header):
         results.append((step, None))
         return False
     session.log('      -> ' + ', '.join(f'{k}={v}' for k, v in result.items()))
-    session.state[step.name] = result
     manifest.record(step, 'ok', attempts, result=result,
                     judges=session.last_judges)
     results.append((step, result))
@@ -353,7 +352,6 @@ def _rail_fallback(protocol, session, manifest, index, rail):
                 manifest.record(s, 'failed (rail fallback)', attempts=1,
                                 error='unexpected error (see log)')
                 return False, f'{s.name} raised an unexpected error (see log)'
-            session.state[s.name] = result
             manifest.record(s, 'ok (rail fallback)', attempts=1, result=result,
                             judges=session.last_judges)
         return True, None

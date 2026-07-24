@@ -75,9 +75,11 @@ own preset. Defaults per step:
 Rules (`params.py:PresetFile`, `primitives/tune.py:_build`):
 
 - A bare name resolves against **your protocol's own directory first**, then
+  `atomize/epr_auto/presets/` (USER_PRESET_DIR), then
   `atomize/control_center/experiments/`; an absolute path also works. A name
   that resolves nowhere is a load-time error with a file:line, not a
-  surprise at the bench.
+  surprise at the bench. (A step *default* preset resolves against the
+  shipped `experiments/` set only — see PresetFile.)
 - The preset's **Shift Offset** checkbox state (`IQ Correction:` line) no
   longer matters: the automation always needs the demodulated 1-D mode, so
   `_build` force-enables `iq_cor = 1` (with a log line) when the preset was
@@ -264,7 +266,10 @@ real hardware:
 
 - `manifest.json` rewritten after every step; kill the terminal mid-run
   once and check the manifest still reads consistently (status stays the
-  last written state, no truncation).
+  last written state, no truncation). NB a terminal kill delivers SIGHUP —
+  no Python unwinding in either process, so the worker's `pulser_close`
+  does NOT run: expect to power-cycle/recover the Insys board after this
+  test (Ctrl-C is the clean stop; it saves, closes the card and aborts).
 - `retries: 1` on pi_calibration: if a judge fails transiently, one retry.
 - Rail fallback: provoke by calibrating with a too-low held amplitude so
   pi lands beyond the sweep (`rails: high`) → the runner should offer /

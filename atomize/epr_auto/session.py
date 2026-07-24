@@ -11,15 +11,19 @@ from pathlib import Path
 
 class EPRSession:
 
-    def __init__(self, sample, autonomy, test, output=None, notify='none'):
+    def __init__(self, sample, autonomy, test, output=None, notify='none',
+                 base_dir=None):
         self.sample = sample
         self.autonomy = autonomy
         self.test = test
         self.output = output          # run-dir template ({date}, {sample})
+        self.base_dir = base_dir      # pre-chdir CWD for relative templates
         self.notify_mode = notify     # 'none' | 'telegram'
         # Cross-step results (calibrations, chosen field, ...); step functions
         # read what earlier steps stored here.
         self.state = {}
+        # tuning results staged here; committed into state only after the judge gate
+        self._staged_state = {}
         # Judge reports of the most recent primitive call (set by the step
         # layer); the runner snapshots them into the run manifest.
         self.last_judges = []
@@ -74,16 +78,29 @@ class EPRSession:
     @property
     def run_dir(self):
         """Directory for this run's acquisitions + manifest (created lazily).
-        Honors the protocol's 'output' template; {date} and {sample} expand."""
+        Honors the protocol's 'output' template; {date} and {sample} expand.
+        A directory that already holds a manifest.json belongs to an earlier
+        run of the same day/sample — a _runN suffix is picked instead so
+        nothing is silently overwritten."""
         if self._run_dir is None:
             stamp = datetime.date.today().isoformat()
             safe_sample = ''.join(c if c.isalnum() or c in '-_' else '_'
                                   for c in str(self.sample))
             if self.output:
-                self._run_dir = Path(self.output.format(
+                base = Path(self.output.format(
                     date=stamp, sample=safe_sample)).expanduser()
+                if not base.is_absolute() and self.base_dir:
+                    # cli chdirs to libs/; relative templates mean the invoke dir
+                    base = Path(self.base_dir) / base
             else:
-                self._run_dir = Path.home() / 'epr_data' / f'epr_auto_{stamp}_{safe_sample}'
+                base = Path.home() / 'epr_data' / f'epr_auto_{stamp}_{safe_sample}'
+            run_dir, n = base, 2
+            while (run_dir / 'manifest.json').exists():
+                run_dir = base.with_name(f'{base.name}_run{n}')
+                n += 1
+            if run_dir != base:
+                self.log(f'      {base} already holds a run — using {run_dir}')
+            self._run_dir = run_dir
             self._run_dir.mkdir(parents=True, exist_ok=True)
         return self._run_dir
 
@@ -95,6 +112,22 @@ class EPRSession:
         if self.loop_tag:
             tag = f'{tag}_{self.loop_tag}'
         return str(self.run_dir / f'{self._save_counter:03d}_{tag}.csv')
+
+    # ------------------------------------------------------- staged state
+
+    def stage_state(self, key, value):
+        """Stage a tuning result instead of writing session.state directly:
+        the step layer commits the staged entries only after the judge gate
+        passes (mirrors the accepted-only guard field.edfs/rep_rate use), so
+        a failed-but-skipped step cannot poison downstream steps."""
+        self._staged_state[key] = value
+
+    def commit_staged_state(self):
+        self.state.update(self._staged_state)
+        self._staged_state.clear()
+
+    def discard_staged_state(self):
+        self._staged_state.clear()
 
     # ------------------------------------------------- cross-process locks
 

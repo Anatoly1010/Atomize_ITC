@@ -18,7 +18,7 @@ built on Atomize. Companion file: [ROADMAP.md](ROADMAP.md) (phases + session log
 | Experiments v1 | T1 (inversion recovery), T2/Tm (Hahn echo decay) |
 | Channel | **AWG first** (awg_phasing_insys path); RECT in a later phase |
 | Sequence source | Existing `*.phase_awg` presets + the sequence/acquisition machinery inside `atomize/control_center/awg_phasing_insys.py` |
-| Detection pulses during calibration | **Soft/selective pair at ~3–4× the target length** (target 22 ns ⇒ 60–90 ns) at **proportionally lower amplitude** — standard rule `amp_det = amp_cal · L_target/L_det` (amp nearly linear); optional one-shot refine re-run (agreed 2026-07-17, see "Tune-up completeness") |
+| Detection pulses during calibration | **Soft/selective pair at ~3–4× the target length** (target 22 ns ⇒ 60–90 ns) at **proportionally lower amplitude** — standard rule `amp_det = amp_cal · (L·f)_cal/(L·f)_det` with `f` the envelope area factor (amp nearly linear); optional one-shot refine re-run (agreed 2026-07-17, see "Tune-up completeness") |
 | Integration window | `tune.echo_window` primitive: echo-trace acquisition → auto window, stored relative to the DETECTION pulse start; runs before auto-phase (agreed 2026-07-17) |
 | Temperature | `temp.set` / `temp.wait` primitives mirroring temp_control's setter-waiter (band, hold count, wall-clock timeout) under the temp.param lock (agreed 2026-07-17) |
 | Initial signal search | `field.edfs range: auto` from synthesizer frequency + g (default 2.0023) with one widen-and-retry escalation; truly blind search stays human (agreed 2026-07-17) |
@@ -135,10 +135,18 @@ rotates, and its low amplitude keeps it out of amplifier compression.
 
 - **Never patch the detection pair with the target's calibrated amplitudes
   directly** — longer pulse ⇒ certainly lower amplitude. The rule is
-  **proportional inverse-length scaling**:
-  `amp_det(θ) = amp_cal(θ) · L_target / L_det`. The amplifier is nearly
-  linear (lab measurement 2026-07-17), so this scaling is the *standard* way
-  the pair is set after every fine calibration, not an optional refinement.
+  **proportional inverse-(length·area) scaling**:
+  `amp_det(θ) = amp_cal(θ) · (L·f)_cal / (L·f)_det`, where `f` is the pulse's
+  envelope **area factor** (1 for SINE, the mean of the peak-referenced
+  envelope for GAUSS/SINC — 0.5434 for the 28.8 ns/σ 6.4 GAUSS above). The
+  flip angle is θ ∝ amp · L · ⟨envelope⟩, so the shape rides along with the
+  length; the pure length ratio drove every GAUSS-calibrated SINE pulse
+  1.84× too hard (2026-07-23 review, P1). The amplifier is nearly linear
+  (lab measurement 2026-07-17), so this scaling is the *standard* way the
+  pair is set after every fine calibration, not an optional refinement.
+  Adiabatic shapes (WURST/SECH) have no such factor — `apply_cal` refuses to
+  transfer an amplitude calibration across differing envelopes it cannot
+  model.
 - Bootstrap (why the chicken-and-egg is soft): first pass runs the
   preset-stored detection values as-is. The nutation extremum *position* is
   first-order independent of detection-pair errors (they scale the echo, they
@@ -337,11 +345,17 @@ later steps see them via the session state and presets are patched accordingly.
 `engine/snapshot.py` mirrors, line for line, the GUI pipeline
 `open_file/setter → update_* handlers → dig_start_exp` packing. The sweep
 type picks the Worker method: Linear Time→`exp`, Log Time→`exp_log`,
-Amplitude→`exp_amplitude`, Field→`exp_field` (ESEEM Avg: not supported yet).
+Amplitude→`exp_amplitude`, Field→`exp_field`, ESEEM Avg→`exp_eseem` (no
+protocol step exposes ESEEM Avg yet, but any tune primitive accepts a preset
+of that family).
 **Any edit to either side must be followed by re-running
 `~/epr_auto_dev/gui_vs_engine.py`** (offscreen GUI vs engine, all presets,
-element-wise). Executor stop semantics: sending 'exit' still reads out and
-saves — treat operator stop as "finish early", not "discard".
+element-wise). Executor stop semantics: the worker child ignores SIGINT
+(`_shielded`), so a terminal Ctrl-C reaches only the parent, which sends
+'exit' — the worker still reads out and saves — and then re-raises so the
+interrupt aborts the protocol (never a retryable StepFailure). Parent-side
+errors wind down the same way (`_wind_down`: exit + drain, terminate only as
+a last resort) so the worker's `pulser_close` always gets its chance.
 
 ## Reference code
 

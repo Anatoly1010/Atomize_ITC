@@ -2,10 +2,11 @@
 
 Mirrors the temp_control tool's proven setter-waiter semantics: consecutive
 in-band polls (hold count) at a slow cadence — GPIB is slow — inside a
-wall-clock timeout. The session's temp.param lock (source 'epr_auto')
-already keeps the interactive tool off the bus during a run; the waiter
-mirrors its readings into temp.param so an open temp_control window keeps
-displaying live values.
+wall-clock timeout. Both primitives seize the session's temp.param lock
+(source 'epr_auto') before touching the Lakeshore, so a temp-first or
+temp-only protocol keeps the interactive tool off the GPIB bus too; the
+waiter mirrors its readings into temp.param so an open temp_control window
+keeps displaying live values.
 """
 import time
 
@@ -54,6 +55,7 @@ def set_temperature(session, setpoint, heater_range=None, rephase_delta=REPHASE_
     return immediately — pair with temp.wait to block until it holds.
     The device module's test branch range-checks both against the config."""
     setpoint = float(setpoint)
+    session.ensure_hardware_locks()   # keep temp_control off the GPIB bus
     ls = session.temp_controller
     if heater_range is not None:
         if heater_range not in HEATER_RANGES:
@@ -68,7 +70,7 @@ def set_temperature(session, setpoint, heater_range=None, rephase_delta=REPHASE_
     _rephase_check(session, setpoint, rephase_delta, 'temperature set')
     result = {'setpoint': setpoint,
               'heater_range': heater_range or 'unchanged'}
-    session.state['temperature'] = result
+    session.state['temperature'] = {**result, 'reached': False}  # only wait confirms arrival
     return result, []
 
 
@@ -84,6 +86,7 @@ def wait_temperature(session, band=0.2, channels='B', hold=3,
     if band <= 0:
         raise ValueError(f'band must be positive, got {band}')
     timeout_s = parse_time_ns(timeout) / 1e9
+    session.ensure_hardware_locks()   # keep temp_control off the GPIB bus
     ls = session.temp_controller
     sp = float(setpoint) if setpoint is not None else float(ls.tc_setpoint())
     chans = tuple(channels)               # 'AB' -> ('A', 'B')
@@ -96,6 +99,7 @@ def wait_temperature(session, band=0.2, channels='B', hold=3,
         temps = {c: ls.tc_temperature(c) for c in chans}   # arg validation
         result = {'setpoint': sp, 'temperature': temps, 'elapsed_s': 0.0,
                   'canned': True}
+        session.state['temperature'] = {'setpoint': sp, 'reached': True}
         return result, [JudgeReport('temperature_band', True, band,
                                     {'note': 'dry-run, not judged'})]
 
@@ -125,7 +129,8 @@ def wait_temperature(session, band=0.2, channels='B', hold=3,
         {'band_k': band, 'hold': int(hold), 'timeout_s': timeout_s,
          **({} if reached else {'note': 'timeout before the band held'})})
     if reached:
-        session.state['temperature'] = {'setpoint': sp, **result['temperature']}
+        session.state['temperature'] = {'setpoint': sp, 'reached': True,
+                                        **result['temperature']}
     return result, [judge]
 
 

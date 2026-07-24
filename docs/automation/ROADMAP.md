@@ -1776,9 +1776,10 @@ Two runs, both 2-independent-adversarial-skeptics per bug/risk finding:
   Monte-Carlo of the pi/pi2 chain, re-scoring of the 71-trace oTerPhenyl
   campaign) — that empirical work is what makes these findings decisive.
 
-**Full report: [REVIEW_2026-07-23.md](REVIEW_2026-07-23.md)** — every finding
-with evidence chain, scenario, suggested fix and both skeptics verbatim;
-dimensions 1/2/3/5 first half, physics second half (findings P1-P7).
+**Full report: `REVIEW_2026-07-23.md`** — every finding with evidence chain,
+scenario, suggested fix and both skeptics verbatim; dimensions 1/2/3/5 first
+half, physics second half (findings P1-P7). *Removed from the tree after all
+fixes landed (2026-07-24) — retrieve it from git history at commit `be42789`.*
 
 Totals: **13 CONFIRMED, 4 PLAUSIBLE, 2 REFUTED, 20 notes.**
 
@@ -1792,7 +1793,7 @@ list before re-deriving any of them.
 **Physics first — these are wrong NUMBERS reaching hardware, and two of them
 invalidate campaign data rather than merely risking it.**
 
-- [ ] **[F]** `primitives/tune.py:264` **bug** (P1) — the amplitude-transfer rule
+- [x] **[F]** `primitives/tune.py:264` **bug** (P1) — the amplitude-transfer rule
       `amp_slot = amp_cal * L_cal/L_slot` ignores the pulse ENVELOPE, but flip
       angle is amp x L x <envelope>. The shipped default amplitude-cal preset
       `ampl_4s.phase_awg` sweeps a GAUSS (28.8 ns, sigma 6.4) whose area factor
@@ -1806,7 +1807,7 @@ invalidate campaign data rather than merely risking it.**
       blessed — the linearity argument it gives is a different (correct) point.
       Fix: carry a shape factor with the calibration; minimum stop-gap is to
       refuse/warn when `cal_slot.typ != target_slot.typ`.
-- [ ] **[F]** `primitives/judges.py:52` **bug** (P2) — `echo_snr` uses the REAL-
+- [x] **[F]** `primitives/judges.py:52` **bug** (P2) — `echo_snr` uses the REAL-
       Gaussian MAD constant 0.6745 on COMPLEX traces (all five production
       callers pass `i + 1j*q`). For complex noise |diff| is Rayleigh, median
       1.17741, so sigma is over-estimated 1.746x and every score is under-
@@ -1825,7 +1826,7 @@ invalidate campaign data rather than merely risking it.**
       shipped path **rejects 13 real traces the calibration deemed good**
       (FAIL@3.0: 8 -> 21 of 71). Fix the constant AND re-check SNR_FLOOR
       together — either alone shifts every gate 1.7x.
-- [ ] **[F]** `primitives/tune.py:799` **risk** (P3) — `_refine_minimum`'s de-bias
+- [x] **[F]** `primitives/tune.py:799` **risk** (P3) — `_refine_minimum`'s de-bias
       is itself biased: the observed minimum of `a*cos(theta)*exp(-k*x)` sits
       before theta = pi, so the refinement trades the fit's unbiased root for a
       biased one and `_anchored_pi2` propagates it. Noiseless synthetic: pi low
@@ -1833,7 +1834,7 @@ invalidate campaign data rather than merely risking it.**
       low by up to 12 %. Routine B1 inhomogeneity on a powder sample is enough.
       Fix: refine on the envelope-corrected trace `(y-c0)*exp(+k*x)` — keeps the
       variance reduction ROADMAP.md:573-575 wanted, removes the bias.
-- [ ] `primitives/tune.py:830` **risk** (P4) — pi/2 is never rail- or range-
+- [x] `primitives/tune.py:830` **risk** (P4) — pi/2 is never rail- or range-
       checked (only pi is), and the rails JUDGE is emitted for amplitude mode
       only, so a length-mode calibration can rail with no hard judge at all.
       Monte-Carlo hit a degenerate basin returning pi2 = 1726 ns on a sweep
@@ -1841,7 +1842,7 @@ invalidate campaign data rather than merely risking it.**
       `apply_calibration`'s length branch has no upper bound. Fix: guard pi2 like
       pi, add a `length_rails` hard judge, and make apply_calibration reject a
       result carrying `rails`.
-- [ ] `primitives/judges.py:62` **risk** (P5) — `phase_coherence`'s fixed
+- [x] `primitives/judges.py:62` **risk** (P5) — `phase_coherence`'s fixed
       `min_r=0.7` is meaningless at `tune.auto_phase`'s default 4 points: measured
       pure-noise pass rate **21.5 %** at n=4 (0.1 % at n=16). It is auto_phase's
       ONLY judge and a hard one, so one cold-start run in five accepts a phase
@@ -1853,7 +1854,7 @@ Then the eight from dimensions 1/2/3/5, hardware-hazard first:
 
 Fix list, hardware-hazard first (details + suggested fixes in the report):
 
-- [ ] **[F]** `engine/executor.py:133` **bug** — terminal Ctrl-C also SIGINTs the
+- [x] **[F]** `engine/executor.py:133` **bug** — terminal Ctrl-C also SIGINTs the
       forked Worker child (same process group); the child dies via its blanket
       `except BaseException` WITHOUT `digitizer_at_exit`/save, so the parent's
       documented 'exit' handshake never gets the chance and the operator's
@@ -1864,31 +1865,31 @@ Fix list, hardware-hazard first (details + suggested fixes in the report):
       NB this SUPERSEDES the refuted "single Ctrl-C swallowed" finding — same
       defect, correct diagnosis; the `return`-in-`except` at :148 still wants
       fixing as part of it.
-- [ ] **[F]** `engine/executor.py:155` **risk** — `finally: terminate()` SIGTERMs a
+- [x] **[F]** `engine/executor.py:155` **risk** — `finally: terminate()` SIGTERMs a
       HEALTHY mid-scan worker, so `pulser_close()` never runs and the FPGA card
       is left open for every later run. Fix: send 'exit' + drain with the
       Open->FL handling before terminating as last resort. Folds in candidate (e).
-- [ ] `primitives/tune.py:853` **risk** — auto_phase/echo_window/pi_calibration
+- [x] `primitives/tune.py:853` **risk** — auto_phase/echo_window/pi_calibration
       commit `session.state` BEFORE the caller-side judge gate; with
       `on_fail: skip` a railed calibration reaches hardware via `_apply_cal`
       (`'rails'` is never read by `apply_calibration`). Fix: stage the write,
       commit only after the gate — mirror field.edfs/rep_rate.
-- [ ] `primitives/tune.py:908` **risk** — `power_for_length` discards the internal
+- [x] `primitives/tune.py:908` **risk** — `power_for_length` discards the internal
       nutation's judges: up to `max_iter-1` REAL vane moves computed from noise,
       possibly toward 0 dB. Fix: gate each iteration on echo_snr, log cal_judges,
       extend the step-order lint to power_for_length.
-- [ ] `primitives/temp.py:107` **risk** — `temp.set`/`temp.wait` never call
+- [x] `primitives/temp.py:107` **risk** — `temp.set`/`temp.wait` never call
       `ensure_hardware_locks()`, so a temp-prologue or temp-only protocol talks to
       the Lakeshore with `temp.param` Lock='Off' while temp_control polls the same
       GPIB session. Fix: seize the locks at the top of both (or once in `cli._run`);
       then correct temp.py's docstring + checklist claims.
-- [ ] `session.py:86` **bug** — same-day re-run reuses the run dir; `manifest.json`
+- [x] `session.py:86` **bug** — same-day re-run reuses the run dir; `manifest.json`
       and `NNN_tag.csv` silently overwritten, defeating the crash-safety promise.
       Fix: run-unique component (HHMMSS) or refuse when manifest.json exists.
-- [ ] `primitives/tune.py:444` **risk** — dry-run pre-flights only the SLOWEST
+- [x] `primitives/tune.py:444` **risk** — dry-run pre-flights only the SLOWEST
       rep_rate grid point; a `rate_max` shorter than the sequence passes `--test`
       and aborts live. Fix: pre-flight the whole grid in test mode.
-- [ ] `session.py:83` **note** (downgraded) — relative `output:` template resolves
+- [x] `session.py:83` **note** (downgraded) — relative `output:` template resolves
       against `libs/` (cwd after cli's chdir). Fix: resolve against the pre-chdir
       CWD, or reject relative templates at load time.
 
@@ -1931,3 +1932,159 @@ Review scripts kept at `~/epr_auto_dev/review_wf_ef0c3f4c/`: `finish.js`
 (dimensions 1/2/3/5 verification, physics stripped out) and `physics.js`
 (dimension 4 + verification). Both re-runnable; `physics.js` takes
 `args:{skeptics:N}`.
+
+## Session 2026-07-24 — ALL 13 CONFIRMED FINDINGS FIXED (+ dispositions (a)/(b))
+
+Everything on the 2026-07-23 fix list applied and verified. `gui_vs_engine.py`
+ALL PASS (mutated `control_center/*.param` restored); all three shipped
+protocols `run --test` green; the fix-list checkboxes above are ticked.
+
+### Physics
+
+- **P1** `tune.py`: new `_envelope_area` (SINE → 1, GAUSS/SINC → mean of the
+  peak-referenced envelope by 4096-pt midpoint quadrature — 0.543410 for the
+  ampl_4s GAUSS, matching the driver's discrete mean; WURST/SECH → None) +
+  `_slot_area`. `apply_calibration` and `_scale_detection_pair` scale by
+  `(L·f)_cal/(L·f)_slot`; transfer across envelopes with no factor is refused
+  (unless identical typ+length). `pi_calibration` stores `shape_typ` /
+  `shape_factor` beside `length_ns`. Verified in `run --test`:
+  overnight_t2 apply_cal P2 43.07 → **23.41 %**, P3 43.71 → **23.75 %**;
+  detection pair 11.17/22.67 → **6.07/12.32** — the review's shape-correct
+  numbers exactly. ARCHITECTURE table + 'Detection pulses' section updated.
+- **P2** `judges.echo_snr`: the MAD divisor branches on input type
+  (0.6745 real / 1.17741 Rayleigh complex). Measured pure-noise medians:
+  complex 1.03–1.07 (was ~0.59), real branch unchanged (0.88–0.91).
+  **SNR_FLOOR stays 3.0** — it was calibrated on the rotated-REAL oTP curves,
+  where the constant was already correct; the complex branch now reports in
+  those same units, so the floor and every target_snr transfer unchanged.
+- **P3**: `_refine_minimum`/`_anchored_pi2` now run on the envelope-corrected
+  trace `(y−c0)·exp(+k·x)` (anchored re-fit seeded with k=0/c0=0). Noiseless
+  synthetic: pi = 68.00 and pi/2 = 34.00 at every envelope 1.00 → 0.26
+  (was −0.9 → −11.2 % on pi, up to −12 % on pi/2).
+- **P4**: pi2 rail-guarded like pi (an out-of-sweep pi/2 root → rails + None,
+  never shipped); new hard judge `judges.length_rails` for mode='length'
+  (steps.py rail extraction accepts both rail judges, so the coarse fallback
+  now triggers for length mode too); `apply_calibration` rejects any cal
+  carrying `rails`.
+- **P5**: `phase_coherence` floor = `max(min_r, 3/sqrt(n))`; measured null
+  false-pass ≤ 1e-4 at every n (was 21.5 % at the old default n=4); n < 10
+  can never pass and the details say so. `tune.auto_phase` default points
+  4 → 16 (primitive + step schema). rep_rate's concatenated 24-sample judge
+  unaffected (floor stays 0.7 there).
+
+### State flow / error paths
+
+- **executor**: `_shielded` child entry ignores SIGINT — the whole process
+  group receives the terminal's Ctrl-C; verified with a setsid/killpg repro:
+  the child survives and completes the exit→save handshake (previously it
+  died in its `except BaseException` without saving). The parent's
+  KeyboardInterrupt handler now ALWAYS re-raises after the drain (operator
+  interrupt aborts the protocol; the old `return {'status':'stopped'}` /
+  'worker error during stop' EngineError paths made it a retryable
+  StepFailure). New `_wind_down` replaces the bare join/terminate finally in
+  BOTH run_worker and acquire_trace: a still-alive worker gets 'exit' plus a
+  served Open→FL drain for `_WIND_DOWN_S` = 60 s; terminate is the last
+  resort — `pulser_close` always gets its chance, the card is never stranded
+  by a parent-side raise. Escalation ladder: 1st Ctrl-C graceful-indefinite,
+  2nd bounded 60 s, 3rd immediate terminate. All four callbacks wrapped
+  (`_safe_call`, candidate (e) folded in — a raising `session.log` on a dead
+  stdout degrades to no-resize); acquire_trace's 'start' send moved inside
+  the try (orphan-on-send-failure note).
+- **Staged state**: `session.stage_state` / `commit_staged_state` /
+  `discard_staged_state`; auto_phase, echo_window, pi_calibration, rep_rate
+  and power_for_length all stage; `_run_primitive` commits only after the
+  judge gate and discards on every failure path. This also fixes the
+  aborted-run leak: `pi_calibration` takes `_stage` and power_for_length
+  passes False, so the internal length probe never reaches
+  `state['pi_calibration']` (repro protocol power_for_length → exp.t2:
+  apply_cal line gone). field/temp keep their direct writes on purpose —
+  they mirror physical hardware state, not accepted tuning.
+- **power_for_length**: per-iteration nutation judges logged ('nutation
+  [PASS/FAIL] ...'); hard gate on the internal echo_snr — no vane move is
+  ever computed from noise; the final iteration's cal judges ride along into
+  the step's judge list (→ manifest); step-order lint extended to
+  tune.power_for_length (tune_up.yaml now warns at validate — informational,
+  the canonical chain assumes a parked magnet).
+- **temp.set / temp.wait** call `ensure_hardware_locks()` (no-op in test):
+  temp-only/temp-first protocols now really keep temp_control off the GPIB
+  bus; module docstring corrected (it promised a lock nothing took).
+- **session.run_dir**: a target dir already holding `manifest.json` gets a
+  `_run2`/`_run3`… suffix — a same-day re-run can no longer overwrite the
+  manifest and low-numbered CSVs. Relative `output:` templates resolve
+  against the pre-chdir invoke CWD (cli captures it before `os.chdir(libs)`);
+  tune_up.yaml's default-template comment corrected
+  (`epr_auto_{date}_{sample}`).
+- **tune.rep_rate** dry-run now pre-flights EVERY grid rate (canned return
+  moved after the loop) — a rate_max whose period is shorter than the
+  sequence fails `--test` instead of aborting live.
+- **Dispositions**: (a) `scan_data_flag` set only when `_snr_policy` returns
+  non-None (exp.t2/t1 + field.edfs); (b) `_PROJECTION_MARGIN = 1.15` on the
+  SNR projection (`needed = ceil(k·(1.15·target/SNR_k)²)`) — the OVER_TICKS
+  persistence variant retired per the physics verdict.
+- HARDWARE_CHECKLIST: SIGHUP warning added to the kill-terminal item (no
+  Python unwinding → pulser_close skipped → expect board recovery; Ctrl-C is
+  the clean stop). ARCHITECTURE: ESEEM Avg contract line unstaled; executor
+  stop-semantics paragraph rewritten for the shield/wind-down.
+
+### Still outstanding
+
+1. Hardware run per HARDWARE_CHECKLIST — now unblocked: with P1/P2 fixed, a
+   weak bench echo is evidence about the hardware again, not about these two
+   defects. Bench items worth an explicit look: the Ctrl-C stop path
+   (save + abort) and a length-mode rail triggering the coarse fallback.
+2. PLAUSIBLE findings remain operator's-call (edfs magnet-parking,
+   projection undershoot beyond the margin, exp.py:130 sensitivity-mode
+   rep_rate warning) — read both skeptics in the review report first
+   (removed from the tree; git history, commit `be42789`).
+
+### 2026-07-24 (2) — review NOTES implemented (Opus agent)
+
+Worthwhile items from the NOTES sections of REVIEW_2026-07-23.md (each
+re-verified in code first). Uncommitted, on top of the 2026-07-24 confirmed
+fixes. All three shipped protocols stay green (`validate` + `run --test`),
+`gui_vs_engine.py` ALL PASS, param files restored.
+
+- **echo_window physical smoothing box** (`primitives/tune.py`): `_smooth`
+  gained an optional width arg; `echo_window` now smooths `|V(t)|` with a
+  ~3 ns box (`max(3, round(3.0/tpp)) | 1`) instead of the trace-scaled
+  `len(y)//20`. Synthetic Gaussian echo, 512 ns window @ tpp 0.4: measured
+  FWHM 26.4 → 14.4 ns (true 15); 30 ns 35.2 → 29.6; 60 ns 62.4 → 60.0.
+  Other `_smooth` callers (rep_rate/nutation) unchanged.
+- **_phase_temperature trusts only reached setpoints** (`primitives/temp.py`,
+  `tune.py`): `temp.set` stamps `'reached': False`, `temp.wait` success (and
+  the test-mode canned wait) stamps `'reached': True`; `_phase_temperature`
+  falls through to the measured `tc_temperature('B')` when the entry is not
+  reached, so a failed/skipped wait can't anchor a later re-phase test at a
+  temperature the cryostat never reached.
+- **acquire_trace forwards dig_on's script_test warning** (`engine/executor.py`):
+  the recv loop now handles `('test', payload)` — non-empty payload (e.g.
+  `!!!TOO MANY PHASES FOR LIVE MODE!!!`) goes to `on_message`; empty stays
+  pre-flight chatter.
+- **edfs point-count off-by-one** (`primitives/field.py`): `step` nudged down
+  by `(1 - 1e-9)` so the worker's `int((END-START)/STEP)+1` recomputes the
+  requested `points`. 0 mismatches over 200 000 random (lo, hi, points) combos
+  (was 11 362/200 000 unguarded).
+- **Dropped runner's dead dotted-key state writes** (`runner.py:169`, `:356`):
+  grep confirmed nothing reads `state['tune.*']`; both writes removed (the
+  manifest already records results).
+- **adjusted-R² dof** (`primitives/judges.py`): `dof = n - n_params` in both
+  `fit_quality` and `relaxation_fit` (n_params already counts the intercept);
+  `dof > 0` guard kept. Diagnostics-only.
+- **validate lints two statically-dead cases** (`protocol.py`, `steps.py`):
+  (a) `rep_rate: auto` with no earlier `tune.rep_rate` → warning (proven:
+  fires on exp.t2 with rep_rate auto); (b) `field.edfs` `pick: value` with an
+  explicit range and the value outside `[lo, hi]` → hard ParamError at load
+  (proven: `pick value 4000.0 G is outside the range (3380.0..3520.0 G)`).
+- **foreach can drive numeric params** (`params.py`): `Int`/`Float` now coerce
+  a cleanly-parsing string (foreach `$var` leaves are strings), preserving the
+  existing range checks and error messages. Proven: `foreach N in [4, 8]` over
+  `points: $N` runs green under `--test`.
+- **HARDWARE_CHECKLIST preset-resolution doc** corrected to include the
+  USER_PRESET_DIR middle step (`epr_auto/presets/`) and note the default-only
+  shipped-set rule.
+
+Deliberately NOT done (per task scope): rep_rate `_FLAT_SPREAD` rework, the
+ctx `_preset_hashes` cache, and the OVER_TICKS/`k>=2` items (retired /
+bench-conditional). Also left the several "retire"/cosmetic dispositions
+(scan_data_flag pairing note beyond what 2026-07-24 already did, ARCHITECTURE
+ESEEM-Avg line already handled, ParamError substitution context) untouched.

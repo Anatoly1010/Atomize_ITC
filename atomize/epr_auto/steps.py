@@ -70,15 +70,19 @@ def _run_primitive(session, func, advisory_extra=(), **kwargs):
     advisory_extra names judges that are advisory for THIS step only (e.g. the
     exp.* relaxation steps demote echo_snr: relaxation_fit is their hard gate,
     and a noisy-but-valid decay must not also be aborted on SNR — echo_snr
-    stays a hard gate for tune.*/field.*)."""
+    stays a hard gate for tune.*/field.*). Tuning results the primitive staged
+    (session.stage_state) are committed into session.state only after the
+    gate passes, so a failed-but-skipped step cannot poison later steps."""
     try:
         result, judge_reports = func(session, **kwargs)
     except StepFailure:
+        session.discard_staged_state()
         raise
     except (ValueError, RuntimeError) as e:
         # expected failure modes: bad preset/arguments (ValueError), engine /
         # vane / lock errors (RuntimeError incl. EngineError) — report as a
         # failed step, not a traceback
+        session.discard_staged_state()
         raise StepFailure(str(e)) from None
     session.last_judges = list(judge_reports)   # runner -> manifest
     for j in judge_reports:
@@ -88,9 +92,12 @@ def _run_primitive(session, func, advisory_extra=(), **kwargs):
         hard = [j for j in judge_reports
                 if not j.passed and j.name not in advisory]
         if hard:
+            session.discard_staged_state()
             rails = next((j.details.get('rail') for j in hard
-                          if j.name == 'amplitude_rails'), None)
+                          if j.name in ('amplitude_rails', 'length_rails')),
+                         None)
             raise StepFailure('; '.join(str(j) for j in hard), rails=rails)
+    session.commit_staged_state()
     return result
 
 
@@ -101,8 +108,11 @@ def _run_primitive(session, func, advisory_extra=(), **kwargs):
           params={
               'preset': PresetFile(default='hahn_echo_4s.phase_awg',
                                    help='echo preset the phase is measured on'),
-              'points': Int(min=2, default=4,
-                            help='sweep points for the quick phase acquisition'),
+              'points': Int(min=2, default=16,
+                            help='sweep points for the quick phase acquisition '
+                                 '(the phase_coherence judge needs >= ~10 to '
+                                 'be informative — its noise floor is '
+                                 '3/sqrt(n))'),
               'scans': Int(min=1, default=1,
                            help='scans for the quick acquisition'),
           })
@@ -249,6 +259,11 @@ def _check_edfs(params, ctx):
         lo, hi = (parse_field_g(v) for v in params['range'])
         if lo >= hi:
             raise ParamError(f"range must be [low, high], got {params['range']}")
+        if params['pick'] == 'value' and params['value'] is not None:
+            picked = parse_field_g(params['value'])
+            if not (lo <= picked <= hi):
+                raise ParamError(f'pick value {picked} G is outside the '
+                                 f'range ({lo:.1f}..{hi:.1f} G)')
     elif parse_field_g(params['span']) <= 0:
         # the auto range is center +/- span, so a zero span is the same
         # degenerate lo == hi sweep the explicit-range check rejects above
