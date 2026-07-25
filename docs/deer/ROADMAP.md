@@ -23,7 +23,7 @@ the plan's *Model allocation* for why that substitutes.
 | Session | Status | Report |
 |---|---|---|
 | S1 Foundations — kernel, background, zero-time | **DONE + FIXED** 2026-07-23 | [REVIEW_S1_foundations.md](REVIEW_S1_foundations.md) |
-| S2 Tikhonov + NNLS | next | |
+| S2 Tikhonov + NNLS | **review done, VERIFICATION PENDING** 2026-07-25 | [REVIEW_S2_tikhonov.md](REVIEW_S2_tikhonov.md) |
 | S3 Mellin transform core | not started | |
 | S4 Mellin engine + joint background | not started | |
 | S5 Multi-Gaussian | not started | |
@@ -138,16 +138,56 @@ the hardcoded 52.04 in `_gauss_mc`'s Pake band) are recorded in the S1 report.
 
 ---
 
-## Next session — S2: Tikhonov + NNLS
+## Session 2026-07-25 — S2 Tikhonov: review stage done, verification deferred
 
-Scope, hunt list and ground truth: [REVIEW_PLAN.md](REVIEW_PLAN.md) § S2.
+Run `wf_789813f0-a0b` — six concurrent dimension reviewers (α selection, NNLS
+algebra, CI coverage, joint engine, orchestration+GUI, DeerLab cross-check),
+~2.9 M tokens, 3 h 20 min. Stopped deliberately after stage 1; the 2-skeptic
+verification is the next session's work. Full interim report:
+[REVIEW_S2_tikhonov.md](REVIEW_S2_tikhonov.md).
 
-Prerequisites, both now met:
-- DeerLab works — `~/deer_benchmark/deerlab_shim.py`, import it **before**
-  `deerlab` (site-packages untouched). This is S2's main ground truth.
-- S1's negative-time fix is in, so engine comparisons are no longer contaminated.
+**38 raw findings → 15 unique bug/risk** (merged by file:line, so the three
+reviewers who independently hit `deer.py:629` become one finding carrying all
+three write-ups) **+ 17 notes. None verified** — S1 refuted findings that looked
+just as solid at this stage.
 
-The one thing S2 should test that the existing benchmarks do **not**: **CI
-coverage.** `tikhonov_ci` reports a 95 % band from covariance/curvature; nothing
-checks that it actually covers 95 %. Simulate N traces at known noise and count.
-A band that reads 95 % and covers 60 % is a publication hazard.
+### Fixed in-session — an S1 regression, not a stage-1 hypothesis
+
+S1's `_crop_pre_zero` shortened the engines' result arrays, but all three engine
+tabs then restored the **full** acquisition axis (`res['t'] = x * tf`), so the DEER
+window raised `ValueError ... 354 ... 338` on every real trace — **all 28** YopO
+traces carry pre-t₀ samples (4–40 each). Reproduced directly, then fixed at
+`deer_analysis.py:1844` / `:1924` / `:2012` with `res['t'] = x[t_us >= 0] * tf`
+(masking on `t_us` so it is bit-identical to the engine's own crop), and verified
+by driving the GUI's exact transform over all 28 traces: axis length now matches
+the result arrays on 28/28.
+
+*Lesson: S1 verified its fix against the math and the benchmark harness, not
+against the GUI — and `benchmark.py:46` pre-crops where the GUI does not. That is
+the second time this session boundary bit. Any engine-signature change needs one
+GUI-path smoke run before the session closes.*
+
+### The headline measurement: no regression from S1, but the CI is narrow
+
+DeerLab cross-check over 28 real YopO traces holds at overlap **0.9781** and
+|Δpeak| **0.0245 nm** (historical 0.978 / 0.024), and the harness-crop vs
+`_crop_pre_zero` paths agree to **1.00000** on all 28. α selection matches DeerLab
+EXACTLY on a shared grid; the regularization operator matches to 2.6e-11 up to dr²
+with no boundary off-by-one; λ round-trip and `∫P_density dr = 1.0000` are clean.
+
+The open question is **uncertainty, not the point estimate**: measured coverage of
+the nominal 95 % band runs 0.94 (narrow, low noise) down to 0.75 (bimodal) and
+**0.19 at the `alpha_factor` 2–4 the docstring itself recommends**. DeerLab's band
+under-covers too (0.883) but is 3.6× wider on real data. Whether that is a defect
+or intrinsic to covariance CIs on a constrained estimator is exactly what the
+skeptics are for.
+
+## Next session — S2 stage 2: verification
+
+Run `~/deer_benchmark/s2_verify.js`; its header has the exact invocation (findings
+go in through `args`, since `resumeFromRunId` is same-session only). 15 findings ×
+2 skeptics = 30 agents, ~2 at a time on this 4-core box.
+
+Then apply the confirmed fixes, re-run the DeerLab cross-check as a regression
+gate, and — per the lesson above — **smoke-run the GUI path** before closing.
+Reading guidance for correlated findings is at the end of the interim report.

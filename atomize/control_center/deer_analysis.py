@@ -1840,9 +1840,8 @@ class MainWindow(QMainWindow):
                     fit_dim=fit_dim, alpha=alpha, alpha_factor=afac, engine=engine,
                     bg_params=bgp)
                 band = None
-            # display/cursors stay in the original acquisition time; only the
-            # kernel used the t0-shifted axis internally
-            res['t'] = x * tf
+            # display axis stays in acquisition time, cropped like the engine's pre-t0 drop
+            res['t'] = x[t_us >= 0] * tf
             if bg_end_us is not None:
                 res['background']['bg_end'] = bge_disp * tf
             return {'t0_disp': t0_disp, 'res': res, 'band': band}
@@ -1921,7 +1920,8 @@ class MainWindow(QMainWindow):
                     t_us, v, r=r, bg_start=bg_us, bg_end=bg_end_us, dim=dim,
                     fit_dim=fit_dim, n_mc=n_mc, **mk)
                 band = None
-            res['t'] = x * tf
+            # display axis stays in acquisition time, cropped like the engine's pre-t0 drop
+            res['t'] = x[t_us >= 0] * tf
             if bg_end_us is not None:
                 res['background']['bg_end'] = bge_disp * tf
             return {'t0_disp': t0_disp, 'res': res, 'band': band}
@@ -2008,7 +2008,8 @@ class MainWindow(QMainWindow):
                     t_us, v, r=r, bg_start=bg_us, bg_end=bg_end_us, dim=dim,
                     fit_dim=fit_dim, n_mc=n_mc, **gk)
                 band = None
-            res['t'] = x * tf
+            # display axis stays in acquisition time, cropped like the engine's pre-t0 drop
+            res['t'] = x[t_us >= 0] * tf
             if bg_end_us is not None:
                 res['background']['bg_end'] = bge_disp * tf
             return {'t0_disp': t0_disp, 'res': res, 'band': band}
