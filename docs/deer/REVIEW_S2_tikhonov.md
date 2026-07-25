@@ -24,8 +24,13 @@ python3 -c "import json;print(json.dumps(json.load(open('/home/anatoly/deer_benc
 ```
 
 then `Workflow({ scriptPath: '~/deer_benchmark/s2_verify.js', args: <that array> })`
-— pass the actual JSON array, not a string. 15 findings × 2 skeptics = 30 agents;
-at this machine's concurrency cap of 2 (4 cores) budget several hours.
+— pass the actual JSON array, not a string. **14** findings × 2 skeptics = 28
+agents; at this machine's concurrency cap of 2 (4 cores) budget several hours.
+
+The queue holds 14, not 15: the GUI axis regression was fixed in-session and moved
+to `fixed_in_session` in the JSON, so it is not re-verified. Its downstream finding
+(ME1 `nan`, `deer_analysis.py:2368`) **is** still in the queue and must be judged
+against the fixed code.
 
 Findings merged from several reviewers carry `corroborated_by`. The skeptic prompt
 is told explicitly that agreement is **not** a pass — the reviewers read the same

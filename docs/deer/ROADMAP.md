@@ -185,8 +185,11 @@ skeptics are for.
 ## Next session — S2 stage 2: verification
 
 Run `~/deer_benchmark/s2_verify.js`; its header has the exact invocation (findings
-go in through `args`, since `resumeFromRunId` is same-session only). 15 findings ×
-2 skeptics = 30 agents, ~2 at a time on this 4-core box.
+go in through `args`, since `resumeFromRunId` is same-session only). 14 findings ×
+2 skeptics = 28 agents, ~2 at a time on this 4-core box. (14, not 15: the GUI axis
+regression was fixed in-session and moved to `fixed_in_session` in the JSON. Its
+downstream finding — ME1 `nan` at `deer_analysis.py:2368` — is still queued and
+must be judged against the fixed code.)
 
 Then apply the confirmed fixes, re-run the DeerLab cross-check as a regression
 gate, and — per the lesson above — **smoke-run the GUI path** before closing.
