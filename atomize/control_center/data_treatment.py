@@ -45,6 +45,9 @@ import atomize.general_modules.bruker_opener as bruker
 import atomize.math_modules.least_square_fitting_modules as fitting
 import atomize.math_modules.signal_processing as sigproc
 import atomize.math_modules.fft as fft_module
+# Parameter-header viewer shared with the 2D tool (separate non-modal window).
+from atomize.control_center.header_view import (HeaderWindow, read_header,
+                                                params_to_lines)
 # Reuse the main-window plot stack so the embedded preview behaves identically
 # to the main UI (crosshair, Shift-drag ruler, FFT/log right-click toggles).
 from atomize.main.widgets import CrosshairPlotWidget, CloseableDock, CrosshairDock
@@ -149,6 +152,9 @@ class MainWindow(QMainWindow):
         self.trace_colors = {}
         # channel-colour map of the *active* trace (set in _activate_trace)
         self.active_colors = {}
+        # uname -> '#'-header lines of the file the trace came from (see header_view)
+        self.trace_headers = {}
+        self.header_window = None          # created on first use, then reused
         # label -> (x, y) of the *active* trace's source curves
         self.datasets = {}
 
@@ -315,10 +321,21 @@ class MainWindow(QMainWindow):
         # Name of the dataset currently loaded (file basename, or 'Loaded from
         # plot' for the in-memory buffer). Kept on its own line so a long path
         # wraps instead of stretching the panel.
+        file_row = QHBoxLayout()
         self.loaded_label = QLabel('File: —')
         self.loaded_label.setStyleSheet(LABEL_STYLE)
         self.loaded_label.setWordWrap(True)
-        panel.addWidget(self.loaded_label)
+        file_row.addWidget(self.loaded_label, 1)
+        self.header_btn = QPushButton('Header…')
+        self.header_btn.setStyleSheet(BUTTON_STYLE)
+        self.header_btn.clicked.connect(self.show_header)
+        file_row.addWidget(self.header_btn)
+        panel.addLayout(file_row)
+        # Remove / Header… sit one above the other: one width, aligned edges
+        btn_w = max(self.trace_remove_btn.sizeHint().width(),
+                    self.header_btn.sizeHint().width())
+        self.trace_remove_btn.setFixedWidth(btn_w)
+        self.header_btn.setFixedWidth(btn_w)
 
         ch_grid = QGridLayout()
         ch_grid.addWidget(self._label('I / primary channel'), 0, 0)
@@ -835,13 +852,16 @@ class MainWindow(QMainWindow):
             i += 1
         return f'{name} ({i})'
 
-    def _add_traces(self, items, colors=None):
+    def _add_traces(self, items, colors=None, headers=None):
         """Register one or more (name, channel-mapping) traces and make the last
         one active. `items` is a list of (name, {label: (x, y)}). `colors`, when
         given, is a {channel label: (r,g,b)} map (from "Load from plot") whose
-        entries are kept per trace so each channel draws in its original colour."""
+        entries are kept per trace so each channel draws in its original colour.
+        `headers`, when given, is a list of '#'-header line lists parallel to
+        `items`, stored per trace for the header viewer. Returns the names the
+        traces were registered under."""
         added = []
-        for name, mapping in items:
+        for idx, (name, mapping) in enumerate(items):
             if not mapping:
                 continue
             uname = self._unique_trace_name(name)
@@ -850,14 +870,17 @@ class MainWindow(QMainWindow):
                 tc = {lbl: colors[lbl] for lbl in mapping if lbl in colors}
                 if tc:
                     self.trace_colors[uname] = tc
+            if headers and idx < len(headers) and headers[idx]:
+                self.trace_headers[uname] = headers[idx]
             added.append(uname)
         if not added:
-            return
+            return added
         self.trace_combo.blockSignals(True)
         self.trace_combo.addItems(added)
         self.trace_combo.setCurrentIndex(self.trace_combo.count() - 1)
         self.trace_combo.blockSignals(False)
         self._activate_trace()                     # show the newly added trace
+        return added
 
     def _activate_trace(self, *args):
         """Make the selected trace active: point self.datasets at its channels and
@@ -877,6 +900,8 @@ class MainWindow(QMainWindow):
         if name:
             self._set_loaded_file(f'{name}  ({self.trace_combo.currentIndex() + 1} '
                                   f'of {self.trace_combo.count()})')
+        if self.header_window is not None:         # the viewer follows the panel
+            self.header_window.select(name)
 
     def _remove_trace(self):
         """Drop the active trace; activate the next one, or clear if none remain."""
@@ -885,6 +910,7 @@ class MainWindow(QMainWindow):
             return
         self.traces.pop(name, None)
         self.trace_colors.pop(name, None)
+        self.trace_headers.pop(name, None)
         idx = self.trace_combo.currentIndex()
         self.trace_combo.blockSignals(True)
         self.trace_combo.removeItem(idx)
@@ -892,9 +918,30 @@ class MainWindow(QMainWindow):
         if self.trace_combo.count():
             self.trace_combo.setCurrentIndex(min(idx, self.trace_combo.count() - 1))
             self._activate_trace()
+            self._sync_header_window()
             self.set_status(f'Removed trace "{name}".')
         else:
             self.clear_all()
+
+    # ------------------------------------------------------- header viewer
+    def _sync_header_window(self):
+        """Push the current traces (and their stored headers) into the viewer.
+        A load never opens the window by itself — only the 'Header…' button does."""
+        if self.header_window is None:
+            return                         # nothing open: nothing to keep in sync
+        sources = [(name, self.trace_headers.get(name, []))
+                   for name in self.traces]
+        self.header_window.set_sources(sources,
+                                       active=self.trace_combo.currentText())
+
+    def show_header(self):
+        """'Header…' button: open (or raise) the viewer on the active trace."""
+        if self.header_window is None:
+            self.header_window = HeaderWindow(self)
+        self._sync_header_window()
+        if not self.traces:
+            self.set_status('No dataset loaded — nothing to show a header for.')
+        self.header_window.show_source(self.trace_combo.currentText())
 
     def _refresh_combos(self, select_i=None, select_q=None):
         """Repopulate the I/Q selectors from self.datasets without discarding it."""
@@ -909,28 +956,18 @@ class MainWindow(QMainWindow):
         self.on_source_changed()
 
     @staticmethod
-    def _csv_header_labels(file_path):
-        """Column labels from a CSV's '#'-comment header, e.g.
-        '# Time (ns), Signal (V)' -> ['Time (ns)', 'Signal (V)']. Uses the last
-        comment line before the data (the column-name row, by convention) and
-        splits on commas; decorative '#'-only lines are ignored. Returns [] when
-        the file has no usable comment header."""
+    def _csv_header_labels(header_lines):
+        """Column labels from a CSV's '#'-comment header (as read by
+        header_view.read_header), e.g. '# Time (ns), Signal (V)' ->
+        ['Time (ns)', 'Signal (V)']. Uses the last comment line before the data
+        (the column-name row, by convention) and splits on commas; decorative
+        '#'-only lines are ignored. Returns [] when there is nothing usable."""
         labels = []
-        try:
-            with open(file_path, 'r', errors='ignore') as fh:
-                for line in fh:
-                    s = line.strip()
-                    if not s:
-                        continue
-                    if s.startswith('#'):
-                        parts = [c.strip() for c in s.lstrip('#').split(',')]
-                        if any(parts):
-                            labels = parts
-                    else:
-                        break                     # reached the first data row
-        except Exception:
-            return []                             # header is best-effort: never
-        return labels if any(labels) else []      # block a load over a bad header
+        for line in header_lines:
+            parts = [c.strip() for c in line.split(',')]
+            if any(parts):
+                labels = parts
+        return labels if any(labels) else []      # never block a load over a bad header
 
     def _remember_dir(self, path):
         """Record the folder of `path` as the next dialog's starting directory."""
@@ -957,9 +994,10 @@ class MainWindow(QMainWindow):
             self._remember_dir(path)
         return path
 
-    def _csv_to_mapping(self, file_path):
-        """Read a CSV into a {channel label: (x, y)} mapping plus its header
-        labels. Raises ValueError on a structurally unusable file.
+    def _csv_to_mapping(self, file_path, header_lines):
+        """Read a CSV into a {channel label: (x, y)} mapping plus its column
+        labels, taken from the already-read `header_lines`. Raises ValueError on
+        a structurally unusable file.
 
         Guards against accidentally loading a 2D matrix: open_1d gives one row per
         CSV column, so a [trace × point] dataset arrives as hundreds/thousands of
@@ -973,7 +1011,7 @@ class MainWindow(QMainWindow):
             raise ValueError(f'looks like a 2D dataset ({data.shape[0]} columns); '
                              f'use the 2D tool')
         x = data[0]
-        labels = self._csv_header_labels(file_path)
+        labels = self._csv_header_labels(header_lines)
         mapping = {}
         for i in range(1, data.shape[0]):
             y = data[i]
@@ -988,10 +1026,11 @@ class MainWindow(QMainWindow):
         paths = self._open_dialog(multiple=True)
         if not paths:
             return
-        items, failed, xname = [], [], None
+        items, headers, failed, xname = [], [], [], None
         for file_path in paths:
+            header_lines = read_header(file_path)   # one read: labels + viewer
             try:
-                mapping, labels = self._csv_to_mapping(file_path)
+                mapping, labels = self._csv_to_mapping(file_path, header_lines)
             except Exception as e:
                 failed.append(f'{os.path.basename(file_path)} ({e})')
                 continue
@@ -999,10 +1038,12 @@ class MainWindow(QMainWindow):
             if xname is None and labels and labels[0]:
                 xname = labels[0]
             items.append((os.path.splitext(os.path.basename(file_path))[0], mapping))
+            headers.append(header_lines)
         if xname:
             self.xname_edit.setText(xname)
         if items:
-            self._add_traces(items)
+            self._add_traces(items, headers=headers)
+            self._sync_header_window()
         msg = f'Loaded {len(items)} trace(s)' if items else 'No traces loaded'
         if failed:
             msg += '. Skipped: ' + '; '.join(failed)
@@ -1031,7 +1072,9 @@ class MainWindow(QMainWindow):
         mapping = {lbl: (x, np.asarray(y, dtype=float)) for lbl, y in res['channels']}
         unit = f' ({res["x_unit"]})' if res['x_unit'] else ''
         self.xname_edit.setText(f'{res["x_name"]}{unit}')
-        self._add_traces([(os.path.splitext(os.path.basename(file_path))[0], mapping)])
+        self._add_traces([(os.path.splitext(os.path.basename(file_path))[0], mapping)],
+                         headers=[params_to_lines(res.get('params', {}))])
+        self._sync_header_window()
         if res['complex']:                        # selects first two as I / Q
             self.pair_check.setChecked(True)
         self.set_status(f'Loaded {os.path.basename(file_path)} — {res["format"]}, '
@@ -1119,6 +1162,7 @@ class MainWindow(QMainWindow):
             if buf_xname:
                 self.xname_edit.setText(buf_xname)
             self._add_traces(items, colors=curve_colors)
+            self._sync_header_window()   # plot buffer carries no parameter header
             # if the active (last) trace came in as an I/Q pair, treat both
             # channels together for FFT / smoothing, as the Bruker-complex load does
             if len(items[-1][1]) > 1:
@@ -1343,12 +1387,14 @@ class MainWindow(QMainWindow):
         self.traces = {}
         self.trace_colors = {}
         self.active_colors = {}
+        self.trace_headers = {}
         self._reset_result()
         self.step_counter = 0
         for combo in (self.trace_combo, self.i_combo, self.q_combo):
             combo.blockSignals(True)
             combo.clear()
             combo.blockSignals(False)
+        self._sync_header_window()             # after the combos: no stale active
         for lbl in list(self._curve_items):
             self.plot_widget.removeItem(self._curve_items.pop(lbl))
             try:

@@ -51,6 +51,9 @@ from pyqtgraph.dockarea import DockArea
 from atomize.main.widgets import CrossSectionDock
 # Shared checkbox look (hollow outline + gold tick) — one source of truth.
 from atomize.general_modules.gui_style import CHECKBOX_STYLE
+# Parameter-header viewer shared with the 1D tool (separate non-modal window).
+from atomize.control_center.header_view import (HeaderWindow, read_header,
+                                                params_to_lines)
 
 BG = 'rgb(42, 42, 64)'
 FG = 'rgb(193, 202, 227)'
@@ -197,6 +200,11 @@ class MainWindow(QMainWindow):
         self._suppress_live = False
         self.last_dir = _load_last_dir()   # start file dialogs in the last folder
 
+        # '#'-header of the loaded dataset + its name (empty for a plot load)
+        self.header_lines = []
+        self.header_name = ''
+        self.header_window = None          # created on first use, then reused
+
         self.design()
         self.load_from_plot(silent=True)   # consume a pending buffer on startup
         self._init_buffer_watch()          # auto-load new data while open
@@ -285,10 +293,16 @@ class MainWindow(QMainWindow):
 
         # Name of the dataset currently loaded (file basename, or 'Loaded from
         # plot' for the in-memory buffer).
+        file_row = QHBoxLayout()
         self.loaded_label = QLabel('File: —')
         self.loaded_label.setStyleSheet(LABEL_STYLE)
         self.loaded_label.setWordWrap(True)
-        panel.addWidget(self.loaded_label)
+        file_row.addWidget(self.loaded_label, 1)
+        self.header_btn = QPushButton('Header…')
+        self.header_btn.setStyleSheet(BUTTON_STYLE)
+        self.header_btn.clicked.connect(self.show_header)
+        file_row.addWidget(self.header_btn)
+        panel.addLayout(file_row)
 
         self.transpose_check = QCheckBox('Transpose on load (swap trace / point axes)')
         self.transpose_check.setStyleSheet(CHECKBOX_STYLE)
@@ -715,7 +729,8 @@ class MainWindow(QMainWindow):
             else:
                 q = np.zeros_like(i)
                 qmsg = 'no _1 file (Q = 0)'
-            dx, xu, dy, yu = self._parse_axis_header(path)
+            header_lines = read_header(path)    # one read: axis steps + viewer
+            dx, xu, dy, yu = self._parse_axis_header(header_lines)
             if self.transpose_check.isChecked():
                 i, q = i.T, q.T
                 dx, xu, dy, yu = dy, yu, dx, xu   # axes swap with the matrix
@@ -729,6 +744,7 @@ class MainWindow(QMainWindow):
             self.live_check.setChecked(False)   # new data: don't auto-reprocess
             self.reset_to_raw()
             self._set_loaded_file(os.path.basename(path))
+            self._set_header(os.path.basename(path), header_lines)
             msg = (f'Loaded I={os.path.basename(path)}, Q={qmsg} '
                    f'(matrix {i.shape[0]}×{i.shape[1]} [traces × points]).')
             if parsed:
@@ -746,8 +762,9 @@ class MainWindow(QMainWindow):
         return float(a[0]), float((a[-1] - a[0])/(a.size - 1))
 
     @staticmethod
-    def _parse_axis_header(path):
-        """Best-effort scan of a CSV comment header for the acquisition steps.
+    def _parse_axis_header(header_lines):
+        """Best-effort scan of an already-read comment header (header_view.
+        read_header) for the acquisition steps.
 
         Atomize-saved CSVs carry lines like::
 
@@ -756,27 +773,20 @@ class MainWindow(QMainWindow):
 
         Horizontal → X (within-trace / columns), Vertical → Y (traces / rows).
         Returns ``(dx, x_unit, dy, y_unit)`` with any field ``None`` when it is
-        absent, so a file without such a header — or one that cannot be read —
-        simply leaves every axis widget untouched.
+        absent, so a file without such a header simply leaves every axis widget
+        untouched.
         """
         dx = dy = xu = yu = None
-        try:
-            with open(path, 'r', errors='ignore') as fh:
-                for ln in fh:
-                    s = ln.strip()
-                    if not s.startswith('#'):
-                        break                 # header is the leading comment block only
-                    m = re.search(r'(horizontal|vertical)\s+resolution\s*:\s*'
-                                  r'([-+0-9.eE]+)\s*([a-zA-Zµ]*)', s, re.IGNORECASE)
-                    if not m:
-                        continue
-                    val, unit = float(m.group(2)), (m.group(3) or None)
-                    if m.group(1).lower() == 'horizontal':
-                        dx, xu = val, unit
-                    else:
-                        dy, yu = val, unit
-        except Exception:
-            pass
+        for ln in header_lines:
+            m = re.search(r'(horizontal|vertical)\s+resolution\s*:\s*'
+                          r'([-+0-9.eE]+)\s*([a-zA-Zµ]*)', ln, re.IGNORECASE)
+            if not m:
+                continue
+            val, unit = float(m.group(2)), (m.group(3) or None)
+            if m.group(1).lower() == 'horizontal':
+                dx, xu = val, unit
+            else:
+                dy, yu = val, unit
         return dx, xu, dy, yu
 
     def _apply_header_axes(self, dx, xu, dy, yu):
@@ -845,6 +855,8 @@ class MainWindow(QMainWindow):
         self.live_check.setChecked(False)   # new data: don't auto-reprocess
         self.reset_to_raw()
         self._set_loaded_file(os.path.basename(path))
+        self._set_header(os.path.basename(path),
+                         params_to_lines(res.get('params', {})))
         self.set_status(f'Loaded {os.path.basename(path)} — {res["format"]}, '
                         f'{i.shape[0]}×{i.shape[1]} [traces × points], '
                         + ('complex.' if res['complex'] else 'real (Q = 0).'))
@@ -896,6 +908,7 @@ class MainWindow(QMainWindow):
             self.live_check.setChecked(False)   # new data: don't auto-reprocess
             self.reset_to_raw()
             self._set_loaded_file('Loaded from plot')
+            self._set_header('Loaded from plot', [])
             msg = (f'Loaded 2D plot from buffer '
                    f'({i.shape[0]}×{i.shape[1]} [traces × points]).')
             if zeroed:
@@ -1018,7 +1031,27 @@ class MainWindow(QMainWindow):
         self.res_i = self.res_q = None
         self._clear_preview()
         self._set_loaded_file(None)
+        self._set_header('', [])
         self.set_status('Cleared. Open an I/Q 2D dataset.')
+
+    # ------------------------------------------------------- header viewer
+    def _set_header(self, name, lines):
+        """Store the parameter header of the dataset just loaded and refresh the
+        viewer. A load never opens the window — only the 'Header…' button does."""
+        self.header_name, self.header_lines = name, list(lines or [])
+        if self.header_window is not None:
+            self.header_window.set_sources([(self.header_name or 'dataset',
+                                             self.header_lines)])
+
+    def show_header(self):
+        """'Header…' button: open (or raise) the viewer on the loaded dataset."""
+        if self.header_window is None:
+            self.header_window = HeaderWindow(self)
+        self.header_window.set_sources([(self.header_name or 'dataset',
+                                         self.header_lines)])
+        if not self.header_lines:
+            self.set_status('The loaded dataset carries no parameter header.')
+        self.header_window.show_source()
 
     def _clear_preview(self):
         """Wipe the embedded heatmap + X/Y cross-section traces and reset the
