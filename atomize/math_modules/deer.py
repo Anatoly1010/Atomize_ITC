@@ -355,7 +355,15 @@ def tikhonov_nnls(K, F, alpha, L=None):
         L = regularization_matrix(K.shape[1], 2)
     A = np.vstack([K, alpha*L])
     b = np.concatenate([F, np.zeros(L.shape[0])])
-    P, _ = nnls(A, b)
+    # scipy's default maxiter (3n) raises RuntimeError at large alpha on fine r
+    # grids, aborting the whole scan; give it room, then degrade to clipped lstsq
+    try:
+        try:
+            P, _ = nnls(A, b, maxiter=max(3*A.shape[1], 5000))
+        except TypeError:                              # scipy without maxiter
+            P, _ = nnls(A, b)
+    except RuntimeError:
+        P = np.clip(np.linalg.lstsq(A, b, rcond=None)[0], 0.0, None)
     return P
 
 
@@ -376,18 +384,33 @@ def l_curve(K, F, alphas, L=None, method='gcv'):
 
     The optimal alpha is chosen by `method`:
       'gcv'       -- minimum of the generalized cross-validation score (default).
-                     Robust for DEER, whose L-curve is nearly vertical (the
-                     residual stays at the noise floor across decades of alpha),
-                     so the classic L-corner is ill-defined and tends to pick a
-                     tiny alpha => spiky P(r).
-      'curvature' -- classic maximum-Menger-curvature L-corner.
+                     Matches DeerLab's 'gcv' selection exactly on the same grid.
+      'curvature' -- classic maximum-Menger-curvature L-corner. Unreliable here:
+                     the DEER L-curve is nearly vertical (the residual stays at
+                     the noise floor across decades of alpha), so there is no
+                     well-defined corner and the pick lands at either end of the
+                     grid depending on the background window -- measured swings of
+                     six decades (alpha 1.6e-4 <-> 158) on one trace with only
+                     `bg_start` moved, i.e. 17 modes <-> 1. Over-smoothing (merged
+                     peaks) is the more common outcome, not the spiky P(r) the
+                     older docs warned about. DeerLab's own 'lc' picks differently
+                     again on the identical grid. Use GCV unless cross-checking.
 
     GCV uses the (unconstrained) Tikhonov influence-matrix trace as the effective
     degrees of freedom paired with the NNLS residual -- the standard DEER GCV
-    approximation.
+    approximation. That approximation biases alpha *upward* relative to a
+    constrained-dof GCV, never downward.
 
     Returns dict: alphas, rho, eta, curvature, gcv, alpha_opt, index, method,
-    P (the solution at the chosen alpha).
+    P (the solution at the chosen alpha), `at_bound` (the pick sits on the first
+    or last grid point -- a clipped, not an interior, optimum; also raises a
+    RuntimeWarning) and `corner_ok` (False when 'curvature' found no corner and
+    fell back to GCV).
+
+    Note that alpha is in the units of the raw [1,-2,1] operator from
+    `regularization_matrix`, i.e. dr^2 times the true second derivative, so a
+    given numeric alpha means more smoothing on a coarser distance grid and the
+    value is not directly comparable to DeerLab's (alpha_here*dr^2 ~ alpha_DL).
     """
     _require_scipy()
     K = np.asarray(K, float)
@@ -418,13 +441,30 @@ def l_curve(K, F, alphas, L=None, method='gcv'):
     kappa = np.zeros(len(alphas))
     for i in range(1, len(alphas) - 1):
         kappa[i] = _menger(x[i - 1], y[i - 1], x[i], y[i], x[i + 1], y[i + 1])
+    corner_ok = True
     if method == 'curvature':
-        idx = int(np.argmax(kappa)) if len(alphas) > 2 else len(alphas)//2
+        # kappa[0] / kappa[-1] are unfilled sentinels; search the interior only
+        if len(alphas) > 2 and kappa[1:-1].max() > 0:
+            idx = 1 + int(np.argmax(kappa[1:-1]))
+        else:                                         # no corner at all: fall back
+            idx = int(np.argmin(gcv)) if len(alphas) > 2 else len(alphas)//2
+            corner_ok = False
     else:                                             # 'gcv' (default)
         idx = int(np.argmin(gcv))
+    at_bound = bool(idx in (0, len(alphas) - 1))
+    if at_bound:
+        warnings.warn(
+            'DEER regularization scan picked alpha = %.4g at the %s end of the '
+            'search grid [%.4g, %.4g]: this is a grid boundary, not an interior '
+            'optimum, so the true optimum probably lies outside the grid and the '
+            'reported alpha is clipped. Widen `alphas`, or treat the resulting '
+            'P(r) as over-/under-smoothed.'
+            % (alphas[idx], 'lower' if idx == 0 else 'upper', alphas[0], alphas[-1]),
+            RuntimeWarning, stacklevel=2)
     return {'alphas': alphas, 'rho': rho, 'eta': eta, 'curvature': kappa,
             'gcv': gcv, 'alpha_opt': float(alphas[idx]), 'index': idx,
-            'method': method, 'P': Ps[idx]}
+            'method': method, 'P': Ps[idx],
+            'at_bound': at_bound, 'corner_ok': corner_ok}
 
 
 # --------------------------------------------------------------------------- #
@@ -441,16 +481,31 @@ def _normalize_masses(P):
 
 
 def tikhonov_ci(K, F, alpha, P, L=None, dr=1.0, z=1.96):
-    """Covariance-based confidence band on the regularized P(r) — the asymptotic
-    (curvature) CI DeerLab shows by default.
+    """Pointwise NOISE-PROPAGATION band on the regularized P(r).
 
     For the linear Tikhonov estimator P = (KᵀK + α²LᵀL)⁻¹ Kᵀ F, the noise on the
     form factor propagates as cov(P) = σ² M Mᵀ with M = (KᵀK + α²LᵀL)⁻¹ Kᵀ and σ²
     estimated from the fit residuals (effective dof = N − tr(K M)). Returns
     (lower, upper) at confidence z (default 95%) on the same density scale as
-    P/sum(P)/dr, clipped at 0. The non-negativity constraint is not propagated, so
-    the band is a slightly conservative linear approximation (as in DeerLab's
-    moment-based CI)."""
+    P/sum(P)/dr, clipped at 0.
+
+    This is NOT a calibrated confidence interval, and it is not DeerLab's band:
+      * It excludes the regularization bias, which is the dominant error at the
+        peaks. Measured coverage of a nominal-95% band at the mode: 0.84 at the
+        GCV alpha, 0.08 at alpha x2, ~0 at alpha x3 (the `alpha_factor` 2-4 that
+        `deer_invert` recommends). Coverage gets WORSE as the data get cleaner,
+        because the bias stops being masked by noise.
+      * It is conservative only where NNLS pins P = 0 (3-12x too wide there) and
+        anti-conservative at the modes.
+      * It is ~1.6-2.4x narrower than DeerLab's covariance band on the same data
+        (3.6x on the real ring-test traces) and has the opposite alpha
+        dependence: this band NARROWS as alpha grows, DeerLab's is flat.
+      * With engine='joint' it is narrower again by up to ~7x, because it holds
+        the background and lambda fixed at their fitted values while the joint
+        fit's own lambda/k scatter is the dominant uncertainty there.
+    Treat it as a display aid for the noise level. For a coverage-honest interval
+    use `deer_validate` (background-window ensemble) or the Mellin / multi-Gaussian
+    Monte-Carlo bands."""
     K = np.asarray(K, float)
     F = np.asarray(F, float)
     P = np.asarray(P, float)
@@ -483,10 +538,13 @@ def deer_invert(t, V, r=None, bg_start=None, bg_end=None, dim=3.0, fit_dim=False
     L-corner) -- see `l_curve`.
 
     `alpha_factor` scales the auto-selected alpha (ignored when an explicit
-    `alpha` is given). GCV/AIC tend to under-regularize the near-vertical DEER
-    L-curve, leaving noise spikes in P(r); a factor > 1 (e.g. 2-4) reproduces
-    the heavier hand-picked L-corner regularization the DeerAnalysis ring-test
-    labs used to get smooth distributions (Schiemann et al., JACS 2021).
+    `alpha` is given). A factor > 1 (e.g. 2-4) reproduces the heavier hand-picked
+    L-corner regularization the DeerAnalysis ring-test labs used to get smooth
+    distributions (Schiemann et al., JACS 2021). It is a deliberate trade of bias
+    for smoothness: P(r) is pulled measurably off the truth, and the `tikhonov_ci`
+    band -- which propagates noise only -- NARROWS while the bias grows, so its
+    coverage at the mode collapses (0.84 at factor 1, 0.08 at 2, ~0 at 3). Above
+    factor 1 read the band as a noise scale, not as a confidence interval.
 
     `engine` selects how the background is handled:
       'sequential' -- fit the background on the tail window, divide it out, then
@@ -556,7 +614,7 @@ def deer_invert(t, V, r=None, bg_start=None, bg_end=None, dim=3.0, fit_dim=False
     return {'t': t, 'r': r, 'form_factor': F, 'F_fit': F_fit,
             'residuals': F - F_fit, 'P': P, 'P_norm': P_norm,
             'P_density': P_density, 'P_lower': P_lower, 'P_upper': P_upper,
-            'kernel': K, 'alpha': float(alpha),
+            'kernel': K, 'alpha': float(alpha), 'ci_kind': 'noise',
             'l_curve': lc, 'background': bg, 'lambda': bg['lambda'],
             'k': bg['k'], 'dim': bg['dim'],
             'engine': engine if engine in ('none', 'general') else 'sequential'}
@@ -591,6 +649,15 @@ def deer_invert_joint(t, V, r=None, bg_start=None, bg_end=None, dim=3.0,
     by Tikhonov + NNLS, the regularization weight chosen by GCV on the fitted-
     background form factor (the same `l_curve` selection as `deer_invert`). Same
     return dict as `deer_invert`, with engine='joint'.
+
+    Caveat on the uncertainty band: `P_lower`/`P_upper` come from `tikhonov_ci`,
+    which conditions on the FITTED background and lambda. Here those are themselves
+    fitted, and their scatter dominates -- measured up to 7x too narrow versus the
+    Monte-Carlo spread, where the same formula is honest to ~1.3x in the sequential
+    engine on the same data (`ci_kind` = 'noise_fixed_bg' marks this). The
+    background's own reliability flags (`lambda_clamped`, `tail_abs_F`,
+    `k_disagrees` -- see `joint_background`) are the ones to check before trusting
+    lambda or a distance from this engine.
     """
     _require_scipy()
     t, V, _n_pre = _crop_pre_zero(t, V)
@@ -626,12 +693,13 @@ def deer_invert_joint(t, V, r=None, bg_start=None, bg_end=None, dim=3.0,
         P_masses = tikhonov_nnls(K, F, alpha_use, L)
     P_norm = _normalize_masses(P_masses)
     dr = float(r[1] - r[0]) if len(r) > 1 else 1.0
-    F_fit = K@P_norm
+    F_fit = K@P_masses                                 # the solved masses, as deer_invert
     P_lower, P_upper = tikhonov_ci(K, F, alpha_use, P_masses, L=L, dr=dr)
     return {'t': t, 'r': r, 'form_factor': F, 'F_fit': F_fit,
             'residuals': F - F_fit, 'P': P_masses, 'P_norm': P_norm,
             'P_density': P_norm/dr, 'P_lower': P_lower, 'P_upper': P_upper,
             'kernel': K, 'alpha': float(alpha_use),
+            'ci_kind': 'noise_fixed_bg',
             'l_curve': lc, 'background': bg, 'lambda': lam,
             'k': float(k), 'dim': float(d), 'engine': 'joint'}
 
@@ -791,6 +859,14 @@ def joint_background(t, V, bg_start=None, bg_end=None, dim=3.0, fit_dim=False,
     component being forced into the background -- which would leave a pedestal in
     F that the Mellin engine (phi -> 0) renders as a drooping forward fit at long
     T -- while still keeping k determined on short single-peak traces.
+
+    Reliability keys in the returned dict (the pin can fail silently otherwise):
+    `lambda_raw` / `lambda_clamped` (the raw pin estimate and whether it hit the
+    [0.02, 0.95] clamp), `tail_abs_F` (mean |F| over the pin window -- the pin only
+    forces mean F = 0 there, so mean |F| above ~0.05 says the tail has NOT decayed
+    and lambda is a guess: measured 6.6x low on a 1 us trace of a 4.5 nm pair), and
+    `k_ref` / `k_ratio` / `k_disagrees` (the sequential tail-fit rate and how far
+    the joint rate sits from it). Any of these firing raises a RuntimeWarning.
     """
     _require_scipy()
     from scipy.optimize import least_squares, minimize_scalar
@@ -889,9 +965,40 @@ def joint_background(t, V, bg_start=None, bg_end=None, dim=3.0, fit_dim=False,
     collapsed = (k_w < 0.5*k_t) and (decay_w < 0.05)
     k, d = (k_t, d_t) if collapsed else (k_w, d_w)
     B = np.exp(-(k*np.abs(t))**(d/3.0))
+    lam_raw = 1.0 - float(np.mean((V/B)[pin_mask]))
     lam = lam_of(B)
     F = (V/B - (1 - lam))/lam
-    return {'lambda': lam, 'k': float(k), 'dim': float(d), 'A': float(1 - lam),
+    # the pin only fixes mean(F) = 0 over its window; mean|F| there is what says
+    # whether the tail has actually decayed, i.e. whether lambda means anything
+    tail_absF = float(np.mean(np.abs(F[pin_mask])))
+    lam_clamped = not (0.02 <= lam_raw <= 0.95)
+    k_ratio = float(k)/kref if kref > 0 else float('nan')
+    k_disagrees = bool(np.isfinite(k_ratio) and (k_ratio > 2.0 or k_ratio < 0.5))
+    reasons = []
+    if lam_clamped:
+        reasons.append('the modulation depth hit the [0.02, 0.95] clamp '
+                       '(raw %.3f, used %.3f)' % (lam_raw, lam))
+    if tail_absF > 0.05:
+        reasons.append('the tail has not decayed under the lambda pin (mean|F| = '
+                       '%.3f over the pin window), so lambda = %.3f is a guess'
+                       % (tail_absF, lam))
+    if k_disagrees and float(k0) <= 1e-4:              # kref sat on its floor
+        reasons.append('the sequential tail fit found essentially no decay '
+                       '(k = %.2g) where the joint fit gives k = %.4g'
+                       % (float(k0), float(k)))
+    elif k_disagrees:
+        reasons.append('the joint decay rate k = %.4g is %.1fx the sequential '
+                       'tail-fit rate %.4g' % (float(k), k_ratio, kref))
+    if reasons:
+        warnings.warn(
+            'DEER joint background needs checking: ' + '; '.join(reasons)
+            + '. Cross-check against engine=\'sequential\' and a later bg_start '
+              'before quoting lambda or a distance.', RuntimeWarning, stacklevel=2)
+    return {'lambda': lam, 'lambda_raw': float(lam_raw),
+            'lambda_clamped': bool(lam_clamped),
+            'tail_abs_F': tail_absF, 'k_ref': float(kref),
+            'k_ratio': k_ratio, 'k_disagrees': k_disagrees,
+            'k': float(k), 'dim': float(d), 'A': float(1 - lam),
             'B': B, 'form_factor': F, 'V_norm': V, 't': t,
             'bg_start': float(bg_start),
             'bg_end': (None if bg_end is None else float(bg_end)), 'mask': mask}

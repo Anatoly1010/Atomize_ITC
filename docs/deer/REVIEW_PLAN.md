@@ -283,7 +283,7 @@ panel and on symbolic checks (sympy) against closed-form transform pairs.
 | Session | Model | Status | Report |
 |---|---|---|---|
 | S1 Foundations | Opus + blind-derivation panel | **DONE** 2026-07-23 — 4 confirmed, 1 plausible | [REVIEW_S1_foundations.md](REVIEW_S1_foundations.md) |
-| S2 Tikhonov | Opus | **review done 2026-07-25** — 15 unique bug/risk, verification pending | [REVIEW_S2_tikhonov.md](REVIEW_S2_tikhonov.md) |
+| S2 Tikhonov | Opus | **DONE** 2026-07-28 — 9 confirmed, 3 plausible, 2 refuted; all confirmed fixed | [REVIEW_S2_tikhonov.md](REVIEW_S2_tikhonov.md) |
 | S3 Mellin core | Opus + blind-derivation panel | not started | |
 | S4 Mellin engine | Opus | not started | |
 | S5 Multi-Gaussian | Opus | not started | |

@@ -374,15 +374,20 @@ class MainWindow(QMainWindow):
         grid.addWidget(self.deer_show, r, 1); r += 1
 
         # Uncertainty options shared by both engines.
-        self.deer_ci_chk = QCheckBox('Show 95% confidence band')
+        self.deer_ci_chk = QCheckBox('Show 95% uncertainty band')
         self.deer_ci_chk.setStyleSheet(CHECKBOX_STYLE)
         self.deer_ci_chk.setChecked(True)
         self.deer_ci_chk.setToolTip(
-            'Shade the 95% confidence interval on P(r). Tikhonov: covariance / '
-            'curvature CI (as DeerLab shows by default). Mellin: Monte-Carlo band '
-            'from re-inverting the form factor with the fit-residual noise. '
-            'Multi-Gaussian: parametric band from the fit-covariance of the '
-            'component parameters. Superseded by the Validate band when that is on.')
+            'Shade the 95% uncertainty band on P(r). Tikhonov: propagates the '
+            'NOISE only — the regularization bias is excluded, so the band '
+            'under-covers at the peaks (measured ~84% at the GCV α, ~8% at α×2, '
+            '~0% at α×3) and is 1.6–3.6× narrower than DeerLab\'s; with the joint '
+            'engine it also holds the background and λ fixed, which makes it up '
+            'to 7× narrower again. Read it as a noise scale, not a confidence '
+            'interval. Mellin: Monte-Carlo band from re-inverting the form factor '
+            'with the fit-residual noise. Multi-Gaussian: parametric band from the '
+            'fit-covariance of the component parameters. For a coverage-honest '
+            'interval use Validate, whose band supersedes this one.')
         self.deer_ci_chk.stateChanged.connect(self._ci_toggled)
         grid.addWidget(self.deer_ci_chk, r, 0, 1, 2); r += 1
 
@@ -796,11 +801,13 @@ class MainWindow(QMainWindow):
         self.deer_alpha_factor.setSingleStep(0.5)
         self.deer_alpha_factor.setValue(1.0)
         self.deer_alpha_factor.setToolTip(
-            'Multiply the auto-selected (GCV) α by this factor. GCV under-'
-            'regularizes the near-vertical DEER L-curve, leaving spiky P(r); '
-            '2–4× reproduces the heavier hand-picked L-corner the DeerAnalysis '
-            'ring-test labs used for smooth distributions (JACS 2021). Ignored '
-            'when α is set manually.')
+            'Multiply the auto-selected (GCV) α by this factor. 2–4× reproduces '
+            'the heavier hand-picked L-corner the DeerAnalysis ring-test labs '
+            'used for smooth distributions (JACS 2021). It buys smoothness with '
+            'bias: P(r) is pulled off the truth while the uncertainty band, which '
+            'sees noise only, gets NARROWER — its coverage at the peak falls from '
+            '~84% at 1× to ~8% at 2× and ~0% at 3×. Ignored when α is set '
+            'manually.')
         self.deer_alpha_factor.valueChanged.connect(self._live_update)
         grid.addWidget(self.deer_alpha_factor, r, 1); r += 1
 
@@ -1806,6 +1813,9 @@ class MainWindow(QMainWindow):
         r = np.linspace(rmin, rmax, int(self.deer_rn.value()))
         alpha = None if self.deer_alpha_auto.isChecked() else float(self.deer_alpha.value())
         afac = float(self.deer_alpha_factor.value())
+        # a manual alpha needs no selection scan; pay the 36-point scan (~34x the
+        # single solve) only when the L-curve is actually being displayed
+        scan_lc = alpha is None or self.deer_show.currentText() == 'L-curve'
         engine = ('sequential', 'joint', 'none', 'general')[self.deer_engine.currentIndex()]
         dim = float(self.deer_dim.value())
         fit_dim = self.deer_fitdim.isChecked()
@@ -1838,7 +1848,7 @@ class MainWindow(QMainWindow):
                 res = deer_module.deer_invert(
                     t_us, v, r=r, bg_start=bg_us, bg_end=bg_end_us, dim=dim,
                     fit_dim=fit_dim, alpha=alpha, alpha_factor=afac, engine=engine,
-                    bg_params=bgp)
+                    bg_params=bgp, scan_lcurve=scan_lc)
                 band = None
             # display axis stays in acquisition time, cropped like the engine's pre-t0 drop
             res['t'] = x[t_us >= 0] * tf
@@ -2155,9 +2165,9 @@ class MainWindow(QMainWindow):
         self._batch_band_items = {}
 
     def _show_batch_bands(self, results):
-        """Per-trace 95% CI bands on the overlaid P(r), each a translucent fill in
-        the trace's colour. Gated by the 'Show 95% confidence band' checkbox; only
-        traces whose result carries P_lower/P_upper get a band."""
+        """Per-trace 95% uncertainty bands on the overlaid P(r), each a translucent
+        fill in the trace's colour. Gated by the 'Show 95% uncertainty band'
+        checkbox; only traces whose result carries P_lower/P_upper get a band."""
         self._clear_batch_bands()
         if not self.deer_ci_chk.isChecked():
             return
@@ -2172,7 +2182,7 @@ class MainWindow(QMainWindow):
             fill = pg.FillBetweenItem(lo_item, hi_item, brush=pg.mkBrush(*col, 50))
             fill.setZValue(-5)                 # behind the P(r) curves
             for it in (lo_item, hi_item, fill):
-                self.p_pr.addItem(it)
+                self.p_pr.addItem(it, ignoreBounds=True)   # never set the P(r) scale
             self._batch_band_items[name] = (lo_item, hi_item, fill)
 
     def _trace_stats(self, res):
@@ -2215,7 +2225,7 @@ class MainWindow(QMainWindow):
         head = ''.join(f'<th style="padding:1px 7px;">{h}</th>' for h in hdr)
         body = ''
         for name, s in rows:
-            me = (f'{s["mean"]:.2f}±{s["me1"]:.2f}' if np.isfinite(s.get('me1', np.nan))
+            me = (f'{s["mean"]:.2f}±{s["me1"]:.3f}' if np.isfinite(s.get('me1', np.nan))
                   else f'{s["mean"]:.2f}')
             vals = [f'<b>{name}</b>']
             if gauss:
@@ -2433,6 +2443,24 @@ class MainWindow(QMainWindow):
                        f'c={bgp["c"]:.3g}, d={bgp["d"]:.3g})')
         else:
             bg_line = f'bg decay k = {res["k"]:.4g}, dim = {res["dim"]:.2f}'
+        # reliability flags the engines now report: a clamped/degenerate λ, an
+        # undecayed tail under the λ pin, a joint rate far from the sequential one,
+        # or an α pinned to the end of the search grid rather than an optimum
+        bgr = res.get('background', {})
+        flags = []
+        if bgr.get('lambda_clamped') or bgr.get('lambda_degenerate'):
+            flags.append(f'λ clamped (raw {bgr.get("lambda_raw", float("nan")):.2f})')
+        if float(bgr.get('tail_abs_F') or 0.0) > 0.05:
+            flags.append(f'tail not decayed (mean|F| = {bgr["tail_abs_F"]:.2f})')
+        if bgr.get('k_disagrees'):
+            flags.append('sequential tail fit sees no decay'
+                         if float(bgr.get('k_ref') or 0.0) <= 1e-4
+                         else f'k = {bgr["k_ratio"]:.1f}× the sequential tail fit')
+        if (res.get('l_curve') or {}).get('at_bound'):
+            flags.append('α sits on the grid edge, not at an interior optimum')
+        if flags:
+            bg_line += ('<br><span style="color: rgb(224, 130, 96);">⚠ '
+                        + '; '.join(flags) + '</span>')
         # headline scalars as a one-row table (same layout as 'Process all'), with
         # the engine-specific detail (background, α / δ / components, skew) below.
         row_stats = {'peak': r_peak, 'mean': r_mean, 'me1': me1,
@@ -2513,7 +2541,7 @@ class MainWindow(QMainWindow):
                           'Distance (nm)', '_pr_key', left_label='P(r) (nm⁻¹)',
                           force=True)
         else:
-            # covariance-based 95% confidence band (DeerLab-style), if available;
+            # covariance noise-propagation band (see deer.tikhonov_ci), if available;
             # the Monte-Carlo engine's ensemble band always shows (it is the mode's
             # native uncertainty estimate, not the optional covariance band).
             if (res.get('P_lower') is not None
@@ -2612,7 +2640,9 @@ class MainWindow(QMainWindow):
             self._show_bg_cursor(False)
             lc = res.get('l_curve')
             if lc is None:
-                self.set_status('No L-curve available for this result.')
+                self.set_status('No L-curve for this result: it was computed with '
+                                'a manual α, which skips the scan. Re-run with the '
+                                'L-curve view selected, or tick Auto (GCV).')
                 self._show_lcurve_marker(False)
                 return
             x, y = self._lcurve_xy(lc)
@@ -2702,8 +2732,10 @@ class MainWindow(QMainWindow):
             self._band_fill = pg.FillBetweenItem(
                 self._band_lo, self._band_hi, brush=pg.mkBrush(211, 194, 78, 110))
             self._band_fill.setZValue(-10)
+            # ignoreBounds: the covariance band diverges as alpha -> 0 (1e5 nm^-1
+            # at the spinbox minimum), and autoRange would then squash P(r) flat
             for it in (self._band_lo, self._band_hi, self._band_fill):
-                self.p_pr.addItem(it)
+                self.p_pr.addItem(it, ignoreBounds=True)
         if not visible:
             for it in (self._band_lo, self._band_hi, self._band_fill):
                 it.setVisible(False)
@@ -2919,7 +2951,8 @@ class MainWindow(QMainWindow):
         elif res.get('P_lower') is not None:
             _save('distance', [res['r'], res['P_density'], res['P_lower'],
                                res['P_upper'], res['P_norm']],
-                  'r (nm), P(r) density, 95% CI lower, 95% CI upper, P (masses)')
+                  'r (nm), P(r) density, 95% band lower (noise only), '
+                  '95% band upper (noise only), P (masses)')
         elif is_mellin and res.get('P_signed_density') is not None:
             _save('distance', [res['r'], res['P_density'], res['P_signed_density']],
                   'r (nm), P(r) density (clipped, normalized), P(r) signed density')

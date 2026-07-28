@@ -23,11 +23,11 @@ the plan's *Model allocation* for why that substitutes.
 | Session | Status | Report |
 |---|---|---|
 | S1 Foundations — kernel, background, zero-time | **DONE + FIXED** 2026-07-23 | [REVIEW_S1_foundations.md](REVIEW_S1_foundations.md) |
-| S2 Tikhonov + NNLS | **review done, VERIFICATION PENDING** 2026-07-25 | [REVIEW_S2_tikhonov.md](REVIEW_S2_tikhonov.md) |
+| S2 Tikhonov + NNLS | **DONE + VERIFIED + FIXED** 2026-07-28 | [REVIEW_S2_tikhonov.md](REVIEW_S2_tikhonov.md) |
 | S3 Mellin transform core | not started | |
-| S4 Mellin engine + joint background | not started | |
+| S4 Mellin engine + joint background | not started — carries 2 S2 hand-overs: the collapse guard and the joint λ/k CI propagation | |
 | S5 Multi-Gaussian | not started | |
-| S6 Cross-engine, validation, GUI | not started | |
+| S6 Cross-engine, validation, GUI | not started — carries the on-demand residual bootstrap | |
 
 ---
 
@@ -182,15 +182,117 @@ under-covers too (0.883) but is 3.6× wider on real data. Whether that is a defe
 or intrinsic to covariance CIs on a constrained estimator is exactly what the
 skeptics are for.
 
-## Next session — S2 stage 2: verification
+---
 
-Run `~/deer_benchmark/s2_verify.js`; its header has the exact invocation (findings
-go in through `args`, since `resumeFromRunId` is same-session only). 14 findings ×
-2 skeptics = 28 agents, ~2 at a time on this 4-core box. (14, not 15: the GUI axis
-regression was fixed in-session and moved to `fixed_in_session` in the JSON. Its
-downstream finding — ME1 `nan` at `deer_analysis.py:2368` — is still queued and
-must be judged against the fixed code.)
+## Session 2026-07-28 — S2 stage 2: verified, 9 confirmed, all fixed
 
-Then apply the confirmed fixes, re-run the DeerLab cross-check as a regression
-gate, and — per the lesson above — **smoke-run the GUI path** before closing.
-Reading guidance for correlated findings is at the end of the interim report.
+Run `wf_502ac692-564` — 28 skeptics (2 per finding, default stance REFUTED),
+2.4 M tokens, 7 h 43 min, 0 errors. **9 confirmed, 3 plausible, 2 refuted.** Full
+verdicts and both skeptics' reasoning per finding:
+`~/deer_benchmark/s2_verify_results.json`. Report:
+[REVIEW_S2_tikhonov.md](REVIEW_S2_tikhonov.md).
+
+### Priming the skeptics with the report's own caveats changed three verdicts
+
+The interim report's *For the reviewer of stage 2* section was injected into the
+skeptic prompts as per-finding caveats keyed by `file:line` (in
+`~/deer_benchmark/s2_verify.js`), not left as prose for a human to remember:
+
+- Both findings downstream of the in-session axis fix (ME1 `nan`, `ptp` reliability
+  bands) came back **REFUTED 4/4**, each skeptic reproducing the pre-fix failure
+  first and then the fixed behaviour. One went further: the numbers finding 14 calls
+  wrong are the pre-fix values, and its own "should be" figures are what the code now
+  emits. Told to judge the committed-then transcript, they would very likely have
+  confirmed both.
+- The four-route CI cluster split (2 confirmed, 1 confirmed-with-split-severity,
+  1 down to a wording note) instead of confirming four times.
+- Finding 5 downgraded to a note on reachability — k = 0.20–0.40 /µs against a real
+  maximum of 0.0473.
+
+*Lesson: a caveat that only exists in the report does not reach the agent that needs
+it. Ship review context as prompt data keyed to the finding it qualifies.*
+
+### Fixed (all 9 confirmed, plus 2 of 3 plausible as documentation)
+
+Wrong numbers: joint `F_fit` from `P_norm` (reported R² −1.90 where the true fit
+gives +0.25 when P(r) mass sits outside the r grid); `tikhonov_nnls` aborting the
+whole scan on scipy's 600-iteration default. Silent failures now announced:
+`at_bound` on a grid-edge α, `corner_ok` for the L-corner, and
+`lambda_raw`/`lambda_clamped`/`tail_abs_F`/`k_ratio` from `joint_background` with a
+`RuntimeWarning` and a ⚠ line in the DEER window. Presentation/cost: the diverging
+band no longer drives the P(r) autoscale (at α = 1e-4 the band reaches 4376 nm⁻¹
+against a 3.25 nm⁻¹ peak; P(r) now fills 90.9 % of the axis instead of being
+squashed flat), manual α skips the selection scan (**14.69 s → 0.38 s in the
+GUI**), and
+every "95% CI" label now says the band propagates noise only, with the measured
+coverage numbers. Details and the four deliberate non-changes — the
+`joint_background` collapse guard above all, which belongs to S4 — are in the report.
+
+### Regression gate
+
+Real ring-test set, GUI path, both engines: 56/56 inversions complete, `sum(P)`
+0.975–1.009, **0/56** α-at-boundary, `tail_abs_F` max 0.045 (threshold 0.05, 0/28
+fire), k cross-check fires on 6/28 joint runs (ratios 2.1–59×; in the two extreme
+ones it is the *sequential* fit that collapsed, k on its 1e-4 floor / 2.5e-4). GUI smoke-run offscreen per the S1 lesson: both engines,
+`fit_t0`, manual α, α×3 and the L-curve view all render with
+`len(res['t']) == len(form_factor)` = 338/338. DeerLab cross-check re-run post-fix
+(`~/deer_benchmark/batch.py`, 28/28 traces): mean P(r) overlap **0.978** (min
+0.816), mean |Δpeak| **0.024 nm** (max 0.327), mean |Δλ| vs the labs' own values
+0.0259 — identical to the pre-fix S2 baseline and to the historical figures, so
+none of the S2 fixes moved the sequential result.
+
+## Next session — S3: Mellin transform core
+
+Per [REVIEW_PLAN.md](REVIEW_PLAN.md), with a blind-derivation panel (no Fable).
+Two things S2 hands over:
+
+- **`joint_background`'s collapse guard** (`deer.py:889`) is a real robustness hole
+  with a knife-edge (a 1.5 ns background-cursor shift flips the mean by 1.3 nm),
+  deliberately left unfixed because tuning it needs the synthetic suite as a gate.
+  It belongs to S4, whose subject it is — do not fix it blind in S3.
+- **The port is now two sessions deep.** `deer.py` is byte-identical across plain /
+  NIOCH / NIOCH_Q / Cryomech (`c3ebd21f`) while ITC carries S1 + S2;
+  `deer_analysis.py` exists only in ITC / NIOCH / NIOCH_Q. Port both together, and
+  run `~/atomize_sync/sync_check.py` first.
+
+## Queued: a band that deserves the name (from the S2 CI findings)
+
+S2 did the zero-risk half — the band no longer claims coverage it does not have.
+These two are the other half. **No band centred on a regularized estimate can cover
+the truth at the mode**, because the dominant error there is bias, not noise, so
+neither of these is a "true CI" on its own; each fixes a specific, measured hole.
+"Match DeerLab" is not the target — DeerLab's own band measured 0.883 support /
+0.480 modal coverage in S2. Judge both against the skeptics' coverage harnesses,
+which already exist: `~/deer_benchmark/{sk1_ci,sk2_cicov,sk1_cicov2}/`.
+
+### 1. Propagate the joint fit's λ/k covariance — **S4**, do this first
+
+Targets confirmed finding 9, the largest verified error in the uncertainty
+machinery: the joint band is **7–8.6× too narrow** where the *identical* formula is
+honest to ~1.3× in sequential mode on the same data (skeptic controls: coverage of
+the ensemble *mean* at the peak 0.033 joint vs 0.900 sequential; band/scatter ratio
+0.133 vs 0.96). `tikhonov_ci` conditions on the fitted background and λ, and in the
+joint engine those are themselves fitted — their scatter dominates. This is a
+defect, not a philosophical limit, and it is self-contained: either propagate the
+rate fit's covariance into the linear band, or bootstrap the joint pipeline
+(item 2). Acceptance: band/scatter ratio within ~1.5× on the S2 Monte-Carlo setups
+at k = 0.05 and k = 0.30, with the sequential engine unchanged.
+
+### 2. Residual bootstrap over the whole pipeline, on demand — **S6**
+
+Resample the fit residuals, refit background + λ + P(r) per trial, take percentile
+bands — what DeerLab does, and now cheap enough to be practical: one inversion at
+fixed α with `scan_lcurve=False` measures **1.6–1.8 s under load, 0.38 s idle**
+(GUI smoke run), so 200 trials is ~1.5–6 min single-threaded and well under a
+minute across the 4 cores. A button, never the live-update path; `rThread` is the
+house concurrency primitive. **Be explicit in the UI about what it does not fix:**
+bootstrapping a biased estimator gives an interval for the estimator's expectation,
+so the mode still under-covers. Re-selecting α per trial (rather than freezing it)
+folds in the selection variance and costs 36× more — measure whether it is worth it.
+
+Two further options were considered and are NOT queued: swapping the estimator to
+Wahba's Bayesian form σ²G⁻¹ (one line, 1.44× wider, support coverage 0.800 → 0.925,
+but it moves every shipped band and CSV and still leaves the mode optimistic), and
+undersmoothing the band at α/4–α/8 (the only cheap route that genuinely covers the
+truth, needs a calibration pass). Revisit both once 1 and 2 land and there is a
+coverage table to argue from.
