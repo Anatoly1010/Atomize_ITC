@@ -24,10 +24,10 @@ the plan's *Model allocation* for why that substitutes.
 |---|---|---|
 | S1 Foundations — kernel, background, zero-time | **DONE + FIXED** 2026-07-23 | [REVIEW_S1_foundations.md](REVIEW_S1_foundations.md) |
 | S2 Tikhonov + NNLS | **DONE + VERIFIED + FIXED** 2026-07-28 | [REVIEW_S2_tikhonov.md](REVIEW_S2_tikhonov.md) |
-| S3 Mellin transform core | not started | |
-| S4 Mellin engine + joint background | not started — carries 2 S2 hand-overs: the collapse guard and the joint λ/k CI propagation | |
+| S3 Mellin transform core | **DONE + VERIFIED + FIXED** 2026-07-29 | [REVIEW_S3_mellin.md](REVIEW_S3_mellin.md) |
+| S4 Mellin engine + joint background | not started — carries 2 S2 hand-overs (the collapse guard, the joint λ/k CI propagation) + 3 from S3 (`du` aliasing, zero σ silently killing the MC band, manual δ below the first sample) | |
 | S5 Multi-Gaussian | not started | |
-| S6 Cross-engine, validation, GUI | not started — carries the on-demand residual bootstrap | |
+| S6 Cross-engine, validation, GUI | not started — carries the on-demand residual bootstrap + S3's ME₁-ε placement | |
 
 ---
 
@@ -241,19 +241,103 @@ ones it is the *sequential* fit that collapsed, k on its 1e-4 floor / 2.5e-4). G
 0.0259 — identical to the pre-fix S2 baseline and to the historical figures, so
 none of the S2 fixes moved the sequential result.
 
-## Next session — S3: Mellin transform core
+## Session 2026-07-29 — S3 Mellin core: 7 confirmed, 0 refuted, all fixed
 
-Per [REVIEW_PLAN.md](REVIEW_PLAN.md), with a blind-derivation panel (no Fable).
-Two things S2 hands over:
+Run `wf_080dd2f1-054` — 26 agents, 2.36 M tokens, ~5 h, 0 errors. Same structure as
+S1: 3 blind derivers + 2 code reviewers concurrently, then a reconciler that saw
+both, then 2 skeptics per bug/risk. **7 confirmed, 3 plausible, 0 refuted, 11
+notes.** Report: [REVIEW_S3_mellin.md](REVIEW_S3_mellin.md).
 
-- **`joint_background`'s collapse guard** (`deer.py:889`) is a real robustness hole
-  with a knife-edge (a 1.5 ns background-cursor shift flips the mean by 1.3 nm),
-  deliberately left unfixed because tuning it needs the synthetic suite as a gate.
-  It belongs to S4, whose subject it is — do not fix it blind in S3.
-- **The port is now two sessions deep.** `deer.py` is byte-identical across plain /
-  NIOCH / NIOCH_Q / Cryomech (`c3ebd21f`) while ITC carries S1 + S2;
-  `deer_analysis.py` exists only in ITC / NIOCH / NIOCH_Q. Port both together, and
-  run `~/atomize_sync/sync_check.py` first.
+### The transform is CLEARED — do not re-derive
+
+The panel agreed **to 12 significant figures** on Φ(s), on the reflected forward
+relation `Ṽ(s) = Φ(s)·P(1−s)`, on the inverse prefactor `(1/2π)·w^(−1/2)` and on the
+w→r Jacobian `3w/r`; the code matches all of them. The decisive check was a
+**convention-sensitivity sweep**: the unnormalized recovered area is 0.9837, and
+every alternative convention breaks it loudly (no conjugation → 8e-5, Jacobian r^−3
+→ 2.98, w without the 2π → mean 1.65 nm instead of 2.99). So the session's stated
+nightmare — a bespoke transform with a silent convention error and no external
+implementation to catch it — is ruled out.
+
+### The defects were all in the layer AROUND the transform
+
+`mellin_delta`'s floor was an **absolute** 90 ns, so for r₀ ≲ 2.5 nm it handed most
+of the first dipolar oscillation to a single parabola: overlap **0.166 at 1.6 nm**.
+It was tuned on a synthetic benchmark whose 13 distributions all peak between 3.0
+and 4.3 nm — precisely where the clamp is harmless. Fixed with a `floor_ratio`, so
+the floor may stretch δ to at most 2× the trace's own decay scale: 0.166 → 0.678 at
+1.6 nm, 0.763 → 0.908 at 2.0 nm, and **bit-identical at r₀ ≥ 3.0 nm**.
+
+*Lesson, and it is the same shape as S1's and S2's: a constant tuned on a benchmark
+inherits that benchmark's blind spot. Check the range a tuning set actually covers
+before trusting a tuned default outside it.*
+
+### The one wrong number, found three ways
+
+`_MELLIN_I_S[1] = 4.35466` is **0.92 % too high** — it corresponds to Φ(1/3) taken
+as **3 exactly** instead of 2.972800. Found independently by the moments reviewer,
+by the blind reconciler, and by me before the panel returned. n = 2, 3, 4 are right
+to their own rounding and, incidentally, are the g_e set, not the "for g=2" the
+comment claimed. Consequence is confined: `I(s)` is consumed only by
+`moment_error_apriori`, so every ME₁ was low by 0.908 %.
+
+*The blind panel earned its cost here. The constant is quoted to six digits with a
+paper citation, and the paper's own anchor number (std(M1) = 0.0400 nm) is closer to
+the WRONG constant than to the right one — so nothing except an independent
+derivation could have adjudicated it.*
+
+### Also fixed
+
+The parabolic echo-top correction silently switched itself off below 3 samples in
+its fit window (a purely acquisition-driven jump: overlap 0.968 at dt = 32 ns,
+0.849 at 40 ns); `_tail_noise` returned a 10.8–12.5× inflated σ for 12–28 positive
+samples by putting the convolution edge back that the line above had just removed;
+the docstring's and tooltip's "conservative bound" guarantee on ME₁ is false
+(measured std/ME₁ up to 2.64, RMSE/ME₁ to 41.8) and is now stated as a noise floor;
+and the GUI printed a mean from the signed density beside a width and skew from the
+clipped one — a gap of up to 6.4× the ME₁ shown next to it.
+
+*My first `_tail_noise` fix was wrong and the verification caught it: the suggested
+`resid[hi-4:hi]` slides into the LEFT zero-padded edge, which `mode='same'` also
+creates and which the finding never mentioned. Verify a fix against the failure it
+targets, not against the finding's prose.*
+
+### Regression gate
+
+GUI smoke run offscreen (the S1 lesson), Mellin engine with `fit_t0`, all 28 real
+ring-test traces: **28/28** complete, axis lengths matched, moments finite — and the
+δ spinbox reads 0.09 on real data, confirming directly that the S3-1 fix does not
+touch the real-trace regime. DeerLab cross-check re-run post-fix (28/28): overlap
+**0.978** (min 0.816), |Δpeak| **0.024 nm**, |Δλ| **0.0259** — identical to the S2
+baseline, so nothing here moved the Tikhonov path. Synthetic δ gate: bit-identical
+at r₀ ≥ 3.0 nm across four noise levels, large wins below 2.5 nm. All four engines
+run end-to-end.
+
+### Environment
+
+**`sympy` and `mpmath` were not installed**, though S1's and S2's environment blocks
+both told their agents they were. S3 leans on symbolic work harder than any other
+session, so this was found and fixed early (sympy 1.14.0, mpmath 1.3.0). Do not
+propagate an environment claim without checking it.
+
+## Next session — S4: Mellin engine + joint background
+
+Per [REVIEW_PLAN.md](REVIEW_PLAN.md). Hand-overs waiting for it:
+
+- **`joint_background`'s collapse guard** (`deer.py:889`) — S2's, still open. A real
+  robustness hole with a knife-edge (a 1.5 ns background-cursor shift flips the mean
+  by 1.3 nm), left unfixed because tuning it needs the synthetic suite as a gate.
+- **The joint fit's λ/k CI propagation** — S2's, the largest verified error in the
+  uncertainty machinery (band 7–8.6× too narrow).
+- **From S3**: the `du = 0.02` log-T aliasing on long traces (note-severity, but it
+  interacts with the τ_max selector, so it needs the synthetic suite as a gate — and
+  it is *more* visible now that short-r reconstructions work); `_tail_noise`
+  returning 0.0 silently disabling the Monte-Carlo band; a manual δ below the first
+  sample double-counting [δ, T₁] at the decayed level.
+- **The port is now three sessions deep.** `deer.py` is byte-identical across plain /
+  NIOCH / NIOCH_Q / Cryomech (`c3ebd21f`) while ITC carries S1 + S2 + S3;
+  `deer_analysis.py` exists only in ITC / NIOCH / NIOCH_Q. Port together, and run
+  `~/atomize_sync/sync_check.py` first.
 
 ## Queued: a band that deserves the name (from the S2 CI findings)
 

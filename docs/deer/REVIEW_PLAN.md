@@ -161,6 +161,15 @@ a closed form (log-normal, Gaussian) by hand/sympy and compare. Cross-check mome
 against `distribution_moments` on ground-truth distributions. The `i^(-2/3)` NUA
 relation is an independent anchor.
 
+> **DONE 2026-07-29** — see [REVIEW_S3_mellin.md](REVIEW_S3_mellin.md).
+> The transform itself is CLEARED: the blind panel agreed to 12 s.f. on Phi(s), on the
+> reflected forward relation `V(s) = Phi(s) P(1-s)`, on the inverse prefactor and on the
+> w->r Jacobian, and a convention-sensitivity sweep confirms the code end-to-end
+> (unnormalized recovered area 0.9837; every alternative convention breaks it). Six
+> defects in the layer around it, all fixed — the largest being `mellin_delta`'s
+> absolute 90 ns floor, which collapsed every r0 <~ 2.5 nm (overlap 0.166 -> 0.678 at
+> 1.6 nm) while leaving the 3.0-4.3 nm benchmark it was tuned on untouched.
+
 ---
 
 ## S4 — Mellin engine + joint background · Opus
@@ -284,7 +293,7 @@ panel and on symbolic checks (sympy) against closed-form transform pairs.
 |---|---|---|---|
 | S1 Foundations | Opus + blind-derivation panel | **DONE** 2026-07-23 — 4 confirmed, 1 plausible | [REVIEW_S1_foundations.md](REVIEW_S1_foundations.md) |
 | S2 Tikhonov | Opus | **DONE** 2026-07-28 — 9 confirmed, 3 plausible, 2 refuted; all confirmed fixed | [REVIEW_S2_tikhonov.md](REVIEW_S2_tikhonov.md) |
-| S3 Mellin core | Opus + blind-derivation panel | not started | |
+| S3 Mellin core | Opus + blind-derivation panel | **DONE** 2026-07-29 — 7 confirmed, 3 plausible, 0 refuted; all confirmed fixed | [REVIEW_S3_mellin.md](REVIEW_S3_mellin.md) |
 | S4 Mellin engine | Opus | not started | |
 | S5 Multi-Gaussian | Opus | not started | |
 | S6 Cross-engine + GUI | Opus | not started | |

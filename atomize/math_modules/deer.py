@@ -734,8 +734,12 @@ def deer_invert_joint(t, V, r=None, bg_start=None, bg_end=None, dim=3.0,
 #                                                              [x = x0 sin th],
 #        \int_{x0}^1 (3x^2-1)^{-s} dx = x0 \int_0^{arccosh sqrt3} sinh(u)^{1-2s} du
 #                                                              [x = x0 cosh u].
-#    The sinh integrand has unit modulus near u=0 (Re(1-2s)=0 on the line), so a
-#    plain grid integrates it accurately. Valid for 0 < Re s < 3/2.
+#    The x-integral converges only for Re s < 1 (|1-3x^2| ~ 2 sqrt3 |x-x0| at x0);
+#    both pieces above are its analytic continuation, and the poles of Gamma(1-s)
+#    cancel against the zeros of cos(pi s/2). On the critical line the sinh
+#    integrand has unit MODULUS, but its phase -2 tau ln sinh(u) turns over ever
+#    faster as u -> 0, so the plain grid at `n_u` converges only as O(1/n_u)
+#    (~2.4e-2 relative at tau = 30; ~1e-4 nm on a recovered mean distance).
 #
 #  * Signal image V~(s).  Direct numeric Mellin of F(T) is hard near T=0, where
 #    cos/sin(tau ln T) oscillate ever faster. Following the paper, split at a
@@ -789,8 +793,9 @@ def mellin_signal_spectrum(t, F, tau, delta, F0=1.0, du=0.02, parabolic=True,
     echo (the 'thin parabola' near t=0) and lets `delta` be widened:
         int_0^delta (F0 + b T^2) T^{s-1} dT = F0 delta^s/s + b delta^{s+2}/(s+2).
     The curvature b is least-squares fit over a widened low-T window (out to where
-    F has fallen to `fit_level`*F0) so a few delta-wide samples cannot make it
-    noisy. Set parabolic=False for the original constant-F split."""
+    F has fallen to `fit_level`*F0, and never narrower than three positive samples
+    so a coarse step cannot silently drop the term back to the constant-F split).
+    Set parabolic=False for the original constant-F split."""
     t = np.asarray(t, dtype=float)
     F = np.asarray(F, dtype=float)
     tau = np.asarray(tau, dtype=float)
@@ -804,7 +809,7 @@ def mellin_signal_spectrum(t, F, tau, delta, F0=1.0, du=0.02, parabolic=True,
         f0 = float(Fp[0]) or F0
         below = np.where(Fp < fit_level*f0)[0]
         wfit = float(Tp[below[0]]) if len(below) else float(Tp[-1])
-        msk = Tp <= max(wfit, delta)
+        msk = Tp <= max(wfit, delta, float(Tp[2]))      # always >= 3 samples
         if int(np.count_nonzero(msk)) >= 3:
             Tw, Fw = Tp[msk], Fp[msk]
             q = float(np.sum(Tw**4))
@@ -1004,24 +1009,29 @@ def joint_background(t, V, bg_start=None, bg_end=None, dim=3.0, fit_dim=False,
             'bg_end': (None if bg_end is None else float(bg_end)), 'mask': mask}
 
 
-def mellin_delta(t, F, level=0.95, floor=0.09, cap=0.12):
+def mellin_delta(t, F, level=0.95, floor=0.09, cap=0.12, floor_ratio=2.0):
     """Practical split point delta: the first T > 0 where the form factor has
     fallen to `level` of F(0) (the paper's F(delta) ~ 0.95 estimate). Falls back
     to the first positive sample if F never drops that far.
 
     The raw F-level estimate is then clipped to [`floor`, `cap`] (in the kernel
-    time unit, us). The floor is the key correction for *sharp* distributions:
-    a fast-decaying form factor crosses `level` within a couple of samples, which
-    leaves the analytic parabolic [0,delta] echo-top anchor too narrow -- the
-    'thin parabola' at t=0 -- so the recovered F_fit top comes out too steep and
-    the short-r density is unstable. Widening delta to ~90 ns gives the parabolic
-    term enough low-T support; the cap (~120 ns) stops a slow-decaying (long-r)
-    trace from over-smoothing P(r) by handling too much of the modulation
-    analytically. Both bounds were tuned on the synthetic benchmark (overlap-
-    optimal across 13 distributions x 4 noise levels x 2 conditions; the floor
-    lifts e.g. gauss_narrow easy from 0.90 to 0.92). Set floor/cap to None to
-    disable. The bounds are also clamped to the trace so delta never exceeds the
-    last positive sample."""
+    time unit, us). The floor widens a too-narrow analytic [0,delta] echo-top
+    anchor -- the 'thin parabola' at t=0 -- which otherwise leaves the recovered
+    F_fit top too steep and the short-r density unstable; the cap (~120 ns) stops
+    a slow-decaying (long-r) trace from over-smoothing P(r) by handling too much
+    of the modulation analytically. Both were tuned on the synthetic benchmark,
+    whose peaks all lie between 3.0 and 4.3 nm.
+
+    `floor_ratio` bounds how far the floor may stretch delta beyond the trace's
+    OWN decay scale: delta is raised to at most `floor_ratio` * the raw crossing.
+    Without it the floor is an absolute time, so for r0 <~ 2.5 nm -- where the
+    raw crossing is a few times smaller than 90 ns -- it hands most of the first
+    dipolar oscillation to a single parabola and the reconstruction collapses
+    (measured overlap at r0 = 2.0 nm: 0.76 clamped vs 0.92 unclamped, noiseless;
+    0.42 vs 0.64 at sigma 0.04). Above ~3 nm the raw crossing already exceeds
+    floor/floor_ratio, so the clamp binds exactly as before and the tuned regime
+    is unchanged. Set floor/cap to None to disable. The bounds are also clamped
+    to the trace so delta never exceeds the last positive sample."""
     t = np.asarray(t, dtype=float)
     F = np.asarray(F, dtype=float)
     pos = t > 0
@@ -1032,9 +1042,10 @@ def mellin_delta(t, F, level=0.95, floor=0.09, cap=0.12):
         return 1e-3
     f0 = float(Fp[0]) or 1.0
     below = np.where(Fp < level*f0)[0]
-    d = float(Tp[below[0]]) if len(below) else float(Tp[0])
+    d_raw = float(Tp[below[0]]) if len(below) else float(Tp[0])
+    d = d_raw
     if floor is not None:
-        d = max(d, float(floor))
+        d = max(d, min(float(floor), float(floor_ratio)*d_raw))
     if cap is not None:
         d = min(d, float(cap))
     return float(min(d, Tp[-1]))                        # never past the last sample
@@ -1046,8 +1057,12 @@ def _tail_noise(t, y, frac=0.35, smooth_w=7):
     Over the last `frac` of the t > 0 trace the dipolar signal is gone (only the
     smooth background + additive electrical noise remain), so sigma is the std of
     (y - moving-average(y)) there, corrected for the variance a width-`w` moving
-    average removes: var(y - movavg) = sigma^2 (1 - 1/w). The convolution edge
-    (last w points) is excluded."""
+    average removes: var(y - movavg) = sigma^2 (1 - 1/w). `mode='same'` zero-pads
+    BOTH ends, so both convolution edges are excluded; on a trace too short for the
+    tail window to hold four non-edge points the window is pulled back toward the
+    middle rather than into the padding, and 0.0 is returned if even that fails
+    (which leaves the caller without a noise level -- see `deer_invert_mellin`,
+    where sig_e <= 0 disables the Monte-Carlo band)."""
     t = np.asarray(t, float); y = np.asarray(y, float)
     yp = y[t > 0]
     n = len(yp)
@@ -1056,8 +1071,9 @@ def _tail_noise(t, y, frac=0.35, smooth_w=7):
     w = int(max(3, smooth_w | 1))                       # odd window
     ys = np.convolve(yp, np.ones(w)/w, mode='same')
     resid = yp - ys
-    lo, hi = int(n*(1.0 - frac)), n - w                 # tail, minus right edge
-    tail = resid[lo:hi] if hi - lo >= 4 else resid[lo:]
+    hi = n - w                                          # drop the right conv edge
+    lo = min(max(int(n*(1.0 - frac)), w), max(hi - 4, w))   # inside BOTH edges
+    tail = resid[lo:hi]
     if len(tail) < 4:
         return 0.0
     return float(np.std(tail))/np.sqrt(max(1.0 - 1.0/w, 1e-6))
@@ -1083,7 +1099,15 @@ def residual_whiteness(resid, max_lag=None):
       acf1          : lag-1 autocorrelation r_1 = sum e_i e_{i-1} / sum e_i^2
                       (~ 1 - DW/2); 0 = white. The single headline number.
       acf, lags     : autocorrelation function vs lag (for an autocorrelogram).
-      ci95          : +-1.96/sqrt(N), the 95% white-noise band for the ACF.
+      ci95          : +-1.96/sqrt(N), the 95% white-noise band for the ACF. It is
+                      the band for RAW white noise; a fitted, regularized residual
+                      has a different null distribution and sits slightly
+                      anti-correlated, so `white` over-flags on that side.
+      offset        : mean(e)/std(e) BEFORE the mean subtraction below. DW and the
+                      ACF are computed on the demeaned residual, which is blind to
+                      a constant pedestal from a mis-fitted lambda or background --
+                      exactly the systematic this diagnostic is meant to catch. A
+                      |offset| of order 1 is a bad fit however white it looks.
       white         : bool, |acf1| <= ci95 (residual consistent with white noise).
     """
     e = np.asarray(resid, float)
@@ -1092,8 +1116,10 @@ def residual_whiteness(resid, max_lag=None):
     if n < 4:
         return {'durbin_watson': float('nan'), 'acf1': float('nan'),
                 'acf': np.array([1.0]), 'lags': np.array([0]),
-                'ci95': float('nan'), 'white': True}
-    e = e - e.mean()
+                'ci95': float('nan'), 'offset': float('nan'), 'white': True}
+    mu = float(e.mean())
+    e = e - mu
+    sd = float(np.std(e)) or 1e-30
     denom = float(np.sum(e*e)) or 1e-30
     dw = float(np.sum(np.diff(e)**2)/denom)
     if max_lag is None:
@@ -1102,14 +1128,14 @@ def residual_whiteness(resid, max_lag=None):
     acf = np.array([float(np.sum(e[k:]*e[:n - k])/denom) for k in lags])
     ci95 = float(1.96/np.sqrt(n))
     return {'durbin_watson': dw, 'acf1': float(acf[1]) if len(acf) > 1 else 0.0,
-            'acf': acf, 'lags': lags, 'ci95': ci95,
+            'acf': acf, 'lags': lags, 'ci95': ci95, 'offset': float(mu/sd),
             'white': bool(abs(acf[1] if len(acf) > 1 else 0.0) <= ci95)}
 
 
-# Analytic kernel-integral constants I(s) for g=2 (Nekrasov, Matveeva, Syryamina,
-# Agarkin & Bowman, Phys. Chem. Chem. Phys. 2026, DOI 10.1039/D5CP04144A; their
-# Eqns. 5-6), with s = n/3 for the n-th moment.
-_MELLIN_I_S = {1: 4.35466, 2: 3.06158, 3: 2.77339, 4: 2.56993}
+# Analytic kernel-integral constants I(s) = Phi(s)/(2 pi nu_dd)^s (Nekrasov,
+# Matveeva, Syryamina, Agarkin & Bowman, Phys. Chem. Chem. Phys. 2026,
+# DOI 10.1039/D5CP04144A; their Eqns. 5-6), with s = n/3 for the n-th moment.
+_MELLIN_I_S = {1: 4.31512, 2: 3.06158, 3: 2.77339, 4: 2.56993}
 
 
 def distribution_moments(r, P):
@@ -1176,11 +1202,17 @@ def moment_error_apriori(eps, dt, n_points, n=1):
 
     Notes
     -----
-    Reproduces the paper's reported uniform-acquisition std(M1)=0.0400 nm for
-    eps=0.04, dt=24 ns, NT=231 (-> 0.0407 nm). The empirical std of M1 from a full
-    Tikhonov / Mellin inversion sits at or below this bound (regularization only
-    reduces the noise-driven scatter), so ME_1 is a conservative a priori error
-    bar on the recovered mean distance."""
+    Against the paper's reported uniform-acquisition std(M1) = 0.0400 nm for
+    eps=0.04, dt=24 ns, NT=231, this returns 0.0411 nm.
+
+    ME_n is the propagated NOISE error of the linear Mellin moment integral and
+    nothing else -- it carries no resolution and no regularization-bias term, so
+    it is NOT a bound on the scatter of a recovered distance. Measured
+    std(M1)/ME_1 over 200 Mellin inversions runs 0.97 (3.0 nm, sigma 0.15,
+    NT=231) up to 2.64 (5.5 nm, sigma 0.30, NT=40), and once bias is included
+    RMSE/ME_1 reaches ~40x on a trace too short to resolve the distance -- ME_1
+    is smallest exactly where the answer is worst. Report it as a noise floor,
+    not as an error bar."""
     n = int(n)
     if n not in _MELLIN_I_S:
         raise ValueError('moment order n must be 1..4')

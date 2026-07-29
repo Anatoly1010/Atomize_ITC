@@ -1619,9 +1619,12 @@ class MainWindow(QMainWindow):
         'mean r ± ME₁: the a priori rms error of the mean distance from random '
         'noise alone (Nekrasov, Matveeva & Bowman, PCCP 2026). It is set by the '
         'form-factor noise, the time step and the trace length — not by the '
-        'distribution — and needs no ground truth. The actual scatter of a '
-        'regularized fit sits at or below this bound. width δr = rms width '
-        '√(M₂−M₁²); skew = third standardized moment of P(r).')
+        'distribution — and needs no ground truth. It is a NOISE FLOOR, not a '
+        'bound: it contains no resolution or regularization-bias term, so the '
+        'real scatter can exceed it (measured up to 2.6× on a trace too short '
+        'to resolve the distance, where ME₁ is smallest). mean, width δr = rms '
+        'width √(M₂−M₁²) and skew are all moments of the non-negative part of '
+        'P(r).')
 
     def _bg_start_floor(self):
         """Engine-aware background-start floor (see BG_START_FRAC notes)."""
@@ -2190,10 +2193,9 @@ class MainWindow(QMainWindow):
         ME₁) reusing the same formulas as the single-result info panel."""
         r = np.asarray(res['r'], float)
         P = np.asarray(res['P_density'], float)
-        Pn = np.asarray(res['P_norm'], float)
         peak = float(r[int(np.argmax(P))]) if len(r) else float('nan')
-        mean = float(np.sum(r * Pn))
         dsc = deer_module.distribution_moments(r, P)
+        mean = float(dsc['mean'])                  # same density as width/skew
         F = np.asarray(res['form_factor'], float)
         Ff = self._fit_curve(res)
         ss = float(np.sum((F - F.mean()) ** 2)) or 1.0
@@ -2352,8 +2354,12 @@ class MainWindow(QMainWindow):
         wht = self._whiteness_of(res)
         if wht is not None and np.isfinite(wht['durbin_watson']):
             wv = ('white' if wht['white'] else 'structured')
+            off = float(wht.get('offset', float('nan')))
+            # a pedestal survives the demeaning DW/r₁ are computed on, so flag it
+            off_txt = (f', offset = {off:+.2f}σ' if np.isfinite(off)
+                       and abs(off) > 0.25 else '')
             wht_txt = (f'<br>resid: DW = {wht["durbin_watson"]:.2f}, '
-                       f'r₁ = {wht["acf1"]:+.2f} <i>({wv})</i>')
+                       f'r₁ = {wht["acf1"]:+.2f}{off_txt} <i>({wv})</i>')
         else:
             wht_txt = ''
         if band is not None:
@@ -2366,7 +2372,7 @@ class MainWindow(QMainWindow):
             med_tag = ' (median)'
         else:
             r_peak = float(res['r'][int(np.argmax(res['P_density']))])
-            r_mean = float(np.sum(res['r'] * res['P_norm']))
+            r_mean = None                          # from distribution_moments below
             extra, med_tag = '', ''
 
         # shape descriptors (rms width δr, skew) + a priori mean-distance error
@@ -2374,6 +2380,8 @@ class MainWindow(QMainWindow):
         # noise-only error bar the acquisition itself allows on the mean distance,
         # from the form-factor noise + step + length -- no ground truth needed.
         dsc = deer_module.distribution_moments(res['r'], res['P_density'])
+        if r_mean is None:                         # same density as width/skew
+            r_mean = float(dsc['mean'])
         try:
             t_arr = np.asarray(res['t'], float)
             eps_F = float(deer_module._tail_noise(t_arr, res['form_factor']))
