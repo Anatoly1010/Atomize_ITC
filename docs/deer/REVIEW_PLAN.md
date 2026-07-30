@@ -188,6 +188,20 @@ single largest function in the module).
 **Ground truth** — the `diag/` diagnostics in `~/deer_benchmark/synth/`; synthetic
 ground truth; agreement with Tikhonov within CI (meaningful *only* if S1 passed).
 
+> **DONE 2026-07-30** — see [REVIEW_S4_mellin_engine.md](REVIEW_S4_mellin_engine.md).
+> 5 dimension reviewers → 38 raw findings → 12 queued (+1 spun out of a skeptic's
+> refutation); **10 confirmed, 3 plausible, 0 refuted**, all confirmed ones fixed —
+> **none as suggested**, since every proposal was criticized by at least one skeptic.
+> Both big hand-overs answered and closed: **H1**'s collapse guard was a genuine
+> knife-edge (`vss` differs 0.032 % while k differs 19×; one 10 ns `bg_start` step
+> moved the mean 3.52 → 4.53 nm) and the wide cap is now **deleted**; **H2**'s deficit
+> is real and *worst at the GUI default* (band/scatter 0.457 at Auto τmax vs 0.746 at
+> τmax = 30) — disclosed via `ci_kind` + the tooltip, the bootstrap deferred. Also
+> found outside scope and fixed: a Bruker file with no `XUNI` was read in the wrong
+> time unit (7 of 27 real files, peak 16.1 nm instead of 2.44 nm). The Mellin taper is
+> now an absolute window, so the reported mean no longer depends on the "Distance max"
+> box (grid spread 0.617 → 0.009 nm).
+
 ---
 
 ## S5 — Multi-Gaussian · Opus
@@ -294,6 +308,6 @@ panel and on symbolic checks (sympy) against closed-form transform pairs.
 | S1 Foundations | Opus + blind-derivation panel | **DONE** 2026-07-23 — 4 confirmed, 1 plausible | [REVIEW_S1_foundations.md](REVIEW_S1_foundations.md) |
 | S2 Tikhonov | Opus | **DONE** 2026-07-28 — 9 confirmed, 3 plausible, 2 refuted; all confirmed fixed | [REVIEW_S2_tikhonov.md](REVIEW_S2_tikhonov.md) |
 | S3 Mellin core | Opus + blind-derivation panel | **DONE** 2026-07-29 — 7 confirmed, 3 plausible, 0 refuted; all confirmed fixed | [REVIEW_S3_mellin.md](REVIEW_S3_mellin.md) |
-| S4 Mellin engine | Opus | not started | |
+| S4 Mellin engine | Opus | **DONE** 2026-07-30 — 38 raw → 13 queued; 10 confirmed, 3 plausible, 0 refuted; all confirmed fixed (none as suggested) | [REVIEW_S4_mellin_engine.md](REVIEW_S4_mellin_engine.md) |
 | S5 Multi-Gaussian | Opus | not started | |
 | S6 Cross-engine + GUI | Opus | not started | |

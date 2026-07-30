@@ -25,9 +25,9 @@ the plan's *Model allocation* for why that substitutes.
 | S1 Foundations — kernel, background, zero-time | **DONE + FIXED** 2026-07-23 | [REVIEW_S1_foundations.md](REVIEW_S1_foundations.md) |
 | S2 Tikhonov + NNLS | **DONE + VERIFIED + FIXED** 2026-07-28 | [REVIEW_S2_tikhonov.md](REVIEW_S2_tikhonov.md) |
 | S3 Mellin transform core | **DONE + VERIFIED + FIXED** 2026-07-29 | [REVIEW_S3_mellin.md](REVIEW_S3_mellin.md) |
-| S4 Mellin engine + joint background | not started — carries 2 S2 hand-overs (the collapse guard, the joint λ/k CI propagation) + 3 from S3 (`du` aliasing, zero σ silently killing the MC band, manual δ below the first sample) | |
+| S4 Mellin engine + joint background | **DONE + VERIFIED + FIXED** 2026-07-30 — 13 findings judged: 10 confirmed, 3 plausible, 0 refuted; all confirmed fixed, **none as suggested**. H1 and H2 both answered and closed. | [REVIEW_S4_mellin_engine.md](REVIEW_S4_mellin_engine.md) |
 | S5 Multi-Gaussian | not started | |
-| S6 Cross-engine, validation, GUI | not started — carries the on-demand residual bootstrap + S3's ME₁-ε placement | |
+| S6 Cross-engine, validation, GUI | not started — carries the on-demand residual bootstrap, the joint/Mellin band propagation S4 disclosed, S3's ME₁-ε placement, and S4's note queue | |
 
 ---
 
@@ -320,24 +320,210 @@ both told their agents they were. S3 leans on symbolic work harder than any othe
 session, so this was found and fixed early (sympy 1.14.0, mpmath 1.3.0). Do not
 propagate an environment claim without checking it.
 
-## Next session — S4: Mellin engine + joint background
+## Session 2026-07-30 — S4: 10 confirmed, 0 refuted, all fixed
 
-Per [REVIEW_PLAN.md](REVIEW_PLAN.md). Hand-overs waiting for it:
+Two runs: `wf_79b3f216-ad5` (24 agents; stages 1–2 plus 15 of the 24 skeptics, then
+paused) and `wf_f77b0b07-2aa` (the standalone continuation from a **new** session —
+11 skeptics, 0 errors, banking the 15 verdicts already collected). Full report:
+[REVIEW_S4_mellin_engine.md](REVIEW_S4_mellin_engine.md).
 
-- **`joint_background`'s collapse guard** (`deer.py:889`) — S2's, still open. A real
-  robustness hole with a knife-edge (a 1.5 ns background-cursor shift flips the mean
-  by 1.3 nm), left unfixed because tuning it needs the synthetic suite as a gate.
-- **The joint fit's λ/k CI propagation** — S2's, the largest verified error in the
-  uncertainty machinery (band 7–8.6× too narrow).
-- **From S3**: the `du = 0.02` log-T aliasing on long traces (note-severity, but it
-  interacts with the τ_max selector, so it needs the synthetic suite as a gate — and
-  it is *more* visible now that short-r reconstructions work); `_tail_noise`
-  returning 0.0 silently disabling the Monte-Carlo band; a manual δ below the first
-  sample double-counting [δ, T₁] at the decayed level.
-- **The port is now three sessions deep.** `deer.py` is byte-identical across plain /
-  NIOCH / NIOCH_Q / Cryomech (`c3ebd21f`) while ITC carries S1 + S2 + S3;
-  `deer_analysis.py` exists only in ITC / NIOCH / NIOCH_Q. Port together, and run
-  `~/atomize_sync/sync_check.py` first.
+Structure: 5 concurrent dimension reviewers (joint-background rate fit, τmax
+selection, MC band + noise, forward fit/δ/droop, call sites) → triage that merged
+**38 raw findings into a 12-entry queue** → 2 adversarial skeptics per finding,
+default stance REFUTED. A 13th entry was added mid-flight, spun out of S4-8's
+refutation, and got its own two skeptics. Final: **10 CONFIRMED, 3 PLAUSIBLE, 0
+REFUTED**; every confirmed finding fixed and **not one landed as suggested**.
+
+### Both big hand-overs are answered
+
+- **H1 (collapse guard)** — CONFIRMED, mechanism fully characterized: `vss(log k)`
+  has 3–4 local minima and the two adopted branches differ by **0.032 % in vss while
+  k differs 19×**, so `minimize_scalar` is picking a *basin*. One 10 ns `bg_start`
+  step moves the reported mean **3.517 → 4.527 nm**. Two new facts S2 did not have:
+  the bad branch **is already flagged** (14/14 mis-branches in a noise ensemble fired
+  `k_disagrees`), so it is a knife-edge not a silent failure; and *dropping the wide
+  fit* survived both skeptics' gates (mean |ln k/k_true| 0.176 → 0.095, adjacent jump
+  2.24 → 0.012, 28 real traces move ≤ 0.027 nm) while the weaker "drop only the decay
+  test" variant was refuted. **The wide cap is now deleted** (re-gated in-session:
+  long-r family bit-identical, adjacent |Δln k| 2.2333 → 0.0093, real traces 0.46 %
+  median in k / ≤ 0.031 nm in mean distance), and `joint_background` is ~2× faster.
+- **H2 (λ/k CI propagation)** — the Mellin MC band **does** inherit the deficit. Two
+  reviewers contradicted each other (1.0× vs 2–11×) and the skeptics resolved it to a
+  single knob: band/scatter at the peak is **0.457 at the GUI's default Auto τmax**
+  and 0.746 at `tau_max=30`, with bit-identical background fits. *The narrow
+  configuration is the default.* Method lesson recorded: never validate this band at
+  a pinned high cutoff — it inflates it 3.0–3.7× and hides the defect. **Disclosed,
+  not re-derived:** the Mellin result now carries `ci_kind = 'mc_fixed_bg'` and the
+  tooltip states the real noise source, the conditioning and the measured 78–91 %
+  coverage. The bootstrap that would actually fix it is deferred to S6 — at 418 ms
+  per realization it is ~21 s at the GUI's n_mc = 50, on a path wired to live update.
+
+### The unexpected one
+
+**S4-6, from the call-sites reviewer, outside the nominal scope:** a Bruker file that
+states no time unit was read in whatever unit the selector happened to show, and µs is
+the session default with no `else` branch and no settings restore. Roughly a quarter
+of the validation corpus is affected (hand-saved / third-party-converted files; every
+file written by our own spectrometer carries its unit). Reproduced through the real
+GUI: peak **16.11 nm** instead of 2.438 nm, R² nan, and a 171-character integer
+printed into the info panel from `%.2f` on `lambda_raw`. **Fixed and re-verified
+through the GUI:** the unit is now inferred from the trace span before the trace is
+registered, the advisory survives into the final status line, `_unit_changed`
+re-derives the auto distance window, and **no file reports a distance above 9 nm**
+where seven did before.
+
+### Method notes worth keeping
+
+- **Two reviewers disagreeing was more productive than either being right.** The H2
+  contradiction was only resolvable because both had left runnable harnesses; the
+  skeptics re-ran them on one shared setup and found the single differing knob. Give
+  contradicting findings to the skeptics as one queue entry, not two.
+- **Priming the skeptics with triage caveats keyed to `file:line` again changed
+  verdicts** — S4-3's "with no flag" headline was refuted by both skeptics on exactly
+  the point its caveat flagged (the warning already exists and fires 17/17).
+- **API 529s killed 3 of the first 6 agents.** Because `resumeFromRunId` is
+  same-session only, the recovery path had to be built by hand; it now exists as
+  `~/deer_benchmark/s4_persist/build_resume.py` +
+  `~/deer_benchmark/s4_verify_resume.js` and is reusable for S5/S6. Long
+  multi-agent review runs should persist their stage output outside the session
+  directory *as they go*, not at the end. (The builder itself had a latent bug — a
+  line-anchored substitution that left the previous data block behind — found and
+  fixed when the continuation session first ran it.)
+- **A refuted payload was worth more than a confirmation, twice.** S4-8 and S4-10
+  both had exact mechanisms and over-reached consequences; both times the corrected
+  aim came out of the adversarial pass, not the review pass.
+- **Ask the skeptics to gate the fix, not only the finding.** All 13 suggested fixes
+  were wrong, incomplete or optimistic, and three would have made things worse.
+
+### What was fixed
+
+Order per the report: S4-6 first, then S4-1 and S4-4, re-baseline, then S4-2.
+
+- **S4-6** — the time unit is inferred from the trace span before the trace is
+  registered, the advisory is folded into the loader's final status line (it was
+  being clobbered), `_unit_changed` re-derives the auto distance window while it
+  still holds auto values, and `%.2f` → `%.3g` on `lambda_raw` in both the panel and
+  the engine warning.
+- **S4-1** — `deer_validate` pins `tau_max`, `n_tau` and `delta` for
+  `engine='mellin'`. Gated on a background-start sweep deliberately straddling a
+  cutoff change: trials used to mix τmax **{12, 32, 40}** (n_tau {800, 2133, 2667});
+  they now all inherit the central trial's, and the reported band area drops
+  **0.163 → 0.018 (9.0×)**.
+- **S4-4** — the wide-cap collapse guard is deleted; `k_at_bound` (S4-3) added
+  alongside it, since the bracket-edge case is what survives.
+- **S4-8(b) + S4-13** — `deer_validate` returns per-trial `trials` / `trial_spread`
+  with a majority rule, and the reported row now describes **one** density (the
+  central trial) with the ensemble reported separately. On S4-8's own demo the
+  bifurcation is gone: r_mean **4.412 → 3.499 nm** (truth 3.500), trial spread
+  **1.10 → 0.016 nm**.
+- **S4-2** — the short-r taper is an absolute window (`fit_rmin_abs`,
+  `fit_rmin_width`), not a fraction of the r range, re-tuned over nine candidate
+  windows. Grid dependence of the reported mean **0.617 → 0.009 nm**, r_min bias
+  **0.319 → 0.000**, bimodal population error **0.240 → 0.010**, at a deliberate
+  mid-r cost (overlap 0.805 → 0.762) that the sweep shows is unavoidable: every
+  wider window buys that back by deleting a real short-r peak.
+- **The echo-top parabola** (found while gating, not a queued finding, pre-existing):
+  on a noisy shallow-modulation trace the δ crossing and the curvature window are
+  both set by single noisy samples, so δ collapses (141 → 37 ns from σ 0.02 → 0.04)
+  and |b| reaches ~560 against a noise-only scatter of ~230 — leaving the forward fit
+  above the data across the whole echo top. Fixed by smoothing the crossing (a no-op
+  below rel-noise ≈ 0.09, so the tuned regime is untouched by construction) and a
+  9-sample curvature-window floor **under the same gate** — ungated it degraded the
+  28 real traces (residual up to 6.6× worse, one peak moved 1.40 nm), because on
+  clean data the parabola is only valid very near the echo top. Gated, all 28 real
+  traces are bit-identical. **The fits are repaired; the distributions are
+  not** — the broken curvature had been an accidental regularizer, so every way of
+  repairing it costs ~0.10 overlap on the case it fixes. The real lever is the
+  zero-time fit (+0.085 overlap, and it removes most of the collapse): queued below.
+- **S4-7 / S4-9 / S4-11** — fit quality judged against the independent noise floor
+  with the "overfit" arm dropped and `neg_area` added; the τmax-selection checkbox
+  relabelled, rewired to refit, and four false docstrings corrected; `_tail_noise`
+  returns NaN for "cannot measure" so a missing CI band says why.
+
+**Not implemented, by verdict:** S4-10 (0/28 real traces at a bound, 25/28 already
+flagged, and both the proposed detector and the tighter `[2, 4]` dimension range were
+refuted — DeerLab's own bounds are wider) and S4-12 (R² −29 … −288 already announces
+it, and the proposed clamp is inert *and* makes the result look more plausible).
+
+### Regression gate
+
+Pre-fix baselines were taken from a pristine `git worktree` at HEAD, so every "before"
+number below is the shipped code, not a memory of it.
+
+- **`unit.py`** — passes. Two synthetic values move slightly with the tight-cap
+  background (`sum(P)` 0.2532 → 0.2510, R² 0.2518 → 0.2493) on a case deliberately
+  built with the truth *outside* the r grid; its assertions (interior index,
+  `corner_ok`, `at_bound`) still hold.
+- **`check.py`**, 28 real traces × both engines — **identical counts**: 0 α-at-bound,
+  6 joint warnings, 6 `k_disagrees`, 0 traces with `tail_abs_F` > 0.05, `sum(P)`
+  0.994–1.008. Per-trace λ and R² match the baseline to 3–5 dp.
+- **`gui_smoke.py`** (offscreen, the S1 lesson) — every substantive field identical:
+  α, `ci_kind`, axis lengths 338/338, band behaviour, statuses; joint λ 0.414 → 0.415.
+  Only the CPU times differ (the machine was running 15 jobs).
+- **S4 GUI-path smoke** (new, `~/deer_benchmark/s4_fix/s4_gui_smoke.py`) — the panel
+  code S4 touched renders in all four modes: Mellin + CI, Mellin + Validate,
+  Tikhonov + Validate, and a trace too short to measure a noise floor, which now
+  prints *"no band: the noise level could not be measured"* and the new
+  `k pinned at its search bracket edge` flag instead of silently dropping the band.
+- **DeerLab cross-check, pre-fix baseline** — overlap **0.978** (min 0.816),
+  |Δpeak| **0.024 nm** (max 0.327), |Δλ| **0.0259** over 28/28 traces, matching the
+  S2 and S3 figures exactly.
+
+## Notes ready to implement (S5/S6 queue)
+
+Unverified — no skeptic ran on these — but each carries the reviewer's own numbers.
+Full text in `~/deer_benchmark/s4_persist/s4_triage_notes.json`, summary in the S4
+report.
+
+1. **Widen the τmax candidate grid.** `[6 … 40]` clamps silently at both ends where
+   `l_curve` warns; the ceiling is picked on 10 of 28 real traces. `[3 … 60]` gains
+   +0.017 mean overlap over 72 synthetic conditions (oracle +0.045) for ~35 % cost.
+   Needs a boundary flag either way. *Closest finding to the verification cut.*
+2. **Guard `_masses` relatively, not absolutely.** It normalizes by the signed area
+   with a fallback only at |area| < 1e-12, nine orders below the smallest reachable
+   value; at low λ a negative area returns the exact negative of the honest density.
+   The guard must be `area < eta·positive_area`, gated on the synthetic suite.
+3. **Make a failed `_fit_rate` visible.** Both arms end in
+   `except Exception: return kref, d0`, so a failure degrades to the sequential fit
+   with `k_ratio` exactly 1.0 and no warning; one non-finite sample before `bg_start`
+   is enough, and the NaN travels on into the inversion.
+4. **Unify the λ clamp** — 0.95 / 1.0 / 0.98 in one module.
+5. **`du = 0.005` as the default?** H3 is answered: the aliasing story is refuted
+   (S3's overlap gap was a forward-model r-quadrature artifact); what `du` costs is
+   noise decimation (mean-distance bias +0.037 → +0.009 nm). The two reviewers split
+   on changing the default (+0.016 overlap at 1.46× cost vs no action); both rejected
+   a data-driven `du = dt/Tmax` rule.
+6. **The two non-default τmax methods are broken** and unreachable from the GUI:
+   `'discrepancy'` silently becomes argmin(σ_fit) on 17/28 traces, `'lcurve'` cannot
+   return its end candidates and has no no-corner fallback. Fix or remove.
+7. **The forward model is a rectangle sum over the user's r grid** and needs
+   dr ≪ r⁴/(6·ν_dd·T); the GUI default violates it 6× at r = 2 nm on a 10 µs trace.
+   Not reachable on real traces, but it affects the Tikhonov kernel too.
+8. **`joint_background` defaults `bg_start` to 0.6 × span** while every other engine
+   uses 0.5 × span — invisible from the GUI, but scripts and mirrors see it.
+9. **Fit the zero-time on a lightly smoothed trace.** `fit_zero_time` is an argmax
+   over a noisy curve; at the highest synthetic noise it is +3.9 ns biased with a
+   21 ns scatter (worst 77 ns), and a 5-point boxcar gives +0.4 ns / 16 ns / 52 ns.
+   Worth **+0.085 overlap** on the case where the Mellin echo top collapses — more
+   than any δ or curvature change — and it removes most of that collapse as a side
+   effect. 9-point smoothing is worse (worst error 168 ns), so the width matters.
+   This touches an S1-reviewed estimator every engine depends on, so it needs the
+   full suite plus the real traces as a gate.
+
+## Next session — S5 (multi-Gaussian)
+
+Hand-overs that were waiting for S4 are all resolved: H1 → S4-4 (fixed), H2 → S4-5
+(disclosed; the bootstrap is S6), H3 → refuted and reframed (note 5 above),
+H4 → S4-11 (fixed), H5 → S4-12 (plausible, no action).
+
+Carried into S5 by S4's own findings: `engine='gauss'` has the **identical**
+`deer_validate` hole S4-1 fixed for Mellin — `n_gauss` is re-selected per trial
+through the same `**kwargs`, so the validation band mixes component counts.
+
+**The port is now four sessions deep.** `deer.py` is byte-identical across plain /
+NIOCH / NIOCH_Q / Cryomech while ITC carries S1 + S2 + S3 + S4; `deer_analysis.py`
+exists only in ITC / NIOCH / NIOCH_Q. Port together, and run
+`~/atomize_sync/sync_check.py` first.
 
 ## Queued: a band that deserves the name (from the S2 CI findings)
 
@@ -349,7 +535,7 @@ neither of these is a "true CI" on its own; each fixes a specific, measured hole
 0.480 modal coverage in S2. Judge both against the skeptics' coverage harnesses,
 which already exist: `~/deer_benchmark/{sk1_ci,sk2_cicov,sk1_cicov2}/`.
 
-### 1. Propagate the joint fit's λ/k covariance — **S4**, do this first
+### 1. Propagate the joint fit's λ/k covariance — **S6** (S4 disclosed it, did not fix it)
 
 Targets confirmed finding 9, the largest verified error in the uncertainty
 machinery: the joint band is **7–8.6× too narrow** where the *identical* formula is
@@ -361,6 +547,15 @@ defect, not a philosophical limit, and it is self-contained: either propagate th
 rate fit's covariance into the linear band, or bootstrap the joint pipeline
 (item 2). Acceptance: band/scatter ratio within ~1.5× on the S2 Monte-Carlo setups
 at k = 0.05 and k = 0.30, with the sequential engine unchanged.
+
+S4 confirmed the same deficit in the **Mellin** MC band (S4-5) and shipped only the
+honest half — a distinct `ci_kind`, and a tooltip that states the noise source, the
+conditioning and the measured coverage. Two constraints it added for whoever
+implements this: re-fitting `tau_max` per realization folds a *discrete* selection
+instability into a Gaussian ±1.96σ summary and must not be done (re-fit the
+background and λ only, cutoff pinned); and the cost, 418 ms per realization, is ~21 s
+at the GUI's n_mc = 50 on a path wired to live update — so it needs a button and an
+n_mc cap, not a checkbox.
 
 ### 2. Residual bootstrap over the whole pipeline, on demand — **S6**
 

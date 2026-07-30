@@ -128,6 +128,8 @@ class MainWindow(QMainWindow):
 
     # time-unit -> factor that converts the X axis into microseconds (kernel unit)
     DEER_TUNITS = {'µs': 1.0, 'ns': 1e-3, 'ms': 1e3}
+    # plausible DEER trace length in µs, for guessing the unit of a file with none
+    DEER_TSPAN_US = (0.05, 50.0)
 
     def __init__(self, *args, **kwargs):
         super(MainWindow, self).__init__(*args, **kwargs)
@@ -385,7 +387,11 @@ class MainWindow(QMainWindow):
             'engine it also holds the background and λ fixed, which makes it up '
             'to 7× narrower again. Read it as a noise scale, not a confidence '
             'interval. Mellin: Monte-Carlo band from re-inverting the form factor '
-            'with the fit-residual noise. Multi-Gaussian: parametric band from the '
+            'with the decayed-tail noise of V (not the fit residual), holding the '
+            'fitted background, λ, τmax and δ fixed — so it under-covers too '
+            '(measured 78–91% against a nominal 95%, worse at small τmax) and it '
+            'is centred on a possibly biased density, which no widening would '
+            'fix. Multi-Gaussian: parametric band from the '
             'fit-covariance of the component parameters. For a coverage-honest '
             'interval use Validate, whose band supersedes this one.')
         self.deer_ci_chk.stateChanged.connect(self._ci_toggled)
@@ -933,17 +939,19 @@ class MainWindow(QMainWindow):
         self.mellin_signed_chk.stateChanged.connect(self._deer_rerender)
         grid.addWidget(self.mellin_signed_chk, r, 0, 1, 2); r += 1
 
-        self.mellin_signed_fit_chk = QCheckBox('Signed forward fit (negative-aware)')
+        self.mellin_signed_fit_chk = QCheckBox('Signed density in the τmax selection')
         self.mellin_signed_fit_chk.setStyleSheet(CHECKBOX_STYLE)
         self.mellin_signed_fit_chk.setToolTip(
-            'Build the forward fit F_fit = K·P from the honest SIGNED density (the '
-            'masses the Mellin inverse actually produced) instead of the clipped, '
-            'low-r-tapered one. Reproduces the echo-top/trough amplitude more '
-            'faithfully (whiter residual); used for both the τmax-penalty rmsF and '
-            'the displayed fit. Uncheck for low-λ data with a strong short-r noise '
-            'spike, where the negatives can give a double-peaked echo top.')
+            'Score the τmax penalty against the honest SIGNED density (the masses '
+            'the Mellin inverse actually produced) instead of the clipped, '
+            'low-r-tapered one. It does NOT change the displayed fit: with the '
+            'short-r taper on (always, in this tool) F_fit is built from the '
+            'tapered density either way. With τmax on Auto it moves the chosen '
+            'cutoff on about half of real traces, and the reported distance with '
+            'it; at a fixed τmax it changes nothing. Needs a re-run to take '
+            'effect.')
         self.mellin_signed_fit_chk.setChecked(True)        # signed forward fit = default
-        self.mellin_signed_fit_chk.stateChanged.connect(self._deer_rerender)
+        self.mellin_signed_fit_chk.stateChanged.connect(self._mellin_live)
         grid.addWidget(self.mellin_signed_fit_chk, r, 0, 1, 2); r += 1
 
         self.mellin_live = QCheckBox('Live update on parameter change')
@@ -1191,15 +1199,36 @@ class MainWindow(QMainWindow):
             return []
         return labels if any(labels) else []
 
-    def _preset_deer_unit(self, label):
+    def _preset_deer_unit(self, label, x=None):
         """If an axis label carries a time unit like 'Time (ns)', preset the
-        time-unit selector to match."""
+        time-unit selector to match. With no unit in the label, fall back to the
+        trace's own magnitude. Returns an advisory for the caller's status line,
+        empty when the file stated its unit."""
         u = ''
         if label and label.endswith(')') and '(' in label:
             u = label[label.rfind('(') + 1:-1].strip().lower()
         tmap = {'ns': 'ns', 'us': 'µs', 'µs': 'µs', 'μs': 'µs', 'ms': 'ms'}
         if u in tmap:
             self.deer_tunit.setCurrentText(tmap[u])
+            return ''
+        return self._preset_unit_from_span(x)
+
+    def _preset_unit_from_span(self, x):
+        """Last resort for a file with no time unit: pick the unit that makes the
+        trace length a plausible DEER window. Reading a ns axis as µs scales every
+        distance by 10 (a 2.4 nm peak reads as 16-22 nm), so guessing beats keeping
+        whatever the selector happened to show — but the guess is always announced."""
+        cur = self.deer_tunit.currentText()
+        x = np.asarray(x, dtype=float) if x is not None else np.array([])
+        lo, hi = self.DEER_TSPAN_US
+        span = abs(float(x[-1] - x[0])) if x.size > 1 else 0.0
+        cand = [u for u, f in self.DEER_TUNITS.items() if lo <= span*f <= hi]
+        if span > 0 and cand and cur not in cand:
+            self.deer_tunit.setCurrentText(cand[0])
+            return (f' No time unit in the file — {cand[0]} assumed from the '
+                    f'{span:.4g} span; check the Time unit selector.')
+        return (f' No time unit in the file — read as {cur}; check the Time unit '
+                f'selector.')
 
     def _csv_to_mapping(self, file_path):
         """Read a CSV into a {channel label: (x, y)} mapping plus its header
@@ -1238,14 +1267,16 @@ class MainWindow(QMainWindow):
             items.append((os.path.splitext(os.path.basename(file_path))[0], mapping))
         # preset the time unit BEFORE registering (the auto distance range scales
         # with _deer_tfactor(), which depends on the unit)
-        if unit_label:
-            self._preset_deer_unit(unit_label)
+        advice = ''
+        if items:
+            first_x = next(iter(items[0][1].values()))[0]
+            advice = self._preset_deer_unit(unit_label, first_x)
         if items:
             self._add_traces(items)
         msg = f'Loaded {len(items)} trace(s)' if items else 'No traces loaded'
         if failed:
             msg += '. Skipped: ' + '; '.join(failed)
-        self.set_status(msg + '.')
+        self.set_status(msg + '.' + advice)
 
     def open_bruker(self):
         """Load a Bruker dataset (BES3T .DSC/.DTA or ESP/WinEPR .par/.spc). A
@@ -1275,12 +1306,16 @@ class MainWindow(QMainWindow):
         tmap = {'ns': 'ns', 'us': 'µs', 'µs': 'µs', 'μs': 'µs', 'ms': 'ms'}
         if u in tmap:
             self.deer_tunit.setCurrentText(tmap[u])
+            advice = ''
+        else:                                        # file carries no XUNI line
+            advice = self._preset_unit_from_span(x)
         # leave I/Q pairing OFF by default even for complex data — the user opts in
         # (many traces are already phased; auto-pairing surprised more than it helped)
         self._add_traces([(os.path.splitext(os.path.basename(file_path))[0], mapping)])
         self.set_status(f'Loaded {os.path.basename(file_path)} — {res["format"]}, '
                         f'{len(x)} pts, '
-                        + ('complex (I/Q pair).' if res['complex'] else 'real.'))
+                        + ('complex (I/Q pair).' if res['complex'] else 'real.')
+                        + advice)
 
     def load_from_buffer(self, silent=False):
         if not os.path.isfile(BUFFER_PATH):
@@ -1318,10 +1353,11 @@ class MainWindow(QMainWindow):
                 if not silent:
                     self.set_status('Plot buffer is empty.')
                 return
-            if buf_xname:
-                self._preset_deer_unit(buf_xname)
+            advice = self._preset_deer_unit(buf_xname,
+                                            next(iter(mapping.values()))[0])
             self._add_traces([('Loaded from plot', mapping)])
-            self.set_status(f'Loaded {len(mapping)} curve(s) from the current plot.')
+            self.set_status(f'Loaded {len(mapping)} curve(s) from the current '
+                            f'plot.' + advice)
         except Exception as e:
             self._consume_buffer()
             if not silent:
@@ -1583,8 +1619,10 @@ class MainWindow(QMainWindow):
             self.do_deer()
 
     def _unit_changed(self, *args):
-        """Time-unit change: recompute if live (the kernel axis scales), else just
-        relabel the displayed input/result in the new unit."""
+        """Time-unit change: re-derive the auto distance range (it is computed from
+        the trace length in µs), then recompute if live (the kernel axis scales),
+        else just relabel the displayed input/result in the new unit."""
+        self._retune_auto_rrange()
         if self.live_check.isChecked() and self.real_xy[0] is not None:
             self.do_deer()
         elif self.deer_result is not None:
@@ -1710,6 +1748,28 @@ class MainWindow(QMainWindow):
         self.set_status(f'Auto distance max = {rmax:.1f} nm '
                         f'(trace-supported, 5·(t/2)^⅓).')
 
+    def _retune_auto_rrange(self):
+        """Refresh the distance window after a time-unit change, but only while it
+        still holds the auto-derived values — both bounds scale with the trace
+        length in µs, so a stale window reads a 2.4 nm peak as 18 nm."""
+        prev = getattr(self, '_rrange_auto', None)
+        if prev is None or self.real_xy[0] is None:
+            return
+        if (abs(self.deer_rmin.value() - prev[0]) > 1e-9
+                or abs(self.deer_rmax.value() - prev[1]) > 1e-9):
+            return                                 # user-edited: leave it alone
+        rmax, rmin = self._auto_rmax_value(), self._auto_rmin_value()
+        if rmax is None or rmin is None:
+            return
+        rmin = min(rmin, rmax - 0.5)
+        for sb in (self.deer_rmin, self.deer_rmax):
+            sb.blockSignals(True)
+        self.deer_rmax.setValue(rmax)
+        self.deer_rmin.setValue(rmin)
+        for sb in (self.deer_rmin, self.deer_rmax):
+            sb.blockSignals(False)
+        self._rrange_auto = (self.deer_rmin.value(), self.deer_rmax.value())
+
     def _auto_rrange(self):
         rmax = self._auto_rmax_value()
         rmin = self._auto_rmin_value()
@@ -1722,6 +1782,7 @@ class MainWindow(QMainWindow):
         self.deer_rmin.setValue(min(rmin, rmax - 0.5))
         for sb in (self.deer_rmin, self.deer_rmax):
             sb.blockSignals(False)
+        self._rrange_auto = (self.deer_rmin.value(), self.deer_rmax.value())
         self.deer_rmax.valueChanged.emit(rmax)
         self.set_status(f'Auto distance window = {self.deer_rmin.value():.1f}'
                         f'–{rmax:.1f} nm (Δt-resolved min, trace-supported max).')
@@ -1747,6 +1808,7 @@ class MainWindow(QMainWindow):
             self.deer_rmin.setValue(min(rmin, rmax - 0.5))
         for sb in sboxes:
             sb.blockSignals(False)
+        self._rrange_auto = (self.deer_rmin.value(), self.deer_rmax.value())
 
     def _deer_t0_max(self):
         x, v = self.real_xy
@@ -1906,6 +1968,7 @@ class MainWindow(QMainWindow):
         n_tau = int(self.mellin_ntau.value())
         validate = self.deer_validate_chk.isChecked()
         n_mc = 50 if self.deer_ci_chk.isChecked() else 0
+        signed_fit = self.mellin_signed_fit_chk.isChecked()
         bgp = self._general_bg_params()
 
         def compute():
@@ -1922,7 +1985,7 @@ class MainWindow(QMainWindow):
             delta_us = (delta_disp * tf) if delta_disp > 0 else None
             mk = dict(delta=delta_us, tau_max=tau_max, n_tau=n_tau,
                       bg_engine=bg_engine, bg_params=bgp,
-                      signed_fit=self.mellin_signed_fit_chk.isChecked())
+                      signed_fit=signed_fit)
             if validate:
                 val = deer_module.deer_validate(
                     t_us, v, r=r, bg_start=bg_us, bg_end=bg_end_us, dim=dim,
@@ -2174,9 +2237,11 @@ class MainWindow(QMainWindow):
         self._clear_batch_bands()
         if not self.deer_ci_chk.isChecked():
             return
+        missing = []
         for i, (name, res) in enumerate(results):
             lo, hi = res.get('P_lower'), res.get('P_upper')
             if lo is None or hi is None:
+                missing.append(name)           # else the trace silently loses its band
                 continue
             col = self.BATCH_COLORS[i % len(self.BATCH_COLORS)]
             r = np.asarray(res['r'], float)
@@ -2187,6 +2252,10 @@ class MainWindow(QMainWindow):
             for it in (lo_item, hi_item, fill):
                 self.p_pr.addItem(it, ignoreBounds=True)   # never set the P(r) scale
             self._batch_band_items[name] = (lo_item, hi_item, fill)
+        if missing:
+            self.set_status(self.status.text() + f' No band for {len(missing)} '
+                            f'trace(s): {", ".join(missing[:3])}'
+                            + ('…' if len(missing) > 3 else '') + '.')
 
     def _trace_stats(self, res):
         """Per-trace scalar summary (peak/mean/width/skew r, λ, k, dim, R², DW, r₁,
@@ -2362,17 +2431,22 @@ class MainWindow(QMainWindow):
                        f'r₁ = {wht["acf1"]:+.2f}{off_txt} <i>({wv})</i>')
         else:
             wht_txt = ''
+        # every scalar in the row comes from ONE density, the central trial
+        r_peak = float(res['r'][int(np.argmax(res['P_density']))])
+        r_mean = None                              # from distribution_moments below
         if band is not None:
-            r_peak, r_mean = band['peak'], band['r_mean']
-            bgs = band['bg_starts'] / tf
+            bgs = band['bg_starts'] / tf + t0_disp     # back to the acquisition axis
             lo, hi = band['percentiles']
+            sp = band.get('trial_spread') or {}
             extra = (f'<br><b style="color: rgb(150, 200, 255);">validation</b><br>'
                      f'{band["n_trials"]} trials, bg start {bgs[0]:.3g}–{bgs[-1]:.3g} '
-                     f'{self.deer_tunit.currentText()}<br>band = {lo:g}–{hi:g}%')
-            med_tag = ' (median)'
+                     f'{self.deer_tunit.currentText()}<br>band = {lo:g}–{hi:g}%, '
+                     f'median peak {band["peak"]:.2f} nm, mean {band["r_mean"]:.2f} nm'
+                     + (f'<br>trial spread: mean {sp["r_mean_spread"]:.3f} nm, '
+                        f'λ {sp["lambda_spread"]:.3f}, '
+                        f'{sp["n_flagged"]}/{sp["n"]} flagged' if sp else ''))
+            med_tag = ' (central trial; curve and band from the sweep)'
         else:
-            r_peak = float(res['r'][int(np.argmax(res['P_density']))])
-            r_mean = None                          # from distribution_moments below
             extra, med_tag = '', ''
 
         # shape descriptors (rms width δr, skew) + a priori mean-distance error
@@ -2404,15 +2478,30 @@ class MainWindow(QMainWindow):
                 self.mellin_taumax.blockSignals(True)
                 self.mellin_taumax.setValue(float(res.get('tau_max', 0)))
                 self.mellin_taumax.blockSignals(False)
-            sf, sn = res.get('sigma_fit'), res.get('sigma_noise')
-            if sf and sn and np.isfinite(sf) and np.isfinite(sn) and sn > 0:
-                ratio = sf / sn
-                verdict = ('overfit' if ratio < 0.9
-                           else 'matched' if ratio <= 1.6 else 'underfit')
-                disc = (f'<br>σ_fit/σ_noise = {ratio:.2f} '
-                        f'<i>({verdict})</i>')
-            else:
-                disc = ''
+            # judged against the independent noise floor, not against σ_noise
+            def _pos(x):
+                return x is not None and np.isfinite(x) and x > 0
+
+            sf, sn, se = (res.get('sigma_fit'), res.get('sigma_noise'),
+                          res.get('noise_level'))
+            disc = ''
+            if _pos(sf) and _pos(se):
+                ratio = sf / se
+                disc += (f'<br>σ_fit/σ_e = {ratio:.2f} <i>('
+                         + ('matched' if ratio <= 1.5
+                            else 'residual above the noise floor') + ')</i>')
+            elif _pos(sf):
+                disc += (f'<br>σ_fit = {sf:.3g} (no independent noise floor on '
+                         f'this trace)')
+            if _pos(sn) and _pos(se) and sn / se > 1.5:
+                disc += (f'<br>tail residual {sn / se:.1f}× the noise floor — '
+                         f'check the background')
+            na = res.get('neg_area')
+            if na is not None and np.isfinite(na):
+                disc += f'<br>negative area = {na:.3f} <i>(τmax over-fit gauge)</i>'
+            if res.get('ci_unavailable') and self.deer_ci_chk.isChecked():
+                disc += (f'<br><span style="color: rgb(224, 130, 96);">⚠ '
+                         f'{res["ci_unavailable"]}</span>')
             tag_auto = ' (auto)' if res.get('auto_taumax') else ''
             reg = (f'split δ = {delta_disp:.4g} {tunit}<br>'
                    f'τ max = {res.get("tau_max", 0):.0f}{tag_auto}{disc}')
@@ -2457,15 +2546,23 @@ class MainWindow(QMainWindow):
         bgr = res.get('background', {})
         flags = []
         if bgr.get('lambda_clamped') or bgr.get('lambda_degenerate'):
-            flags.append(f'λ clamped (raw {bgr.get("lambda_raw", float("nan")):.2f})')
+            flags.append(f'λ clamped (raw {bgr.get("lambda_raw", float("nan")):.3g})')
         if float(bgr.get('tail_abs_F') or 0.0) > 0.05:
             flags.append(f'tail not decayed (mean|F| = {bgr["tail_abs_F"]:.2f})')
         if bgr.get('k_disagrees'):
             flags.append('sequential tail fit sees no decay'
                          if float(bgr.get('k_ref') or 0.0) <= 1e-4
-                         else f'k = {bgr["k_ratio"]:.1f}× the sequential tail fit')
+                         else f'k = {bgr["k_ratio"]:.3g}× the sequential tail fit')
+        if bgr.get('k_at_bound'):
+            flags.append('k pinned at its search bracket edge (no information)')
         if (res.get('l_curve') or {}).get('at_bound'):
             flags.append('α sits on the grid edge, not at an interior optimum')
+        # the flags above are the central trial's; this one is the whole sweep's
+        bsp = (band or {}).get('trial_spread') or {}
+        if bsp.get('disagree'):
+            flags.append(f'validation trials disagree (mean spans '
+                         f'{bsp["r_mean_spread"]:.2f} nm, '
+                         f'{bsp["n_flagged"]}/{bsp["n"]} flagged)')
         if flags:
             bg_line += ('<br><span style="color: rgb(224, 130, 96);">⚠ '
                         + '; '.join(flags) + '</span>')
@@ -2613,11 +2710,14 @@ class MainWindow(QMainWindow):
             resid_sm = np.convolve(resid, np.ones(wn) / wn, mode='same')
             curves = [('residual (V − fit)', t_disp, resid, C_DATA, 1),
                       ('smoothed (coherent)', t_disp, resid_sm, C_FIT, 2)]
-            sig = res.get('noise_level') or res.get('sigma_noise')
-            if sig and np.isfinite(sig) and sig > 0:
+            # different quantities: fall back only if the first is absent, and say so
+            sig, sig_name = res.get('noise_level'), 'σ noise'
+            if sig is None or not np.isfinite(sig) or sig <= 0:
+                sig, sig_name = res.get('sigma_noise'), 'σ tail residual'
+            if sig is not None and np.isfinite(sig) and sig > 0:
                 ones = np.ones_like(t_disp)
-                curves += [('+σ noise', t_disp, sig * ones, C_BG, 1),
-                           ('−σ noise', t_disp, -sig * ones, C_BG, 1)]
+                curves += [(f'+{sig_name}', t_disp, sig * ones, C_BG, 1),
+                           (f'−{sig_name}', t_disp, -sig * ones, C_BG, 1)]
             self._repaint(self.p_time, self.time_legend, self._time_items, curves,
                           f'Time ({tunit})', '_time_key',
                           left_label='residual', force=True)
@@ -2672,17 +2772,17 @@ class MainWindow(QMainWindow):
             self._show_lcurve_marker(False)
 
     def _fit_curve(self, res):
-        """The forward fit F_fit to display/score. The Mellin engine already builds
-        it from the signed or clipped density per its `signed_fit` flag (set from the
-        'Signed forward fit' checkbox), so we use it directly; other engines return
-        their own F_fit."""
+        """The forward fit F_fit to display/score, as the engine built it. For the
+        Mellin engine that is K·(the tapered signed density) — the short-r taper is
+        always on here, so the `signed_fit` flag reaches only the τmax selector, not
+        this curve. Other engines return their own F_fit."""
         return np.asarray(res['F_fit'], float)
 
     def _whiteness_of(self, res):
         """Residual-whiteness diagnostic from the V-space residual over the valid
         dipolar fit region (t>0, via bg['t']) — matching the engine's own pos-based
-        whiteness so the toggle-off number reproduces it, and honouring the signed-
-        forward-fit toggle. Engine-agnostic. Returns the residual_whiteness dict."""
+        whiteness so the toggle-off number reproduces it. Engine-agnostic. Returns
+        the residual_whiteness dict."""
         try:
             bg = res['background']
             Vn = np.asarray(bg['V_norm'], float)
