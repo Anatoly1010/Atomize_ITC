@@ -2466,10 +2466,85 @@ def deer_invert_gauss(t, V, r=None, bg_start=None, bg_end=None, dim=3.0,
 # --------------------------------------------------------------------------- #
 #  Zero-time (reference-time) fitting
 # --------------------------------------------------------------------------- #
+def _boxcar(V, w):
+    """Edge-padded moving average; mode='same' zero-pads and would pull the
+    argmax off a peak sitting at t[0]."""
+    n = len(V)
+    if w <= 1:
+        return V
+    return np.convolve(np.pad(V, w//2, mode='edge'), np.ones(w)/w,
+                       mode='same')[w//2:w//2 + n]
+
+
+def _top_width(Vs, i0, n, drop):
+    """Half-width of the echo top: walk out from i0 until the smoothed trace has
+    fallen `drop` of the peak-to-min amplitude, and keep the shorter side."""
+    amp = max(float(np.max(Vs)) - float(np.min(Vs)), 1e-12)
+    thr = float(Vs[i0]) - drop*amp
+    lo = i0
+    while lo > 0 and Vs[lo] >= thr:
+        lo -= 1
+    hi = i0
+    while hi < n - 1 and Vs[hi] >= thr:
+        hi += 1
+    lo = max(min(lo, i0 - 3), 0)
+    hi = min(max(hi, i0 + 3), n - 1)
+    return max(3, min(i0 - lo, hi - i0)), amp, thr
+
+
+def _centroid_zero_time(t, V, search_frac=0.30, smooth_w=9, drop=0.25,
+                        reach=5.0, iters=3):
+    """Zero time as the centroid of the echo top, iterated to a fixed point.
+
+    V is even about t0, so the centroid of any weight symmetric about t0 IS t0 --
+    no curvature needed. Weight = max(Vs - thr, 0), thr `drop` of the peak-to-min
+    amplitude below the peak, over a window `reach` times the top half-width,
+    re-centred on the running estimate until it stops moving.
+
+    This is a LINEAR functional of V, which is why it holds up where the parabola
+    vertex does not: on a broad distribution at high noise the echo top is flat
+    over tens of samples, so the anchoring argmax is a winner-take-all pick among
+    near-equal noisy samples (its own error reaches 120 ns) and the vertex -b/2a
+    is a ratio of two numbers that are both noise. A centroid averages those
+    samples instead of choosing between them, and cannot diverge.
+
+    Where the window runs past the start of the trace the truncation is one-sided
+    and shrinks the estimate toward the data that exists. That bias lands only on
+    the flattest echoes, which carry almost no zero-time information anyway.
+    """
+    n = len(t)
+    Vs = _boxcar(V, int(max(1, smooth_w)))
+    ns = max(5, int(search_frac*n))
+    i0 = int(np.argmax(Vs[:ns]))
+    if i0 >= ns - 1 and ns < n:
+        return None
+    hw, _amp, thr = _top_width(Vs, i0, n, drop)
+    dt = float(t[1] - t[0])
+    h = int(round(reach*hw))
+    i, out = i0, float(t[i0])
+    for _ in range(int(max(1, iters))):
+        lo = max(i - h, 0)
+        hi = min(i + h, n - 1)
+        if hi - lo < 4:
+            return float(t[i])
+        wgt = np.clip(Vs[lo:hi + 1] - thr, 0.0, None)
+        if wgt.sum() <= 0:
+            return float(t[i])
+        out = float(np.average(t[lo:hi + 1], weights=wgt))
+        j = int(np.clip(round((out - t[0])/dt), 0, n - 1))
+        if j == i:
+            break
+        i = j
+    return out
+
+
 def _parabolic_zero_time(t, V, drop=0.15, smooth_w=5, search_frac=0.30,
-                         noisy_rel=0.055, noisy_half=8):
-    """Zero-time t0 from a quadratic fit to the echo maximum (the classic
-    DeerAnalysis approach). V(t) near the echo is even and parabolic in (t - t0)
+                         noisy_rel=0.055, centroid_w=9, centroid_drop=0.25,
+                         centroid_reach=5.0, centroid_iters=3):
+    """Zero-time t0 from the echo maximum of V(t).
+
+    Below a measured noise-to-amplitude ratio of `noisy_rel` this is the classic
+    DeerAnalysis quadratic fit: V near the echo is even and parabolic in (t - t0)
     -- V ~ Vpk - c(t - t0)^2 -- so the vertex of a least-squares parabola is t0.
 
     Robust against noise: the initial peak is the argmax of a lightly smoothed V
@@ -2482,48 +2557,46 @@ def _parabolic_zero_time(t, V, drop=0.15, smooth_w=5, search_frac=0.30,
     than the residual search at high noise on traces with a clear echo maximum.
     Returns t0, or None if no concave peak is found (caller falls back).
 
-    On a NOISY echo the drop-walk is the weak link: it compares the smoothed trace
-    against a threshold `drop` below the peak, so once the smoothed noise
-    sigma/sqrt(smooth_w) is a sizeable fraction of drop*amplitude the walk stops on
-    noise and returns a window a few samples wide, from which the vertex is badly
-    determined. Above `noisy_rel` (measured sigma over the peak-to-min amplitude;
-    the walk degrades past ~drop*sqrt(smooth_w)/6, i.e. ~0.055 at the defaults)
-    three things change: the window widens to at least `noisy_half` samples either
-    side, the parabola is fitted to the SMOOTHED trace, and the edge-padded samples
-    are dropped from the fit. A symmetric boxcar shifts a quadratic by a CONSTANT,
-    so fitting smoothed data does not move the vertex -- but np.pad(mode='edge')
-    breaks that symmetry at the ends, worth -1 to -3 ns when the window touches a
-    trace edge, which on a DEER trace with the echo near the start it usually does;
-    hence the guard. Below `noisy_rel` all three are skipped and the result is
-    bit-identical to the unmodified estimator, which covers every real trace
-    measured (sigma/amplitude 0.004-0.025) and the whole low-noise benchmark.
-    Set `noisy_rel` to inf to disable.
+    ABOVE `noisy_rel` (measured sigma over the peak-to-min amplitude) the vertex
+    is the wrong statistic and the estimator hands over to `_centroid_zero_time`.
+    Two things break the parabola together on a broad distance distribution at
+    high noise, and both worsen the broader P(r) is: the echo top goes flat, so
+    the curvature -- and hence the vertex -- is a ratio of two numbers that are
+    both noise; and the argmax anchoring the fit window is a winner-take-all pick
+    among dozens of near-equal noisy samples. An earlier round widened the WINDOW
+    here instead, which was only half the fix.
 
-    Worth +0.033 mean overlap at the noisiest synthetic condition, and the SAME
-    +0.034 for the Tikhonov engine -- which is what distinguishes it from the
+    Below the gate the result is bit-identical to the pre-2026-07 estimator: that
+    covers every real trace measured (sigma/amplitude 0.004-0.025), though a
+    weak-modulation short-distance shape can cross it at sigma 0.02. Set
+    `noisy_rel` to inf to force the parabola everywhere.
+
+    Measured over 21 shapes x 168 noisy synthetic traces, out of sample: mean
+    |t0 error| 15.2 -> 10.5 ns, worst 163.7 -> 63.7, and no concave-peak failures
+    (8 -> 1, each of which costs the caller a full residual search). The
+    distance-distribution overlap gains +0.0098 on the Mellin engine and +0.0111
+    on Tikhonov -- BOTH engines, which is what distinguishes this from the
     `xcheck` route in `fit_zero_time`: that one improved t0 accuracy yet lost
     overlap, because a slightly-late t0 was cancelling a Mellin-specific forward
-    bias, so it moved the two engines in opposite directions. This moves them
-    together and leaves the worst-case t0 error unchanged."""
+    bias, so it moved the two engines in opposite directions."""
     t = np.asarray(t, float); V = np.asarray(V, float)
     n = len(t)
     if n < 7:
         return None
     w = int(max(1, smooth_w))
-    # edge-pad: mode='same' zero-pads and pulls the argmax off a peak at t[0]
-    if w > 1:
-        Vs = np.convolve(np.pad(V, w//2, mode='edge'), np.ones(w)/w,
-                         mode='same')[w//2:w//2 + n]
-    else:
-        Vs = V
+    Vs = _boxcar(V, w)
     _sig = float(np.std(np.diff(V)))/np.sqrt(2.0)       # white-noise level
-    noisy = (_sig/max(float(np.max(Vs)) - float(np.min(Vs)), 1e-12)) > noisy_rel
     ns = max(5, int(search_frac*n))
     i0 = int(np.argmax(Vs[:ns]))
     if i0 >= ns - 1 and ns < n:
         # still rising at the window edge -- echo top is beyond search_frac
         return None
     vpk = float(Vs[i0]); vmin = float(np.min(Vs)); amp = max(vpk - vmin, 1e-12)
+    if _sig/max(float(np.max(Vs)) - float(np.min(Vs)), 1e-12) > noisy_rel:
+        _t0 = _centroid_zero_time(t, V, search_frac, centroid_w, centroid_drop,
+                                  centroid_reach, centroid_iters)
+        if _t0 is not None:                 # else fall through to the parabola
+            return _t0
     thr = vpk - drop*amp
     lo = i0
     while lo > 0 and Vs[lo] >= thr:
@@ -2535,17 +2608,11 @@ def _parabolic_zero_time(t, V, drop=0.15, smooth_w=5, search_frac=0.30,
     hi = min(max(hi, i0 + 3), n - 1)
     # symmetric, as documented: the raw walks run up to 22x wider on the decay side
     half = max(3, min(i0 - lo, hi - i0))
-    if noisy:                                           # the drop-walk read noise
-        half = max(half, int(noisy_half))
     lo = max(i0 - half, 0)
     hi = min(i0 + half, n - 1)
     if hi - lo < 4:
         return None
-    if noisy and w > 1:                                 # drop the edge-padded samples
-        lo2, hi2 = max(lo, w//2), min(hi, n - 1 - w//2)
-        if hi2 - lo2 >= 4:
-            lo, hi = lo2, hi2
-    tt = t[lo:hi + 1]; vv = (Vs if noisy else V)[lo:hi + 1]
+    tt = t[lo:hi + 1]; vv = V[lo:hi + 1]
     a, b, _c = np.polyfit(tt - tt.mean(), vv, 2)
     if a >= 0:                                          # not concave -> no echo max
         return None

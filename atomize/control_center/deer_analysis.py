@@ -171,6 +171,7 @@ class MainWindow(QMainWindow):
         # draggable background start/end cursors + L-curve marker (top plot)
         self._bg_cursor = None
         self._bg_cursor_end = None
+        self._t0_cursor = None            # zero-time marker (top plot)
         self._lcurve_marker = None
         self._suppress_cursor = False     # guard against cursor<->spinbox echo
         self._suppress_live = False
@@ -1921,6 +1922,7 @@ class MainWindow(QMainWindow):
                 band = None
             # display axis stays in acquisition time, cropped like the engine's pre-t0 drop
             res['t'] = x[t_us >= 0] * tf
+            res['pre'] = self._pre_zero(res, x, v, t_us, tf)
             if bg_end_us is not None:
                 res['background']['bg_end'] = bge_disp * tf
             return {'t0_disp': t0_disp, 'res': res, 'band': band}
@@ -2002,6 +2004,7 @@ class MainWindow(QMainWindow):
                 band = None
             # display axis stays in acquisition time, cropped like the engine's pre-t0 drop
             res['t'] = x[t_us >= 0] * tf
+            res['pre'] = self._pre_zero(res, x, v, t_us, tf)
             if bg_end_us is not None:
                 res['background']['bg_end'] = bge_disp * tf
             return {'t0_disp': t0_disp, 'res': res, 'band': band}
@@ -2090,6 +2093,7 @@ class MainWindow(QMainWindow):
                 band = None
             # display axis stays in acquisition time, cropped like the engine's pre-t0 drop
             res['t'] = x[t_us >= 0] * tf
+            res['pre'] = self._pre_zero(res, x, v, t_us, tf)
             if bg_end_us is not None:
                 res['background']['bg_end'] = bge_disp * tf
             return {'t0_disp': t0_disp, 'res': res, 'band': band}
@@ -2210,17 +2214,24 @@ class MainWindow(QMainWindow):
             ff = self._fit_curve(res)                         # F_fit (form factor)
             v_norm = np.asarray(bg['V_norm'], float)
             v_fit = np.asarray(bg['B'], float) * ((1 - lam) + lam * ff)
+            pre = res.get('pre')                              # t < 0, per trace
+
+            def ext(y, key, pre=pre, t_disp=t_disp):
+                return self._cat_pre(pre, tf, t_disp, y, key)
+
             if residual:
-                top_curves.append((name, t_disp, v_norm - v_fit, col, 1))
+                top_curves.append((name, *ext(v_norm - v_fit, 'resid'), col, 1))
             elif use_vt:
                 level = ((1 - lam) * np.asarray(bg['B'], float)
                          if view == 'Background fit' else v_fit)
-                top_curves.append((name, t_disp, v_norm, col, 1))
-                top_curves.append((f'{name} fit', t_disp, level, col, 2, dash))
+                lkey = 'level' if view == 'Background fit' else 'v_fit'
+                top_curves.append((name, *ext(v_norm, 'V_norm'), col, 1))
+                top_curves.append((f'{name} fit', *ext(level, lkey), col, 2, dash))
             else:                                             # form factor + fit
-                top_curves.append((name, t_disp,
-                                   np.asarray(res['form_factor'], float), col, 1))
-                top_curves.append((f'{name} fit', t_disp, ff, col, 2, dash))
+                top_curves.append((name, *ext(np.asarray(res['form_factor'], float),
+                                              'form_factor'), col, 1))
+                top_curves.append((f'{name} fit', *ext(ff, 'F_fit'), col, 2, dash))
+        self._show_t0_cursor(False)         # per-trace t0: one marker would mislead
         self._show_batch_bands(results)
         self._repaint(self.p_pr, self.pr_legend, self._pr_items, pr_curves,
                       'Distance (nm)', '_pr_key', left_label='P(r) (nm⁻¹)', force=True)
@@ -2635,6 +2646,10 @@ class MainWindow(QMainWindow):
         tunit = self.deer_tunit.currentText()
         t_disp = res['t'] / tf
         bg = res['background']
+        pre = res.get('pre')
+
+        def ext(y, key):
+            return self._cat_pre(pre, tf, t_disp, y, key)
 
         # ---- bottom plot: distance distribution ----
         rr = np.asarray(res['r'], float)
@@ -2686,18 +2701,20 @@ class MainWindow(QMainWindow):
         # ---- top plot: chosen time-domain / L-curve view ----
         view = self.deer_show.currentText()
         ff = self._fit_curve(res)
+        self._show_t0_cursor(view not in ('Residual ACF', 'L-curve'))
         if view == 'Form factor + fit':
             self._repaint(self.p_time, self.time_legend, self._time_items,
-                          [('F(t)', t_disp, res['form_factor'], C_DATA, 2),
-                           ('K·P fit', t_disp, ff, C_FIT, 2)],
+                          [('F(t)', *ext(res['form_factor'], 'form_factor'),
+                            C_DATA, 2),
+                           ('K·P fit', *ext(ff, 'F_fit'), C_FIT, 2)],
                           f'Time ({tunit})', '_time_key', force=True)
             self._show_bg_cursor(True)
             self._show_lcurve_marker(False)
         elif view == 'Background fit':
             level = (1 - res['lambda']) * bg['B']
             self._repaint(self.p_time, self.time_legend, self._time_items,
-                          [('V(t)', t_disp, bg['V_norm'], C_DATA, 2),
-                           ('(1-λ)·B', t_disp, level, C_BG, 2)],
+                          [('V(t)', *ext(bg['V_norm'], 'V_norm'), C_DATA, 2),
+                           ('(1-λ)·B', *ext(level, 'level'), C_BG, 2)],
                           f'Time ({tunit})', '_time_key', force=True)
             self._show_bg_cursor(True)
             self._show_lcurve_marker(False)
@@ -2706,22 +2723,22 @@ class MainWindow(QMainWindow):
             # band: a flat residual inside the band ⇒ adequate fit; a coherent
             # oscillation ⇒ unmodelled dipolar modulation (over-smoothed P(r)).
             v_fit = bg['B'] * ((1 - res['lambda']) + res['lambda'] * ff)
-            resid = bg['V_norm'] - v_fit
+            t_r, resid = ext(bg['V_norm'] - v_fit, 'resid')
             # smoothed overlay exposes the coherent (systematic) part of the
             # residual — averaging out the white noise; a flat smoothed line ⇒
             # white, an oscillation ⇒ unmodelled dipolar modulation.
             wn = int(max(5, len(resid) // 50)) | 1
             resid_sm = np.convolve(resid, np.ones(wn) / wn, mode='same')
-            curves = [('residual (V − fit)', t_disp, resid, C_DATA, 1),
-                      ('smoothed (coherent)', t_disp, resid_sm, C_FIT, 2)]
+            curves = [('residual (V − fit)', t_r, resid, C_DATA, 1),
+                      ('smoothed (coherent)', t_r, resid_sm, C_FIT, 2)]
             # different quantities: fall back only if the first is absent, and say so
             sig, sig_name = res.get('noise_level'), 'σ noise'
             if sig is None or not np.isfinite(sig) or sig <= 0:
                 sig, sig_name = res.get('sigma_noise'), 'σ tail residual'
             if sig is not None and np.isfinite(sig) and sig > 0:
-                ones = np.ones_like(t_disp)
-                curves += [(f'+{sig_name}', t_disp, sig * ones, C_BG, 1),
-                           (f'−{sig_name}', t_disp, -sig * ones, C_BG, 1)]
+                ones = np.ones_like(t_r)
+                curves += [(f'+{sig_name}', t_r, sig * ones, C_BG, 1),
+                           (f'−{sig_name}', t_r, -sig * ones, C_BG, 1)]
             self._repaint(self.p_time, self.time_legend, self._time_items, curves,
                           f'Time ({tunit})', '_time_key',
                           left_label='residual', force=True)
@@ -2768,9 +2785,9 @@ class MainWindow(QMainWindow):
             level = (1 - res['lambda']) * bg['B']
             v_fit = bg['B'] * ((1 - res['lambda']) + res['lambda'] * ff)
             self._repaint(self.p_time, self.time_legend, self._time_items,
-                          [('V(t)', t_disp, bg['V_norm'], C_DATA, 2),
-                           ('background', t_disp, level, C_BG, 2),
-                           ('fit', t_disp, v_fit, C_FIT, 2)],
+                          [('V(t)', *ext(bg['V_norm'], 'V_norm'), C_DATA, 2),
+                           ('background', *ext(level, 'level'), C_BG, 2),
+                           ('fit', *ext(v_fit, 'v_fit'), C_FIT, 2)],
                           f'Time ({tunit})', '_time_key', force=True)
             self._show_bg_cursor(True)
             self._show_lcurve_marker(False)
@@ -2781,6 +2798,55 @@ class MainWindow(QMainWindow):
         always on here, so the `signed_fit` flag reaches only the τmax selector, not
         this curve. Other engines return their own F_fit."""
         return np.asarray(res['F_fit'], float)
+
+    def _pre_zero(self, res, x, v, t_us, tf):
+        """Display-only extension of a result back through t < 0 (before t0).
+
+        The engines drop the pre-t0 samples (deer._crop_pre_zero: the kernel
+        evaluates |ω·t|, so a t<0 sample would be modelled as +|t| evolution and
+        pile P(r) mass at short r), so nothing they return is defined there. This
+        refits nothing: B(t) and F(t) = K(|t|)·P are both exactly EVEN in t, so
+        the fitted curves are read off the engine's own positive-time arrays at
+        |t| — evaluation, not extrapolation. The data are put on the engine's
+        V(0)=1 scale by the least-squares ratio to its V_norm (the echo-top
+        normalization the background functions applied internally).
+
+        Returns None when the trace starts at or after the zero time.
+        """
+        t_us = np.asarray(t_us, float)
+        pre = t_us < 0
+        if not pre.any():
+            return None
+        bg = res['background']
+        Vn = np.asarray(bg['V_norm'], float)
+        vpos = np.asarray(v, float)[~pre]
+        n = min(len(Vn), len(vpos))
+        den = float(np.dot(Vn[:n], Vn[:n]))
+        if n < 1 or den <= 0:
+            return None
+        scale = float(np.dot(vpos[:n], Vn[:n]))/den
+        if not np.isfinite(scale) or scale == 0:
+            return None
+        tp = np.abs(t_us[pre])
+        tpos = np.asarray(bg['t'], float)
+        lam = float(res['lambda'])
+        B = np.interp(tp, tpos, np.asarray(bg['B'], float))
+        F_fit = np.interp(tp, tpos, self._fit_curve(res))
+        V_norm = np.asarray(v, float)[pre]/scale
+        v_fit = B*((1 - lam) + lam*F_fit)
+        return {'t': np.asarray(x, float)[pre]*tf, 'V_norm': V_norm, 'B': B,
+                'level': (1 - lam)*B, 'F_fit': F_fit, 'v_fit': v_fit,
+                'form_factor': (V_norm/B - (1 - lam))/lam,
+                'resid': V_norm - v_fit}
+
+    @staticmethod
+    def _cat_pre(pre, tf, t, y, key):
+        """One curve carried back through t < 0, when the pre-t0 block exists."""
+        y = np.asarray(y, float)
+        if pre is None:
+            return t, y
+        return (np.concatenate((np.asarray(pre['t'], float)/tf, t)),
+                np.concatenate((np.asarray(pre[key], float), y)))
 
     def _whiteness_of(self, res):
         """Residual-whiteness diagnostic from the V-space residual over the valid
@@ -2973,6 +3039,24 @@ class MainWindow(QMainWindow):
         self._bg_cursor_end.setVisible(True)
         self._suppress_cursor = False
 
+    def _show_t0_cursor(self, visible):
+        """Show/position (or hide) the zero-time marker on the top plot. Fixed,
+        not draggable: t0 comes from the spin box / the fit, and it is what
+        separates the inverted region (t >= t0) from the pre-t0 samples now drawn
+        to its left."""
+        if self._t0_cursor is None:
+            self._t0_cursor = pg.InfiniteLine(
+                angle=90, movable=False,
+                pen=pg.mkPen((150, 150, 165), width=1, style=Qt.PenStyle.DashLine),
+                label='t₀', labelOpts={'color': (150, 150, 165),
+                                       'position': 0.99})
+            self.p_time.addItem(self._t0_cursor, ignoreBounds=True)
+        if not visible:
+            self._t0_cursor.setVisible(False)
+            return
+        self._t0_cursor.setValue(float(self.deer_t0.value()))
+        self._t0_cursor.setVisible(True)
+
     def _on_bg_cursor_end(self, *args):
         # Update the spin box only; recompute is governed by Live update / Run
         # DEER (don't re-invert on every drag).
@@ -2981,11 +3065,13 @@ class MainWindow(QMainWindow):
         self.deer_bgend.setValue(float(self._bg_cursor_end.value()))
 
     def _clear_overlays(self):
-        """Hide all overlays (background cursors, L-curve marker, P(r) band)."""
+        """Hide all overlays (background/zero-time cursors, L-curve marker, band)."""
         if self._bg_cursor is not None:
             self._bg_cursor.setVisible(False)
         if self._bg_cursor_end is not None:
             self._bg_cursor_end.setVisible(False)
+        if self._t0_cursor is not None:
+            self._t0_cursor.setVisible(False)
         if self._lcurve_marker is not None:
             self._lcurve_marker.setVisible(False)
         if self._band_fill is not None:

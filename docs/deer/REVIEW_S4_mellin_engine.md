@@ -510,8 +510,14 @@ fraction from a better estimator is **+0.033**, measured on both engines. The we
 turned out not to be the smoothing width but the `drop`-walk that sets the parabola's
 fit window — it thresholds the smoothed trace and, once the smoothed noise is a
 sizeable fraction of that threshold, stops on noise and returns a window a few samples
-wide. See "The zero-time lever — applied" in [ROADMAP.md](ROADMAP.md) for the change,
-the numbers and why it clears the `xcheck` trap that an earlier session hit.
+wide. A second round then found that widening that window was only half the fix and
+replaced the vertex itself with the centroid of the echo top above the same gate. See
+"The zero-time lever — applied" and "Round 2" in [ROADMAP.md](ROADMAP.md) for both
+changes, the numbers and why they clear the `xcheck` trap an earlier session hit.
+
+**δ itself was re-tested and the change rejected** — the optimum is ~1.7× the auto
+value, not below it, but every rule that reaches it destroys short distances. See "The
+Mellin δ — direction confirmed, change REJECTED" in [ROADMAP.md](ROADMAP.md).
 
 **Not implemented, by verdict:** S4-10 (PLAUSIBLE; 0/28 real traces at a bound,
 25/28 already flagged, and both skeptics refuted the proposed detector *and* the

@@ -14,8 +14,8 @@ the plan's *Model allocation* for why that substitutes.
 
 | | lines |
 |---|---|
-| `atomize/math_modules/deer.py` | 2592 |
-| `atomize/control_center/deer_analysis.py` | 2981 |
+| `atomize/math_modules/deer.py` | 2961 |
+| `atomize/control_center/deer_analysis.py` | 3213 |
 | `atomize/control_center/data_treatment.py` (DEER paths) | — |
 
 ## Review status
@@ -503,7 +503,15 @@ report.
    uses 0.5 × span — invisible from the GUI, but scripts and mirrors see it.
 9. ~~Fit the zero-time on a lightly smoothed trace.~~ **DONE** — see below.
 
-## The zero-time lever — applied (2026-07-31)
+## Session 2026-07-31 — zero time (2 rounds), Mellin δ rejected, pre-t₀ display
+
+Not a review session: three targeted changes driven by broad distributions failing
+at the highest synthetic noise. Two shipped, one rejected. The lasting methodological
+lesson is in the δ entry — a rule tuned on a broad-heavy case list passed every check
+that list could run and still destroyed short distances, which only a full shape sweep
+exposed. Every number below is from seed bases the tuning never used.
+
+### The zero-time lever — applied
 
 The +0.085 overlap figure was an **oracle**: it came from handing the engine the
 true t0. The realizable fraction from a better estimator is **+0.033**, and getting
@@ -541,6 +549,87 @@ cross-engine and cross-implementation agreement is what carries it, not the sing
 number. The 0.055 gate is derived from the walk geometry but calibrated on this
 benchmark's amplitude scale — a dataset landing between 0.048 and 0.067 would sit on
 the boundary, and none exists to test that.
+
+### Round 2 — the centroid replaces the vertex
+
+The window widening above was half the fix. On fresh seeds the broad distributions
+were still failing: mean |t0 error| 16.5 → 11.3 ns from round 1, but `gauss_broad_long`
+still averaged 37 ns with a 125 ns worst case, and a late t0 biases P(r) SHORT
+(−0.49 nm on one spot-check). Two things break the parabola together, and both worsen
+the broader P(r) is — the echo top goes flat, so the vertex −b/2a is a ratio of two
+numbers that are both noise; and the argmax that anchors the window is a
+winner-take-all pick among dozens of near-equal noisy samples, with up to 120 ns of
+error on its own that no local refinement can undo.
+
+Above the same 0.055 gate the statistic is now the **centroid of the echo top**
+(`_centroid_zero_time`), iterated to a fixed point. V is even about t0, so the
+centroid of any symmetric weight IS t0 — no curvature needed — and it is LINEAR in V,
+so the same samples average instead of competing.
+
+**Measured**, 21 shapes on a third seed base (out of sample for the tuning), 168
+noisy traces: mean |t0 error| 15.2 → 10.5 ns, worst 163.7 → 63.7, concave-peak
+failures 8 → 1 (each costs the caller a full residual search — 33 s → 0.4 s over the
+noisy set). Overlap **+0.0098 Mellin (t = 2.73) and +0.0111 Tikhonov (t = 3.55)**:
+both engines, both significant, no shape group regressing (sharp +0.007/+0.022, edges
+−0.003/+0.005, short-r +0.008/+0.001, broad +0.018/+0.011). All 28 real traces
+bit-identical. Three shapes dip past −0.01 on Mellin (rectangle, narrow-at-5 nm,
+bimodal σ0.55) but Tikhonov *improves* on all three at n = 8, so they read as scatter.
+
+Two corrections to round 1's write-up, both found by testing shapes it never used:
+
+* "the whole easy condition is bit-identical" is **not** exact — a weak-modulation
+  short-distance shape (2.0 nm) reaches ratio 0.059 at σ 0.02 and crosses the gate.
+  The effect is negligible (t0 +0.42 → +0.37 ns) but the honest statement is
+  "identical *below the gate*", not "identical on easy".
+* the declared weakness — a trace whose zero time sits 1–3 samples into the record —
+  is real as an estimator number (|t0| 29.1 → 31.3 ns at 1 sample) and **wrong as a
+  verdict**: end-to-end the overlap *improves* on both engines there (+0.014/+0.018).
+  A `min_pre` guard was built and rejected; every threshold that caught it mis-fired
+  often enough elsewhere to cost more than it saved.
+
+### The Mellin δ — direction confirmed, change REJECTED
+
+Tested because the flat-echo failure looked like it might be a δ problem. It is not,
+and the intuition that δ should be *lowered* is backwards: paired against the auto δ
+on identical traces, δ = 40 ns costs −0.0135 overlap and δ = 200 ns gains **+0.0250
+(t = 3.11)**, the optimum sitting ~1.7× the 96–140 ns the auto rule picks. It survives
+pinning t0 to the truth, so it is a genuine δ effect and not the zero-time error in
+disguise. Mechanism: at high noise the binding constraint is `floor_ratio`·d_raw — the
+0.85-crossing collapses to ~50 ns under noise and 2× that caps δ near 100 ns, so the
+floor/cap bump never gets to act.
+
+A candidate rule that opens `floor_ratio` above the old bump ceiling was **rejected on
+the shape sweep**. It gains +0.0106 overall (t = 2.58) and is bit-identical on easy,
+but it destroys short distances: r = 2.0–2.6 nm loses −0.0267 with only 25 % of traces
+improving and a −0.29 worst case. Within those cases the correlation between the δ
+increase and the overlap change is **−0.707** — where the guard holds δ fixed nothing
+moves, where it lets δ rise the trace is destroyed (87 → 156 ns costs 0.451 → 0.163).
+The guard keys on `d_raw`, which at high noise is exactly the quantity that has
+collapsed. A sound guard must key on the dipolar timescale (δ_max ∝ r³), which is not
+known before the inversion — a research round, not a tweak. The gain is also narrower
+than the tuning run implied: hard σ0.02/σ0.04 give +0.0006/+0.0015 (nil), and nearly
+all of it comes from hard2 σ0.04.
+
+### Pre-t₀ samples are now drawn in the GUI
+
+`_crop_pre_zero` drops every t < 0 sample at the entry of all engines (the kernel
+evaluates |ω·t|, so a negative-time sample would be modelled as +|t| evolution and
+pile P(r) mass at short r), and `deer_analysis.py` mirrored that crop in the display
+axis — so the whole pre-zero region vanished the moment you pressed Run. The engines
+still see t ≥ 0 only; the display now rebuilds that block from the engines' OWN
+positive-time arrays at |t|, since B(t) and F(t) = K(|t|)·P are exactly even, and adds
+a t₀ marker. Verified: the mirrored fit reproduces the engine's fit to 0.0, B matches
+exp(−(k|t|)^(d/3)) to 0.0, and the residual RMS over the restored region (0.0101)
+matches the fitted region (0.0096) — the fit genuinely describes the pre-t₀ data.
+
+### Ported and committed
+
+`deer.py` is shared by all five repos and `deer_analysis.py` by ITC/NIOCH/NIOCH_Q
+(lead: ITC); both were mirrored byte-identically this session and `sync_check.py` is
+clean. The zero-time change has **no real-data validation and cannot get any** from
+the current corpus: the 28 ring-test traces sit at noise/amplitude 0.004–0.025 against
+a 0.055 gate, so the new path never fires on them. It will first act on genuinely
+noisy measurements — below roughly SNR 18 per point.
 
 ## Next session — S5 (multi-Gaussian)
 
