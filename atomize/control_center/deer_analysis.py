@@ -53,6 +53,8 @@ BUFFER_PATH = str(Path(__file__).resolve().parent.parent.parent / 'libs' / 'trea
 LASTDIR_PATH = str(Path(__file__).resolve().parent.parent.parent / 'libs' / 'treatment_lastdir.txt')
 
 ROW_H = 28
+# Common width for the Mellin δ / τmax spin boxes (each shares its row with 'Auto')
+MELLIN_SPIN_W = 110
 
 
 def _load_last_dir():
@@ -871,6 +873,7 @@ class MainWindow(QMainWindow):
         self.mellin_delta.setDecimals(5)
         self.mellin_delta.setSingleStep(0.001)
         self.mellin_delta.setValue(0.0)          # 0 ⇒ auto (F(δ)≈0.85, clipped 90–120 ns)
+        self.mellin_delta.setFixedWidth(MELLIN_SPIN_W)
         self.mellin_delta.setToolTip(
             'Mellin split point δ (display time units), the lone regularizing '
             'knob: on [0, δ] the form factor is integrated analytically (keeping '
@@ -898,6 +901,7 @@ class MainWindow(QMainWindow):
         self.mellin_taumax.setDecimals(1)
         self.mellin_taumax.setSingleStep(1.0)
         self.mellin_taumax.setValue(25.0)
+        self.mellin_taumax.setFixedWidth(MELLIN_SPIN_W)
         self.mellin_taumax.setEnabled(False)
         self.mellin_taumax.setToolTip(
             'Upper limit of the Mellin variable τ (the transform runs over '
