@@ -728,12 +728,17 @@ class MainWindow(QMainWindow):
         btn_autoph = QPushButton('Auto')
         btn_autoph.setStyleSheet(BUTTON_STYLE)
         btn_autoph.setToolTip(
-            'Zero-order auto-phase: rotate so the magnitude-weighted real part '
-            'is maximal (φ₀ = −angle Σ|S|·S over the significant bins).<br><br>'
-            'With "FFT first" on this works on the spectrum; otherwise on the '
-            'time-domain I+iQ. Pair it with the FFT-tab skip-pts / echo '
-            'centre, which removes the first-order phase ramp — leaving only '
-            'this zero-order term. First/second order stay manual.')
+            'Zero-order auto-phase, measured in whichever domain the correction '
+            'is applied in.<br><br>'
+            'With "FFT first" on: the principal axis of the spectrum '
+            '(φ₀ = −½·angle Σ S² over the significant bins). Otherwise: the '
+            'principal axis of the echo samples — the points above 25 % of the '
+            '|I+iQ| envelope peak — which removes the dead-time ramp without '
+            'the origin shift a leading-point skip would introduce.<br><br>'
+            'First/second order stay manual, and must be set <b>first</b> on '
+            'undemodulated data: a carrier leaves nothing for φ₀ to fix. The '
+            'status line reports any residual offset and the First-order value '
+            'that removes it.')
         btn_autoph.clicked.connect(self.auto_phase_zero)
         ph0_row.addWidget(btn_autoph)
         grid.addLayout(ph0_row, 1, 1)
@@ -2078,10 +2083,12 @@ class MainWindow(QMainWindow):
                         f'{len(signal)}→{n} pts.')
 
     def auto_phase_zero(self):
-        """Fill the zero-order phase field with the value that maximises the
-        magnitude-weighted real part (see Fast_Fourier.auto_phase_zero). Works on
-        the FFT spectrum when 'FFT first' is on, else on the time-domain I+iQ;
-        first/second order stay manual (skip-pts removes the φ₁ ramp)."""
+        """Fill the zero-order phase field with the principal-axis value,
+        measured in the domain `do_phase` corrects in: on the spectrum when
+        'FFT first' is on, else on the time-domain echo
+        (Fast_Fourier.auto_phase_zero_echo) with the first/second-order phase
+        already applied. First/second order stay manual, but a leftover carrier
+        — which no φ₀ can absorb — is reported."""
         il = self.i_combo.currentText()
         ql = self.q_combo.currentText()
         if il not in self.datasets or ql not in self.datasets:
@@ -2095,20 +2102,35 @@ class MainWindow(QMainWindow):
             self.set_status('I and Q channels must have the same length (≥ 2).')
             return
         sig = idata + 1j*qdata
+        x = np.asarray(x, dtype=float)
+        dt = float(np.mean(np.diff(x))) if x.size > 1 else 0.0
         if self.phase_fft.isChecked():
-            dt = float(np.mean(np.diff(np.asarray(x, dtype=float))))
             if dt == 0:
                 self.set_status('X axis has zero spacing; cannot FFT.')
                 return
             n = self._zerofill_n(len(idata), self.phase_zerofill.currentText())
-            spec = np.fft.fft(sig, n)
-            domain = 'frequency'
-        else:
-            spec = sig
-            domain = 'time'
-        phi = self.fft.auto_phase_zero(spec)
+            phi = self.fft.auto_phase_zero(np.fft.fft(sig, n))
+            self.phase_zero.setValue(phi)
+            self.set_status(f'Auto φ₀ = {phi:.2f}° (frequency domain).')
+            return
+
+        v1 = float(self.phase_first.value()); v2 = float(self.phase_second.value())
+        sig = sig*np.exp(1j*(2*np.pi*v1/1000.0*x + 2*np.pi*v2/1000.0*x*x))
+        phi = self.fft.auto_phase_zero_echo(sig)
         self.phase_zero.setValue(phi)        # fires the live preview update
-        self.set_status(f'Auto φ₀ = {phi:.2f}° ({domain} domain).')
+
+        note = ', first/second order applied' if (v1 or v2) else ''
+        f0 = self.fft.carrier_offset(sig, dt)*1000.0 if dt else 0.0
+        # a carrier that turns by more than ~45 deg across the echo cannot be
+        # absorbed into phi0 at all; report the first-order value that kills it
+        env = np.abs(sig)
+        width = abs(dt)*max(1, int(np.count_nonzero(env >= 0.25*env.max())))
+        if abs(f0)*width/1000.0 > 0.125:
+            self.set_status(f'Auto φ₀ = {phi:.2f}° (echo{note}), but the signal '
+                            f'still sits at {f0:+.2f} MHz: set First order '
+                            f'= {v1 - f0:.2f} and press Auto again.')
+        else:
+            self.set_status(f'Auto φ₀ = {phi:.2f}° (echo{note}).')
 
     def do_phase(self):
         il = self.i_combo.currentText()

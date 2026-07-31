@@ -455,13 +455,17 @@ class MainWindow(QMainWindow):
         btn_autoph = QPushButton('Auto')
         btn_autoph.setStyleSheet(BUTTON_STYLE)
         btn_autoph.setToolTip(
-            'Zero-order auto-phase: rotate so the magnitude-weighted real part '
-            'of the X-spectrum is maximal (φ₀ = −angle Σ|S|·S over the '
-            'significant bins).<br><br>'
-            'A global φ₀ commutes with the FFT, so this time-domain value is '
-            'what makes the spectrum absorptive. Pair it with the FFT-tab '
-            'skip-pts / echo centre (removes the first-order ramp); first/'
-            'second order stay manual.')
+            'Zero-order auto-phase: the principal axis of the echo samples '
+            '(φ₀ = −½·angle Σ z² over the points above 25 % of the |I+iQ| '
+            'envelope peak).<br><br>'
+            'Measured on the trace itself, in the same frame the correction is '
+            'applied in — the FFT-tab skip is <b>not</b> used here, since a '
+            'skipped spectrum reports φ₀ in a shifted time origin (off by '
+            '360·f·dt per skipped point for a line at offset f).<br><br>'
+            'First/second order stay manual, and must be set <b>first</b> on '
+            'undemodulated data: a carrier leaves nothing for φ₀ to fix. The '
+            'status line reports any residual offset and the First-order value '
+            'that removes it.')
         btn_autoph.clicked.connect(self.auto_phase_zero)
         ph0_row.addWidget(btn_autoph)
         grid.addLayout(ph0_row, 1, 1)
@@ -1167,32 +1171,53 @@ class MainWindow(QMainWindow):
         return ('freq' in name) or (unit in ('hz', 'khz', 'mhz', 'ghz', 'thz'))
 
     def auto_phase_zero(self):
-        """Fill the zero-order phase with the value that maximises the magnitude-
-        weighted real part of the X-spectrum (Fast_Fourier.auto_phase_zero). A
-        global φ₀ commutes with the FFT, so the value found on the spectrum is
-        exactly what this time-domain correction needs. First/second order stay
-        manual — the FFT-tab skip-pts removes the first-order ramp."""
+        """Fill the zero-order phase with the principal-axis value for the
+        current source.
+
+        `do_phase` corrects the trace in the time domain, from the *start* of the
+        window, so φ₀ has to be measured in that same frame — on the echo
+        (Fast_Fourier.auto_phase_zero_echo), with the first/second-order phase
+        already applied and with the FFT-tab skip deliberately left out of it. A
+        spectrum built from a skipped trace reports φ₀ in the shifted frame
+        instead, which for an off-centre line is wrong by 360·f·dt per skipped
+        point. Input that is already a spectrum ('Result → input') is phased on
+        that spectrum as-is. First/second order stay manual, but a leftover
+        carrier — which no φ₀ can absorb — is reported."""
         if self.src_i is None:
             self.set_status('Open an I/Q dataset first.')
             return
         if self._is_freq_axis(self.src_col):
             # Input is already a spectrum (FFT'd, then 'Result → input'): use it
-            # straight, with NO second FFT and NO skip — transforming again is
-            # what produced a meaningless φ₀. Skip is a time-domain concept here.
+            # straight, with NO second FFT — transforming again is what produced
+            # a meaningless φ₀. Echo/carrier are time-domain concepts here.
             S = self.src_i + 1j*self.src_q
-            domain = 'X spectrum (input already frequency-domain)'
-        else:
-            # Time-domain FID: build the X spectrum the FFT uses (same echo-centre
-            # skip, so the φ₁ ramp is gone and only zero order remains). The
-            # apodization window is real-positive and would not change φ₀.
-            skip = max(0, min(int(self.fft_skip.value()), self.src_i.shape[1] - 2))
-            Z = self.src_i[:, skip:] + 1j*self.src_q[:, skip:]
-            n = sigproc.zerofill_length(Z.shape[1], self.fft_zerofill.currentText())
-            S = np.fft.fft(Z, n=n, axis=1)
-            domain = 'X spectrum (FFT of FID)'
-        phi = fft_module.Fast_Fourier.auto_phase_zero(S.ravel())
+            phi = fft_module.Fast_Fourier.auto_phase_zero(S.ravel())
+            self.phase_zero.setValue(phi)
+            self.set_status(f'Auto φ₀ = {phi:.2f}° — X spectrum '
+                            f'(input already frequency-domain).')
+            return
+
+        ncols = self.src_i.shape[1]
+        axisx = self.src_col['start'] + self.src_col['step']*np.arange(ncols)
+        v1 = float(self.phase_first.value()); v2 = float(self.phase_second.value())
+        Z = (self.src_i + 1j*self.src_q)*np.exp(
+            1j*(2*np.pi*v1/1000.0*axisx + 2*np.pi*v2/1000.0*axisx*axisx))[None, :]
+        phi = fft_module.Fast_Fourier.auto_phase_zero_echo(Z)
         self.phase_zero.setValue(phi)        # fires the live preview update
-        self.set_status(f'Auto φ₀ = {phi:.2f}° — {domain}.')
+
+        note = ' (first/second order applied)' if (v1 or v2) else ''
+        step = float(self.src_col['step'])
+        f0 = fft_module.Fast_Fourier.carrier_offset(Z, step)*1000.0
+        # a carrier that turns by more than ~45 deg across the echo cannot be
+        # absorbed into phi0 at all; report the first-order value that kills it
+        env = np.abs(Z).mean(axis=0)
+        width = abs(step)*max(1, int(np.count_nonzero(env >= 0.25*env.max())))
+        if abs(f0)*width/1000.0 > 0.125:
+            self.set_status(f'Auto φ₀ = {phi:.2f}° — echo window{note}, but the '
+                            f'signal still sits at {f0:+.2f} MHz: set First order '
+                            f'= {v1 - f0:.2f} and press Auto again.')
+        else:
+            self.set_status(f'Auto φ₀ = {phi:.2f}° — echo window{note}.')
 
     def do_phase(self):
         if self.src_i is None:
