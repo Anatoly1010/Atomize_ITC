@@ -14,7 +14,7 @@ the plan's *Model allocation* for why that substitutes.
 
 | | lines |
 |---|---|
-| `atomize/math_modules/deer.py` | 2961 |
+| `atomize/math_modules/deer.py` | 2992 |
 | `atomize/control_center/deer_analysis.py` | 3213 |
 | `atomize/control_center/data_treatment.py` (DEER paths) | — |
 
@@ -622,14 +622,78 @@ a t₀ marker. Verified: the mirrored fit reproduces the engine's fit to 0.0, B 
 exp(−(k|t|)^(d/3)) to 0.0, and the residual RMS over the restored region (0.0101)
 matches the fitted region (0.0096) — the fit genuinely describes the pre-t₀ data.
 
+### The Mellin echo-top double maximum — fixed (fit curve only)
+
+Reported from the GUI once the pre-t0 region became visible: on
+`gauss_narrow_broad` at sigma 0.04 the Mellin fit shows two maxima straddling
+t = 0. It is a real defect and a **regression**, not a new one.
+
+*Provable cause.* `dipolar_kernel` gives K(0, r) = 1 for every r, so
+F_fit(0) = sum of the masses = 1. A negative mass at short r subtracts |m| at
+t = 0 but less than that at t > 0, because its kernel decays fastest — so F_fit
+RISES after the zero time. With non-negative masses summing to 1 and |K| <= 1,
+F = K·m <= 1 = F(0) and an interior maximum is impossible. The negatives are the
+sole cause; on the reported trace they total −0.137 and lift the fit to 1.0272.
+
+*History.* `d619c3c` built F_fit from the non-negative density for exactly this
+reason ("so a negative density can't flip the F_fit curvature at t=0 into a
+spurious double peak"). Two days later `5778347` replaced it with `K@masses` of
+the signed tapered density, "consistent with the displayed P(r)", betting its new
+short-r taper would remove the spike at source. It does not — the taper spans only
+r[0]→2.0 nm and negatives outside it still lift the fit. Measured on the 21-shape
+catalogue: **a third of noisy traces carry the artifact** (85/252 at the true zero
+time, worst rise +0.52), and 4 of the 28 real traces. A late zero time masks it,
+which is why the previous round's t0 work is what exposed it.
+
+*Fix.* The guard is restored, generalised, and put on ONE path — F_fit previously
+took `K@masses` or `_fwd(f_r)` depending on `taper_short`, and `_fwd` itself
+branched on `signed_fit`, so whether any guard applied depended on two unrelated
+switches. F_fit is now always built from `_nonneg_cumulative(f_disp)`: isotonic
+(PAVA) regression of the cumulative mass, which is the identity where nothing is
+negative and *cancels* each ± noise pair instead of deleting the dip and keeping
+the spike. Gate: **0/252 synthetic and 0/28 real** interior maxima, at both the
+true and the fitted zero time. Reported P(r) **bit-identical** on 252/252
+synthetic and 28/28 real traces. The cost is `sigma_fit` +5.8 % mean / +24 % worst
+on real data — the signed fit was flattering itself by fitting with a
+non-physical model, so a slightly worse honest residual is the correct outcome.
+
+### Queued — project the REPORTED density too (blocked on short r)
+
+Projecting `P_density` as well is better nearly everywhere and would make the
+GUI's existing labels true (the checkbox says "before clipping negatives", the CSV
+header says "clipped", `distribution_moments` clips internally — yet the engine
+returns a signed `P_density`, negative on 251/252 traces down to −4.03, and
+`P_signed_density` is an alias of it, so the overlay draws the same curve twice).
+Measured: overlap +0.021 (t = 6.96), sharp +0.047, edges +0.034, broad +0.014,
+mean-distance error −0.081 nm.
+
+**Blocked** on the same class that killed the delta rule: short distances lose
+0.020 overlap (t = −4.65 over 120 traces, only 41 % improving, `short_r26` 20 %),
+because at 2.0–2.6 nm part of the pooled "noise" spike is genuine mass. Their mean
+distance nonetheless improves 0.096 nm — the peak lands better while the shape
+degrades. One real trace also moves 1.92 → 4.24 nm (`sample4_labE`; its six
+sibling labs sit at 4.18–4.54 and Tikhonov says 4.67, so it is probably a fix, but
+it is a reported result changing). Candidate kept at `~/deer_benchmark/s5_t0/deer_nomax.py`.
+Any revival needs a short-r-safe projection and its own gate — it is a change to
+what P(r) *means*, not a bug fix.
+
 ### Ported and committed
 
 `deer.py` is shared by all five repos and `deer_analysis.py` by ITC/NIOCH/NIOCH_Q
 (lead: ITC); both were mirrored byte-identically this session and `sync_check.py` is
-clean. The zero-time change has **no real-data validation and cannot get any** from
-the current corpus: the 28 ring-test traces sit at noise/amplitude 0.004–0.025 against
-a 0.055 gate, so the new path never fires on them. It will first act on genuinely
-noisy measurements — below roughly SNR 18 per point.
+clean. NIOCH/NIOCH_Q had also fallen ~200 lines behind ITC on `deer_analysis.py`
+(the S3/S4 round), which forced the pre-t0 change to be hand-ported onto their older
+text; that lag was then closed separately, so the EPR control centre is fully in
+sync again.
+
+Two limits on what any of this has actually been proven against:
+
+* the **zero-time** change has no real-data validation and cannot get any from the
+  current corpus — the 28 ring-test traces sit well below the noise gate, so the new
+  path never fires on them. It will first act on genuinely noisy measurements.
+* the **echo-top** fix does fire on real data (4 of the 28 traces carried the
+  artifact), and it is the one change this session that makes a fit residual
+  slightly *worse* by design.
 
 ## Next session — S5 (multi-Gaussian)
 
