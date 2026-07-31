@@ -501,14 +501,46 @@ report.
    Not reachable on real traces, but it affects the Tikhonov kernel too.
 8. **`joint_background` defaults `bg_start` to 0.6 × span** while every other engine
    uses 0.5 × span — invisible from the GUI, but scripts and mirrors see it.
-9. **Fit the zero-time on a lightly smoothed trace.** `fit_zero_time` is an argmax
-   over a noisy curve; at the highest synthetic noise it is +3.9 ns biased with a
-   21 ns scatter (worst 77 ns), and a 5-point boxcar gives +0.4 ns / 16 ns / 52 ns.
-   Worth **+0.085 overlap** on the case where the Mellin echo top collapses — more
-   than any δ or curvature change — and it removes most of that collapse as a side
-   effect. 9-point smoothing is worse (worst error 168 ns), so the width matters.
-   This touches an S1-reviewed estimator every engine depends on, so it needs the
-   full suite plus the real traces as a gate.
+9. ~~Fit the zero-time on a lightly smoothed trace.~~ **DONE** — see below.
+
+## The zero-time lever — applied (2026-07-31)
+
+The +0.085 overlap figure was an **oracle**: it came from handing the engine the
+true t0. The realizable fraction from a better estimator is **+0.033**, and getting
+it needed a specific diagnosis rather than "smooth more".
+
+The weak link is not the smoothing width but the `drop`-walk that sets the fit
+window: it thresholds the smoothed trace `drop` below the peak, so once the smoothed
+noise is a sizeable fraction of that drop it stops on noise and hands the parabola a
+window a few samples wide. Above a measured noise-to-amplitude ratio of 0.055 the
+window is now widened to >= 8 samples either side, the parabola is fitted to the
+smoothed trace, and the edge-padded samples are dropped. A symmetric boxcar leaves a
+quadratic's vertex exactly where it was — verified, not assumed — but
+`np.pad(mode='edge')` does not, and on a DEER trace the echo sits near the start so
+the window reaches the edge on ~35 % of traces (bias -1 to -3 ns); hence the guard.
+
+**Measured** (12 condition x shape pairs x 4 noise levels, both engines, paired
+seeds): +0.0328 Mellin and +0.0339 Tikhonov overlap at hard sigma 0.04, +0.0074 /
++0.0078 at sigma 0.02, and the Tikhonov mean-distance error halved (0.225 -> 0.113
+nm). Bit-identical on the whole `easy` condition, on `hard` sigma <= 0.01, and on
+**all 28 real traces** (their noise-to-amplitude ratio is 0.004-0.025 against a gate
+of 0.055, so the new path never fires on real data).
+
+**Why this one shipped where `xcheck` did not.** The `fit_zero_time` docstring
+records an earlier, more accurate t0 estimator that *lost* 0.015 overlap: it raised
+the worst-case error, and a slightly-late t0 had been cancelling a Mellin-specific
+forward bias. Three checks separate this change from that trap — both engines move
+together and by the same amount (a cancellation would move them oppositely), the
+gain appears at two different noise levels rather than only where the bias bites,
+and the worst-case t0 error is unchanged (120 ns, one seed where the estimator fails
+outright rather than imprecisely). Two independently written estimators, one mine and
+one an agent's, produced +0.033 on this metric.
+
+*Caveat for whoever revisits it:* at 4 seeds the +0.033 is ~2.7 sigma on its own; the
+cross-engine and cross-implementation agreement is what carries it, not the single
+number. The 0.055 gate is derived from the walk geometry but calibrated on this
+benchmark's amplitude scale — a dataset landing between 0.048 and 0.067 would sit on
+the boundary, and none exists to test that.
 
 ## Next session — S5 (multi-Gaussian)
 

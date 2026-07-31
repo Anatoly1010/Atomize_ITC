@@ -502,13 +502,16 @@ free intercept in the parabola (mixed, and it drops the F(0) = 1 guarantee); a
 Savitzky–Golay smoother (noisier than the boxcar at equal width); a robust decay-scale
 fit replacing the threshold (shifts the clean regime by 4–10 ns).
 
-**The real lever is the zero-time fit, not δ.** Handing the engine the true t₀ is worth
-**+0.085 overlap** on that case — 3–6× anything δ does — and it removes most of the
-collapse as a side effect, because a mis-set t₀ starts the trace already down the
-slope. `fit_zero_time` lands +3.9 ns biased with a 21 ns scatter (worst 77 ns) at the
-highest noise; fitting it on a 5-point smoothed trace gives +0.4 ns bias, 16 ns scatter,
-worst 52 ns. That is a self-contained improvement to S1 territory with its own gate —
-**queued, not applied**, because it changes an estimator every engine depends on.
+**The real lever was the zero-time fit, not δ — and it has now been applied.** Handing
+the engine the true t₀ is worth **+0.085 overlap** on that case, 3–6× anything δ does,
+because a mis-set t₀ starts the trace already down the slope (it also removes most of
+the δ collapse as a side effect). That figure is an *oracle*, though: the realizable
+fraction from a better estimator is **+0.033**, measured on both engines. The weak link
+turned out not to be the smoothing width but the `drop`-walk that sets the parabola's
+fit window — it thresholds the smoothed trace and, once the smoothed noise is a
+sizeable fraction of that threshold, stops on noise and returns a window a few samples
+wide. See "The zero-time lever — applied" in [ROADMAP.md](ROADMAP.md) for the change,
+the numbers and why it clears the `xcheck` trap that an earlier session hit.
 
 **Not implemented, by verdict:** S4-10 (PLAUSIBLE; 0/28 real traces at a bound,
 25/28 already flagged, and both skeptics refuted the proposed detector *and* the
