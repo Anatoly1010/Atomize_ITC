@@ -695,6 +695,97 @@ Two limits on what any of this has actually been proven against:
   artifact), and it is the one change this session that makes a fit residual
   slightly *worse* by design.
 
+## Session 2026-08-02 — a parabolic echo-top head for TIKHONOV (paused, unfinished)
+
+Prompted by a suggestion from the user's colleague: *noise in both Mellin and
+Tikhonov — surprisingly more in Tikhonov — can be strongly suppressed by fitting
+the initial section of the curve with a parabola.* Round 1 ran; round 2 was stopped
+part-way, to be redone on a faster machine. **Nothing here is in `deer.py`.** All
+artefacts live in `~/deer_benchmark/s6_parab/`.
+
+### Half of it already ships — on the Mellin side only
+
+The suggestion is exactly what the Mellin δ-split does. `mellin_signal_spectrum(...,
+parabolic=True)` does not use the data on [0, δ] at all; it integrates the analytic
+parabola in closed form, `int_0^delta (F0 + b T^2) T^(s-1) dT = F0 delta^s/s +
+b delta^(s+2)/(s+2)`, and δ is already noise-adaptive (floor/cap 0.09/0.12 → ~0.13/0.16
+as `sig_e/lambda` grows), for the stated reason that a wider parabola kills the
+short-r spike *at source*. **The Tikhonov path has no equivalent** — which matches
+the colleague's observation that the headroom is bigger there.
+
+### The honest window, from the physics (`validity.py`)
+
+K(0, r) = 1 and K is even, so F(t) = 1 − (2/5)⟨ω²⟩t² + O(t⁴), ω = 2π·ν_dd/r³. Widest
+window where a parabola stays within 1 % of the NOISELESS catalogue form factor:
+
+| shape class | pinned parabola | + quartic term |
+|---|---|---|
+| long / broad (4.5–5.0 nm) | 220–330 ns | ≥ 400 ns |
+| typical (3.0–4.0 nm) | 65–130 ns | 120–245 ns |
+| short r (2.0 nm) | **18 ns** | 34 ns |
+
+At 10 ns sampling a typical head spans only ~7–13 points, but they are the
+highest-leverage points in the inversion and the head costs 1–2 parameters.
+
+### Round 1 — 756 traces × 21 variants (`sweep.py` → `sweep.json`)
+
+s5 shape catalogue (21 shapes × 3 conditions × 4 noise levels × 3 reps), r grid
+coarsened to 128 points, joint background cached per trace, head applied to F before
+`l_curve`/`tikhonov_nnls`. Two results, both sharp:
+
+**1. Pinning F(0) = 1 is what hurts.** Every pinned variant loses: `pin2_50` −0.0055
+overlap (t = −7.0), and the level-driven pinned rules — the direct analogue of the
+Mellin δ rule — sit at −0.004 (t ≈ −6). Spurious mass below 2.5 nm *rises*, 0.140 →
+0.151. At high noise the normalization anchor is itself wrong by more than the noise
+on any single sample, and a pinned head welds the whole echo top to that wrong anchor.
+
+**2. Freeing the constant (a + b·t²) flips the sign, and the gain grows with noise:**
+
+| σ | base overlap | best free head | Δ overlap | t | win % |
+|---|---|---|---|---|---|
+| 0.0025 | 0.9589 | free2_80 | −0.0132 | −2.3 | 44 |
+| 0.005 | 0.9272 | free2_80 | −0.0108 | −2.9 | 53 |
+| 0.01 | 0.8853 | free2_80 | −0.0024 | −0.8 | 57 |
+| 0.02 | 0.8495 | free2_80 | **+0.0033** | +1.6 | 63 |
+| 0.04 | 0.7575 | free2_120 | **+0.0119** | +2.7 | 58 |
+| 0.06 | 0.7001 | free2_180 | **+0.0213** | +1.9 | 67 |
+
+By class at σ ≥ 0.02: EDGY +0.0149 (t = 6.9, 76 % win), SHARP +0.0145 (t = 5.1),
+broad/other +0.0057. Per shape, `free2_120` helps on **20 of 21 shapes**; the single
+loser is the one the table above predicts — `short_r20` −0.205 at 0 % win, a 120 ns
+head on an 18 ns honest window (`short_r26` +0.047, `gauss_broad_short` +0.022).
+
+### The two design rules that fall out
+
+* **δ must be level-driven, not constant** — the F(δ)/F(0) rule already auto-shrank to
+  31 ns on the short-r shapes against 65 ns on typical ones, which is exactly the
+  r-gating `short_r20` needs.
+* **The head must be noise-gated** — below σ ≈ 0.01 it costs real resolution
+  (−0.013 at σ = 0.0025). Gate on the same `sig_e/lambda` the Mellin δ rule uses.
+
+Note the free constant may be doing two jobs at once: denoising the head AND
+re-estimating the echo top (a better estimator than `_echo_top`'s ±5-sample vertex,
+which is what the pinned anchor comes from). Round 2 records the fitted constant `a`
+so the two can be separated — worth knowing, because if it is mostly the echo-top
+re-estimate then the cheaper fix is to `_echo_top` itself, not a new head.
+
+### Where it stopped, and what to run next
+
+`sweep2.py` (free constant × level-driven δ at F(δ)/F(0) = 0.95/0.90/0.85/0.80/0.75,
+fixed δ = 60/100/150/220 ns, free quartics, `rel_noise` + head coefficients recorded
+per trace) got ~1/756 traces in and was **killed** — 15 s per trace on 4 cores is
+~30 min a round here. Re-run it on a faster machine. Then, in order:
+
+1. Fit the noise gate from the recorded `rel` rather than guessing a σ threshold.
+2. Re-check the winner at full r resolution (NR = 256) — round 1 ran at 128.
+3. `real.py` is written and ready: the 28 YopO ring-test traces, reporting peak/mean
+   movement and V-space RMS versus no head. **They are all low-noise** (0.004–0.025
+   noise/amplitude), so the expected result is that a properly gated head barely
+   fires — which is the correct outcome, not a null result.
+4. Only then consider a `deer.py` patch, and consider whether the same free-constant
+   lesson applies to the Mellin `parabolic` term, whose `F0` is likewise pinned
+   (`analytic = F0*delta**s/s`, `b` fit against `Fw - F0`).
+
 ## Next session — S5 (multi-Gaussian)
 
 Hand-overs that were waiting for S4 are all resolved: H1 → S4-4 (fixed), H2 → S4-5
