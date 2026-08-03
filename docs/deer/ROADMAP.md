@@ -1112,12 +1112,51 @@ the user's bump before assuming the mechanism above: if the spurious mass is at
 the joint background's λ, or `_crop_pre_zero` / the pre-t0 display change in
 `5c557de`).
 
+### Bisect result (ran 2026-08-03) — culprit is `a64098e`, and the metric is wrong
+
+`gauss_broad`, σ = 0.04, hard + hard2, 3 reps, averaged:
+
+| rev | date | lo_mass | \|t0 err\| ns | overlap |
+|---|---|---|---|---|
+| `a351f0a` | Jun 20 | **0.0546** | 17.0 | **0.8382** |
+| **`a64098e`** | **Jul 23 — S1, "negative time, negative lambda, zero-time"** | **0.1079** | **30.2** | **0.7826** |
+| `f6768ed`…`6ecab18` | Jul 23–31 | 0.1079 | 30.2 | 0.7826 |
+| `51f0df6` | Jul 31 | 0.0734 | 22.6 | 0.8167 |
+| `5c557de`…`5200009` | Jul 31–Aug 3 | 0.0973 | 15.1 | 0.8051 |
+| HEAD (+ taper) | Aug 3 | 0.0686 | 15.1 | 0.8236 |
+
+**`a64098e` is where it regressed** — spurious short-r mass doubled and overlap fell
+0.838 → 0.783 in one commit, an S1 *zero-time* fix. The Jul-31 work recovered the t0
+error (30.2 → 15.1 ns) but not `lo_mass`, which is still above the June level. This
+matches the user's "there was no such bump earlier": earlier means before 23 July,
+NOT before this session. **Start by reading a64098e's zero-time hunk.**
+
+**But the bump metric in `bisect_bump.py` is WRONG and must be redefined first.**
+`bump_max` is negative at *every* revision, i.e. `F_fit` never actually rises in the
+first 300 ns — yet the kink is plainly visible in `t0diag_gauss_broad_0.04.png`
+(hard/rep1, ~80 ns). So the artefact is a **shoulder — a curvature sign change —
+not a rise**, and a first-difference test cannot see it. Use a second-derivative /
+inflection test (or fit a monotone convex reference and measure the residual), or
+the bisect will keep reporting "no bump" while the plot shows one.
+
 ### Acceptance
 
-`bisect_bump.py` identifies the commit; `gauss_broad` at σ = 0.04 shows a monotone
-`F_fit` head (bump metric ≈ 0) across reps; and whatever fix lands does not regress
-the 756-trace catalogue (`~/deer_benchmark/s8_tik_taper/sweep_taper.py`,
-`s6_parab/summarize.py`).
+The redefined shoulder metric is ≈ 0 on `gauss_broad` at σ = 0.04 across reps;
+`lo_mass` returns to about the June level (~0.055) on that case; and whatever fix
+lands does not regress the 756-trace catalogue
+(`~/deer_benchmark/s8_tik_taper/sweep_taper.py`, `s6_parab/summarize.py`).
+
+### State of the short-r taper
+
+Implemented in `deer_invert_joint` (`taper_short=True`, `fit_rmin_abs=2.0`,
+`fit_rmin_width=0.5`) plus a shared `_short_r_taper` helper that Mellin's inline
+copy was refactored onto. Benchmarked **+0.0051** overall, **+0.0066** excluding the
+one 2.0 nm shape (t 11.6, 81 % of traces, worst −0.025), rising with noise. It does
+**NOT** fix the reported bump, so it was left UNCOMMITTED and the tree reverted to
+what is pushed — a regression hunt should not carry an unrelated behaviour change to
+the same function. The full implementation and its benchmark live in
+`~/deer_benchmark/s8_tik_taper/` (`taper.py`, `sweep_taper.json`, `summ.py`,
+`post20_check.py`); re-apply from there if it is wanted after the bump is fixed.
 
 ## Next session — S5 (multi-Gaussian)
 
