@@ -950,34 +950,46 @@ NR = 256 against the s5 catalogue). If a < 1 were quartic droop being absorbed, 
 T⁴ term or a narrower window would fix it. Neither does: `quart` −0.0014 (t −6.2),
 `narrow` (0.95) and `narrow90` both −0.0002.
 
-**Freeing the constant does capture something real — and pays for it where it hurts:**
+**CORRECTION (same session).** The first version of this section was measured with
+the Mellin cutoff pinned at 30. `deer_invert_mellin`'s signature default is
+`tau_max=30.0`, **not** `None`, and the auto (`'penalty'`) selector only runs when it
+is `None` — which is what the GUI passes when "auto" is ticked. The harness omitted
+the argument, so the whole sweep ran at a fixed cutoff the oracle puts at 6–9. Base
+overlap was therefore 0.638 rather than **0.8116**, and the claim in the first
+version that 0.638 reflected "the engine's known noise sensitivity" was wrong.
+Everything below is the re-run with `tau_max=None` (`sweep_f0_auto.json`).
+
+**Anyone benchmarking this engine must pass `tau_max=None` explicitly.** Omitting it
+silently disables auto-selection and costs ~0.17 mean overlap.
+
+**Freeing the constant does capture something real — and pays for it on SHORT:**
 
 | | free | quart | narrow |
 |---|---|---|---|
-| ALL | +0.0009 (t 3.3, 67 % win) | −0.0014 | −0.0002 |
-| SHARP | +0.0018 (t 6.7) | −0.0001 | +0.0000 |
-| EDGY | +0.0028 (t 6.9, 77 %) | −0.0005 | −0.0001 |
-| broad | +0.0026 (t 11.8, 76 %) | −0.0009 | −0.0004 |
-| **SHORT** | **−0.0085 (t −6.6, 19 % win)** | −0.0063 | −0.0000 |
+| ALL | **+0.0035** (t 4.1, 69 % win) | −0.0019 | −0.0004 |
+| SHARP | +0.0052 (t 4.7, 72 %) | −0.0012 | −0.0002 |
+| EDGY | +0.0065 (t 4.9, 74 %) | −0.0021 | −0.0001 |
+| **SHORT** | **−0.0122 (t −3.0)** | −0.0053 | +0.0001 |
 
-and on SHORT the spurious sub-2.5 nm mass rises **0.9025 → 1.0057 (+11 %)**, with
-`rough` 0.603 → 0.758. That is precisely the failure the wide parabola exists to
-suppress — the docstring's own rationale is that a wider parabola "kills the short-r
-spike *at source*". **The pin is load-bearing: its inaccuracy is acting as an
-implicit regularizer against the short-r spike**, exactly as this function's
-docstring already records for the noise-gated `n_min` floor ("the wrong curvature had
-been acting as an accidental regularizer, and removing it costs ~0.10 overlap").
+By noise: +0.0021 / +0.0019 / +0.0042 / +0.0012 / +0.0082 / +0.0040 at
+σ = 0.0025…0.06 — positive everywhere. `|dmean|` improves in every class
+(ALL 0.1442 → 0.1336) and overall `lo_mass` **improves** 0.1830 → 0.1747.
 
-So: correct diagnosis, real effect, **do not fix it** — +0.0009 overall (0.14 %
-relative) is not worth an 11 % increase in short-r mass on the class most prone to
-the artefact. If it is ever revisited, the fix has to free the constant *and* keep
-the short-r protection some other way; freeing it alone is a regression.
+**The mechanism claimed in the first version does not survive.** At the pinned
+cutoff, freeing the constant inflated short-r mass by 11 %, which supported "the pin
+is load-bearing as an implicit short-r regularizer". With the correct cutoff that
+effect is gone: overall `lo_mass` *falls*, and on SHORT it moves only
+0.6675 → 0.6736 (+0.9 %). The SHORT overlap loss is real but is not a short-r-mass
+mechanism, and remains unexplained.
 
-(Harness note: Mellin's absolute overlap on this catalogue is far below Tikhonov's
-— 0.638 vs 0.856 ALL — but that is the engine's known noise sensitivity, not a
-harness bug: at σ = 0.0025 it is 0.9156 against Tikhonov's 0.9589, and it falls to
-0.4190 at σ = 0.04 where Tikhonov holds 0.7575. The A/B above is internally
-controlled, and the low-noise rows are the ones that match real data.)
+**Both "the window is too wide" readings stay refuted** — `quart` −0.0019 and
+`narrow`/`narrow90` −0.0004/−0.0003, unchanged in sign from the first run.
+
+**Status: not shipped, but the case is now closer than the first version implied.**
++0.0035 overall (t = 4.1) with better mean-r and less short-r mass is a real gain;
+the blocker is the −0.0122 on SHORT (14 % of the catalogue), whose cause is not
+understood. Freeing the constant *and* diagnosing the SHORT regression is a genuine
+open item rather than a closed "do not fix it".
 
 ## Next session — S5 (multi-Gaussian)
 
