@@ -927,10 +927,57 @@ the synthetic catalogue where the first-minimum bound always wins first.
    from a cheap first-pass inversion; require ≥ 1 full dipolar period inside t_max
    with margin; or cap δ as a fraction of the first-minimum time rather than
    bounding at it. Acceptance must include the sample4 group going to dRMS ≤ 0.
-5. Then the same free-constant question for the Mellin `parabolic` term, whose `F0`
-   is likewise pinned (`analytic = F0*delta**s/s`, `b` fit against `Fw - F0`). Q2
-   showed pinning is what costs on the Tikhonov side, so this is now a concrete
-   suspicion rather than speculation.
+5. ~~The same free-constant question for the Mellin `parabolic` term~~ — done, see
+   below. Also not worth shipping, and for a more interesting reason than the head.
+
+### The Mellin `F0` pinning — measured, real, and deliberately left alone
+
+`mellin_signal_spectrum` pins the [0, δ] analytic term at `F0 = 1.0` and fits only
+the curvature (`b = Σ T²(F − F0)/Σ T⁴`) — the same pinned parametrization the
+Tikhonov bench measured as its costliest choice. Mellin's window is *wider* than the
+heads tested there (δ 90–160 ns, fit out to `F = 0.80·f0`), so it had more room to
+act. Bench in `~/deer_benchmark/s7_mellin_f0/`.
+
+**The pin is measurably wrong** (`probe.py`, 28 real traces). A free constant lands
+systematically *below* 1 — mean −0.0121, median −0.0127, **25 of 28 negative**, i.e.
+bias, not scatter — and pinning therefore forces the curvature steep: |b| is 6.2 %
+too large in the median and **18 % worst case**. Note the shipped code already
+computes `f0 = Fp[0]` from the data (0.982–1.013 on real traces) but uses it only to
+pick the fit window, then pins the fit itself to the nominal 1.0.
+
+**Both "the window is too wide" readings are refuted** (`sweep_f0.py`, 756 × 6 at
+NR = 256 against the s5 catalogue). If a < 1 were quartic droop being absorbed, a
+T⁴ term or a narrower window would fix it. Neither does: `quart` −0.0014 (t −6.2),
+`narrow` (0.95) and `narrow90` both −0.0002.
+
+**Freeing the constant does capture something real — and pays for it where it hurts:**
+
+| | free | quart | narrow |
+|---|---|---|---|
+| ALL | +0.0009 (t 3.3, 67 % win) | −0.0014 | −0.0002 |
+| SHARP | +0.0018 (t 6.7) | −0.0001 | +0.0000 |
+| EDGY | +0.0028 (t 6.9, 77 %) | −0.0005 | −0.0001 |
+| broad | +0.0026 (t 11.8, 76 %) | −0.0009 | −0.0004 |
+| **SHORT** | **−0.0085 (t −6.6, 19 % win)** | −0.0063 | −0.0000 |
+
+and on SHORT the spurious sub-2.5 nm mass rises **0.9025 → 1.0057 (+11 %)**, with
+`rough` 0.603 → 0.758. That is precisely the failure the wide parabola exists to
+suppress — the docstring's own rationale is that a wider parabola "kills the short-r
+spike *at source*". **The pin is load-bearing: its inaccuracy is acting as an
+implicit regularizer against the short-r spike**, exactly as this function's
+docstring already records for the noise-gated `n_min` floor ("the wrong curvature had
+been acting as an accidental regularizer, and removing it costs ~0.10 overlap").
+
+So: correct diagnosis, real effect, **do not fix it** — +0.0009 overall (0.14 %
+relative) is not worth an 11 % increase in short-r mass on the class most prone to
+the artefact. If it is ever revisited, the fix has to free the constant *and* keep
+the short-r protection some other way; freeing it alone is a regression.
+
+(Harness note: Mellin's absolute overlap on this catalogue is far below Tikhonov's
+— 0.638 vs 0.856 ALL — but that is the engine's known noise sensitivity, not a
+harness bug: at σ = 0.0025 it is 0.9156 against Tikhonov's 0.9589, and it falls to
+0.4190 at σ = 0.04 where Tikhonov holds 0.7575. The A/B above is internally
+controlled, and the low-noise rows are the ones that match real data.)
 
 ## Next session — S5 (multi-Gaussian)
 
