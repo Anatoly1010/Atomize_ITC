@@ -1049,6 +1049,76 @@ collapses to +0.0069 blanket and 1.00 goes negative).
 Recorded so nobody re-derives it; the docstring's 0.12 figure is superseded by a
 properly swept 0.25 that is still not worth using.
 
+## NEXT SESSION (first) — the Tikhonov echo-top bump on `gauss_broad` is a REGRESSION
+
+**User report, 2026-08-03: a bump / kink in the Tikhonov fit near t = 0 on
+`gauss_broad`, and "there was no such bump for Tikhonov earlier". Mellin is clean.
+The short-r taper shipped this session did NOT remove it.** Treat the regression
+claim as the primary lead — the work below diagnosed a *mechanism* that produces
+this signature, but did not establish that it is the same thing the user is seeing,
+and the taper not fixing it is evidence that it is not.
+
+### Reproduction
+
+```bash
+cd ~/deer_benchmark/s7_mellin_f0
+SLUG=gauss_broad SIGMA=0.04 CONDS=hard,hard2 python3 t0diag.py   # -> t0diag_*.png
+python3 t0_cause.py        # same trace at fitted / true / +-1 sample zero time
+python3 t0_ab.py           # A/B two git revisions of deer.py side by side
+cd ~/deer_benchmark/s8_tik_taper && python3 bisect_bump.py       # WHEN it appeared
+```
+`bisect_bump.py` walks the deer.py revisions and reports, per revision, the largest
+positive step of `F_fit` inside the first 300 ns (0 = clean monotone decay, which is
+what a broad single Gaussian must give), the sub-2.5 nm mass, and the |t0| error.
+**Start here** — it answers "which commit" directly.
+
+### What is already known
+
+* **The signature is a spurious sub-2 nm peak.** Small r oscillates fastest in the
+  kernel, so it distorts precisely the first ~100 ns: too-steep echo-top decay plus
+  a kink. `hard`/rep1 at σ = 0.04 shows it clearly.
+* **On that trace it is caused by the ZERO TIME, not the inversion.** The estimator
+  returns 154.7 ns against a true 120 ns (+35 ns ≈ 3.5 samples). Feed the same data
+  the true t0 and the artefact vanishes outright: short-r mass 0.2319 → **0.0002**,
+  overlap 0.6222 → **0.8538**. On `hard`/rep0 (t0 off by only 8 ns) the residual
+  junk is genuine noise instead — so it is not one cause across all traces.
+* **Suspects are the three 2026-07-31 zero-time commits** (`51f0df6` noise-aware
+  `_parabolic_zero_time`, `5c557de` centroid-above-noise-gate + pre-t0 display,
+  `b013457` Mellin forward-fit peak), since `fit_zero_time` is shared by both
+  engines. A/B `84d1f03` vs `5200009` on this case is **mixed, not uniformly bad**:
+  rep1 worse (lo_mass 0.065 → 0.232), rep0 better (0.252 → 0.207), rep2 unchanged —
+  and note rep1's t0 error *improved* (+50 → +35 ns) while its P(r) got worse,
+  because the joint background re-fits too (λ 0.220 vs 0.244). The landscape is
+  non-monotone in t0; do not assume "better t0 ⇒ better P(r)".
+* **Nothing from 2026-08-03 caused it.** The only code change that day was
+  `deer_invert_mellin`'s `tau_max` default (Mellin-only), plus the short-r taper
+  added at the end of the session — and the user still sees the bump with it.
+
+### Ruled out
+
+* Not the parabolic echo-top head — that was never shipped (see 2026-08-02/03).
+* Not the short-r taper — it postdates the report and does not fix it.
+* Not a Mellin problem: Mellin is clean because it has BOTH a τ cutoff (which
+  truncates the high-τ spectrum where short-r leakage lives) and `taper_short`.
+
+### The open question the taper result forces
+
+The taper suppresses sub-2 nm density and measurably helps the catalogue
+(+0.0066 excl. `short_r20`, t 11.6) — yet the reported bump survives it. So either
+the offending mass sits **above** 2 nm (where the taper weight is exactly 1.0 and
+cannot act), or the bump is not short-r mass at all. Check the P(r) that accompanies
+the user's bump before assuming the mechanism above: if the spurious mass is at
+2–3 nm the whole short-r framing is wrong and the cause is elsewhere (candidates:
+the joint background's λ, or `_crop_pre_zero` / the pre-t0 display change in
+`5c557de`).
+
+### Acceptance
+
+`bisect_bump.py` identifies the commit; `gauss_broad` at σ = 0.04 shows a monotone
+`F_fit` head (bump metric ≈ 0) across reps; and whatever fix lands does not regress
+the 756-trace catalogue (`~/deer_benchmark/s8_tik_taper/sweep_taper.py`,
+`s6_parab/summarize.py`).
+
 ## Next session — S5 (multi-Gaussian)
 
 Hand-overs that were waiting for S4 are all resolved: H1 → S4-4 (fixed), H2 → S4-5
