@@ -769,22 +769,168 @@ which is what the pinned anchor comes from). Round 2 records the fitted constant
 so the two can be separated — worth knowing, because if it is mostly the echo-top
 re-estimate then the cheaper fix is to `_echo_top` itself, not a new head.
 
-### Where it stopped, and what to run next
+### Where it stopped
 
-`sweep2.py` (free constant × level-driven δ at F(δ)/F(0) = 0.95/0.90/0.85/0.80/0.75,
-fixed δ = 60/100/150/220 ns, free quartics, `rel_noise` + head coefficients recorded
-per trace) got ~1/756 traces in and was **killed** — 15 s per trace on 4 cores is
-~30 min a round here. Re-run it on a faster machine. Then, in order:
+`sweep2.py` got ~1/756 traces in and was **killed** — 15 s per trace on 4 cores is
+~30 min a round here. Resumed 2026-08-03 on a faster box; see the next section. The
+two design rules stated above did **not** survive that round — read on before
+building on them.
 
-1. Fit the noise gate from the recorded `rel` rather than guessing a σ threshold.
-2. Re-check the winner at full r resolution (NR = 256) — round 1 ran at 128.
-3. `real.py` is written and ready: the 28 YopO ring-test traces, reporting peak/mean
-   movement and V-space RMS versus no head. **They are all low-noise** (0.004–0.025
-   noise/amplitude), so the expected result is that a properly gated head barely
-   fires — which is the correct outcome, not a null result.
-4. Only then consider a `deer.py` patch, and consider whether the same free-constant
-   lesson applies to the Mellin `parabolic` term, whose `F0` is likewise pinned
-   (`analytic = F0*delta**s/s`, `b` fit against `Fw - F0`).
+## Session 2026-08-03 — the head, finished: δ from curvature, not from a crossing
+
+Rounds 2–4 of the parabolic head, run on a second machine (`fel@172.16.16.1`,
+6-core i5-9400F, ~4–5× this one: 13 min for a 756-trace × 13-variant round against
+~30 min here). Still **nothing in `deer.py`**; artefacts in `~/deer_benchmark/s6_parab/`.
+
+### Round 2 reversed one of round 1's two design rules
+
+Round 1 proposed (a) δ must be level-driven and (b) the head must be noise-gated to
+fire only at *high* noise. Round 2 (`sweep2.json`, 756 × 13) shows those two are
+**incompatible**: the level-driven head only wins at *low* noise.
+
+| σ | `fl75` level-driven | `f2_100` fixed δ |
+|---|---|---|
+| 0.0025 | **+0.0015** (t 2.0) | −0.0250 |
+| 0.005 | **+0.0019** (t 4.8) | −0.0212 |
+| 0.01 | **+0.0036** (t 5.6) | −0.0111 |
+| 0.02 | −0.0006 | −0.0028 |
+| 0.04 | **−0.0107** (t −6.1) | +0.0107 |
+| 0.06 | −0.0106 | **+0.0182** (t 2.9) |
+
+**Mechanism: the raw-crossing rule is anti-adaptive.** `delta_from_level` reads the
+first sample where F drops below `level`·F(0), so a noise excursion trips it early
+and δ *shrinks* as noise rises — `fl85` picks 82 ns at σ = 0.0025 but 51 ns at
+σ = 0.04, narrowing the window exactly when a wide denoising window is wanted. At
+σ ≥ 0.04 it also *adds* spurious short-r mass (`lo_mass` 0.204 → 0.221).
+
+**The dominant axis is shape, not noise.** SHARP `f4_250` +0.0144 (t 5.7) and EDGY
+`f4_250` +0.0141 (t 6.1) are the largest gains available anywhere — and the same
+setting is −0.2835 on SHORT. A wide fixed head is simultaneously the best and the
+most dangerous option; the level rule was only ever the thing protecting short r.
+
+**Q2 — "is it just the echo-top re-estimate?" — answered NO** (`gate.py`). This was
+round 1's explicit open question, with the note that if the free constant were
+mostly re-estimating the echo top then the cheap fix is `_echo_top`, not a head.
+For the level family mean |a−1| ≈ 0.025–0.035 and **corr(Δov, |a−1|) = −0.04…−0.09**,
+i.e. no relationship — the gain is genuine denoising. For the fixed-δ family
+corr = −0.49…−0.80 and Δov in the large-|a−1| half is −0.012…−0.118, so a large free
+constant is a *failure marker* (a wide window forcing a wrong constant), not a source
+of gain. On the 28 real traces a ∈ [0.985, 1.001] — nothing to re-estimate on clean
+data. `_echo_top` is not the cheap substitute.
+
+### Round 3 — `delta_from_curvature`, and the fix that made it work
+
+The honest window scales as r³ (ω ∝ r⁻³; `validity.py`: 18 ns at 2.0 nm, 65–130 at
+3–4, 220–330 at 4.5–5). The level rule is a *proxy* for that scaling computed on
+noisy F, which is why it inverts. `delta_from_curvature` instead takes δ from the
+least-squares curvature of the window — δ = √((1−level)·a/−b) — iterated to a fixed
+point, so b is a fit over many points rather than one sample.
+
+Two bugs found getting there, both instructive and both fixed:
+
+* **Seeding from the raw crossing** put the noise dependence straight back in.
+  Iterate from the *wide* end instead.
+* **Seeding from `cap`** runs past the first dipolar minimum, where a parabola fit
+  returns nonsense curvature and δ sticks at the cap — `short_r20` at σ = 0.06 went
+  to overlap **0.005**. Fixed with `first_min_time()` (smoothed first local minimum
+  of F) as the upper bound: past there is not echo top by definition.
+* A fixed 30 ns floor holds only **2** samples at `hard2`'s 12.6 ns sampling, below
+  `parab_head`'s `n_min`, so the head silently no-opped. The floor is now
+  sample-count-driven (`n_min`-th sample), which also fixed the one real trace
+  (`sample1_labC`, dt = 16 ns) whose head never fired.
+
+`cv60` then came out positive in **every** class and at **every** σ — the first
+variant to do so (ALL +0.0046, t 6.6; SHORT +0.0082 where fixed δ is −0.28). Two
+knobs also died: the quartic is worse than order-2 everywhere, and `cap` is inert
+because the first-minimum bound always binds first.
+
+### Round 4 — the level series, run down until it turned over
+
+Round 3 never turned over (cv90 +0.0013 < cv80 < cv70 < cv60 +0.0046), so round 4
+extended it to 0.05, where the limit is δ = the first-minimum bound itself.
+
+| | cv60 | **cv50** | cv40 | cv30 | cv20 | cv5 |
+|---|---|---|---|---|---|---|
+| ALL | +0.0046 | **+0.0053** (t 6.8) | +0.0040 | +0.0024 | −0.0018 | −0.0129 |
+| SHARP | +0.0055 | +0.0060 | +0.0074 | **+0.0082** | +0.0054 | −0.0042 |
+| EDGY | +0.0059 | +0.0081 | **+0.0094** | +0.0093 | +0.0062 | −0.0033 |
+| SHORT | +0.0082 | +0.0107 | +0.0079 | +0.0102 | **+0.0123** | +0.0070 |
+| broad | **+0.0023** | +0.0019 | −0.0015 | −0.0064 | −0.0141 | −0.0287 |
+
+Per-class optima genuinely differ — broad wants a narrow head, short/sharp a wide
+one — but **`cv50` is the best single setting that never loses**, and `lo_mass` falls
+0.1404 → 0.1292, so it is not buying overlap by smearing. No noise gate is needed:
+`cv50` is positive at every σ, which retires round 1's rule (b) rather than
+implementing it.
+
+### NR = 256 production re-check — conclusions transfer, and cv60 catches cv50
+
+`sweep256.json`, 756 × 7 at full r resolution. Every round-4 conclusion holds, and
+the two leaders converge:
+
+| | base | cv60 | cv50 | cv40 | cv30 | f2_150 | f4_250 |
+|---|---|---|---|---|---|---|---|
+| ALL | 0.8563 | **+0.0050** (t 7.3) | **+0.0052** (t 7.0) | +0.0044 | +0.0024 | −0.0278 | −0.0370 |
+| SHARP | 0.7963 | +0.0064 | +0.0068 | +0.0081 | **+0.0086** | +0.0153 | +0.0165 |
+| EDGY | 0.8596 | +0.0071 | +0.0087 | **+0.0097** | +0.0090 | +0.0147 | +0.0167 |
+| SHORT | 0.8927 | +0.0076 | +0.0092 | +0.0095 | **+0.0107** | −0.2553 | −0.3203 |
+| broad | 0.8761 | **+0.0023** | +0.0014 | −0.0017 | −0.0068 | +0.0052 | +0.0040 |
+
+At NR = 128 cv50 led cv60 (+0.0053 vs +0.0046); at production resolution they are a
+statistical tie and cv60 is the better of the two on broad shapes. Taken with the
+real-data result below, **cv60 is the recommendation, not the NR=128 winner.**
+
+### Real data (28 YopO traces) — the honest limit of the whole idea
+
+`real.py` with the curvature rule. Samples 1–3 (2.2–5.5 nm) are clean: |dpeak| ≤ one
+grid step, |dmean| ≤ 0.06 nm, dRMS ≈ 0 or negative. **The sample4 group (5.9–7.35 nm)
+degrades**: at cv60 dRMS +0.0003…+0.0027 and dmean +0.10…+0.22 nm; at cv50 worse,
+including one −0.457 nm peak jump (a mode switch on a multimodal P(r)).
+
+Two explanations were tested and **both refuted**:
+
+* *|a−1| flags it.* No — `valve.py` on `sweep4.json` shows that for cv50 the
+  |a−1| > 0.05 group gains **+0.0145**, i.e. it is where the gain lives; vetoing it
+  collapses cv50 to +0.0005. The valve works only for the FIXED-δ family (turns
+  `f2_150` from −0.0248 into +0.0008), which is Q2 restated, not a new diagnostic.
+* *Those traces exceed their r_max.* No — `tmax_check.py`: all 28 sit inside
+  r_max ≈ 5·(t_max/2)^(1/3) (sample4 6.99–7.35 nm against 7.83–8.22).
+
+**So it is a real, physical limit.** At long r the echo-top curvature *is* the
+distance measurement — ν_dd(7 nm) ≈ 0.15 MHz, one dipolar period ≈ 6.6 µs, so a
+200 ns head is ~3 % of a period and fitting that curvature from noisy data adds
+error rather than removing it. At short/typical r the echo top is over-sampled
+relative to the information it carries, so the parabola denoises. The synthetic
+catalogue says the same thing: broad/other is the weakest class and goes negative
+as δ widens (cv30 −0.0068 at NR = 256).
+
+The first-minimum bound does not protect against this — at long r it is far out, so
+δ grows to 180–270 ns exactly where it should shrink.
+
+### Correction to the bench notes
+
+**NR = 256 costs 4.3× NR = 128, not the ~29× the s6_parab README claimed** (measured
+1.95 vs 0.45 s per trace-variant). The production re-check is a ~1.5 h 7-variant
+round on 6 cores, not an overnight job. README corrected. Also: `cap` is NOT inert
+as round 3 concluded — it binds on 5 of 7 real 5 nm traces (δ = 350 ns), it is only
+the synthetic catalogue where the first-minimum bound always wins first.
+
+### What is left
+
+1. ~~Fit the noise gate from `rel`~~ — retired: the curvature rule needs no gate,
+   it is positive at every σ.
+2. ~~NR = 256 re-check~~ — done, conclusions transfer.
+3. ~~`real.py` with the winner~~ — done, and it found the long-r limitation above.
+4. **A distance-scale guard is the open problem, and it blocks a `deer.py` patch.**
+   The head must not fire (or must shrink hard) when the echo-top curvature is the
+   measurement rather than redundant detail. Candidates: gate on an estimated mean r
+   from a cheap first-pass inversion; require ≥ 1 full dipolar period inside t_max
+   with margin; or cap δ as a fraction of the first-minimum time rather than
+   bounding at it. Acceptance must include the sample4 group going to dRMS ≤ 0.
+5. Then the same free-constant question for the Mellin `parabolic` term, whose `F0`
+   is likewise pinned (`analytic = F0*delta**s/s`, `b` fit against `Fw - F0`). Q2
+   showed pinning is what costs on the Tikhonov side, so this is now a concrete
+   suspicion rather than speculation.
 
 ## Next session — S5 (multi-Gaussian)
 
