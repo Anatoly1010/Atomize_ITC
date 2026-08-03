@@ -991,6 +991,64 @@ the blocker is the −0.0122 on SHORT (14 % of the catalogue), whose cause is no
 understood. Freeing the constant *and* diagnosing the SHORT regression is a genuine
 open item rather than a closed "do not fix it".
 
+### SHIPPED — `deer_invert_mellin(tau_max=...)` now defaults to `None` (auto)
+
+The one change from this whole line of work that was worth making. `tau_max` **is**
+the Mellin regularization knob — Φ(τ) → 0 at high |τ|, so the truncation sets how
+much amplified noise reaches P(r), exactly as α does in Tikhonov. The signature
+pinned it at **30.0** while `auto_taumax = tau_max is None`, so the documented,
+data-driven 'penalty' selector was off unless a caller opted in — even though the
+GUI ships with its Auto box `setChecked(True)`. The library default contradicted the
+GUI's own default.
+
+Measured over 756 catalogue traces, pinned 30 vs auto: overlap **0.6383 vs 0.8116**
+(Δ −0.1733, t = −46.4), winning on **0.9 %** of traces, roughness 0.620 vs 0.015
+(41×), spurious short-r mass 0.5295 vs 0.1830. Worse at *every* noise level,
+including the cleanest (−0.0221 at σ = 0.0025). The auto cutoff adapts as intended —
+τ ≈ 12–22 on clean traces down to 6 on noisy ones.
+
+Note this **removes** a hard-coded constant rather than adding one, which is why it
+was shipped where the Wiener filter below was not. `deer_analysis.py` is the only
+in-tree caller and always passes `tau_max` explicitly, so GUI behaviour is unchanged;
+the change protects scripts, `epr_auto` and benchmarks. Side effect to know about:
+`n_tau = _ntau_for(tau_max)` runs only in the auto branch, so default callers now
+also get the adaptive τ-grid instead of a fixed `n_tau = 601`.
+
+Synced byte-identical across all five repos (`deer.py` md5 `a089e260cf`).
+P(r) comparison figures: `~/deer_benchmark/s7_mellin_f0/pr_{easy,hard}.png`.
+
+### NOT shipped — the Wiener inverse filter, measured and rejected
+
+`wiener` (default 0) is implemented but unreachable: nothing in the tree, GUI
+included, ever sets it. Swept properly (`wien.py`, 7 strengths × 756 traces, gate
+evaluated post hoc since the gate only *chooses* between the filtered and plain run).
+
+The best setting is **0.25 gated at `rel = sig_e/λ > 0.08`**, not the docstring's
+0.12: +0.0100 overall (t 10.0), +0.0242 at σ = 0.04, +0.0521 at σ = 0.06, bit-identical
+below the gate, `lo_mass` 0.1830 → 0.1686, and positive in every shape class
+(SHORT +0.0156, the short-r spike it exists to suppress). The optimum is a diagonal
+ridge — stronger filters need a higher gate — and 0.25 is the robust point (flat at
++0.0100 across gates 0.03/0.05/0.08, still +0.0090 with no gate at all, where 0.50
+collapses to +0.0069 blanket and 1.00 goes negative).
+
+**Rejected anyway, for three reasons:**
+
+1. *The gain sits where the answer is not trustworthy.* It is inactive wherever
+   Mellin is doing well (σ ≤ 0.01: Δ = +0.0002 or exactly 0) and only engages where
+   it is already failing (0.694 → 0.719, 0.603 → 0.655). It turns bad answers into
+   less bad ones. On the 28 real traces (`rel` ≤ 0.0301) it never fires at all.
+2. *Per-trace instability.* When it fires it still loses on 24 % of traces, worst
+   −0.156 overlap, and at σ = 0.02 it wins on only 63 % of the traces it touches.
+   One analyses one sample, not 756, with no way to tell which side one landed on.
+3. *It would compromise what the engine is for.* Mellin's value is "no Tikhonov, no
+   NNLS, no L-curve — the only regularizing knob is `delta` together with `tau_max`",
+   both *derived* from the data. A tuned strength plus a tuned gate are two constants
+   fitted to a synthetic catalogue, and tuning Mellin toward Tikhonov's smoothness
+   destroys the independence that makes a Mellin-vs-Tikhonov disagreement diagnostic.
+
+Recorded so nobody re-derives it; the docstring's 0.12 figure is superseded by a
+properly swept 0.25 that is still not worth using.
+
 ## Next session — S5 (multi-Gaussian)
 
 Hand-overs that were waiting for S4 are all resolved: H1 → S4-4 (fixed), H2 → S4-5
