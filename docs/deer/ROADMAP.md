@@ -1646,6 +1646,55 @@ cores, load average 35, a 6-shard round making no progress in 60 minutes. Pinnin
 in ~6 minutes. **Always pin the thread count when sharding on that box**; the
 per-process CPU readout looks like a healthy 100 % either way.
 
+## Known tensions between the recent short-r work (read before adding another)
+
+Four shipped mechanisms now attack the same artefact — spurious short-r / grid-edge
+mass — and they were each justified against a baseline that lacked the others. The
+overlap is measured, not hypothetical: `echo_head` fell **+0.0046 → +0.0033 → +0.0016**
+as `pre_zero` and `reg_edges` landed under it. **Anything new aimed at short-r mass
+must be measured against all four, not against the historical baseline**, or it will
+book a gain that is already being paid for elsewhere.
+
+1. **The Wiener rejection argues against `echo_head`.** S7 rejected the Wiener filter
+   partly on principle: tuning one engine toward the other "destroys the independence
+   that makes a Mellin-vs-Tikhonov disagreement diagnostic", and objected to two
+   constants fitted to a synthetic catalogue. `echo_head` IS the Tikhonov analogue of
+   Mellin's δ-split, with two fitted constants (`head_level` 0.60,
+   `head_ratio_max` 1.25) — the same convergence with the sign reversed. It is
+   opt-in and default-off, which is the mitigating difference, but by S7's own
+   standard it faced a lower bar than it should have.
+
+2. **The two engines now fit DIFFERENT DATA on the same trace.** `pre_zero='even'` is
+   Tikhonov-only (Mellin integrates on a log-T grid, `_gauss_mc` assumes uniform
+   sampling), so on a trace with 15 pre-t₀ samples the Tikhonov engines see 161 points
+   and Mellin/gauss 146. Cross-engine disagreement was supposed to diagnose METHOD;
+   part of it is now the input. This undercuts the S6 cross-engine item and should be
+   stated wherever the two are compared.
+
+3. **`reg_edges` and the alias warning give opposite advice.** `reg_edges`: keep r_min
+   generous and let the operator work, because closing the edge is wrong when the truth
+   sits at the boundary. The alias warning: raise r_min to ~1.88 nm on a 32 ns trace.
+   For a coarse-sampled sample with a genuinely short distance these conflict, and the
+   conflict is real — clamping costs −0.0123 on the SHORT class at 32 ns. **Resolution
+   for now: on coarse traces prefer raising r_min ONLY when no short distance is
+   expected; otherwise accept the alias warning and keep the grid.** A principled rule
+   (e.g. raise r_min but disable `reg_edges` when clamped) is unmeasured.
+
+4. **`fit_zero_time` defaults balance a trade-off that shifted.** `xcheck` is off partly
+   because "a slightly-late t0 compensates a Mellin forward bias" — but the estimator is
+   shared, and Tikhonov's t0 sensitivity dropped materially with `pre_zero`. The
+   default has not been re-derived since.
+
+5. **CHECKED and clear:** `echo_head`'s guard threshold was fitted under the plain
+   operator and its `r_mean` input now comes from a `reg_edges` inversion, so it could
+   have drifted. Re-run on the 28 real traces under the shipped code: sample4 still
+   gates off 7/7 with d_rms +0.00000 and sample1-3 still keep the head 5/7 each. The
+   calibration survived.
+
+Also note: roadmap sessions BEFORE 2026-08-04 quote absolute `lo_mass` figures measured
+with the free-edge operator. They are internally consistent but not comparable with
+anything measured after `reg_edges`.
+
 ## Next session — S5 (multi-Gaussian)
 
 Hand-overs that were waiting for S4 are all resolved: H1 → S4-4 (fixed), H2 → S4-5
