@@ -1943,6 +1943,7 @@ class MainWindow(QMainWindow):
                     bg_params=bgp, scan_lcurve=scan_lc, echo_head=echo_head)
                 band = None
             # display axis in acquisition time, over exactly the samples the engine kept
+            res['r_min_requested'] = float(np.min(r))
             t_eng = np.asarray(res['t'], float)
             res['pre'] = self._pre_zero(res, x, v, t_us, tf, t_eng)
             res['t'] = t_eng + t0_disp * tf
@@ -2026,6 +2027,7 @@ class MainWindow(QMainWindow):
                     fit_dim=fit_dim, n_mc=n_mc, **mk)
                 band = None
             # display axis in acquisition time, over exactly the samples the engine kept
+            res['r_min_requested'] = float(np.min(r))
             t_eng = np.asarray(res['t'], float)
             res['pre'] = self._pre_zero(res, x, v, t_us, tf, t_eng)
             res['t'] = t_eng + t0_disp * tf
@@ -2116,6 +2118,7 @@ class MainWindow(QMainWindow):
                     fit_dim=fit_dim, n_mc=n_mc, **gk)
                 band = None
             # display axis in acquisition time, over exactly the samples the engine kept
+            res['r_min_requested'] = float(np.min(r))
             t_eng = np.asarray(res['t'], float)
             res['pre'] = self._pre_zero(res, x, v, t_us, tf, t_eng)
             res['t'] = t_eng + t0_disp * tf
@@ -2618,14 +2621,16 @@ class MainWindow(QMainWindow):
         if wht is not None and np.isfinite(wht['durbin_watson']):
             verdict = (' &nbsp;<i>(' + ('white' if wht['white'] else 'structured')
                        + f', r₁={wht["acf1"]:+.2f})</i>')
-        # sampling-resolution limit: grid points below it are unconstrained
+        # sampling-resolution limit: the engines now CLAMP to it, so compare against
+        # what was asked for, not against the grid that came back
         ra = res.get('r_alias')
         alias_line = ''
         try:
-            if ra and float(np.min(np.asarray(res['r'], float))) < float(ra) - 1e-9:
+            req = res.get('r_min_requested')
+            if ra and req is not None and float(req) < float(ra) - 1e-9:
                 alias_line = (
-                    '<span style="color: rgb(214, 39, 40);">r min below the '
-                    f'{float(ra):.2f} nm sampling limit</span><br>')
+                    '<span style="color: rgb(214, 39, 40);">r min raised '
+                    f'{float(req):.2f} → {float(ra):.2f} nm: sampling limit</span><br>')
         except Exception:
             alias_line = ''
         info_html = (

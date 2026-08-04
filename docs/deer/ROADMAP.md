@@ -1599,10 +1599,27 @@ same quantity at **+0.0018, t = +0.1** — same size, opposite sign, both consis
 zero. There is no measured short-distance cost to clamping. The claim also reached
 commit `150e429`'s message, which cannot be edited; this is the correction of record.
 
-**Shipped as a WARNING, not a clamp**, and that decision now rests on ONE argument
-rather than two: the distance grid is the user's choice and silently moving it changes
-what gets reported. The evidence for clamping is in fact stronger than first measured —
-see the tensions section — so revisiting the default is a legitimate open question. `alias_r_min(t)` is public,
+**NOW SHIPPED AS A CLAMP** (`clamp_alias=True`, opt out with `False`). Once the
+short-distance objection turned out to be noise, the only argument left for warning was
+that the grid is the user's to choose — and a silently unconstrained grid is the worse
+of the two surprises. `_apply_alias_floor` drops the sub-floor points in ALL FIVE entry
+points (`deer_invert`, `deer_invert_joint`, `deer_invert_mellin`, `deer_invert_gauss`,
+`deer_validate`) so every engine and the validation ensemble stay on one grid. If
+clamping would leave fewer than 8 points it refuses and says to lower r_max or sample
+faster instead. The GUI reports it as "r min raised 1.50 → 1.88 nm: sampling limit".
+
+Measured per engine before adopting the default (Tikhonov numbers in the tensions
+section):
+
+| engine | dt 24 ns | dt 32 ns |
+|---|---|---|
+| Tikhonov | +0.0071 (t 4.1) | +0.0080 (t 2.7) |
+| Mellin | +0.0025 (t 1.3); non-short +0.0047 (t 3.0) | +0.0069 (t 1.9); non-short +0.0065 (t 2.1) |
+| multi-Gaussian | +0.0010 (t 0.3) | +0.0026 (t 1.1) |
+
+Mellin is significantly positive on non-short shapes; the multi-Gaussian is neutral but
+never negative — unlike the `even_fold` case, where it was consistently negative across
+three low-noise bins and therefore kept `'crop'`. Exactly a no-op at dt <= 16 ns. `alias_r_min(t)` is public,
 `_warn_alias` raises a RuntimeWarning from both Tikhonov engines (precedent:
 `background_fit`'s degenerate-lambda warning), the result dict carries `r_alias`, and
 the GUI shows a red "r min below the N nm sampling limit" line in the info panel that
