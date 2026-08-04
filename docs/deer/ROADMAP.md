@@ -27,6 +27,7 @@ the plan's *Model allocation* for why that substitutes.
 | S3 Mellin transform core | **DONE + VERIFIED + FIXED** 2026-07-29 | [REVIEW_S3_mellin.md](REVIEW_S3_mellin.md) |
 | S4 Mellin engine + joint background | **DONE + VERIFIED + FIXED** 2026-07-30 — 13 findings judged: 10 confirmed, 3 plausible, 0 refuted; all confirmed fixed, **none as suggested**. H1 and H2 both answered and closed. | [REVIEW_S4_mellin_engine.md](REVIEW_S4_mellin_engine.md) |
 | S5 Multi-Gaussian | not started | |
+| **Tikhonov defect round** (out of band) | **DONE 2026-08-04 + PORTED + PUSHED** — 4 defects fixed (`pre_zero`, `reg_edges`, the sampling floor, `deer_validate` pre-crop) + 1 opt-in feature; see the 2026-08-04 session | this file |
 | S6 Cross-engine, validation, GUI | not started — carries the on-demand residual bootstrap, the joint/Mellin band propagation S4 disclosed, S3's ME₁-ε placement, and S4's note queue | |
 
 ---
@@ -1052,7 +1053,7 @@ properly swept 0.25 that is still not worth using.
 ## The Tikhonov echo-top bump on `gauss_broad` is a REGRESSION — **RESOLVED 2026-08-04**
 
 **Answer, for anyone reading only this far: the culprit is `a64098e`'s
-`_crop_pre_zero`, not its zero-time fixes, and the fix is in `deer.py` (uncommitted).
+`_crop_pre_zero`, not its zero-time fixes; fixed in `9a4bf6f`.
 Jump to the 2026-08-04 session below.** The lead as it stood on 2026-08-03 follows,
 kept because two of its guesses were wrong in instructive ways.
 
@@ -1071,8 +1072,10 @@ cd ~/deer_benchmark/s7_mellin_f0
 SLUG=gauss_broad SIGMA=0.04 CONDS=hard,hard2 python3 t0diag.py   # -> t0diag_*.png
 python3 t0_cause.py        # same trace at fitted / true / +-1 sample zero time
 python3 t0_ab.py           # A/B two git revisions of deer.py side by side
-cd ~/deer_benchmark/s8_tik_taper && python3 bisect_bump.py       # WHEN it appeared
 ```
+**Do NOT use `s8_tik_taper/bisect_bump.py`** — its first-difference metric cannot see
+this artefact (it reads negative at every revision). Use `s9_t0_crop/bisect2.py`, which
+scores the curvature instead.
 `bisect_bump.py` walks the deer.py revisions and reports, per revision, the largest
 positive step of `F_fit` inside the first 300 ns (0 = clean monotone decay, which is
 what a broad single Gaussian must give), the sub-2.5 nm mass, and the |t0| error.
@@ -1164,7 +1167,24 @@ the same function. The full implementation and its benchmark live in
 `~/deer_benchmark/s8_tik_taper/` (`taper.py`, `sweep_taper.json`, `summ.py`,
 `post20_check.py`); re-apply from there if it is wanted after the bump is fixed.
 
-## Session 2026-08-04 — the bump is the pre-zero CROP; fixed in `deer.py` (uncommitted)
+## Session 2026-08-04 — the bump is the pre-zero CROP (and three more defects)
+
+**Shipped, committed and ported to all five repos.** In order:
+
+| commit | change | catalogue effect |
+|---|---|---|
+| `9a4bf6f` | `pre_zero='even'` — keep the pre-zero samples that pass a mirror test | +0.0082 (t 7.6) |
+| `aafa27a` | `echo_head` — guarded even echo-top head, **opt-in, default off** | +0.0016 (t 3.2) |
+| `4d563d8` | `reg_edges=True` — close the regularization operator's free ends | +0.0046 (t 5.1) |
+| `5f1bb45` | sampling-resolution floor, first as a warning | — |
+| `2f10ce7` | `pre_zero='even_fold'` for Mellin — all engines on the same data | +0.0064 (t 5.2) |
+| `7524374` | tensions #3/#4 closed; `xcheck` docstring corrected; a claim of mine retracted | — |
+| `bf215c6` | `clamp_alias=True` — the floor now clamps rather than warns | +0.0071…+0.0080 |
+
+Ported ITC → plain → NIOCH / NIOCH_Q / Cryomech; `deer_analysis.py` ITC → the two
+endstation forks. `deer.py` and `deer_analysis.py` MUST ship together.
+
+The detail, the mechanism and the refuted alternatives follow.
 
 Artefacts in `~/deer_benchmark/s9_t0_crop/`. Fable was available this session and was
 consulted on the inverse-theory side; its parity argument is the spine of what follows.
@@ -1273,7 +1293,7 @@ mean, 0.026 max). And the statistic PREDICTS where keeping hurts: on the 7 trace
 above 3σ the V-residual degrades 44 % if the pre-zero samples are kept, on the 21
 below, 4 %.
 
-### SHIPPED (uncommitted) — `pre_zero='even'` on the two Tikhonov entry points
+### SHIPPED `9a4bf6f` — `pre_zero='even'` on the two Tikhonov entry points
 
 `_crop_pre_zero(t, V, policy='crop'|'even', tol=3.0)`. Under `'even'` it walks outward
 from t = 0 and keeps the contiguous pre-zero run whose mirror residual stays inside
@@ -1414,9 +1434,10 @@ long-r problem, not all of it; the remainder is the physical limit already named
 7 nm one dipolar period is ~6.6 µs, so a 200–300 ns head is a few percent of a period
 and the echo-top curvature IS the measurement.
 
-**Status: SHIPPED (uncommitted at the time of writing, then committed) as
-`deer_invert_joint(echo_head=True)`, default OFF.** The guard below clears s6's
-acceptance. `head_pair` is the construction that ships, not `head_1s`.
+**Status: SHIPPED `aafa27a` as `deer_invert_joint(echo_head=True)`, default OFF.**
+The guard below clears s6's acceptance. `head_pair` is the construction that ships,
+not `head_1s`. Note its measured value fell to **+0.0016** once `reg_edges` landed —
+see the tensions section before relying on the +0.0035 quoted below.
 
 ### The guard — and the blocker was mis-framed as a distance problem
 
@@ -1599,7 +1620,7 @@ same quantity at **+0.0018, t = +0.1** — same size, opposite sign, both consis
 zero. There is no measured short-distance cost to clamping. The claim also reached
 commit `150e429`'s message, which cannot be edited; this is the correction of record.
 
-**NOW SHIPPED AS A CLAMP** (`clamp_alias=True`, opt out with `False`). Once the
+**SHIPPED `bf215c6` AS A CLAMP** (`clamp_alias=True`, opt out with `False`). Once the
 short-distance objection turned out to be noise, the only argument left for warning was
 that the grid is the user's to choose — and a silently unconstrained grid is the worse
 of the two surprises. `_apply_alias_floor` drops the sub-floor points in ALL FIVE entry
@@ -1667,91 +1688,50 @@ cores, load average 35, a 6-shard round making no progress in 60 minutes. Pinnin
 in ~6 minutes. **Always pin the thread count when sharding on that box**; the
 per-process CPU readout looks like a healthy 100 % either way.
 
-## Known tensions between the recent short-r work (read before adding another)
+## Known tensions between the short-r mechanisms (read before adding another)
 
-Four shipped mechanisms now attack the same artefact — spurious short-r / grid-edge
-mass — and they were each justified against a baseline that lacked the others. The
-overlap is measured, not hypothetical: `echo_head` fell **+0.0046 → +0.0033 → +0.0016**
-as `pre_zero` and `reg_edges` landed under it. **Anything new aimed at short-r mass
-must be measured against all four, not against the historical baseline**, or it will
-book a gain that is already being paid for elsewhere.
+Four shipped mechanisms attack the same artefact — spurious short-r / grid-edge mass —
+and each was justified against a baseline that lacked the others. The overlap is
+measured, not hypothetical: `echo_head` fell **+0.0046 → +0.0033 → +0.0016** as
+`pre_zero` and `reg_edges` landed under it. **Anything new aimed at short-r mass must
+be measured against all four**, or it books a gain already paid for elsewhere. This is
+the one item here that cannot be closed — only managed.
 
-1. **The Wiener rejection argues against `echo_head`.** S7 rejected the Wiener filter
-   partly on principle: tuning one engine toward the other "destroys the independence
-   that makes a Mellin-vs-Tikhonov disagreement diagnostic", and objected to two
-   constants fitted to a synthetic catalogue. `echo_head` IS the Tikhonov analogue of
-   Mellin's δ-split, with two fitted constants (`head_level` 0.60,
-   `head_ratio_max` 1.25) — the same convergence with the sign reversed. It is
-   opt-in and default-off, which is the mitigating difference, but by S7's own
-   standard it faced a lower bar than it should have.
+Five specific tensions were raised and chased; four are closed:
 
-2. **FIXED — the two engines were fitting DIFFERENT DATA on the same trace.**
-   `pre_zero='even'` was Tikhonov-only, so on a trace with 15 pre-t₀ samples Tikhonov
-   saw 161 points and Mellin/gauss 146: a cross-engine disagreement was partly the
-   input, not the method. Mellin now takes `pre_zero='even_fold'` — the same trusted
-   samples averaged into their positive twins, which keeps t >= 0 and the uniform
-   spacing that `u = ln T` and `_pake_transform` require. It is not merely
-   consistency: **+0.0064 overlap (t 5.2, 62 % win) on 756 traces**, +0.0226 at
-   σ = 0.06, positive at every noise level, because Mellin's δ-split fits its head
-   parabola's curvature from the data on [0, δ] and folding halves the noise there.
+| # | tension | outcome |
+|---|---|---|
+| 2 | engines fitting different sample sets | **fixed** `2f10ce7` — Mellin takes `even_fold`; +0.0064 (t 5.2), not just consistency |
+| 3 | `reg_edges` vs the alias floor | **refuted** — additive, `clamp + edges` best in every cell incl. SHORT |
+| 4 | `xcheck` default resting on a stale trade-off | **resolved** — default right, reasoning replaced; it is now worse on BOTH axes |
+| 5 | `echo_head` guard calibrated under the old operator | **checked, survived** — sample4 still 0/7, d_rms +0.00000 |
+| 6 | `deer_validate` pre-cropping (found while fixing #2) | **fixed** — the policy was a silent no-op through the whole sweep |
 
-   The multi-Gaussian engine was measured too and **keeps `'crop'`**: +0.0034 at
-   t = 1.7 is not significant and it is mildly negative at low noise (−0.0017 at
-   σ = 0.0025). So Tikhonov and Mellin — the pair the cross-engine argument is about —
-   now agree on the data; `gauss` remains the odd one out, deliberately and measured.
+1. **The Wiener rejection still argues against `echo_head`, and this one stands.**
+   S7 rejected the Wiener filter partly on principle — tuning one engine toward the
+   other "destroys the independence that makes a Mellin-vs-Tikhonov disagreement
+   diagnostic" — and partly for two constants fitted to a synthetic catalogue.
+   `echo_head` IS the Tikhonov analogue of Mellin's δ-split, with two fitted constants
+   (`head_level` 0.60, `head_ratio_max` 1.25): the same convergence, sign reversed.
+   Default-off is the mitigating difference, but by S7's own standard it faced a lower
+   bar than it should have — and it is now worth only +0.0016. **If this stack is ever
+   simplified, `echo_head` is the piece to drop first.**
 
-   **A sixth inconsistency surfaced while fixing this, and is also fixed:**
-   `deer_validate` cropped at entry and THEN called the engine, so the mirror policy
-   was a silent no-op through the whole validation sweep — every trial fitted a
-   different sample set from the direct inversion it exists to validate. It now takes
-   `pre_zero` and passes it through.
+### A correction of record, kept deliberately
 
-3. **RESOLVED — `reg_edges` and the alias warning do NOT conflict; they are additive.**
-   The worry was that raising r_min to the alias floor puts the grid boundary exactly
-   where short distances live, so closing that boundary would double-penalise them.
-   Measured as a 2x2 (`t3_rmin_edges.py`, 189 traces per sampling), paired:
+The figure "clamping costs −0.0123 on the SHORT class at 32 ns" was **mine, and it was
+noise stated as fact**: recomputed paired it is t = −0.6 on n = 36, and an independent
+replication puts the same quantity at +0.0018 (t = +0.1). It drove the original
+warn-rather-than-clamp decision and reached commit `150e429`'s message, which cannot be
+edited. Once retracted, the clamp became the better default (`bf215c6`).
 
-   | dt | clamp effect (edges on) | edges effect (clamped) |
-   |---|---|---|
-   | 24 ns | +0.0071 (t 4.1) | +0.0054 (t 2.1) |
-   | 32 ns | +0.0080 (t 2.7) | +0.0070 (t 2.0) |
+The general lesson, since the same trap appeared three times this session: **the SHORT
+subset is n = 36 and swings ±0.01 between replications.** Read t, not the mean, on any
+per-class number from that subset.
 
-   `clamp + edges` is the best of the four cells at both samplings and in every shape
-   class **including SHORT** — the cell predicted to be worst. Each change helps with
-   the other already applied, so there is no rule to pick between them.
-
-   This also corrects the record: the "clamping costs −0.0123 on SHORT" figure that
-   motivated the worry is not significant (t −0.6, n 36) and replicates at +0.0018
-   (t +0.1). See the correction in the alias section.
-
-   **Open, and now better supported than when it was decided:** the clamp effect is
-   +0.007…+0.008 at t 2.7–4.1, comparable to `reg_edges` itself, with no measured
-   short-distance cost. The default is still WARN rather than clamp, on the single
-   remaining argument that the grid belongs to the user. Worth a deliberate decision
-   rather than inheriting mine.
-
-4. **RESOLVED — `xcheck` stays off, but its stated reason was stale.** Re-measured
-   over 252 traces (`t4_xcheck.py`), it is now worse on BOTH axes: mean |t0| error
-   8.5 → **21.3 ns** (worst 84 → 150), and overlap **−0.0215 (t −6.5) on Tikhonov,
-   −0.0196 (t −5.5) on Mellin**, losing on ~81 % of traces at every noise level.
-
-   The old docstring said xcheck IMPROVED t0 accuracy (5.1 → 4.0 ns) and was off only
-   because a slightly-late t0 compensated a Mellin forward bias. Both legs are stale:
-   the parabola/centroid estimator has improved since (noise-aware gate, symmetric
-   window, boundary/vertex checks), so the residual search it defers to is no longer
-   the more robust of the two. No Mellin-specific argument is needed any more, and the
-   shared-estimator worry does not bite — both engines move the same way. Docstring
-   corrected; no behaviour change.
-
-5. **CHECKED and clear:** `echo_head`'s guard threshold was fitted under the plain
-   operator and its `r_mean` input now comes from a `reg_edges` inversion, so it could
-   have drifted. Re-run on the 28 real traces under the shipped code: sample4 still
-   gates off 7/7 with d_rms +0.00000 and sample1-3 still keep the head 5/7 each. The
-   calibration survived.
-
-Also note: roadmap sessions BEFORE 2026-08-04 quote absolute `lo_mass` figures measured
-with the free-edge operator. They are internally consistent but not comparable with
-anything measured after `reg_edges`.
+Also: roadmap sessions BEFORE 2026-08-04 quote absolute `lo_mass` figures measured with
+the free-edge operator. Internally consistent, not comparable with anything measured
+after `reg_edges`.
 
 ## Next session — S5 (multi-Gaussian)
 
