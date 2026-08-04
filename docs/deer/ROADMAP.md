@@ -1414,9 +1414,9 @@ long-r problem, not all of it; the remainder is the physical limit already named
 7 nm one dipolar period is ~6.6 µs, so a 200–300 ns head is a few percent of a period
 and the echo-top curvature IS the measurement.
 
-**Status: still not shipped**, but the guard below now clears s6's acceptance, so the
-head is implementable for the first time. `head_pair` is the construction to guard,
-not `head_1s`.
+**Status: SHIPPED (uncommitted at the time of writing, then committed) as
+`deer_invert_joint(echo_head=True)`, default OFF.** The guard below clears s6's
+acceptance. `head_pair` is the construction that ships, not `head_1s`.
 
 ### The guard — and the blocker was mis-framed as a distance problem
 
@@ -1475,6 +1475,33 @@ against the unguarded head's +0.00013 / +0.072 nm. sample1-3 keep the head (5/7,
   residual criterion by construction but residual is not accuracy: +0.0017 on the
   catalogue against +0.0034, NEGATIVE on long/broad, and on real traces it switches
   the head off almost everywhere (2/28 keep it).
+
+### As shipped — and the port bug that nearly went out with it
+
+`deer.py`: `_first_min_time`, `_head_delta` (the curvature rule), `_pair_fit`,
+`_even_head`, `_r_from_curvature`, `_echo_head_solve`, wired into
+`deer_invert_joint(echo_head=False, head_level=0.60, head_cap=0.35,
+head_ratio_max=1.25)`. The result carries an `echo_head` dict (applied / delta /
+r_eff / r_ratio). The unheaded solution `l_curve` already computed is reused for the
+guard, so the second regularization scan is paid only when the head actually fires.
+GUI: a "Parabolic echo-top head (guarded)" checkbox on the Tikhonov tab, gated to the
+joint engine. Default OFF -- the gain is real but it costs a second scan and it moves
+every reported distance, so it is a per-session choice, not a silent change.
+
+Measured through the SHIPPED path, 756 traces: **+0.0033 (t 5.6)**, head applied on
+66 %, SHORT +0.0057, LONG/broad +0.0016, and only sigma = 0.0025 marginally negative
+(−0.0005, t −0.5). Real ring test: sample4 head off 7/7 -> **d_rms +0.00000,
+d_mean +0.000**; sample1-3 keep the head (5/7 each) and are unchanged.
+
+**The port bug, worth knowing about.** The bench took `r_eff` for the guard from the
+quadratic coefficient of the **quartic** pair fit; the first port used the two-term
+fit's. Over a window wide enough to denoise, the `(2/35)w^4 t^4` term is not
+negligible and biases a two-term `b`, so `r_eff` came out too large, the ratio too
+small, and the guard fired on only **3 of the 7** traces it exists for. The catalogue
+number was **+0.0034 either way** and did not notice; only the real traces did. The
+replacement parabola stays at order 2 (two-parameter denoising is the point) while the
+diagnostic reads order 4 (it wants an accurate `<w^2>`) -- the two are deliberately
+different, and `_pair_fit(order=)` is the seam.
 
 **Two honest caveats on the guard.** The threshold sits in a narrow gap — the highest
 kept real trace is 1.227 and the lowest gated is 1.270 — so 1.25 is a constant fitted

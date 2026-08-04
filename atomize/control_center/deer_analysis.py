@@ -703,6 +703,27 @@ class MainWindow(QMainWindow):
         self.deer_engine.currentIndexChanged.connect(self._general_params_update)
         grid.addWidget(self.deer_engine, r, 1); r += 1
 
+        self.deer_echo_head = QCheckBox('Parabolic echo-top head (guarded)')
+        self.deer_echo_head.setStyleSheet(CHECKBOX_STYLE)
+        self.deer_echo_head.setToolTip(
+            'Replace the echo top with an even parabola fitted to the trace\'s own '
+            'even part, [F(u)+F(−u)]/2. F is even about t₀, so the head carries far '
+            'fewer degrees of freedom than it has samples and this denoises the '
+            'highest-leverage part of the trace.\n'
+            'Worth +0.0035 distance-overlap over 756 synthetic traces (t = 4.7); '
+            'guarded it holds +0.0034 while declining the head on 27 % of them.\n'
+            'The guard compares the recovered mean distance with the distance the '
+            'echo-top curvature alone implies and skips the head when they disagree '
+            'by more than 25 % — a BREADTH test: a broad P(r) has an echo top '
+            'dominated by its shortest component (⟨ω²⟩ ∝ r⁻⁶), and a two-parameter '
+            'head cannot stand in for that mixture. Without it the head shifted the '
+            'mean distance +0.07…+0.15 nm on the broad real traces of the ring test.\n'
+            'Joint background only, and it needs pre-t₀ samples (the mirrored pairs '
+            'are what make the fit unbiased). Costs a second regularization scan '
+            'when it fires, so it is off by default.')
+        self.deer_echo_head.stateChanged.connect(self._live_update)
+        grid.addWidget(self.deer_echo_head, r, 0, 1, 2); r += 1
+
         # General-background coefficients g(t) = a·exp(b·(t + c·dᵗ)), one per row.
         # Auto (default) fits all four and writes the fitted values back here;
         # uncheck Auto to set them by hand (used directly as the background, no
@@ -1889,6 +1910,7 @@ class MainWindow(QMainWindow):
         engine = ('sequential', 'joint', 'none', 'general')[self.deer_engine.currentIndex()]
         dim = float(self.deer_dim.value())
         fit_dim = self.deer_fitdim.isChecked()
+        echo_head = self.deer_echo_head.isChecked() and engine == 'joint'
         validate = self.deer_validate_chk.isChecked()
         fit_t0 = self.deer_fit_t0.isChecked()
         bgs_disp = float(self.deer_bgstart.value())
@@ -1918,7 +1940,7 @@ class MainWindow(QMainWindow):
                 res = deer_module.deer_invert(
                     t_us, v, r=r, bg_start=bg_us, bg_end=bg_end_us, dim=dim,
                     fit_dim=fit_dim, alpha=alpha, alpha_factor=afac, engine=engine,
-                    bg_params=bgp, scan_lcurve=scan_lc)
+                    bg_params=bgp, scan_lcurve=scan_lc, echo_head=echo_head)
                 band = None
             # display axis in acquisition time, over exactly the samples the engine kept
             t_eng = np.asarray(res['t'], float)
