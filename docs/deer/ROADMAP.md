@@ -1664,12 +1664,26 @@ book a gain that is already being paid for elsewhere.
    opt-in and default-off, which is the mitigating difference, but by S7's own
    standard it faced a lower bar than it should have.
 
-2. **The two engines now fit DIFFERENT DATA on the same trace.** `pre_zero='even'` is
-   Tikhonov-only (Mellin integrates on a log-T grid, `_gauss_mc` assumes uniform
-   sampling), so on a trace with 15 pre-t₀ samples the Tikhonov engines see 161 points
-   and Mellin/gauss 146. Cross-engine disagreement was supposed to diagnose METHOD;
-   part of it is now the input. This undercuts the S6 cross-engine item and should be
-   stated wherever the two are compared.
+2. **FIXED — the two engines were fitting DIFFERENT DATA on the same trace.**
+   `pre_zero='even'` was Tikhonov-only, so on a trace with 15 pre-t₀ samples Tikhonov
+   saw 161 points and Mellin/gauss 146: a cross-engine disagreement was partly the
+   input, not the method. Mellin now takes `pre_zero='even_fold'` — the same trusted
+   samples averaged into their positive twins, which keeps t >= 0 and the uniform
+   spacing that `u = ln T` and `_pake_transform` require. It is not merely
+   consistency: **+0.0064 overlap (t 5.2, 62 % win) on 756 traces**, +0.0226 at
+   σ = 0.06, positive at every noise level, because Mellin's δ-split fits its head
+   parabola's curvature from the data on [0, δ] and folding halves the noise there.
+
+   The multi-Gaussian engine was measured too and **keeps `'crop'`**: +0.0034 at
+   t = 1.7 is not significant and it is mildly negative at low noise (−0.0017 at
+   σ = 0.0025). So Tikhonov and Mellin — the pair the cross-engine argument is about —
+   now agree on the data; `gauss` remains the odd one out, deliberately and measured.
+
+   **A sixth inconsistency surfaced while fixing this, and is also fixed:**
+   `deer_validate` cropped at entry and THEN called the engine, so the mirror policy
+   was a silent no-op through the whole validation sweep — every trial fitted a
+   different sample set from the direct inversion it exists to validate. It now takes
+   `pre_zero` and passes it through.
 
 3. **`reg_edges` and the alias warning give opposite advice.** `reg_edges`: keep r_min
    generous and let the operator work, because closing the edge is wrong when the truth
