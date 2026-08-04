@@ -1591,14 +1591,18 @@ at 32 ns, and is exactly a no-op at 8 and 16 ns where `r_alias` < 1.5 — which 
 useful sanity check on the harness. Sub-alias mass in the unclamped runs is 0.009
 (24 ns) and 0.020 (32 ns).
 
-Splitting by shape settles the design question: at 32 ns the gain is **+0.0090
-(t 3.9, the strongest signal in the whole alias study) on non-short shapes but
-−0.0123 on the SHORT class** — clamping to 1.88 nm clips a genuinely 2.0 nm
-distribution. So a clamp would trade one bias for another on exactly the samples that
-most need short distances.
+**CORRECTION (same day).** An earlier version of this section said the 32 ns gain was
+"−0.0123 on the SHORT class", i.e. that clamping clips genuinely short distributions.
+**That was noise read as fact.** Recomputed paired it carries **t = −0.6 on n = 36**,
+and an independent replication (`t3_rmin_edges.py`, different noise seeds) puts the
+same quantity at **+0.0018, t = +0.1** — same size, opposite sign, both consistent with
+zero. There is no measured short-distance cost to clamping. The claim also reached
+commit `150e429`'s message, which cannot be edited; this is the correction of record.
 
-**Shipped as a WARNING, not a clamp** — the grid is the user's, a clamp would damage
-real short-distance samples (above), and only the 24 ns row is significant overall. `alias_r_min(t)` is public,
+**Shipped as a WARNING, not a clamp**, and that decision now rests on ONE argument
+rather than two: the distance grid is the user's choice and silently moving it changes
+what gets reported. The evidence for clamping is in fact stronger than first measured —
+see the tensions section — so revisiting the default is a legitimate open question. `alias_r_min(t)` is public,
 `_warn_alias` raises a RuntimeWarning from both Tikhonov engines (precedent:
 `background_fit`'s degenerate-lambda warning), the result dict carries `r_alias`, and
 the GUI shows a red "r min below the N nm sampling limit" line in the info panel that
@@ -1685,19 +1689,42 @@ book a gain that is already being paid for elsewhere.
    different sample set from the direct inversion it exists to validate. It now takes
    `pre_zero` and passes it through.
 
-3. **`reg_edges` and the alias warning give opposite advice.** `reg_edges`: keep r_min
-   generous and let the operator work, because closing the edge is wrong when the truth
-   sits at the boundary. The alias warning: raise r_min to ~1.88 nm on a 32 ns trace.
-   For a coarse-sampled sample with a genuinely short distance these conflict, and the
-   conflict is real — clamping costs −0.0123 on the SHORT class at 32 ns. **Resolution
-   for now: on coarse traces prefer raising r_min ONLY when no short distance is
-   expected; otherwise accept the alias warning and keep the grid.** A principled rule
-   (e.g. raise r_min but disable `reg_edges` when clamped) is unmeasured.
+3. **RESOLVED — `reg_edges` and the alias warning do NOT conflict; they are additive.**
+   The worry was that raising r_min to the alias floor puts the grid boundary exactly
+   where short distances live, so closing that boundary would double-penalise them.
+   Measured as a 2x2 (`t3_rmin_edges.py`, 189 traces per sampling), paired:
 
-4. **`fit_zero_time` defaults balance a trade-off that shifted.** `xcheck` is off partly
-   because "a slightly-late t0 compensates a Mellin forward bias" — but the estimator is
-   shared, and Tikhonov's t0 sensitivity dropped materially with `pre_zero`. The
-   default has not been re-derived since.
+   | dt | clamp effect (edges on) | edges effect (clamped) |
+   |---|---|---|
+   | 24 ns | +0.0071 (t 4.1) | +0.0054 (t 2.1) |
+   | 32 ns | +0.0080 (t 2.7) | +0.0070 (t 2.0) |
+
+   `clamp + edges` is the best of the four cells at both samplings and in every shape
+   class **including SHORT** — the cell predicted to be worst. Each change helps with
+   the other already applied, so there is no rule to pick between them.
+
+   This also corrects the record: the "clamping costs −0.0123 on SHORT" figure that
+   motivated the worry is not significant (t −0.6, n 36) and replicates at +0.0018
+   (t +0.1). See the correction in the alias section.
+
+   **Open, and now better supported than when it was decided:** the clamp effect is
+   +0.007…+0.008 at t 2.7–4.1, comparable to `reg_edges` itself, with no measured
+   short-distance cost. The default is still WARN rather than clamp, on the single
+   remaining argument that the grid belongs to the user. Worth a deliberate decision
+   rather than inheriting mine.
+
+4. **RESOLVED — `xcheck` stays off, but its stated reason was stale.** Re-measured
+   over 252 traces (`t4_xcheck.py`), it is now worse on BOTH axes: mean |t0| error
+   8.5 → **21.3 ns** (worst 84 → 150), and overlap **−0.0215 (t −6.5) on Tikhonov,
+   −0.0196 (t −5.5) on Mellin**, losing on ~81 % of traces at every noise level.
+
+   The old docstring said xcheck IMPROVED t0 accuracy (5.1 → 4.0 ns) and was off only
+   because a slightly-late t0 compensated a Mellin forward bias. Both legs are stale:
+   the parabola/centroid estimator has improved since (noise-aware gate, symmetric
+   window, boundary/vertex checks), so the residual search it defers to is no longer
+   the more robust of the two. No Mellin-specific argument is needed any more, and the
+   shared-estimator worry does not bite — both engines move the same way. Docstring
+   corrected; no behaviour change.
 
 5. **CHECKED and clear:** `echo_head`'s guard threshold was fitted under the plain
    operator and its `r_mean` input now comes from a `reg_edges` inversion, so it could
