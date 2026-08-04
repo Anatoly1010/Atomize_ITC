@@ -1688,6 +1688,109 @@ cores, load average 35, a 6-shard round making no progress in 60 minutes. Pinnin
 in ~6 minutes. **Always pin the thread count when sharding on that box**; the
 per-process CPU readout looks like a healthy 100 % either way.
 
+## Session 2026-08-04b — fresh out-of-sample data; the bump was one noise draw
+
+Everything in the defect round above was measured on the s5 catalogue, whose seeds are
+a deterministic function of (condition, shape, sigma, rep). An artefact that is really
+a property of ONE draw would be invisible to all of it and would reproduce identically
+on every re-run. **`~/deer_benchmark/s10_fresh/`** is the answer: 840 curves, base seed
+20260804, five independent realizations per (condition, shape, sigma) side by side in
+one CSV — overlay them and a real artefact sits in the same place in every column while
+a noise-driven one moves. Loads directly in the DEER tool (verified through its own
+loader; the `Time (ns)` label presets the unit). `truth/P_<shape>.csv` and
+`manifest.csv` (every seed) alongside. These are also the first genuinely out-of-sample
+numbers for the shipped stack — `echo_head`'s guard threshold and the head's δ rule
+were partly chosen against s5.
+
+### The reported bump: realization-specific, as suspected
+
+`gauss_broad` shows a shoulder on **5 % of draws**, mean 0.013, worst cell **1 of 5** —
+against 1.39 on the original seed after the crop fix (1.91 before). `short_r20/24/26`
+and `triangle` are at 0 %. The user's hypothesis was right.
+
+### But two long shapes ARE systematic
+
+| shape | reps > thr | mean sh | max sh | mean ov |
+|---|---|---|---|---|
+| `gauss_narrow_long` | 28 % | 0.742 | 16.34 | **0.678** |
+| `gauss_broad_long` | 15 % | 0.301 | 8.44 | 0.826 |
+| `gauss_broad` | 5 % | 0.013 | 0.44 | 0.941 |
+
+Across all 840 curves `corr(shoulder, |t0 err|) = +0.27`, and curves with a shoulder
+average 0.760 overlap against 0.910 without — the metric still indicates, it just
+points at long distances now.
+
+### `gauss_narrow_long` at 20 draws — and the mean is biased, not just the width
+
+It is a NARROW (σ_r 0.25 nm) Gaussian at 5.0 nm. The shape-resolution limit is
+3.62 nm (easy) / 3.23 (hard), so its width is unrecoverable by construction and a low
+overlap is expected physics. What is NOT expected: on `hard` the **mean** is biased
+short by **0.15–0.29 nm** across all 20 draws, and refitting at the TRUE zero time
+barely moves it. Also worth recording because it inverted a prediction: the inversion
+does not return a broadened peak but a **spike ~3x too tall** (peak density 4.40
+against the truth's 1.60) with a V-space residual of 1.17x noise — it fits the data
+fine.
+
+### Cause: the background window opens inside the dipolar evolution
+
+Walking easy → hard one parameter at a time (dt fixed at 10 ns, true t0 throughout)
+eliminated t_max itself, λ, the true k, the regularization (α/4 identical) and the
+solver (Mellin, no Tikhonov and no NNLS, was biased MORE, −0.46). What remains is
+`bg_start` **relative to the dipolar period at that distance**: at 5 nm one period is
+2.4 µs, so `bg_start` = 0.45 µs sits at 0.20 of a period, the fit absorbs the dipolar
+decay, **k comes out 10–33x the truth**, λ falls 0.40 → 0.21, and the over-subtracted
+form factor decays too fast → short distance. Holding t_max at 2.5 µs and moving
+`bg_start` 0.45 → 1.25 µs takes the bias from −0.122 to **+0.001**.
+
+### `k_disagrees` was inverted, and still is not the fix
+
+It compares the joint rate with the SEQUENTIAL tail fit on the same window. In this
+regime both absorb the same decay and agree: `k_ratio` 0.81–0.91 ("no disagreement")
+while k was 10–33x the truth — and it fired on the HEALTHY fits instead. Measured over
+the calibration set: **56 % detection at a 45 % false-alarm rate**, which against a
+25 % base rate lifts the odds only to 29 %.
+
+### Calibration — 1260 cells, 7560 inversions
+
+7 distances × 5 t_max × 6 bg_start fractions × 3 noise × 2 widths, dt fixed, true t0.
+
+| bg_start / T_dd | mean \|d⟨r⟩\| | k/k_true |
+|---|---|---|
+| < 0.50 | 0.21 nm | 8–36× |
+| 0.50–0.75 | 0.092 | 0.9 |
+| 0.75–1.00 | **0.017** | 0.8 |
+| > 1.00 | 0.013 | 0.95 |
+
+The break is at **0.75 periods**, not the 0.5 an earlier six-configuration probe
+suggested. Confined to long distances — no band exceeds 0.018 nm at r ≤ 3.5 nm.
+
+### SHIPPED `2861d47`
+
+* `bg_start_early` — `bg_start` < 0.75 dipolar periods of the RECOVERED distance.
+  **92 % detection, 23 % false alarm.** The sensitive one.
+* `conc_implausible` — the fitted rate implies > 1000 µM spin concentration
+  (`k = 9.974e-4·C·λ`). **43 % / 1 %.** The specific one; it is what says *why* in the
+  catastrophic case (1181 µM implied against a true 30).
+* `k_disagrees` kept but re-documented as "the two background routes disagree", not a
+  reliability verdict.
+* **`k_window_early` REMOVED after measuring 21 %.** It refit the rate on the window's
+  own second half and compared — but on a long-distance trace that second half is still
+  inside the dipolar evolution, so it fails the same way for the same reason. Same
+  structural flaw as `k_disagrees`: a self-consistency test between two views that
+  share the defect. A note in the code says not to re-derive it. **So `k_disagrees` was
+  NOT fixed** — it was documented, and two flags that do the job were added beside it.
+
+Also `67542e1`: the GUI reliability tooltip claimed "yellow — mean & width reliable".
+The width is not recoverable anywhere in that band, and the mean degrades towards its
+top (good to ±0.07 nm at 83 % of the limit, biased 0.15–0.29 nm at 93 %). All three
+places describing the bands were corrected together; the published 3×/5× factors were
+kept, since they are the shared convention.
+
+Caveats: the sweep used a single λ (0.35), concentration (30 µM), dimension (3.0) and
+Gaussian shapes, so the 0.75 threshold may shift with modulation depth — that is what
+sets how strongly the background and dipolar decay compete. The 23 % false alarms are
+cells whose bias falls just under 0.05 nm, so the warning is conservative there.
+
 ## Known tensions between the short-r mechanisms (read before adding another)
 
 Four shipped mechanisms attack the same artefact — spurious short-r / grid-edge mass —
