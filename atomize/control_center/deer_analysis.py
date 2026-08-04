@@ -1920,9 +1920,10 @@ class MainWindow(QMainWindow):
                     fit_dim=fit_dim, alpha=alpha, alpha_factor=afac, engine=engine,
                     bg_params=bgp, scan_lcurve=scan_lc)
                 band = None
-            # display axis stays in acquisition time, cropped like the engine's pre-t0 drop
-            res['t'] = x[t_us >= 0] * tf
-            res['pre'] = self._pre_zero(res, x, v, t_us, tf)
+            # display axis in acquisition time, over exactly the samples the engine kept
+            t_eng = np.asarray(res['t'], float)
+            res['pre'] = self._pre_zero(res, x, v, t_us, tf, t_eng)
+            res['t'] = t_eng + t0_disp * tf
             if bg_end_us is not None:
                 res['background']['bg_end'] = bge_disp * tf
             return {'t0_disp': t0_disp, 'res': res, 'band': band}
@@ -2002,9 +2003,10 @@ class MainWindow(QMainWindow):
                     t_us, v, r=r, bg_start=bg_us, bg_end=bg_end_us, dim=dim,
                     fit_dim=fit_dim, n_mc=n_mc, **mk)
                 band = None
-            # display axis stays in acquisition time, cropped like the engine's pre-t0 drop
-            res['t'] = x[t_us >= 0] * tf
-            res['pre'] = self._pre_zero(res, x, v, t_us, tf)
+            # display axis in acquisition time, over exactly the samples the engine kept
+            t_eng = np.asarray(res['t'], float)
+            res['pre'] = self._pre_zero(res, x, v, t_us, tf, t_eng)
+            res['t'] = t_eng + t0_disp * tf
             if bg_end_us is not None:
                 res['background']['bg_end'] = bge_disp * tf
             return {'t0_disp': t0_disp, 'res': res, 'band': band}
@@ -2091,9 +2093,10 @@ class MainWindow(QMainWindow):
                     t_us, v, r=r, bg_start=bg_us, bg_end=bg_end_us, dim=dim,
                     fit_dim=fit_dim, n_mc=n_mc, **gk)
                 band = None
-            # display axis stays in acquisition time, cropped like the engine's pre-t0 drop
-            res['t'] = x[t_us >= 0] * tf
-            res['pre'] = self._pre_zero(res, x, v, t_us, tf)
+            # display axis in acquisition time, over exactly the samples the engine kept
+            t_eng = np.asarray(res['t'], float)
+            res['pre'] = self._pre_zero(res, x, v, t_us, tf, t_eng)
+            res['t'] = t_eng + t0_disp * tf
             if bg_end_us is not None:
                 res['background']['bg_end'] = bge_disp * tf
             return {'t0_disp': t0_disp, 'res': res, 'band': band}
@@ -2799,12 +2802,18 @@ class MainWindow(QMainWindow):
         this curve. Other engines return their own F_fit."""
         return np.asarray(res['F_fit'], float)
 
-    def _pre_zero(self, res, x, v, t_us, tf):
+    def _pre_zero(self, res, x, v, t_us, tf, t_eng=None):
         """Display-only extension of a result back through t < 0 (before t0).
 
-        The engines drop the pre-t0 samples (deer._crop_pre_zero: the kernel
-        evaluates |ω·t|, so a t<0 sample would be modelled as +|t| evolution and
-        pile P(r) mass at short r), so nothing they return is defined there. This
+        Extends only below the engine's OWN first sample, not below t = 0: the
+        Tikhonov path's `pre_zero='even'` policy keeps the pre-t0 samples that pass
+        a mirror test (deer._crop_pre_zero), so those are fitted, not extrapolated.
+        `t_eng` is the engine's time array; without it the old drop-everything-
+        below-zero assumption is used.
+
+        The engines drop the remaining pre-t0 samples (the kernel evaluates |ω·t|,
+        so such a sample would be modelled as +|t| evolution and pile P(r) mass at
+        short r), so nothing they return is defined there. This
         refits nothing: B(t) and F(t) = K(|t|)·P are both exactly EVEN in t, so
         the fitted curves are read off the engine's own positive-time arrays at
         |t| — evaluation, not extrapolation. The data are put on the engine's
@@ -2814,7 +2823,8 @@ class MainWindow(QMainWindow):
         Returns None when the trace starts at or after the zero time.
         """
         t_us = np.asarray(t_us, float)
-        pre = t_us < 0
+        t_first = 0.0 if t_eng is None or not len(t_eng) else float(np.min(t_eng))
+        pre = t_us < t_first
         if not pre.any():
             return None
         bg = res['background']

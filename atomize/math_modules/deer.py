@@ -311,19 +311,55 @@ def background_general(t, V, bg_start, bg_end=None,
 # --------------------------------------------------------------------------- #
 #  Tikhonov regularization + non-negativity
 # --------------------------------------------------------------------------- #
-def _crop_pre_zero(t, V):
-    """Drop samples before the dipolar zero time.
+def _crop_pre_zero(t, V, policy='crop', tol=3.0):
+    """Handle samples recorded BEFORE the dipolar zero time.
 
-    `dipolar_kernel` evaluates |w*t|, so a t < 0 sample is modelled as evolution at
-    +|t|; the inversion then piles P(r) mass at short r to fit the echo rising edge
-    (a 5 nm pair reads ~2.7 nm). Called from every engine entry point: the GUI
-    passes the full trace, only the benchmark harnesses crop themselves.
+    `policy='crop'` drops them all. `dipolar_kernel` evaluates |w*t|, so a t < 0
+    sample is modelled as evolution at +|t|; where the data there really is the echo
+    rising edge, the inversion pays for the mismatch with P(r) mass at short r.
+
+    `policy='even'` keeps the ones that are demonstrably NOT a rising edge. Dropping
+    them unconditionally has its own cost, and it is the larger one: every K(.,r) is
+    even, so any model form factor has F'(0) = 0 exactly, and on a symmetric window
+    an odd data error is orthogonal to the whole model space -- a zero-time error
+    costs variance and no bias. Cropping to t >= 0 destroys that orthogonality, and
+    the only basis direction that can supply a non-zero initial slope is the short-r
+    end, so a t0 error late by D buys spurious mass ~ (r_s/<r>)^6 * w_s * D there,
+    with the shoulder in F_fit that goes with it. Measured over the 756-trace
+    synthetic catalogue, keeping them is worth +0.008 overlap (t = 7.6), positive at
+    every noise level and in every shape class, and worth more than a PERFECT t0.
+
+    Which ones are safe is decided from the data, not assumed: walk outward from
+    t = 0 and keep the contiguous run whose mirror residual V(-t) - V(+t) stays
+    inside `tol` * sqrt(2) * sigma, since a rising edge, when there is one, sits at
+    the far end. On the YopO ring test this keeps 74 % of the pre-zero samples and
+    moves no reported peak at all, while rejecting the traces whose V-space residual
+    would otherwise degrade (keeping them unconditionally costs 44 % on the 7 traces
+    whose mirror residual exceeds 3 sigma, and 4 % on the other 21).
     """
     t = np.asarray(t, float); V = np.asarray(V, float)
     m = t >= 0.0
     if m.all():
         return t, V, 0
-    return t[m], V[m], int((~m).sum())
+    n_pre = int((~m).sum())
+    tp, Vp = t[m], V[m]
+    if policy != 'even' or len(tp) < 3:
+        return tp, Vp, n_pre
+    sig = _tail_noise(t, V)
+    if not np.isfinite(sig) or sig <= 0.0:      # cannot judge -> crop, as before
+        return tp, Vp, n_pre
+    tn = -t[~m][::-1]                                  # ascending in |t|
+    Vn = V[~m][::-1]
+    thr = tol*np.sqrt(2.0)*sig
+    keep = 0
+    while (keep < len(tn) and tn[keep] <= tp[-1]
+           and abs(Vn[keep] - np.interp(tn[keep], tp, Vp)) <= thr):
+        keep += 1
+    if keep == 0:
+        return tp, Vp, n_pre
+    tk = np.concatenate([-tn[:keep][::-1], tp])
+    Vk = np.concatenate([Vn[:keep][::-1], Vp])
+    return tk, Vk, n_pre - keep
 
 
 def regularization_matrix(n, order=2):
@@ -533,7 +569,7 @@ def tikhonov_ci(K, F, alpha, P, L=None, dr=1.0, z=1.96):
 def deer_invert(t, V, r=None, bg_start=None, bg_end=None, dim=3.0, fit_dim=False,
                 alpha=None, alphas=None, reg_order=2, nu_dd=NU_DD,
                 scan_lcurve=True, method='gcv', engine='sequential',
-                alpha_factor=1.0, **kwargs):
+                alpha_factor=1.0, pre_zero='even', **kwargs):
     """Full DEER pipeline: background-correct V(t), build the kernel, invert to
     P(r) by Tikhonov + NNLS. When `alpha` is not supplied it is chosen
     automatically by `method` ('gcv' default, or 'curvature' for the classic
@@ -561,6 +597,11 @@ def deer_invert(t, V, r=None, bg_start=None, bg_end=None, dim=3.0, fit_dim=False
                        chosen by AICc). Extra params (n_gauss, max_gauss, ic,
                        bg_engine, n_mc) pass through via **kwargs.
 
+    `pre_zero` decides what happens to samples below the zero time -- 'even'
+    (default) keeps the ones that pass a mirror test, 'crop' drops them all; see
+    `_crop_pre_zero`. Tikhonov engines only: 'mellin' integrates on a log-T grid and
+    'gauss' Monte-Carlo assumes uniform sampling, so both always crop.
+
     `t` in us, `r` in nm. With `scan_lcurve` (default) the regularization scan is
     always computed for display, even when an explicit `alpha` is given. Returns a dict:
     t, r, form_factor F(t), F_fit = K P, residuals, P (raw masses), P_norm
@@ -575,7 +616,7 @@ def deer_invert(t, V, r=None, bg_start=None, bg_end=None, dim=3.0, fit_dim=False
                                  dim=dim, fit_dim=fit_dim, alpha=alpha,
                                  alphas=alphas, reg_order=reg_order, nu_dd=nu_dd,
                                  method=method, scan_lcurve=scan_lcurve,
-                                 alpha_factor=alpha_factor)
+                                 alpha_factor=alpha_factor, pre_zero=pre_zero)
     if engine == 'mellin':
         return deer_invert_mellin(t, V, r=r, bg_start=bg_start, bg_end=bg_end,
                                   dim=dim, fit_dim=fit_dim, nu_dd=nu_dd,
@@ -585,7 +626,7 @@ def deer_invert(t, V, r=None, bg_start=None, bg_end=None, dim=3.0, fit_dim=False
                                  dim=dim, fit_dim=fit_dim, nu_dd=nu_dd,
                                  bg_params=bg_params, **kwargs)
     _require_scipy()
-    t, V, _n_pre = _crop_pre_zero(t, V)
+    t, V, _n_pre = _crop_pre_zero(t, V, policy=pre_zero)
     r = default_r_axis() if r is None else np.asarray(r, float)
     if bg_start is None:
         bg_start = t[0] + 0.5*(t[-1] - t[0])
@@ -625,7 +666,7 @@ def deer_invert(t, V, r=None, bg_start=None, bg_end=None, dim=3.0, fit_dim=False
 def deer_invert_joint(t, V, r=None, bg_start=None, bg_end=None, dim=3.0,
                       fit_dim=False, alpha=None, alphas=None, reg_order=2,
                       nu_dd=NU_DD, method='gcv', scan_lcurve=True,
-                      alpha_factor=1.0):
+                      alpha_factor=1.0, pre_zero='even'):
     """DEER inversion with a *joint* (separable-NLLS / variable-projection) fit of
     the background and modulation depth together with the regularized non-negative
     P(r) -- the strategy DeerLab uses. More robust than the sequential
@@ -662,7 +703,7 @@ def deer_invert_joint(t, V, r=None, bg_start=None, bg_end=None, dim=3.0,
     lambda or a distance from this engine.
     """
     _require_scipy()
-    t, V, _n_pre = _crop_pre_zero(t, V)
+    t, V, _n_pre = _crop_pre_zero(t, V, policy=pre_zero)
     r = default_r_axis() if r is None else np.asarray(r, float)
     K = dipolar_kernel(t, r, nu_dd=nu_dd)
     L = regularization_matrix(len(r), reg_order)
@@ -2728,6 +2769,7 @@ def fit_zero_time(t, V, bg_start=None, bg_end=None, n_grid=16, search_frac=0.15,
     opts = dict(kwargs)
     opts['engine'] = 'sequential'
     opts['scan_lcurve'] = False
+    opts['pre_zero'] = 'crop'     # fixed sample set, or the residual is a staircase in s
     opts.pop('alpha_factor', None)
     rr = opts.get('r')
     if rr is not None and len(np.asarray(rr)) > 100:

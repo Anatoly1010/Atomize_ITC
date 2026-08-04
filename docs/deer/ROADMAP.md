@@ -1049,7 +1049,13 @@ collapses to +0.0069 blanket and 1.00 goes negative).
 Recorded so nobody re-derives it; the docstring's 0.12 figure is superseded by a
 properly swept 0.25 that is still not worth using.
 
-## NEXT SESSION (first) — the Tikhonov echo-top bump on `gauss_broad` is a REGRESSION
+## The Tikhonov echo-top bump on `gauss_broad` is a REGRESSION — **RESOLVED 2026-08-04**
+
+**Answer, for anyone reading only this far: the culprit is `a64098e`'s
+`_crop_pre_zero`, not its zero-time fixes, and the fix is in `deer.py` (uncommitted).
+Jump to the 2026-08-04 session below.** The lead as it stood on 2026-08-03 follows,
+kept because two of its guesses were wrong in instructive ways.
+
 
 **User report, 2026-08-03: a bump / kink in the Tikhonov fit near t = 0 on
 `gauss_broad`, and "there was no such bump for Tikhonov earlier". Mellin is clean.
@@ -1157,6 +1163,363 @@ what is pushed — a regression hunt should not carry an unrelated behaviour cha
 the same function. The full implementation and its benchmark live in
 `~/deer_benchmark/s8_tik_taper/` (`taper.py`, `sweep_taper.json`, `summ.py`,
 `post20_check.py`); re-apply from there if it is wanted after the bump is fixed.
+
+## Session 2026-08-04 — the bump is the pre-zero CROP; fixed in `deer.py` (uncommitted)
+
+Artefacts in `~/deer_benchmark/s9_t0_crop/`. Fable was available this session and was
+consulted on the inverse-theory side; its parity argument is the spine of what follows.
+
+### First, the metric — the old one could not see the artefact at all
+
+`s8_tik_taper/bisect_bump.py` scored the largest positive FIRST DIFFERENCE of `F_fit`
+in the head, which is negative at every revision. The artefact is a CURVATURE sign
+change, not a rise. `metrics.py`:
+
+    shoulder = max(0, max d2F_fit/dt2 on (0, w]) / max |d2F_true/dt2| on (0, w]
+
+with `w` = 0.85 × the window over which the NOISELESS truth is still concave, so the
+score is 0 for a clean concave head and free of the trace's amplitude and decay rate.
+
+### Re-bisect with it — same culprit, now measurable
+
+| rev | shoulder | lo_mass | \|t0 err\| ns | ov |
+|---|---|---|---|---|
+| `a351f0a` Jun 20 | 0.96 | 0.0546 | 17.0 | 0.8382 |
+| **`a64098e` Jul 23** | **2.17** | 0.1080 | 30.2 | 0.7826 |
+| `51f0df6` Jul 31 | 1.25 | 0.0734 | 22.6 | 0.8167 |
+| `5c557de`…HEAD | 1.91 | 0.0973 | 15.1 | 0.8051 |
+
+Note `5c557de`: the t0 error IMPROVES 22.6 → 15.1 ns while shoulder and `lo_mass` get
+worse. "Better t0 ⇒ better P(r)" stays false, as the 2026-08-03 note warned.
+
+### Which half of `a64098e` — the crop, not the zero time
+
+2×2 at HEAD, `gauss_broad`, σ = 0.04, hard + hard2, 3 reps, NR = 256:
+
+| variant | \|t0err\| | shoulder | lo_mass | ov |
+|---|---|---|---|---|
+| base (crop, fitted t0) | 15.1 | 1.91 | 0.0973 | 0.8051 |
+| nocrop (same t0) | 15.1 | 1.39 | 0.0617 | 0.8422 |
+| oracle (true t0, crop) | 0 | 0.71 | 0.0454 | 0.8617 |
+| oracle + nocrop | 0 | 0.59 | 0.0435 | 0.8724 |
+| June estimator + HEAD code | 17.0 | 2.12 | 0.0974 | 0.8040 |
+
+Re-bisecting with the crop disabled at EVERY revision settles it: HEAD then scores
+0.0617 / 0.8422 against June's 0.0546 / **0.8382** — i.e. **with the crop gone HEAD is
+no longer a regression at all**, it is better than June. The crop is the whole of the
+residual regression.
+
+One correction to the above, though: `a64098e` did damage through BOTH its changes.
+Crop-disabled it still doubles `lo_mass` (0.055 → 0.129), purely because its
+zero-time fixes pushed the error 17 → 30 ns on this case. The July-31 commits then
+repaired the estimator to 15.1 ns, better than June's 17.0. So "the estimator is
+exonerated" is true at HEAD and false at `a64098e`.
+
+### The mechanism
+
+Every `K(·,r)` is even, so ANY model form factor has `F'(0) = 0` exactly — this is
+parity, not non-negativity; a signed or complex P(r) would be just as constrained. A
+t0 late by D leaves the retained data as `F_true(t + D)`, whose slope at 0 is
+`−(4/5)⟨ω²⟩D`. **On a symmetric window an odd error is orthogonal to the entire even
+model space: variance only, zero bias.** Cropping to `t ≥ 0` destroys that
+orthogonality, and the only basis direction that can supply a non-zero initial slope
+is the short-r end. Predicted spurious mass `m ≈ (r_s/⟨r⟩)⁶·ω_s·D` = 0.044 at 2.5 nm
+against 0.052 measured (0.097 − 0.045) — the mechanism is not just plausible, it is
+the right size.
+
+**Confirmed with no noise at all** (`dsweep.py`, a KNOWN offset D injected on top of
+the true t0, 4 shapes, σ = 0):
+
+| D (ns) | crop ON — shoulder / lo_mass / ov | crop OFF — shoulder / lo_mass / ov |
+|---|---|---|
+| 0 | 0.00 / 0.239 / 0.704 | 0.00 / 0.238 / 0.693 |
+| +15 | 0.00 / 0.285 / 0.741 | 0.00 / 0.224 / 0.909 |
+| +30 | 0.01 / 0.316 / 0.666 | 0.00 / 0.166 / 0.823 |
+| +45 | 0.12 / 0.340 / 0.548 | 0.00 / 0.076 / 0.727 |
+| +60 | 0.26 / 0.137 / 0.417 | 0.00 / 0.017 / 0.651 |
+
+Short-r mass grows LINEARLY in D with the crop on (≈ 0.0022/ns over D = 0…45, the
+predicted scaling) and the shoulder appears with it. With the pre-zero samples kept
+the shoulder is **exactly 0.00 at every offset from −60 to +60 ns** and short-r mass
+FALLS as D grows, because the mirrored samples absorb the shift. There is no noise
+anywhere in that table: the artefact is manufactured by the crop plus a shift.
+
+Two corollaries that check out and are worth keeping:
+
+* **A better residual search cannot be the fix.** The dipolar part of a σ = 0.04
+  trace barely knows D: Fisher bound σ_D ≈ 30 ns, the same size as the error itself.
+  The shipped echo-top estimator is already well past that bound (mean \|err\| 6.8 ns
+  over the catalogue) because it uses the echo SHAPE, which the dipolar likelihood
+  knows nothing about.
+* **Mellin is immune for a reason, and it is not a Mellin property.** It crops too,
+  but its δ-split replaces the head with an EVEN analytic parabola — the parity fix,
+  already shipped on one engine only. That is the whole explanation of "Mellin is
+  clean, Tikhonov is not".
+
+### S1's premise for the crop does not survive a mirror test
+
+S1 justified `_crop_pre_zero` as "the samples below t0 are the echo RISING EDGE, which
+the model cannot reproduce". `evenness.py` tests it: RMS of `V(−t) − V(+t)` over the
+pre-zero span in units of `√2·σ_tail`, so **1.0 = consistent with pure noise**.
+
+* Synthetic s5: 0.53–1.31 — even by construction, which is exactly why the catalogue
+  **cannot** decide this question on its own (S1's own methodological note).
+* Real YopO ring test: median ≈ 1.4, **19/28 below 2.0**, only 7 above 3.0.
+
+The 0.58 "droop" S1 read as an instrumental rise is the dipolar decay of a
+short-distance sample. S1's own skeptics had already failed to reproduce the headline
+5.0 → 2.7 nm and measured ≤ 0.02 nm on real traces; that reproduces at HEAD (0.009 nm
+mean, 0.026 max). And the statistic PREDICTS where keeping hurts: on the 7 traces
+above 3σ the V-residual degrades 44 % if the pre-zero samples are kept, on the 21
+below, 4 %.
+
+### SHIPPED (uncommitted) — `pre_zero='even'` on the two Tikhonov entry points
+
+`_crop_pre_zero(t, V, policy='crop'|'even', tol=3.0)`. Under `'even'` it walks outward
+from t = 0 and keeps the contiguous pre-zero run whose mirror residual stays inside
+`tol·√2·σ`, dropping the rest — a rising edge, when there is one, sits at the far end.
+σ comes from the module's existing `_tail_noise`; NaN (unmeasurable) falls back to
+cropping. Kept samples go in as ordinary rows at their own negative t, which is what
+the kernel already expects and what shipped before `a64098e`.
+
+`deer_invert(..., pre_zero='even')` and `deer_invert_joint(..., pre_zero='even')` —
+**Tikhonov only.** Mellin integrates on a log-T grid and `_gauss_mc`'s
+`_pake_transform` assumes uniform sampling, so both keep the unconditional crop, as
+does `deer_validate`. `fit_zero_time`'s internal inversions pin `pre_zero='crop'`:
+its residual objective needs a fixed sample set, or it becomes a staircase in the
+offset it is searching over.
+
+**Do NOT fold.** Averaging the mirrored sample into its positive twin looks equivalent
+and is better on synthetic (`lo_mass` 0.052 vs 0.062), but its interpolation onto the
+coarse real grids (16–24 ns) moves reported peaks by up to 0.46 nm. Measured on the
+28 real traces, vs today's crop:
+
+| policy | \|Δpeak\| mean / max | rmsV ratio mean / worst | traces > 1.2× |
+|---|---|---|---|
+| keep (unconditional) | 0.009 / 0.261 | 1.141 / 1.883 | 7/28 |
+| fold (unconditional) | 0.028 / 0.457 | 1.081 / 2.021 | 3/28 |
+| even + fold | 0.021 / 0.457 | 1.063 / 1.959 | 2/28 |
+| **even + keep (shipped)** | **0.000 / 0.000** | **1.012 / 1.087** | **0/28** |
+
+Verified with the shipped code (which uses the module's own `_tail_noise`, not the
+bench prototype's diff-based one): it keeps 74 % of the pre-zero samples across the
+ring test, rejects all of them on 4 traces, and moves no reported peak at all.
+
+### Catalogue result — 756 traces, 21 shapes, NR = 128
+
+| | ov | Δ | t | win % | shoulder | lo_mass |
+|---|---|---|---|---|---|---|
+| base | 0.8526 | — | | | 0.338 | 0.1404 |
+| **keep** | 0.8608 | **+0.0082** | **7.6** | 65 | 0.221 | 0.1338 |
+| oracle t0 | 0.8583 | +0.0056 | 4.8 | 53 | 0.198 | 0.1370 |
+
+Positive at EVERY noise level (+0.0010 at σ = 0.0025 rising monotonically to +0.0183
+at 0.06) and in EVERY shape class (SHORT +0.0162 / 73 % win, EDGY +0.0077,
+SHARP +0.0071, broad +0.0054). Nothing regresses. NR = 256 on six shapes agrees:
++0.0198 (t 4.5), positive on 6/6. **It is worth more than a perfect zero time.**
+
+### Refuted along the way
+
+* **Guard band** (drop `t < 80 ns`): −0.286 overlap, `lo_mass` 0.43. The head is the
+  only place short-r mass is OBSERVABLE — `K(80 ns, 2 nm)` is already small — so
+  removing it makes that mass free. Ranked second-safest a priori; measured, it is the
+  worst thing on the list.
+* **Unpenalized dF/dt nuisance column** (±J so NNLS can take it signed, to give the
+  ramp a home other than short r): −0.019 overlap, shoulder 1.91 → 5.2, and the fitted
+  coefficient does not track the true D.
+* **Symmetry-based t0 estimator**: 400 ns errors. A decaying trace is symmetric about
+  EVERY point in its flat tail, so the raw criterion has no localizing power.
+  Normalizing by the even variation and seeding at the echo maximum makes it converge
+  but it is still worse than what ships (mean \|err\| 11.7 vs 6.8 ns; 22.7 vs 11.4 at
+  σ = 0.04). The shipped parabola/centroid stays.
+
+### Acceptance, scored honestly
+
+The 2026-08-03 bar was "shoulder ≈ 0 on `gauss_broad` at σ = 0.04; `lo_mass` back to
+the June ~0.055; no catalogue regression".
+
+* `lo_mass` 0.0973 → 0.0617 vs June's 0.0546 — essentially met.
+* catalogue — met and then some: +0.0082 (t 7.6), no class or noise level negative.
+* shoulder 1.91 → 1.39 vs June's 0.96 — **NOT met, and "≈ 0" was never reachable**:
+  any t0 error produces some shoulder, and the June revision itself scores 0.96. The
+  bar should have been "back to the June level", and on that it is close but short.
+
+**The fix is partial by construction.** It recovers ~2/3 of the average loss; on the
+worst trace (t0 +35 ns) overlap goes 0.622 → 0.708 against the oracle's 0.854; and it
+does nothing at all for a trace with no pre-zero samples — trimmed, pre-cropped, or
+already starting at t0. Closing the rest needs parity imposed on the MODEL head, i.e.
+the shelved `cv60` parabolic head from `s6_parab`, which is the Tikhonov analogue of
+what Mellin already ships and is blocked on its long-r guard. **That is now the
+natural next item, and the parity framing is a new argument for it that the
+2026-08-02/03 rounds did not have.**
+
+### The cv60 head re-examined under the parity argument — a real defect, half a fix
+
+Same session, after the crop fix. `head_parity.py` (algebra, no inversion),
+`headfit.py`, `head_bench.py` + `head_summ.py` (756 traces), `head_real.py` (28 YopO).
+
+**cv60 is built the one way that leaks.** `parab_head` fits `a + b t^2` on the
+ONE-SIDED window `[0, delta]`, and there the odd part of a zero-time error is not
+orthogonal to the even basis. Projecting `t` onto span{1, t²} with uniform weight
+gives `t ~ 3d/16 + (15/16d) t²`, so
+
+    b_hat = b (1 + 15 D / (8 delta))
+
+a curvature bias LINEAR in the zero-time error — and `b = (2/5)<w²>` with `w ∝ r⁻³`,
+so it is a distance bias. Measured on noiseless catalogue traces, `b_hat(D)/b_hat(0)`
+over D = ±40 ns: `gauss_narrow` **0.083 → 1.48** (17×), `gauss_broad` 0.653 → 1.217,
+`gauss_broad_long` 0.822 → 1.11. The prediction tracks the measurement.
+
+**The obvious repair fails, and its failure explains an s6 result.** Adding an odd
+term to the fit and discarding it does NOT work: on `[0, delta]`, `t` is not
+orthogonal to `t⁴` either, so a shift and F's quartic term are confounded — the
+odd-augmented fit returns `D_hat = 33 ns` on a trace with zero shift. That confound
+is almost certainly why round 3 found "the quartic is worse than order-2 everywhere".
+
+**What works is pair-averaging**, and it is only possible now: fit the parabola to
+the even part `G(u) = [F(u) + F(-u)]/2`, which cancels the odd term identically
+rather than relying on a discrete design the sampling grid may not respect. It needs
+the pre-zero samples that `_crop_pre_zero` was discarding.
+
+**Catalogue, 756 traces, on top of `pre_zero='even'`:**
+
+| | Δ ov | t | win % | shoulder | LONG/broad |
+|---|---|---|---|---|---|
+| `head_1s` (s6's) | +0.0028 | 2.9 | 55 | 0.212 | −0.0019 |
+| `head_pair` | **+0.0035** | **4.7** | 60 | **0.124** | **+0.0003** |
+
+(`base` shoulder 0.224. Against the OLD baseline `head_1s` scores +0.0046, t 6.6 —
+reproducing s6's published +0.0050, which validates the harness.)
+
+**The head is worth less than s6 measured.** Its standalone +0.0046 becomes
++0.0028…+0.0035 once the crop fix is in, so roughly **40 % of what round 2 attributed
+to denoising was parity restoration** — now supplied by the crop policy, more cheaply
+and without the curvature bias. Round 2's `gate.py` could not have caught this: it
+tested the gain against `|a−1|`, and parity restoration is uncorrelated with the
+echo-top anchor just as denoising is.
+
+**Real data — halved, not cleared.** Mean-distance shift vs the new baseline:
+
+| | sample1 | sample2 | sample3 | sample4 (5.9–7.35 nm) | d_rms sample4 |
+|---|---|---|---|---|---|
+| `head_1s` | +0.004 | +0.014 | +0.024 | **+0.148** (max 0.198) | +0.00106 |
+| `head_pair` | +0.003 | +0.009 | +0.008 | **+0.072** (max 0.141) | **+0.00020** |
+
+`head_1s` reproduces s6's long-r regression (+0.10…+0.22 nm) exactly. Pair-averaging
+halves it, cuts the residual harm 5×, and removes the peak instability outright —
+s6's −0.457 nm mode switch on `sample2_labE` is gone and `d_peak` is 0.000 in every
+group. **But s6's acceptance was sample4 dRMS ≤ 0 and this gives +0.00020, so the
+head still does NOT pass.** The parity defect was a real and substantial part of the
+long-r problem, not all of it; the remainder is the physical limit already named — at
+7 nm one dipolar period is ~6.6 µs, so a 200–300 ns head is a few percent of a period
+and the echo-top curvature IS the measurement.
+
+**Status: still not shipped**, but the guard below now clears s6's acceptance, so the
+head is implementable for the first time. `head_pair` is the construction to guard,
+not `head_1s`.
+
+### The guard — and the blocker was mis-framed as a distance problem
+
+It is a **breadth** problem. The sample4 traces report peaks at 6.99-7.35 nm, but the
+distance implied by their own echo-top curvature is **3.3 nm**: `<w^2> ~ r^-6` is
+dominated by the shortest component present, so a broad P(r) has an echo top that
+looks short-r however long its tail is. This is why the three distance-scale
+candidates all fail to separate the group at all:
+
+| group | delta/t_max | t_max/delta | first min missing | r_eff |
+|---|---|---|---|---|
+| sample1 (2.4 nm) | 0.014 | 86 | 0/7 | 2.3 |
+| sample2 (3.6 nm) | 0.031 | 34 | 0/7 | 3.5 |
+| sample3 (5.0 nm) | 0.035 | 46 | 0/7 | 4.6 |
+| **sample4** | **0.026** | **40** | **0/7** | **3.3** |
+
+sample4 sits BETWEEN sample2 and sample3 on every one. Note also that cv60's delta
+rule is scale-free by construction — `delta = sqrt((1-level) a / -b)` with
+`b = -(2/5)<w^2>` gives `delta ~ 1/w_rms`, so `delta*w_rms ~ 1` at every distance and
+no guard built on that product can discriminate.
+
+**What works: `r_mean/r_eff`** — the mean distance from a first-pass inversion against
+`r_eff = (2 pi nu_dd / w_rms)^(1/3)` from the head's own curvature. It is 1 for a
+single distance and grows with breadth. Real traces: sample1 1.07-1.15, sample2
+1.02-1.08, sample3 1.07-1.23, **sample4 1.27-1.47**. Threshold **1.25**; a failed head
+fit (`nan`) also gates off, which is the conservative direction.
+
+**Catalogue, 756 traces** (`g_ratio125` = guard at 1.25):
+
+| | ov | Δ | t | head on | SHORT | LONG/broad |
+|---|---|---|---|---|---|---|
+| `head` unguarded | 0.8642 | +0.0035 | 4.7 | 100 % | +0.0058 | +0.0003 |
+| **`g_ratio125`** | 0.8640 | **+0.0034** | **4.9** | 73 % | +0.0054 | **+0.0015** |
+| `g_ratio115` | 0.8629 | +0.0023 | 4.2 | 60 % | +0.0033 | +0.0005 |
+| `g_resid` | 0.8623 | +0.0017 | 3.4 | 40 % | +0.0054 | −0.0010 |
+
+The guard is free: it keeps the whole gain while switching the head off on 27 % of
+traces, and it IMPROVES long/broad (+0.0003 → +0.0015) — where it fires, the head was
+not helping.
+
+**Real traces — ACCEPTANCE MET.** `g_ratio125` gates off all 7 sample4 traces, so that
+group reproduces the baseline exactly: **d_rms +0.00000, d_mean +0.000, d_peak 0.000**,
+against the unguarded head's +0.00013 / +0.072 nm. sample1-3 keep the head (5/7, 6/7,
+5/7) and are unchanged. s6's bar — sample4 dRMS ≤ 0 — is cleared for the first time.
+
+**Refuted on the way:**
+
+* **`Q = 14 c / (5 b^2)`**, the breadth moment from a pair-averaged QUARTIC fit
+  (`K = 1 - (2/5)w^2 t^2 + (2/35)w^4 t^4`, so `<w^2> = -5b/2`, `<w^4> = 35c/2`). It is
+  the theoretically clean diagnostic — exactly 1 for a single distance, needs no
+  inversion, and is only well posed at all because pair-averaging removes the odd
+  term. It behaves on noiseless catalogue traces (1.07-2.41, correctly ordered) and is
+  **useless on real data**: 1054.8, 203.7, −6.26, nan. The quartic coefficient is not
+  determined from a noisy 150-350 ns window.
+* **Residual selection** (run both, keep whichever fits V better). It satisfies a
+  residual criterion by construction but residual is not accuracy: +0.0017 on the
+  catalogue against +0.0034, NEGATIVE on long/broad, and on real traces it switches
+  the head off almost everywhere (2/28 keep it).
+
+**Two honest caveats on the guard.** The threshold sits in a narrow gap — the highest
+kept real trace is 1.227 and the lowest gated is 1.270 — so 1.25 is a constant fitted
+to a 7-trace separation, not derived. And the firing rate is noise-dependent (head on
+75 % at σ = 0.02, 39 % at 0.04, 35 % at 0.06) because noise inflates both the
+inversion's spread and the head's `b`: `r_ratio` is therefore part breadth test, part
+noise gate, and only the breadth half was derived. Cost is one extra inversion.
+
+Two implementation traps for whoever picks this up, both hit here:
+
+* **s6's `delta_from_curvature` / `first_min_time` assume a cropped trace.** With
+  pre-zero samples present they scan from the first sample, call a "first minimum"
+  inside the rising side, and return a NEGATIVE delta — the head then silently
+  no-ops and every variant looks identical to the baseline. Pass them `t >= 0` only.
+* **The pair fit's window must also bound the REPLACEMENT.** `h` is capped by the
+  available pre-zero span; applying a parabola fitted over 120 ns out to a 322 ns
+  delta is extrapolation, and it cost −0.0131 on long/broad — the exact class the
+  construction exists to rescue — until the replacement window was clipped to `h`.
+
+### Before this ports anywhere
+
+`deer.py` is byte-identical across plain / NIOCH / NIOCH_Q / Cryomech while ITC
+carries S1–S4 plus this. Run `~/atomize_sync/sync_check.py` first. **`deer.py` and
+`deer_analysis.py` must ship together** — see below.
+
+**The GUI needed a matching fix, and it would have broken without it.** All three
+engine paths did `res['t'] = x[t_us >= 0] * tf`, i.e. they rebuilt the display axis
+from the assumption that the engine drops every `t < 0`. With `pre_zero='even'` the
+Tikhonov result has MORE rows than that, so the axis would have mismatched every
+curve. The axis is now derived from the engine's own array
+(`res['t'] = t_eng + t0_disp*tf`, algebraically identical to the old expression
+whenever the engine did crop), and `_pre_zero` takes `t_eng` so it extends the
+display below the engine's FIRST sample rather than below zero — otherwise it would
+have re-extrapolated samples the engine had just fitted, and its `V_norm`/`vpos`
+alignment would have slipped. Verified headless: array lengths agree and the
+reconstructed axis is exact for 0 / 5 / 20 pre-t0 samples on both engines. A real
+GUI run on a Bruker trace is still wanted before this is committed.
+
+### Bench note
+
+The `fel` box was silently thrashing — 6 worker processes × 6 OpenBLAS threads on 6
+cores, load average 35, a 6-shard round making no progress in 60 minutes. Pinning
+`OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1` finished the same round
+in ~6 minutes. **Always pin the thread count when sharding on that box**; the
+per-process CPU readout looks like a healthy 100 % either way.
 
 ## Next session — S5 (multi-Gaussian)
 
