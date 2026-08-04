@@ -1521,6 +1521,70 @@ Two implementation traps for whoever picks this up, both hit here:
   delta is extrapolation, and it cost −0.0131 on long/broad — the exact class the
   construction exists to rescue — until the replacement window was clipped to `h`.
 
+### The residual bump was the REGULARIZATION OPERATOR's free ends
+
+User report after the crop fix: a small bump remains on `gauss_broad` at σ = 0.04, and
+raising the minimum distance removes it. That observation is the diagnostic, and the
+answer is not r_min.
+
+`regularization_matrix(n, 2)` was the plain (n−2, n) second difference, so `P[0]` and
+`P[-1]` appear in ONE row where an interior point appears in three. Edge mass is ~3×
+under-penalized and a spike sitting exactly at the grid edge is the cheapest roughness
+the fit can buy. **The artefact tracks the BOUNDARY, not any distance** — sweeping
+r_min on `gauss_broad`, the edge amplitude `P[0]/max(P)` falls 0.173 → 0.115 as r_min
+goes 1.5 → 1.75 and then climbs back to 0.232 at 2.25 as mass re-accumulates against
+the new edge. Raising r_min only moves the problem.
+
+`regularization_matrix(n, order, include_edges=True)` adds the two rows `[-2, 1, ...]`
+and `[..., 1, -2]`, i.e. P treated as zero just outside the grid, so the boundary
+carries the interior's curvature penalty. Threaded as `reg_edges=True` (**the new
+default**) through `deer_invert` and `deer_invert_joint` only — Mellin, the
+multi-Gaussian and `joint_background`'s coarse internal fit are untouched.
+
+**Catalogue, 756 traces: +0.0046 (t 5.1, 59 % win)**, edge amplitude 0.089 → 0.017,
+shoulder 0.224 → 0.090. Positive at EVERY noise level and growing with it (+0.0006 at
+σ 0.0025, +0.0125 at 0.04, +0.0161 at 0.06). By class SHORT +0.0179 (t 4.4),
+LONG/broad +0.0039, SHARP +0.0010, other +0.0018, EDGY −0.0002 (neutral). Only 3 of 21
+shapes negative — `rectangle` −0.0039, `gauss_narrow` −0.0021, `hyperbola` −0.0010;
+`short_r20` gains **+0.0351** at 75 % win. On `gauss_broad` it beats moving the grid:
+at r_min = 1.5 it recovers the peak to 3.96 nm (true 4.00) against the plain
+operator's 3.61, and against 3.93 for plain-with-r_min-2.0.
+
+Real ring test: **no peak moves at all** (|Δpeak| 0.000), Δmean +0.001 nm, ΔrmsV
++1e-6 — those distributions sit well inside the grid, so there is little edge mass to
+remove and the change is safely inert there.
+
+**When it is WRONG:** a distribution with genuine mass at the grid boundary. Measured:
+`short_r20` (true 2.03 nm) recovers its peak at 2.02 nm on a grid starting at 1.5 nm,
+but at 2.19 nm on one starting at 2.0 — closing the edge forces P → 0 exactly where
+the data says otherwise. The lesson is to keep r_min generous and let the operator do
+the work, not to clip the grid.
+
+**A correction to this session's own reporting.** `lo_mass` was the headline artefact
+metric throughout, and a substantial part of it was this operator effect rather than
+short-r physics. The crop fix's +0.0082 is unaffected (measured plain-against-plain),
+but the ABSOLUTE short-r mass levels quoted earlier were inflated by the free edges.
+
+**And it reprices the head again.** `echo_head` is now worth **+0.0016 (t 3.2)**, down
+from +0.0033: +0.0046 standalone → +0.0033 once `pre_zero` kept the mirrored samples →
++0.0016 once `reg_edges` closed the ends. All three suppress the same edge/short-r
+pile-up, and the head was substantially compensating for the other two.
+
+### Still open — `r_min = 1.5 nm` is below the aliasing floor on coarse traces
+
+Separate defect, found while chasing the above, NOT fixed. The kernel's fastest
+component is `2ω` (the argument `a(1−3cos²θ)` spans [−2a, a]), so it aliases below
+
+    r_alias = (4 · nu_dd · dt)^(1/3)
+
+= 1.28 nm at 10 ns sampling but **1.88 nm at 32 ns**. `default_r_axis` hardcodes
+`rmin=1.5` with no reference to the trace's sampling, and **7 of the 28 real ring-test
+traces** (dt 20–32 ns) therefore get a grid extending into aliased territory, where
+columns the data cannot distinguish are free for the fit to exploit. The synthetic
+catalogue at 10–12.6 ns has a floor of 1.28–1.38 nm, so it is legal there and the
+catalogue cannot see this. Candidates: clamp `r_min` to `r_alias` in the engines, or
+warn in the GUI when the chosen r_min is below it.
+
 ### Before this ports anywhere
 
 `deer.py` is byte-identical across plain / NIOCH / NIOCH_Q / Cryomech while ITC

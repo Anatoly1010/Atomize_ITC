@@ -551,8 +551,24 @@ def _echo_head_solve(t, F, K, L, r, dr, alphas, method, alpha, alpha_factor,
     return F_head, P, lc, a_use, info
 
 
-def regularization_matrix(n, order=2):
-    """Discrete derivative operator L for Tikhonov smoothing (default 2nd order)."""
+def regularization_matrix(n, order=2, include_edges=False):
+    """Discrete derivative operator L for Tikhonov smoothing (default 2nd order).
+
+    `include_edges` closes the operator's FREE ENDS. The plain second difference is
+    (n-2, n): P[0] and P[-1] each appear in exactly one row where an interior point
+    appears in three, so edge mass is ~3x under-penalized and a spike sitting exactly
+    at the grid edge is the cheapest roughness the fit can buy. That is a real
+    artefact generator, not a curiosity -- it is why a spurious short-r peak MOVES
+    when the distance grid's lower bound moves, tracking the boundary rather than any
+    distance. With `include_edges` the two extra rows [-2, 1, ...] and [..., 1, -2]
+    treat P as zero just outside the grid, so the boundary points carry the same
+    curvature penalty as the interior.
+
+    Use it when the grid comfortably contains the distribution; it is WRONG when the
+    truth genuinely has mass at the boundary, because it then forces P -> 0 where the
+    data says otherwise (measured: a true 2.03 nm distribution recovers its peak at
+    2.02 nm on a grid starting at 1.5 nm, but at 2.19 nm on one starting at 2.0).
+    """
     if order == 0:
         return np.eye(n)
     if order == 1:
@@ -566,6 +582,10 @@ def regularization_matrix(n, order=2):
     L[idx, idx] = 1.0
     L[idx, idx + 1] = -2.0
     L[idx, idx + 2] = 1.0
+    if include_edges and n >= 2:
+        top = np.zeros((1, n)); top[0, 0] = -2.0; top[0, 1] = 1.0
+        bot = np.zeros((1, n)); bot[0, -1] = -2.0; bot[0, -2] = 1.0
+        L = np.vstack([top, L, bot])
     return L
 
 
@@ -758,7 +778,7 @@ def tikhonov_ci(K, F, alpha, P, L=None, dr=1.0, z=1.96):
 def deer_invert(t, V, r=None, bg_start=None, bg_end=None, dim=3.0, fit_dim=False,
                 alpha=None, alphas=None, reg_order=2, nu_dd=NU_DD,
                 scan_lcurve=True, method='gcv', engine='sequential',
-                alpha_factor=1.0, pre_zero='even', **kwargs):
+                alpha_factor=1.0, pre_zero='even', reg_edges=True, **kwargs):
     """Full DEER pipeline: background-correct V(t), build the kernel, invert to
     P(r) by Tikhonov + NNLS. When `alpha` is not supplied it is chosen
     automatically by `method` ('gcv' default, or 'curvature' for the classic
@@ -806,6 +826,7 @@ def deer_invert(t, V, r=None, bg_start=None, bg_end=None, dim=3.0, fit_dim=False
                                  alphas=alphas, reg_order=reg_order, nu_dd=nu_dd,
                                  method=method, scan_lcurve=scan_lcurve,
                                  alpha_factor=alpha_factor, pre_zero=pre_zero,
+                                 reg_edges=reg_edges,
                                  echo_head=kwargs.pop('echo_head', False))
     if engine == 'mellin':
         return deer_invert_mellin(t, V, r=r, bg_start=bg_start, bg_end=bg_end,
@@ -828,7 +849,7 @@ def deer_invert(t, V, r=None, bg_start=None, bg_end=None, dim=3.0, fit_dim=False
         bg = background_fit(t, V, bg_start, bg_end=bg_end, dim=dim, fit_dim=fit_dim)
     F = bg['form_factor']
     K = dipolar_kernel(t, r, nu_dd=nu_dd)
-    L = regularization_matrix(len(r), reg_order)
+    L = regularization_matrix(len(r), reg_order, include_edges=reg_edges)
     if alphas is None:
         # wide grid (1e-4 .. 1e3): GCV needs room above the old 1e1 ceiling to
         # find its true minimum, which for well-separated peaks sits at alpha~1e2.
@@ -856,8 +877,9 @@ def deer_invert(t, V, r=None, bg_start=None, bg_end=None, dim=3.0, fit_dim=False
 def deer_invert_joint(t, V, r=None, bg_start=None, bg_end=None, dim=3.0,
                       fit_dim=False, alpha=None, alphas=None, reg_order=2,
                       nu_dd=NU_DD, method='gcv', scan_lcurve=True,
-                      alpha_factor=1.0, pre_zero='even', echo_head=False,
-                      head_level=0.60, head_cap=0.35, head_ratio_max=1.25):
+                      alpha_factor=1.0, pre_zero='even', reg_edges=True,
+                      echo_head=False, head_level=0.60, head_cap=0.35,
+                      head_ratio_max=1.25):
     """DEER inversion with a *joint* (separable-NLLS / variable-projection) fit of
     the background and modulation depth together with the regularized non-negative
     P(r) -- the strategy DeerLab uses. More robust than the sequential
@@ -887,11 +909,14 @@ def deer_invert_joint(t, V, r=None, bg_start=None, bg_end=None, dim=3.0,
     `echo_head` (default OFF) replaces the echo top with an even parabola fitted to
     the trace's own even part -- F is even about t0, so the head carries far fewer
     degrees of freedom than it has samples, and this denoises the highest-leverage
-    part of the trace. Worth **+0.0035 overlap (t = 4.7)** over 756 synthetic traces;
-    guarded (see `_echo_head_solve`) it holds **+0.0034 (t = 4.9)** while declining
-    the head on 27 % of them, and the guard is what makes it safe on the broad real
-    traces where the unguarded head moved the mean distance +0.072 nm. It costs a
-    second regularization scan when it fires, so it is opt-in rather than default.
+    part of the trace. Guarded (see `_echo_head_solve`) it is worth **+0.0016 overlap
+    (t = 3.2)** over 756 synthetic traces on top of the edge-closed operator, and the
+    guard is what makes it safe on the broad real traces where the unguarded head
+    moved the mean distance +0.072 nm. Note the value has fallen as the defects it was
+    partly compensating for were fixed: +0.0046 standalone, +0.0033 once `pre_zero`
+    kept the mirrored samples, +0.0016 once `reg_edges` closed the operator's ends --
+    all three suppress the same short-r/edge pile-up. It costs a second regularization
+    scan when it fires, so it is opt-in rather than default.
     `head_level` sets the head width (0.60 = the fitted parabola falls to 0.60),
     `head_cap` bounds it, `head_ratio_max` is the guard threshold. The result carries
     an `echo_head` dict: applied, delta, r_eff, r_ratio.
@@ -909,7 +934,7 @@ def deer_invert_joint(t, V, r=None, bg_start=None, bg_end=None, dim=3.0,
     t, V, _n_pre = _crop_pre_zero(t, V, policy=pre_zero)
     r = default_r_axis() if r is None else np.asarray(r, float)
     K = dipolar_kernel(t, r, nu_dd=nu_dd)
-    L = regularization_matrix(len(r), reg_order)
+    L = regularization_matrix(len(r), reg_order, include_edges=reg_edges)
     if alphas is None:
         alphas = np.logspace(-4, 3, 24)
 
