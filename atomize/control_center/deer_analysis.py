@@ -2618,6 +2618,16 @@ class MainWindow(QMainWindow):
         if wht is not None and np.isfinite(wht['durbin_watson']):
             verdict = (' &nbsp;<i>(' + ('white' if wht['white'] else 'structured')
                        + f', r₁={wht["acf1"]:+.2f})</i>')
+        # sampling-resolution limit: grid points below it are unconstrained
+        ra = res.get('r_alias')
+        alias_line = ''
+        try:
+            if ra and float(np.min(np.asarray(res['r'], float))) < float(ra) - 1e-9:
+                alias_line = (
+                    '<span style="color: rgb(214, 39, 40);">r min below the '
+                    f'{float(ra):.2f} nm sampling limit</span><br>')
+        except Exception:
+            alias_line = ''
         info_html = (
             '<div style="line-height: 150%;">'
             f'<b style="color: rgb(211, 194, 78);">P(r)</b>{med_tag}'
@@ -2626,7 +2636,7 @@ class MainWindow(QMainWindow):
                                        'gauss' if is_gauss else 'tikhonov')
             + verdict
             + '<div style="line-height: 160%; margin-top: 3px;">'
-            f'{bg_line}<br>{reg}<br>'
+            f'{bg_line}<br>{reg}<br>{alias_line}'
             f'skew = {dsc["skew"]:+.2f}{extra}</div></div>')
         self.deer_info.setText(info_html)
         if is_mellin:

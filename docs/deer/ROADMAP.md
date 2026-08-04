@@ -1570,7 +1570,7 @@ from +0.0033: +0.0046 standalone → +0.0033 once `pre_zero` kept the mirrored s
 +0.0016 once `reg_edges` closed the ends. All three suppress the same edge/short-r
 pile-up, and the head was substantially compensating for the other two.
 
-### Still open — `r_min = 1.5 nm` is below the aliasing floor on coarse traces
+### Sampling-resolution floor — WARNED, not clamped
 
 Separate defect, found while chasing the above, NOT fixed. The kernel's fastest
 component is `2ω` (the argument `a(1−3cos²θ)` spans [−2a, a]), so it aliases below
@@ -1582,8 +1582,27 @@ component is `2ω` (the argument `a(1−3cos²θ)` spans [−2a, a]), so it alia
 traces** (dt 20–32 ns) therefore get a grid extending into aliased territory, where
 columns the data cannot distinguish are free for the fit to exploit. The synthetic
 catalogue at 10–12.6 ns has a floor of 1.28–1.38 nm, so it is legal there and the
-catalogue cannot see this. Candidates: clamp `r_min` to `r_alias` in the engines, or
-warn in the GUI when the chosen r_min is below it.
+catalogue cannot see this.
+
+**Measured** on coarse-sampled synthetic traces (`alias_bench.py`, 756 traces per dt,
+with `reg_edges` already on so the free-edge effect is not in the way): clamping r_min
+to `r_alias` is worth **+0.0058 (t 2.6, 73 % win) at dt = 24 ns** and +0.0049 (t 1.2)
+at 32 ns, and is exactly a no-op at 8 and 16 ns where `r_alias` < 1.5 — which is a
+useful sanity check on the harness. Sub-alias mass in the unclamped runs is 0.009
+(24 ns) and 0.020 (32 ns).
+
+**Shipped as a WARNING, not a clamp** — the grid is the user's, the effect is real but
+modest, and only the 24 ns row is significant. `alias_r_min(t)` is public,
+`_warn_alias` raises a RuntimeWarning from both Tikhonov engines (precedent:
+`background_fit`'s degenerate-lambda warning), the result dict carries `r_alias`, and
+the GUI shows a red "r min below the N nm sampling limit" line in the info panel that
+clears when r_min is raised.
+
+**One probe that did NOT work**, recorded so it is not repeated: a column-coherence
+test (how well the best OTHER kernel column reproduces the one at 1.5 nm) gave 0.52 at
+24 ns and 0.46 at 32 ns, i.e. NOT degenerate — but the comparison set differed per row,
+so the numbers do not separate the hypotheses and nothing should be concluded from
+them. The end-to-end clamp test is the evidence.
 
 ### Before this ports anywhere
 
