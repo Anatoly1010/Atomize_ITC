@@ -1606,9 +1606,18 @@ them. The end-to-end clamp test is the evidence.
 
 ### Before this ports anywhere
 
-`deer.py` is byte-identical across plain / NIOCH / NIOCH_Q / Cryomech while ITC
-carries S1–S4 plus this. Run `~/atomize_sync/sync_check.py` first. **`deer.py` and
-`deer_analysis.py` must ship together** — see below.
+**PORTED 2026-08-04.** The four-session backlog went out with this round: `deer.py`
+lifted ITC → plain and fanned to NIOCH / NIOCH_Q / Cryomech (all five now md5
+`7ea0d590bd`), `deer_analysis.py` ITC → NIOCH / NIOCH_Q via `--sync-cc` (md5
+`ebdc115462`). `sync_check.py` reports the DEER files in sync everywhere; the only
+remaining drift is `Sibir_1.py`, which is pre-existing and untouched. Each fork was
+smoke-tested after the copy (import + joint inversion + `r_alias`).
+
+Note `--sync` would ALSO have carried `Sibir_1.py` plain → every fork, so the port was
+done surgically (`--lift` for the one file, then explicit copies) rather than with the
+bulk distributor.
+
+**`deer.py` and `deer_analysis.py` must ship together** — see below.
 
 **The GUI needed a matching fix, and it would have broken without it.** All three
 engine paths did `res['t'] = x[t_us >= 0] * tf`, i.e. they rebuilt the display axis
