@@ -1591,9 +1591,9 @@ from +0.0033: +0.0046 standalone → +0.0033 once `pre_zero` kept the mirrored s
 +0.0016 once `reg_edges` closed the ends. All three suppress the same edge/short-r
 pile-up, and the head was substantially compensating for the other two.
 
-### Sampling-resolution floor — WARNED, not clamped
+### Sampling-resolution floor — warned first, then CLAMPED (`bf215c6`)
 
-Separate defect, found while chasing the above, NOT fixed. The kernel's fastest
+Separate defect, found while chasing the above. The kernel's fastest
 component is `2ω` (the argument `a(1−3cos²θ)` spans [−2a, a]), so it aliases below
 
     r_alias = (4 · nu_dd · dt)^(1/3)
@@ -1654,16 +1654,34 @@ them. The end-to-end clamp test is the evidence.
 
 ### Before this ports anywhere
 
-**PORTED 2026-08-04.** The four-session backlog went out with this round: `deer.py`
-lifted ITC → plain and fanned to NIOCH / NIOCH_Q / Cryomech (all five now md5
-`7ea0d590bd`), `deer_analysis.py` ITC → NIOCH / NIOCH_Q via `--sync-cc` (md5
-`ebdc115462`). `sync_check.py` reports the DEER files in sync everywhere; the only
-remaining drift is `Sibir_1.py`, which is pre-existing and untouched. Each fork was
-smoke-tested after the copy (import + joint inversion + `r_alias`).
+**PORTED AND PUSHED 2026-08-04**, in four rounds as the work landed — the
+four-session backlog first, then the Mellin mirror policy, the alias clamp, and the
+background flags. `deer.py` is lifted ITC → plain and fanned to NIOCH / NIOCH_Q /
+Cryomech; `deer_analysis.py` goes ITC → NIOCH / NIOCH_Q via `--sync-cc`. After the last
+round all five carry `deer.py` md5 **`aca7659232ad`** and the three endstation forks
+`deer_analysis.py` **`518f813d97be`**; `sync_check.py` reports the DEER files in sync
+everywhere and the only remaining drift is `Sibir_1.py`, pre-existing and untouched.
+Each fork was smoke-tested after every copy (import + joint inversion + the new keys).
+
+**Do not quote an md5 here without re-checking it** — this record went stale three
+times in one day as further commits landed.
 
 Note `--sync` would ALSO have carried `Sibir_1.py` plain → every fork, so the port was
 done surgically (`--lift` for the one file, then explicit copies) rather than with the
 bulk distributor.
+
+**Published docs** (`~/atomize_docs`, separate repo, MkDocs) were updated in the same
+round: the new engine parameters, `alias_r_min()`, `include_edges`, and the three new
+`joint_background` reliability keys. **Convention set 2026-08-04 and applied to the
+whole DEER page: the published reference carries general information only — what an
+option does, the mechanism, and when it is the wrong choice — and NO benchmark
+figures.** Overlap gains, t-statistics, detection and false-alarm rates and
+calibration-set sizes live here and in the commit messages, where they can be dated and
+argued with; on a reference page they age badly and are specific to one synthetic
+catalogue. Numbers that are direct evaluations of a formula printed on the page (the
+aliasing floor at a given sampling, the dipolar period at a given distance) are kept,
+since they are what make an entry usable. Source docstrings in `deer.py` still carry
+their measurements — that rule is for the published reference only.
 
 **`deer.py` and `deer_analysis.py` must ship together** — see below.
 
