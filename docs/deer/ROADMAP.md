@@ -1591,8 +1591,14 @@ at 32 ns, and is exactly a no-op at 8 and 16 ns where `r_alias` < 1.5 — which 
 useful sanity check on the harness. Sub-alias mass in the unclamped runs is 0.009
 (24 ns) and 0.020 (32 ns).
 
-**Shipped as a WARNING, not a clamp** — the grid is the user's, the effect is real but
-modest, and only the 24 ns row is significant. `alias_r_min(t)` is public,
+Splitting by shape settles the design question: at 32 ns the gain is **+0.0090
+(t 3.9, the strongest signal in the whole alias study) on non-short shapes but
+−0.0123 on the SHORT class** — clamping to 1.88 nm clips a genuinely 2.0 nm
+distribution. So a clamp would trade one bias for another on exactly the samples that
+most need short distances.
+
+**Shipped as a WARNING, not a clamp** — the grid is the user's, a clamp would damage
+real short-distance samples (above), and only the 24 ns row is significant overall. `alias_r_min(t)` is public,
 `_warn_alias` raises a RuntimeWarning from both Tikhonov engines (precedent:
 `background_fit`'s degenerate-lambda warning), the result dict carries `r_alias`, and
 the GUI shows a red "r min below the N nm sampling limit" line in the info panel that
