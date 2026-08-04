@@ -350,7 +350,9 @@ class MainWindow(QMainWindow):
             '• min ≈ (4·NU_DD·Δt)^⅓ nm — shortest distance whose dipolar '
             'oscillation the time step Δt still samples (Nyquist).\n'
             '• max ≈ 5·(t_max/2)^⅓ nm — longest distance the trace length '
-            'supports (DeerAnalysis/Jeschke rule).\n'
+            'supports (DeerAnalysis/Jeschke rule). Only the MEAN is recoverable '
+            'near this limit, and it is biased short as the limit is approached '
+            '— see the reliability-shading tooltip.\n'
             'Both are set automatically on load; mass outside this window is '
             'not constrained by the data.')
         btn_autorange.clicked.connect(self._auto_rrange)
@@ -408,8 +410,18 @@ class MainWindow(QMainWindow):
             'set by the dipolar evolution time t_max (DeerLab/DeerAnalysis '
             'convention, r in nm, t_max in µs):\n'
             '  green  — shape reliable, r ≤ 3·(t_max/2)^⅓\n'
-            '  yellow — mean & width reliable, r ≤ 5·(t_max/2)^⅓\n'
-            '  red    — beyond the trace-supported range (unreliable).')
+            '  yellow — MEAN reliable, r ≤ 5·(t_max/2)^⅓; the WIDTH is NOT '
+            'recoverable in this band, and the mean degrades towards its top\n'
+            '  red    — beyond the trace-supported range (unreliable).\n'
+            'The yellow band is more optimistic than its name suggests. Measured '
+            'on a narrow (σ_r 0.25 nm) 5.0 nm distribution over 20 noise draws: at '
+            '83 % of the yellow limit the mean is good to ±0.07 nm, but at 93 % it '
+            'is biased SHORT by 0.15–0.29 nm — systematically, and a perfect zero '
+            'time does not fix it. There the inversion returns a spike ~3x too '
+            'tall rather than a broadened peak, because the kernel columns across '
+            'that distance range are nearly collinear over the available t_max. '
+            'Trust the mean in the lower part of the yellow band, not near its '
+            'edge, and do not read a width from it at all.')
         self.deer_reliab_chk.stateChanged.connect(self._deer_rerender)
         grid.addWidget(self.deer_reliab_chk, r, 0, 1, 2); r += 1
 
@@ -2971,9 +2983,14 @@ class MainWindow(QMainWindow):
             it.setVisible(True)
 
     # DeerAnalysis distance-reliability factors (r in nm, t_max in µs): the shape
-    # of P(r) is reliable to 3·(t_max/2)^⅓, the mean and width to 5·(t_max/2)^⅓
-    # (the 4·(t_max/2)^⅓ width-only tier is folded into the yellow band). The
-    # 5·factor matches R_MAX_FACTOR used for the auto distance-max.
+    # of P(r) is reliable to 3·(t_max/2)^⅓ and the MEAN to 5·(t_max/2)^⅓ (the
+    # 4·(t_max/2)^⅓ width-only tier is folded into the yellow band). The 5·factor
+    # matches R_MAX_FACTOR used for the auto distance-max.
+    # The yellow band is optimistic near its top: measured on a narrow 5.0 nm
+    # distribution over 20 draws, the mean is good to ±0.07 nm at 83 % of the limit
+    # but biased short by 0.15-0.29 nm at 93 %, and the width is not recoverable
+    # anywhere in the band. Kept at the published factors because they are the
+    # shared convention; the tooltip carries the caveat.
     RELIAB_FACTORS = (3.0, 5.0)
 
     def _show_reliab_bands(self, visible, t_max_us=None, r_lo=None, r_hi=None):
