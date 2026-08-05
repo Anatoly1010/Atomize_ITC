@@ -1775,7 +1775,9 @@ class MainWindow(QMainWindow):
         if dt_us <= 0:
             return None
         rmin = (4.0*deer_module.NU_DD*dt_us)**(1.0/3.0)
-        return float(np.clip(round(rmin, 1), 0.5, self.deer_rmax.value() - 0.5))
+        # round UP: rounding to nearest can land below the floor the engine clamps to
+        return float(np.clip(np.ceil(rmin*10.0)/10.0, 0.5,
+                             self.deer_rmax.value() - 0.5))
 
     def _auto_rmax(self):
         rmax = self._auto_rmax_value()
@@ -2595,19 +2597,22 @@ class MainWindow(QMainWindow):
                        f'c={bgp["c"]:.3g}, d={bgp["d"]:.3g})')
         else:
             bg_line = f'bg decay k = {res["k"]:.4g}, dim = {res["dim"]:.2f}'
-        # reliability flags the engines now report: a clamped/degenerate λ, an
-        # undecayed tail under the λ pin, a joint rate far from the sequential one,
-        # or an α pinned to the end of the search grid rather than an optimum
+        # `flags` predict a wrong distance; `notes` false-alarm too often to say that
         bgr = res.get('background', {})
         flags = []
+        notes = []
+        if bgr.get('bg_start_early'):
+            per = float(bgr.get('bg_start_periods') or float('nan'))
+            flags.append(f'background window opens at {per:.2f} dipolar periods '
+                         '— reported distance is biased short; start it later')
+        if bgr.get('conc_implausible'):
+            flags.append(f'background implies '
+                         f'{float(bgr.get("conc_implied_uM") or float("nan")):.0f} µM '
+                         'spin concentration — the fit has absorbed the dipolar decay')
         if bgr.get('lambda_clamped') or bgr.get('lambda_degenerate'):
             flags.append(f'λ clamped (raw {bgr.get("lambda_raw", float("nan")):.3g})')
         if float(bgr.get('tail_abs_F') or 0.0) > 0.05:
             flags.append(f'tail not decayed (mean|F| = {bgr["tail_abs_F"]:.2f})')
-        if bgr.get('k_disagrees'):
-            flags.append('sequential tail fit sees no decay'
-                         if float(bgr.get('k_ref') or 0.0) <= 1e-4
-                         else f'k = {bgr["k_ratio"]:.3g}× the sequential tail fit')
         if bgr.get('k_at_bound'):
             flags.append('k pinned at its search bracket edge (no information)')
         if (res.get('l_curve') or {}).get('at_bound'):
@@ -2618,9 +2623,35 @@ class MainWindow(QMainWindow):
             flags.append(f'validation trials disagree (mean spans '
                          f'{bsp["r_mean_spread"]:.2f} nm, '
                          f'{bsp["n_flagged"]}/{bsp["n"]} flagged)')
+        if bgr.get('k_disagrees'):
+            notes.append(('sequential tail fit sees no decay'
+                          if float(bgr.get('k_ref') or 0.0) <= 1e-4
+                          else f'k = {bgr["k_ratio"]:.3g}× the sequential tail fit')
+                         + ' — the two background routes differ, which is not on '
+                           'its own a sign the distance is wrong')
+        if bgr.get('bg_flat'):
+            notes.append(f'background decays only '
+                         f'{100.0*float(bgr.get("bg_drop") or 0.0):.1f}% over the '
+                         'trace, so the two rate fits are not comparable')
+        eh = res.get('echo_head') or {}
+        if eh.get('requested'):
+            if eh.get('applied'):
+                notes.append(f'echo-top head applied (δ = '
+                             f'{1e3*float(eh["delta"]):.0f} ns)')
+            elif eh.get('r_ratio'):
+                notes.append(f'echo-top head DECLINED by its guard '
+                             f'(r_mean/r_eff = {float(eh["r_ratio"]):.2f} > 1.25); '
+                             'noise inflates this ratio, so it also gates the head '
+                             'off at high noise')
+            else:
+                notes.append('echo-top head DECLINED: its curvature fit failed '
+                             '(too few points before t₀, or no usable curvature)')
         if flags:
             bg_line += ('<br><span style="color: rgb(224, 130, 96);">⚠ '
                         + '; '.join(flags) + '</span>')
+        if notes:
+            bg_line += ('<br><span style="color: rgb(150, 200, 255);">note: '
+                        + '; '.join(notes) + '</span>')
         # headline scalars as a one-row table (same layout as 'Process all'), with
         # the engine-specific detail (background, α / δ / components, skew) below.
         row_stats = {'peak': r_peak, 'mean': r_mean, 'me1': me1,

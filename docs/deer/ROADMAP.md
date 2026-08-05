@@ -5,18 +5,71 @@ next item, updates this file before ending, and records anything that needs real
 data or a lab decision. The staged review itself is planned in
 [REVIEW_PLAN.md](REVIEW_PLAN.md) — update that when the plan changes, don't fork it here.
 
-Model note: sessions are Opus. Fable is not currently available; S1 and S3 use a
-**blind-derivation panel** instead (agents derive the constants from first
-principles with no sight of the code, and the results are diffed afterwards). See
-the plan's *Model allocation* for why that substitutes.
+Model note: S1–S4 were Opus, and because Fable was unavailable then, S1 and S3 used a
+**blind-derivation panel** instead (agents derive the constants from first principles
+with no sight of the code, and the results are diffed afterwards). See the plan's
+*Model allocation*. From 2026-08-04 Fable is available and is used for adversarial
+verification; the 2026-08-05b session is the first where a Fable verifier's
+corrections are recorded inline against the claims they refuted.
+
+## How to read this file
+
+It is a session log, newest sections last, and **later sessions overturn earlier
+ones**. Three habits will save you re-deriving something:
+
+* **Start with *The shipped stack today* below**, not with a session. The sessions
+  record how each mechanism was arrived at, including the versions that were wrong.
+* **Check *Corrections of record*** before quoting any number. Several headline
+  figures were retracted by a later measurement, and one reached a commit message
+  that cannot be edited.
+* **Absolute `lo_mass` figures from before 2026-08-04 are not comparable** with
+  anything after `reg_edges` landed. Paired comparisons within a session are fine.
+
+## The shipped stack today (2026-08-05)
+
+What is on, what is opt-in, and what each thing is for. Every one of these is
+measured in the session that shipped it.
+
+| mechanism | default | what it does |
+|---|---|---|
+| `pre_zero='even'` (Tikhonov) / `'even_fold'` (Mellin) / `'crop'` (gauss) | **on** | keeps pre-t₀ samples that pass a mirror test, restoring the parity a t₀ error would otherwise dump into short r |
+| `reg_edges=True` | **on** | closes the regularization operator's free ends so grid-edge mass is not ~3× under-penalized |
+| `clamp_alias=True` | **on** | drops distance-grid points below `(4·ν_dd·dt)^(1/3)`, which the sampling cannot resolve |
+| `tau_max=None` (Mellin) | **on** | the data-driven cutoff selector, not a pinned 30 |
+| `echo_head` | **OFF** | guarded pair-averaged parabolic echo-top head; worth only +0.0016 now, and it declines itself at high noise |
+| `bg_start_early`, `conc_implausible` | reported | the two calibrated background-reliability detectors, on every engine |
+| `k_disagrees` | reported as a *note* | the two background routes differ — 56 % detection at 45 % false alarms, NOT a reliability verdict |
+
+**Four mechanisms attack the same artefact** (spurious short-r / grid-edge mass) and
+each was justified against a baseline lacking the others — see *Known tensions*
+before adding a fifth.
 
 ## Under review
 
 | | lines |
 |---|---|
-| `atomize/math_modules/deer.py` | 2992 |
-| `atomize/control_center/deer_analysis.py` | 3213 |
-| `atomize/control_center/data_treatment.py` (DEER paths) | — |
+| `atomize/math_modules/deer.py` | ~3500 |
+| `atomize/control_center/deer_analysis.py` | ~3240 |
+
+`data_treatment.py` was listed here in earlier revisions as carrying "DEER paths".
+It does not: the 2026-08-05 audit grepped it and the DEER tab has been fully spun
+out into `deer_analysis.py`, which is the only in-tree GUI caller of `deer.py`.
+
+## Corrections of record
+
+Figures that were stated as fact and later retracted. Each is argued where it was
+made; this is the index.
+
+| claim | verdict | where |
+|---|---|---|
+| "clamping costs −0.0123 on the SHORT class at 32 ns" | **noise read as fact** (t = −0.6, n = 36; replication +0.0018). Drove the warn-not-clamp decision and reached commit `150e429`'s message | 2026-08-04 |
+| "`deer.simulate` is even in t, so a time-asymmetry finding can be settled on it" | true, and that is the *limitation* — such findings need REAL traces | 2026-07-23 |
+| "the whole `easy` condition is bit-identical" (zero-time round 1) | not exact — one weak-modulation 2.0 nm shape crosses the gate | 2026-07-31 |
+| "a trace whose zero time sits 1–3 samples in is a weakness" | right as an estimator number, **wrong as a verdict** — end-to-end overlap improves | 2026-07-31 |
+| Mellin `F0` sweep at a pinned `tau_max=30` | invalid — auto selection was silently off; base overlap 0.638 not 0.812 | 2026-08-03 |
+| "the true t0 helps at σ 0.02–0.04" (shoulder) | **refuted on the shoulder metric** — equal or worse in all four cells | 2026-08-05b |
+| "the envelope detector's `a0` is inflated by the `mode='same'` edge" | **refuted** — edge-correcting changes it 1.02× | 2026-08-05b |
+| `bg_start_early` "on every engine result" | was false when written — `deer_invert`'s own body lacked the call | 2026-08-05b, fixed |
 
 ## Review status
 
@@ -28,7 +81,9 @@ the plan's *Model allocation* for why that substitutes.
 | S4 Mellin engine + joint background | **DONE + VERIFIED + FIXED** 2026-07-30 — 13 findings judged: 10 confirmed, 3 plausible, 0 refuted; all confirmed fixed, **none as suggested**. H1 and H2 both answered and closed. | [REVIEW_S4_mellin_engine.md](REVIEW_S4_mellin_engine.md) |
 | S5 Multi-Gaussian | not started | |
 | **Tikhonov defect round** (out of band) | **DONE 2026-08-04 + PORTED + PUSHED** — 4 defects fixed (`pre_zero`, `reg_edges`, the sampling floor, `deer_validate` pre-crop) + 1 opt-in feature; see the 2026-08-04 session | this file |
-| S6 Cross-engine, validation, GUI | not started — carries the on-demand residual bootstrap, the joint/Mellin band propagation S4 disclosed, S3's ME₁-ε placement, and S4's note queue | |
+| **Audit of the 2026-08-04 burst** (out of band) | **DONE 2026-08-05** — the four mechanisms are provably inert on data that gives them nothing to act on; 10 verified defects, all in the REPORTING layer. Items 1, 2 and 10 **FIXED + PORTED + COMMITTED**; 3–9 open | this file |
+| **High-noise shoulder + auto bg_start** (out of band) | **DONE 2026-08-05b** — Fable-verified: the shoulder at high noise is spurious short-r mass, not t₀ and not the background; the auto bg_start's envelope test is a noise detector. `echo_head` reporting and the sequential-path flag **FIXED + PORTED + COMMITTED**; the bg_start floors left as an open decision | this file |
+| S6 Cross-engine, validation, GUI | not started — carries the on-demand residual bootstrap, the joint/Mellin band propagation S4 disclosed, S3's ME₁-ε placement, and S4's note queue, **plus the 10 reporting defects from the 2026-08-05 audit** | |
 
 ---
 
@@ -1808,6 +1863,457 @@ Caveats: the sweep used a single λ (0.35), concentration (30 µM), dimension (3
 Gaussian shapes, so the 0.75 threshold may shift with modulation depth — that is what
 sets how strongly the background and dipolar decay compete. The 23 % false alarms are
 cells whose bias falls just under 0.05 nm, so the warning is conservative there.
+
+## Session 2026-08-05 — audit of the 2026-08-04 burst: the math is inert, the reporting is not
+
+Prompted by the user's report that the recent commits "created a mess". Read-only
+audit, no code changed. Artefacts in `~/deer_benchmark/s11_audit/`; every finding
+below was verified by EXECUTION (`verify.py`), not by reading the diff.
+
+The headline is a clean bill for the physics and a bad one for the surface: the four
+mechanisms are correctly scoped and provably inert where they should be, and every
+defect found is in what the tool tells the user afterwards.
+
+### The mechanisms are inert where they should be
+
+The user's own suggestion — no background at all, long trace — is the right
+instrument, and it acquits the burst. On `k = 0` (background exactly 1), `t_max` 8 us,
+`dt` 10 ns, no pre-t0 samples, three shapes, the six-way ablation
+(`a2_ablate.py`) is **bit-identical across all of it**: shipped defaults,
+`pre_zero='crop'`, `reg_edges=False`, `clamp_alias=False`, `echo_head=True`, and all
+three off together (the pre-Aug-4 configuration). Nothing the burst added touches a
+trace that gives it nothing to act on.
+
+Positive controls prove that is scoping and not dead code (`a3_controls.py`):
+`reg_edges` moves `P[0]/max` 1.000 -> 0.202 on a 2.0 nm truth against a 1.8 nm grid;
+`clamp_alias` takes a 32 ns trace from 200 grid points to 197 at `r_alias` 1.88;
+`pre_zero='even'` returns 321 rows against `'crop'`'s 301. At sigma 0.02 with real
+noise `reg_edges` is worth +0.006 to +0.011 overlap on the same three shapes, the
+sign and size the 2026-08-04 catalogue reported.
+
+### The noiseless trap — record this before anyone repeats the experiment
+
+"No background AND no noise" is NOT a valid clean-room test for either Tikhonov
+engine, and it nearly produced a false alarm here. On a **noiseless** 5.0 nm narrow
+Gaussian at `t_max` 8 us the joint engine returns overlap 0.576 against sequential's
+0.955, with a peak density 2.86 against the truth's 1.33 — the "~3x too tall spike"
+signature. It is GCV degenerating as sigma -> 0, and it is confined to *exactly* zero
+noise (`a5_alpha.py`):
+
+| sigma | seq alpha / ov | joint alpha / ov |
+|---|---|---|
+| 0 | 3.98 / 0.955 | **0.0135 / 0.576** |
+| 0.001 | 3.98 / 0.954 | 14.9 / **0.988** |
+| 0.005 | 39.8 / 0.961 | 60.6 / 0.976 |
+| 0.01 | 100 / 0.951 | 122 / 0.959 |
+| 0.02 | 159 / 0.932 | 122 / 0.938 |
+
+One part in a thousand of noise is enough: at sigma 0.001 the joint engine is already
+the better of the two. So the `k = 0` half of the user's suggestion is sound and
+useful on its own — it is the sigma = 0 half that breaks the alpha selector, and any
+future clean-room round should keep a token sigma rather than none.
+
+Related, and it is where the roadmap's own `gauss_narrow_long` spike lives: that
+shape's "~3x too tall" peak reproduces here with **no background at all and a healthy
+`bg_start`**, so the 2026-08-04b diagnosis (early background window) is a real cause
+but not the only one.
+
+### Verified defects — all in the reporting layer
+
+Severity order. Each is stated as inputs -> wrong output.
+
+1. **`2861d47`'s two new detectors cannot be seen by a GUI user, through either
+   channel.** `bg_start_early` and `conc_implausible` appear NOWHERE in
+   `deer_analysis.py` (grep: zero hits) — the flag list at `:2601-2620` still shows
+   only `lambda_clamped` / `tail_abs_F` / `k_disagrees` / `k_at_bound`. And the other
+   channel is closed too: `main.py:268` connects only `readyReadStandardOutput` for
+   every control-centre process, so the `RuntimeWarning` route to stderr is discarded
+   as well. The 92 %-detection flag written specifically because `k_disagrees` is
+   blind to the early-background failure is unreachable, while `k_disagrees` — 56 %
+   detection at 45 % false alarm, re-documented in `deer.py:1424-1433` as "NOT a
+   reliability verdict" — is still displayed as a bare orange warning next to the
+   genuinely diagnostic ones.
+2. **The alias clamp is silent on two of the three engine tabs.** `r_alias` is
+   returned by `deer_invert` and `deer_invert_joint` only; `deer_invert_mellin`,
+   `deer_invert_gauss` and `deer_validate` bind it to `_r_alias` and drop it.
+   Measured: a 32 ns trace with a 1.5-8 nm / 200-point grid comes back with **188
+   points** from all three engines, and `r_alias` is `1.8815` on joint but `None` on
+   Mellin and gauss — so `deer_analysis.py:2638-2647`'s red "r min raised" line fires
+   on the Tikhonov tab and never on the other two, while the Distance-min spinbox
+   still reads 1.50 everywhere. `ROADMAP.md:1630`'s "The GUI reports it as ..." is
+   true for one engine in three.
+3. **`deer_validate(..., clamp_alias=False)` raises.** It clamps its own grid at
+   `deer.py:3310` but does not forward the flag to the per-trial `deer_invert`, which
+   defaults to `True`. Reproduced: `ValueError: operands could not be broadcast
+   together with shapes (200,) (188,)`. Not reachable from the GUI (which never passes
+   it), but it is the documented escape hatch on a public API.
+4. **`pre_zero` is silently ignored on two engines.** `deer_invert(engine='mellin',
+   pre_zero='crop')` runs `'even_fold'` — verified identical output to the default —
+   because `deer.py:966`/`:973` pop `pre_zero_engine` instead. The working knob
+   appears in no docstring, and `deer_invert`'s own docstring at `:942-943` still says
+   Mellin and gauss "always crop", which `2f10ce7` made false.
+5. **`deer_invert(engine='joint')` drops `**kwargs`.** `head_level`, `head_cap` and
+   `head_ratio_max` are inert on that path: `head_cap` 0.35 vs 0.05 gives identical
+   `P_density` through `deer_invert` and different output through `deer_invert_joint`
+   directly.
+6. **`'even_fold'` pairs by `searchsorted`, so an off-grid t0 folds outward.** With t0
+   3.7 ns off a 10 ns grid — the normal GUI case, since `t0_disp` comes from a spinbox
+   or `fit_zero_time` — every mirrored sample is averaged into a positive twin
+   **7.4 ns later** than its true mirror, i.e. 74 % of `dt`, concentrated at the echo
+   top where leverage is highest. On-grid the error is exactly 0. The mirror *test*
+   two lines above already interpolates correctly; only the fold does not. This is
+   Mellin's shipped default since `2f10ce7`.
+7. **`echo_head` + Validate silently drops the head.** `deer_analysis.py:1946` calls
+   `deer_validate` without `echo_head`; only the non-validate branch at `:1955` passes
+   it. Tick both and you get a result computed without the head and no indication.
+8. **`echo_head` is a no-op with no pre-t0 samples, and the outcome is never
+   reported.** Pair-averaging needs the mirrored samples, so with `n_pre = 0` the head
+   returns `applied: False` at every noise level — measured. The engine returns an
+   `echo_head` dict (applied / delta / r_eff / r_ratio); nothing in the GUI reads it,
+   so the user cannot tell whether the guard refused or the option did nothing. The
+   checkbox also stays enabled under the three non-joint background models, where it
+   is dropped at `:1925`.
+9. **The reliability shading is now engine-dependent.** `deer_analysis.py:2708` takes
+   `ptp(res['t'])`, which under `pre_zero='even'` includes the pre-t0 span, so on a
+   trace with 0.3 us before the echo and 1.7 us after, the Tikhonov tab draws the
+   green/yellow boundary at 5.00 nm and the Mellin tab at 4.74 nm on identical data.
+   Exact before the burst, when `res['t']` was `x[t_us >= 0]`.
+10. **`k_disagrees` false-alarms on a flat background.** With `k = 0` it compares two
+    rates that are both at the floor (4.757e-05 against the sequential fit) and warns
+    "0.0x the sequential tail-fit rate". Any trace with a genuinely flat background
+    trips it. The ratio needs a floor below which it declines to judge.
+
+Smaller, unverified-by-execution but read directly from the source: `deer_validate`'s
+per-trial `flagged` set (`deer.py:3361-3364`) is stale in the same way as the GUI's
+(no `bg_start_early` / `conc_implausible` / `k_at_bound`), so a sweep in which EVERY
+trial has an early background window reports `n_flag = 0` and trials that agree
+because they are all wrong the same way; `deer_invert_joint:1066-1068` still tells the
+reader to trust `k_disagrees` while `joint_background` demotes it; `reg_edges` and
+`clamp_alias` — both default ON, both able to move a reported distance — appear in no
+entry-point docstring; and the echo-head tooltip still quotes +0.0035 where the code
+comment records +0.0016.
+
+### What this says about the burst
+
+Nothing here argues for reverting any of the seven commits. The measurements they were
+shipped on hold, and the ablation shows they do not act outside their remit. What went
+wrong is a pattern rather than a bug: **each commit added a mechanism plus a way to
+report it, and the reporting half was the part that got tested least.** Two of them
+(`bf215c6`, `2861d47`) landed a user-visible surface that does not reach the user at
+all, and both were verified against the library, not through the window — the same
+S1/S2 lesson this document has recorded twice already ("any engine-signature change
+needs one GUI-path smoke run before the session closes"). It applies to result-dict
+KEYS as much as to array lengths.
+
+### Suggested order if this is picked up
+
+Items 1, 2 and 10 are what a user actually feels; 3, 4, 5 are small and mechanical;
+6 is the one that needs a benchmark re-run, since fixing the fold changes Mellin's
+shipped default and the +0.0064 that justified it was measured with the biased pairing
+in place.
+
+### FIXED same session — items 1, 2 and 10
+
+Gate scripts `fixcheck.py` / `engflags.py` / `real_check.py` in
+`~/deer_benchmark/s11_audit/`.
+
+**Item 2 — `r_alias` on every engine.** The three entry points that bound it to
+`_r_alias` and dropped it now return it; `deer_validate` returns it too. Verified on a
+32 ns trace with a 1.5-8 nm / 200-point grid: joint, Mellin, gauss and validate all
+report `r_alias` 1.8815 with the grid at 188 points, so `deer_analysis.py`'s red
+"r min raised" line now fires on all three tabs instead of one. Control: at dt = 10 ns
+`r_alias` is 1.2768 and the line correctly stays silent. Also `_auto_rmin_value` now
+rounds **up** to 0.1 nm rather than to nearest — `round(1.7087, 1) = 1.7` sits BELOW
+the floor, so clicking Auto and then Run produced a clamp warning the user had just
+caused.
+
+**Item 10 — `k_disagrees` on a flat background.** `k_ratio` is a ratio of two rates and
+says nothing when both sit near their floor. The test is now gated on the decay the
+fitted background actually produces across the trace,
+`bg_drop = 1 - exp(-(k*Tmax)^(d/3))`, and declines to judge below 1 % (`bg_flat`).
+Measured across true rates 0 -> 0.2 /us on a 4 us trace: `bg_drop` 0.55 % / 0.59 % /
+0.95 % / 4.5 % / 18.7 % / 55.5 %, so the three flat cases are suppressed — including
+`k = 0.001`, whose `k_ratio` 0.437 used to trip the `< 0.5` arm — and nothing at or
+above a routine background is touched. Both new keys are returned. **The guard does not
+mute the failure it must not mute:** on the early-background 5 nm case (`bg_start`
+0.45 us) `bg_drop` is 0.242, `bg_flat` False, and `bg_start_early` fires at 0.20
+periods with the distance biased short (4.896 against 5.000), exactly as calibrated.
+
+**Item 1 — the two detectors reach the window.** `bg_start_early` and
+`conc_implausible` are now in the info panel. Two things had to change, not one:
+
+* The GUI flag list was extended, and split in two. `flags` (orange ⚠) are the ones
+  measured to predict a wrong distance; `k_disagrees` moved to a new blue `note:` line
+  together with `bg_flat`, because a 56 %/45 % diagnostic sitting in the same warning
+  line as `bg_start_early`'s 92 %/23 % is what made the panel unreadable in the first
+  place. Its text now says outright that the two background routes differing is not on
+  its own a sign the distance is wrong.
+* **`bg_start_early` was only being COMPUTED in the joint Tikhonov engine**, so
+  displaying it would have left the Mellin and multi-Gaussian tabs blank — both default
+  to `bg_engine='joint'` and inherit the identical failure. The check plus its warning
+  are now one helper, `_flag_bg_start_early`, called from all three after the inversion
+  (it needs the recovered distance to know the dipolar period). Verified: on the 5 nm
+  early-window case all three fire (0.20 / 0.23 / 0.18 periods) and on a healthy
+  window at 1.25 us none of them do (1.06 / 1.18 / 1.04 periods).
+
+**Regression gate — 28 real YopO traces, joint and Mellin, against a pristine
+worktree at HEAD** (`real_check.py`, baselines `real_{base,new}.json`):
+
+* **Reported distances are bit-identical**: max |Δ| = **0.000000** on peak AND mean,
+  both engines, all 28. None of these fixes moves a number.
+* `r_alias` present on **28/56 → 56/56** engine runs (item 2, on real data).
+* `k_disagrees` unchanged at **2/56** — real backgrounds decay far above the 1 %
+  threshold, so the flat-background guard never engages on them (item 10 is inert
+  where it should be).
+* `bg_start_early` **21/56 → 42/56**, and every one of the 21 new firings is the
+  Mellin run on a trace whose joint run was *already* firing. The two engines now
+  agree instead of one being blind — no new information, just parity.
+
+**And it does not make the panel noisy.** At the GUI's own default background window
+(0.5 × span, `bgdefault.py`) `bg_start_early` fires on **0 of 28** real traces: 5.2-9.0
+dipolar periods on sample1, 2.8-3.2 on sample2, 1.5-2.7 on sample3, 1.8-2.3 on
+sample4, all clear of the 0.75 threshold. The 21/56 above comes from the harness
+pinning `bg_start` at 0.3 us, which for a 3.6-7 nm sample genuinely *is* a fifth of a
+dipolar period — the flag is right in both cases. Anyone quoting a firing rate for
+this flag must say which `bg_start` it was measured at.
+
+*Method note, recorded because it is the audit's own finding turned on itself:* the
+first version of `bgdefault.py` crashed with `operands could not be broadcast together
+with shapes (200,) (193,)` — it built its moments on its own `R` instead of `res['r']`,
+which is exactly defect class 2. The alias clamp is active on the real ring test
+(193 of 200 points on the coarse traces), so any harness that keeps its own copy of the
+grid breaks on it.
+
+Not touched, deliberately: `main.py`'s stderr channel. Connecting
+`readyReadStandardError` for every control-centre process to fix one tool's warnings
+would put vendor driver chatter into the log for all of them, and the flags were
+already in the result dict — the panel is the right channel. The `warnings.warn` calls
+stay as the library-caller surface.
+
+Still open from the audit list: items 3-9, and the batch "Process all" summary still
+reports no clamp for any engine.
+
+## Session 2026-08-05b — the high-noise shoulder is short-r mass, and the auto bg_start
+
+Two user questions: the strange curvature near t = 0 on `gauss_broad` /
+`gauss_narrow_broad` with Tikhonov at high noise, and whether the automatic
+background start is correct. Both were put to independent **Fable** adversarial
+verifiers with a default stance of REFUTED; each ran its own harness from scratch.
+Their corrections to my first readings are kept below, because two of them matter.
+
+### 1. The t = 0 curvature at high noise is NOT the mechanism August fixed
+
+The 2026-08-04 round established shoulder = late t0 + the pre-zero crop. At the
+noise the user is asking about that explanation no longer holds. Verified twice,
+independently:
+
+| | σ 0.02 | σ 0.04 | σ 0.06 |
+|---|---|---|---|
+| `gauss_broad` shoulder | 0.000 | 0.066 | **0.512** |
+| same, with the TRUE t0 | 0.000 | 0.161 | **0.512** |
+| `gauss_narrow_broad` | 0.208 | 0.334 | 0.266 |
+| same, with the TRUE t0 | 0.216 | 0.349 | 0.278 |
+
+A perfect zero time does not remove it. The verifier went further and substituted
+the **exact simulated k and λ** for the fitted background as well: shoulder 0.263
+base → 0.307 with an oracle background → 0.396 with an oracle background *and* an
+oracle t0. Neither input is the cause.
+
+**The cause is spurious short-r mass, and the correlation is decisive:**
+`corr(shoulder, lo_mass) = +0.892` against `corr(shoulder, |t0 err|) = −0.041`.
+Sub-2.5 nm mass averages 0.112 on the traces that show a shoulder and 0.020 on the
+ones that do not. At σ 0.06 with λ 0.22 the form-factor noise is ~0.27, the
+non-negative fit buys grid-bottom mass to absorb it, and short-r kernel rows are
+strongly convex in the head — so the fit decays too steeply and then flattens.
+
+*Two corrections to my own first reading.* The artefact is **bursty, not
+systematic** — only 10 of 40 traces carry it and the cell means are outlier-driven
+(one cell's four seeds: 0.000 / 0.856 / 1.018 / 0.173). And "the true t0 helps at
+σ 0.02–0.04" is **refuted on the shoulder metric** (equal or worse in all four
+cells); it helps on `lo_mass` and overlap, which is where the impression came from.
+
+### `echo_head` cannot rescue this, and it fails silently — now reported
+
+`echo_head=True` is **bit-identical to the default** at σ 0.06. Its guard is doing
+it, and the gating is noise-driven, not the breadth test it is documented as:
+
+| σ | head applied | mean r_ratio | r_eff range |
+|---|---|---|---|
+| 0.02 | 6/16 | 1.221 | 3.5–4.4 nm |
+| 0.04 | 1/16 | 1.358 | 2.3–3.8 nm |
+| 0.06 | **0/8** | **1.786** | 1.9–2.6 nm |
+
+The distribution is a 4.0 nm Gaussian throughout. `r_mean` barely moves; what walks
+past `head_ratio_max = 1.25` is `r_eff`, collapsing 4 → 2 nm because noise inflates
+the quartic |b₄|. A second decline path — `r_eff` NaN when b₄ ≥ 0 — fires on 15 of
+40 traces and is the *usual* one at high noise. **Removing the guard does not help**
+(+0.027 shoulder on the affected traces, 0 of 24 wins), so this is not a guard to
+retune; the head simply has nothing to offer here. The 2026-08-02 note that
+`r_ratio` is "part breadth test, part noise gate, and only the breadth half was
+derived" is now measured, and the noise half dominates.
+
+Also measured: the σ 0.04 *worsening* under `echo_head` is not the guard misfiring
+off but letting ONE trace through (r_ratio 1.066): shoulder 0.000 → 0.773 on that
+trace alone.
+
+**SHIPPED — the head now says what it did.** `res['echo_head']` carries `requested`
+alongside `applied`, and the GUI prints "echo-top head applied (δ = N ns)", or
+"DECLINED by its guard (r_mean/r_eff = X > 1.25)", or "DECLINED: its curvature fit
+failed". Before this, ticking the checkbox on exactly the trace the user is asking
+about produced silence and an unchanged result.
+
+### Candidate fixes — measured, and none is a safe default
+
+24 high-noise traces; "BAD8" = the 8 where the artefact actually appears.
+
+| variant | mean shoulder | lo_mass | overlap | BAD8 Δshoulder | BAD8 Δov |
+|---|---|---|---|---|---|
+| base (shipped) | 0.263 | 0.0534 | 0.8310 | — | — |
+| `alpha_factor=2` | 0.198 | 0.0497 | 0.8319 | −0.213 | +0.0138 |
+| `alpha_factor=4` | 0.125 | 0.0455 | 0.8134 | −0.462 | +0.0141 |
+| r_min 2.0 nm | 0.152 | 0.0377 | 0.8300 | −0.329 | −0.0009 |
+| r_min 2.5 nm | **0.038** | — | **0.8444** | **−0.664** | **+0.0350** |
+| `echo_head` unguarded | 0.304 | 0.0543 | 0.8308 | +0.027 | −0.0010 |
+| `alphas` grid → 1e6 | 0.209 | 0.0588 | 0.7938 | −0.307 | −0.0108 |
+
+Control, `short_r24` (true peak 2.4 nm): base overlap 0.882 · r_min 2.0 → 0.894 ·
+**r_min 2.5 → 0.664** · `alpha_factor=2` → 0.857.
+
+**Nothing here was adopted as a default, deliberately.** `alpha_factor=2` is the
+verifier's recommendation and is genuinely overlap-neutral overall, but the
+docstring already records that it collapses the CI band's coverage at the mode
+(0.84 at factor 1, 0.08 at 2) — so it buys a smoother picture by silently
+invalidating the uncertainty next to it. Raising `r_min` is the strongest lever by
+far and is a *sample* decision, not a default: it destroys genuinely short
+distributions. Both are already exposed in the GUI, and the honest advice is to
+reach for them per sample, on a trace whose panel is showing the tell.
+
+**And there IS a tell, already on screen.** `l_curve`'s `at_bound` is **True on
+100 %** of these high-noise traces — GCV wants α above the top of the shipped
+`logspace(-4, 3)` grid (unclipped it asks 1874–7565 on the 256-point axis; α scales
+as 1/dr², so the ceiling bites on fine grids). The GUI already prints "α sits on the
+grid edge, not at an interior optimum". That line is the signature of this
+artefact. **Widening the grid is NOT the fix** — it costs −0.037 overlap (t −3.76)
+because unclipped GCV then picks α up to 11 600 and merges bimodal peaks. At this
+SNR GCV is unreliable in both directions and the 1e3 ceiling is accidentally a
+useful cap. Recorded so nobody "fixes" it.
+
+### 2. The automatic bg_start — it is NOT correct at long distances
+
+Scored against the 2026-08-04b criterion (open no earlier than 0.75 dipolar periods
+of the recovered distance), over 21 shapes × 3 conditions × 4 noise levels:
+
+| rule | opens EARLY | min periods |
+|---|---|---|
+| GUI auto, **joint** (floor 0.35) | **16.7 %** | 0.28 |
+| GUI auto, sequential (floor 0.66) | 4.8 % | 0.54 |
+| engine default 0.5 × span | 14.3 % | 0.38 |
+| `joint_background` default 0.6 × span | 6.3 % | 0.47 |
+| the s5 catalogue's own `bg_start` | **61.9 %** | 0.19 |
+
+Confirmed independently against both the true and the *recovered* mean distance.
+Worst cells are all `gauss_narrow_long` / `gauss_broad_long`. The sharpest single
+case: `gauss_narrow_long`, hard2, σ 0.02 — auto bg_start = 0.345 periods, recovered
+4.63 nm against a true 5.00 (**−0.366 nm**), k 6.9× the truth. That is the
+calibrated failure mode produced by the GUI's own default, and `_reset_bg_window`
+runs it on **every file load**, with joint as the default engine.
+
+*Not overstated in one direction and understated in another.* Most flagged cells are
+not severe (median k inflation 0.74×, |Δr| > 0.09 nm in only 15 of 42) and the
+damage concentrates in the shortest traces. But the flagged *set* is wider than the
+long shapes — `gauss_broad`, `gauss_vbroad`, `gauss_bb` and others appear.
+
+**The modulation-envelope push is a noise test.** This is the mechanical finding.
+`env_frac` sits at 0.117–0.191 for **0 of 189** low-noise cells above the 0.35 floor
+and at 0.778–0.833 for all 63 high-noise ones; the interval between contains one
+cell in 252. On all **28 real traces** it is 0.118–0.179 — never once above the
+floor. The decisive test was the verifier's, not mine: rebuild each real trace as a
+modulation-FREE surrogate from its own fitted background plus its own noise, and
+`env_frac` moves by a mean of 0.0085 — and *rises* in 21 of 28. A trace with no
+dipolar signal at all scores in the same band as one with.
+
+Mechanism, confirmed quantitatively: `osc = vn − boxcar(vn, n/6)` is a high-pass
+whose gain is |1 − sinc(W/T_dd)| — **1.108 at 3.0 nm but 0.094 at 5.0 nm**, an
+11.8× attenuation that predicts the measured 10× ablation ratio. So the filter is
+blindest exactly where an early window does the damage. *My proposed `a0` mechanism
+was wrong* and the verifier refuted it: edge-correcting the convolution changes `a0`
+by a factor 1.02. `a0` is large because `vn[0] = 1` against a local mean of ~0.78 —
+it measures the DEPTH of the form-factor drop (λ-scale), so the threshold `0.15·a0`
+is set by the modulation depth and carries no information about persistence.
+
+Three more, all verified:
+
+* **`BG_START_FRAC_MAX = 0.85` is unreachable dead code.** `sig` is searched only
+  over `amp[:n−win]` with `win = max(5, n//6)`, so `env_frac < 5/6 = 0.8333` for
+  every n (swept n = 16…20000, max 0.833325). 55 of 63 high-noise cells sit exactly
+  at that structural ceiling — "modulation detected to 83 %" is the statistic
+  pegging, not a measurement.
+* **Switching engines never recomputes bg_start.** `deer_engine.currentIndexChanged`
+  is wired to the live-update slots but not to `_reset_bg_window`, so the
+  engine-aware floor applies only if the engine was already selected at load time.
+* **The 0.35 joint floor was validated where its own failure cannot occur.** The
+  commit introducing it justified the low floor on `gauss_broad` (4.0 nm), and
+  `_check_bg_start_periods`'s calibration says the early-window failure "is confined
+  to long distances — no band exceeds 0.018 nm at r ≤ 3.5 nm".
+
+**Inventory correction to my own audit:** `background_fit` has NO automatic rule
+(`bg_start` is a required positional). The 0.5 sites are `deer_invert`,
+`deer_invert_mellin`, `deer_invert_gauss`, `_no_background`, `_bg_start_grid`, and
+`joint_background`'s own fallback when the 0.6 window leaves fewer than 3 points.
+Four distinct numeric answers (0.35 / 0.5 / 0.6 / 0.66) is right; the function list
+was not. Measured spread on `sample3_labD`: 4.16 / 5.87 / 7.07 / 7.84 µs — **3.68 µs**.
+The `pre_zero='even'` shift is real but small (mean −0.057 µs, ~1.2 % of t_max) and
+does not touch Mellin (`even_fold`) or gauss (`crop`), which return t[0] ≥ 0.
+
+### FIXED this session — the early-window flag now reaches every engine
+
+The verifier caught a defect in **this morning's own fix**: `_flag_bg_start_early`
+was called from `deer_invert_joint`, `_mellin` and `_gauss` but NOT from
+`deer_invert`'s own body, so the sequential / none / general paths raised nothing —
+contradicting the helper's docstring, which I had written to say every engine does
+it. Sequential is the engine the history says collapses on an early window. Fixed;
+verified on a 5 nm trace with a deliberately early window, all six paths now report:
+sequential 0.20 / joint 0.21 / none 0.18 / general 0.18 / mellin 0.27 / gauss 0.19
+periods, each with its RuntimeWarning. On the 28 real traces the flag fires 21/28 at
+`bg_start` 0.3 µs and **0/28** at the GUI's own default.
+
+**Not changed:** the 0.35 floor, the envelope test and the four-way rule
+disagreement. Each moves every reported distance, and the adaptive answer — the
+engine telling you when the window is too early for the distance it actually
+recovered — now works on every engine, which is the cheaper half of the same job.
+The floors are the open decision.
+
+### Ported and committed — both 2026-08-05 sessions together
+
+`deer.py` ITC → plain → NIOCH / NIOCH_Q / Cryomech; `deer_analysis.py` ITC → NIOCH /
+NIOCH_Q. Done surgically with explicit copies rather than the bulk distributor,
+because `--sync` would also carry `Sibir_1.py` plain → every fork; that file is
+pre-existing drift and stays untouched. `sync_check.py` was run before and after.
+Each fork was smoke-tested after the copy (import + a joint inversion + the new
+result keys). Hashes are in the commit message, not here — this record went stale
+three times in one day on 2026-08-04, so **re-check an md5 before quoting it.**
+
+Regression carried through the port: **max |Δ| = 0.00000000 nm** on peak and mean
+over the 28 real YopO traces × joint and Mellin, against a pristine worktree at the
+pre-session HEAD. None of the six fixes moves a reported number; they change what is
+reported *about* it.
+
+### What is open
+
+From the audit, items 3–9: `deer_validate(clamp_alias=False)` raises; `pre_zero` is
+silently ignored via `deer_invert(engine='mellin'|'gauss')` (the working knob is the
+undocumented `pre_zero_engine`); `deer_invert(engine='joint')` drops `**kwargs`;
+`'even_fold'` pairs by `searchsorted` so an off-grid t₀ folds outward by up to a full
+`dt`; `echo_head` + Validate silently drops the head; the reliability shading uses
+`ptp(res['t'])` and is now engine-dependent; and "Process all" reports no clamp for
+any engine. The `even_fold` one needs a benchmark re-run, not just a patch — fixing
+the pairing changes Mellin's shipped default and the +0.0064 that justified it was
+measured with the biased pairing in place.
+
+From 2026-08-05b: the four-way disagreement between the automatic `bg_start` rules
+(0.35 / 0.5 / 0.6 / 0.66), the 0.35 joint floor that was validated at distances where
+its own failure mode cannot occur, the envelope test that measures noise, the
+unreachable `BG_START_FRAC_MAX`, and engine switching not recomputing `bg_start`.
 
 ## Known tensions between the short-r mechanisms (read before adding another)
 
