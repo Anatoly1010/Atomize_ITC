@@ -2288,10 +2288,21 @@ The floors are the open decision.
 `deer.py` ITC → plain → NIOCH / NIOCH_Q / Cryomech; `deer_analysis.py` ITC → NIOCH /
 NIOCH_Q. Done surgically with explicit copies rather than the bulk distributor,
 because `--sync` would also carry `Sibir_1.py` plain → every fork; that file is
-pre-existing drift and stays untouched. `sync_check.py` was run before and after.
-Each fork was smoke-tested after the copy (import + a joint inversion + the new
-result keys). Hashes are in the commit message, not here — this record went stale
-three times in one day on 2026-08-04, so **re-check an md5 before quoting it.**
+pre-existing drift and stays untouched. `sync_check.py` was run before and after,
+and afterwards reports `Sibir_1.py` as the ONLY remaining drift with the control
+centre in sync. Each fork was smoke-tested after the copy (import + a joint
+inversion + the new result keys), and all five working trees are clean.
+
+| repo | commit |
+|---|---|
+| Atomize_ITC (lead, carries this file) | `a82fba1` |
+| Atomize (plain) | `8664d96` |
+| Atomize_NIOCH | `28f06ee` |
+| Atomize_NIOCH_Q | `88477e3` |
+| Atomize_Cryomech | `f94ec52` |
+
+Commit SHAs rather than md5s deliberately: the 2026-08-04 record quoted file hashes
+and went stale three times in one day. **Not pushed** — commit only.
 
 Regression carried through the port: **max |Δ| = 0.00000000 nm** on peak and mean
 over the 28 real YopO traces × joint and Mellin, against a pristine worktree at the
