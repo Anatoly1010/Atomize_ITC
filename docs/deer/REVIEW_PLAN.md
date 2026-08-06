@@ -227,6 +227,19 @@ fit `V = A[1−S+K·masses]B` with `λ = Σmasses = S`, multi-start seeding, wid
 **Ground truth** — `bench_gauss.py`, `cmp_gauss.py`, synthetic ground truth with
 known N; the round-8 baseline (overlap 0.846→0.885) as a regression floor.
 
+> **REVIEWED 2026-08-06, VERIFICATION INCOMPLETE** — see
+> [REVIEW_S5_gauss.md](REVIEW_S5_gauss.md). The seeding question is answered
+> (strategy, not count: 4 random restarts at 4× the cost recover a fifth of what
+> the designed spread seed buys) and the width-floor constant is derived (the 3 is
+> exact; the 1/9 is calibration, and the derived floor alone costs −0.145 overlap).
+> Model selection is the open one: the criterion **never turns over on real data**
+> (`n_gauss_ic` == `max_gauss` on 25/28 traces), so N comes from the spin box.
+> The session's usage limit killed the `docs`, `crossengine` and `freqdomain`
+> reviewers, triage, and 13 of 19 skeptics: **the DeerLab `dd_gaussN` cross-check
+> — the only external implementation this engine can be checked against — was not
+> run.** Resume from the 48 banked findings in
+> `~/deer_benchmark/s5_gauss/agent_findings.json`.
+
 ---
 
 ## S6 — Cross-engine consistency, validation, GUI · Opus
@@ -309,5 +322,5 @@ panel and on symbolic checks (sympy) against closed-form transform pairs.
 | S2 Tikhonov | Opus | **DONE** 2026-07-28 — 9 confirmed, 3 plausible, 2 refuted; all confirmed fixed | [REVIEW_S2_tikhonov.md](REVIEW_S2_tikhonov.md) |
 | S3 Mellin core | Opus + blind-derivation panel | **DONE** 2026-07-29 — 7 confirmed, 3 plausible, 0 refuted; all confirmed fixed | [REVIEW_S3_mellin.md](REVIEW_S3_mellin.md) |
 | S4 Mellin engine | Opus | **DONE** 2026-07-30 — 38 raw → 13 queued; 10 confirmed, 3 plausible, 0 refuted; all confirmed fixed (none as suggested) | [REVIEW_S4_mellin_engine.md](REVIEW_S4_mellin_engine.md) |
-| S5 Multi-Gaussian | Opus | not started | |
+| S5 Multi-Gaussian | Opus | **REVIEWED, VERIFICATION 12/22** 2026-08-07 — 53 raw findings; 12 verified (all CONFIRMED 2/2), 2 fixed; 9 skeptics + 5 verifynew outstanding; the DeerLab `dd_gaussN` cross-check never ran | [REVIEW_S5_gauss.md](REVIEW_S5_gauss.md) |
 | S6 Cross-engine + GUI | Opus | not started | |

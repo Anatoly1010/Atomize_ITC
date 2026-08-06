@@ -1091,13 +1091,15 @@ class MainWindow(QMainWindow):
             'How the Gaussian parameters are found. <b>Least-squares</b> (default): '
             'fast gradient fit in the time domain. <b>Monte-Carlo (Pake)</b> '
             '(Dzuba, JMR 275 (2016); Matveeva et al., Z. Phys. Chem. 231 (2017)): '
-            'a random multi-start search in the dipolar frequency (Pake) domain — '
-            'the random starts cannot be trapped in the spurious floor-width-spike '
-            'solution the gradient fit can fall into, and the frequency domain is '
-            'intrinsically immune to ESEEM (fixed frequencies) and background error '
-            '(zero frequency). The data-consistent trials give a non-linearized '
-            'confidence band + per-component error bars. On clean data it matches '
-            'least-squares; its value is robustness on real, artifact-laden traces. '
+            'a random multi-start search selected on the dipolar frequency (Pake) '
+            'spectrum — the random starts cannot be trapped in the spurious '
+            'floor-width-spike solution the gradient fit can fall into. '
+            '<b>Limits:</b> it does NOT match least-squares on clean data '
+            '(worse on both shape and component count), it is NOT '
+            'immune to ESEEM or background error, it fits the prepared form factor '
+            'so λ and the background are never re-fitted, and its band is the '
+            'spread of the optimizer over its own restarts (often exactly zero '
+            'wide). Prefer Least-squares unless you are probing search stability. '
             'Slower (~seconds).')
         self.gauss_method.currentIndexChanged.connect(self._gauss_method_toggle)
         self.gauss_method.currentIndexChanged.connect(self._gauss_live)
@@ -2495,9 +2497,14 @@ class MainWindow(QMainWindow):
             bgs = band['bg_starts'] / tf + t0_disp     # back to the acquisition axis
             lo, hi = band['percentiles']
             sp = band.get('trial_spread') or {}
+            degen = bool(sp.get('band_degenerate'))
+            band_txt = ('the sweep cannot probe this engine — it re-fits the '
+                        'background itself, so the background start never enters '
+                        'its objective; NO band is drawn' if degen
+                        else f'band = {lo:g}–{hi:g}%')
             extra = (f'<br><b style="color: rgb(150, 200, 255);">validation</b><br>'
                      f'{band["n_trials"]} trials, bg start {bgs[0]:.3g}–{bgs[-1]:.3g} '
-                     f'{self.deer_tunit.currentText()}<br>band = {lo:g}–{hi:g}%, '
+                     f'{self.deer_tunit.currentText()}<br>{band_txt}, '
                      f'median peak {band["peak"]:.2f} nm, mean {band["r_mean"]:.2f} nm'
                      + (f'<br>trial spread: mean {sp["r_mean_spread"]:.3f} nm, '
                         f'λ {sp["lambda_spread"]:.3f}, '
@@ -2697,12 +2704,12 @@ class MainWindow(QMainWindow):
                             f'{self.deer_tunit.currentText()}, peak r={r_peak:.2f} nm, '
                             f'R²={r2:.3f}.')
         elif is_gauss:
-            tag = f' ({band["n_trials"]}-trial band)' if band else ''
+            tag = self._band_tag(band)
             self.set_status(f'Multi-Gaussian: {res.get("n_gauss", "?")} comp., '
                             f'λ={res["lambda"]:.3f}, peak r={r_peak:.2f} nm, '
                             f'R²={r2:.3f}{tag}.')
         else:
-            tag = f' ({band["n_trials"]}-trial band)' if band else ''
+            tag = self._band_tag(band)
             self.set_status(f'Tikhonov: λ={res["lambda"]:.3f}, α={res["alpha"]:.3g}, '
                             f'peak r={r_peak:.2f} nm, R²={r2:.3f}{tag}.')
         # a parameter/cursor change arrived while we were busy -> refit once
@@ -2742,7 +2749,12 @@ class MainWindow(QMainWindow):
                                 rr[-1] if len(rr) else None)
         if self.deer_band is not None:
             b = self.deer_band
-            self._show_deer_band(True, b['r'], b['P_lower'], b['P_upper'])
+            # a degenerate sweep (an engine that co-fits its own background) has
+            # no band to show; drawing one would read as certainty, not as
+            # "not measured" — see deer_validate's band_degenerate
+            self._show_deer_band(
+                not (b.get('trial_spread') or {}).get('band_degenerate'),
+                b['r'], b['P_lower'], b['P_upper'])
             self._repaint(self.p_pr, self.pr_legend, self._pr_items,
                           [('P(r) median', b['r'], b['P_density'], C_FIT, 2)],
                           'Distance (nm)', '_pr_key', left_label='P(r) (nm⁻¹)',
@@ -2987,6 +2999,17 @@ class MainWindow(QMainWindow):
             return
         self._lcurve_marker.setData([x], [y])
         self._lcurve_marker.setVisible(True)
+
+    @staticmethod
+    def _band_tag(band):
+        """Status-line tag for a validation run: 'sweep', not 'band', when the
+        sweep produced no usable band (see deer_validate's band_degenerate)."""
+        if not band:
+            return ''
+        kind = ('sweep, no band'
+                if (band.get('trial_spread') or {}).get('band_degenerate')
+                else 'band')
+        return f' ({band["n_trials"]}-trial {kind})'
 
     def _show_deer_band(self, visible, x=None, lo=None, hi=None):
         """Show/hide the P(r) uncertainty band (confidence interval or validation

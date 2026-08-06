@@ -79,7 +79,7 @@ made; this is the index.
 | S2 Tikhonov + NNLS | **DONE + VERIFIED + FIXED** 2026-07-28 | [REVIEW_S2_tikhonov.md](REVIEW_S2_tikhonov.md) |
 | S3 Mellin transform core | **DONE + VERIFIED + FIXED** 2026-07-29 | [REVIEW_S3_mellin.md](REVIEW_S3_mellin.md) |
 | S4 Mellin engine + joint background | **DONE + VERIFIED + FIXED** 2026-07-30 — 13 findings judged: 10 confirmed, 3 plausible, 0 refuted; all confirmed fixed, **none as suggested**. H1 and H2 both answered and closed. | [REVIEW_S4_mellin_engine.md](REVIEW_S4_mellin_engine.md) |
-| S5 Multi-Gaussian | not started | |
+| S5 Multi-Gaussian | **REVIEWED 2026-08-07, VERIFICATION 12/22** — 11 reviewers → 53 raw findings → 10 triaged; **23 skeptics ran, 23 CONFIRMED, 0 refuted**, but the fix was rejected or rewritten on 7 of 12. 2 fixed + gated; 9 skeptics + 5 verifynew outstanding. State banked at `~/deer_benchmark/s5_persist/RESUME.md` | [REVIEW_S5_gauss.md](REVIEW_S5_gauss.md) |
 | **Tikhonov defect round** (out of band) | **DONE 2026-08-04 + PORTED + PUSHED** — 4 defects fixed (`pre_zero`, `reg_edges`, the sampling floor, `deer_validate` pre-crop) + 1 opt-in feature; see the 2026-08-04 session | this file |
 | **Audit of the 2026-08-04 burst** (out of band) | **DONE 2026-08-05** — the four mechanisms are provably inert on data that gives them nothing to act on; 10 verified defects, all in the REPORTING layer. Items 1, 2 and 10 **FIXED + PORTED + COMMITTED**; 3–9 open | this file |
 | **High-noise shoulder + auto bg_start** (out of band) | **DONE 2026-08-05b** — Fable-verified: the shoulder at high noise is spurious short-r mass, not t₀ and not the background; the auto bg_start's envelope test is a noise detector. `echo_head` reporting and the sequential-path flag **FIXED + PORTED + COMMITTED**; the bg_start floors left as an open decision | this file |
@@ -2325,6 +2325,212 @@ From 2026-08-05b: the four-way disagreement between the automatic `bg_start` rul
 (0.35 / 0.5 / 0.6 / 0.66), the 0.35 joint floor that was validated at distances where
 its own failure mode cannot occur, the envelope test that measures noise, the
 unreachable `BG_START_FRAC_MAX`, and engine switching not recomputing `bg_start`.
+
+## Session 2026-08-06/07 — S5 multi-Gaussian: 12 of 53 findings verified, 2 fixed
+
+Full report: [REVIEW_S5_gauss.md](REVIEW_S5_gauss.md). Harness
+`~/deer_benchmark/s5_gauss/`, which reproduces the round-8 baseline **exactly**
+(correct-N 0.801, overlap 0.885), so every ablation is paired against a verified
+floor. **State for the unfinished half is banked at
+`~/deer_benchmark/s5_persist/` — start from its `RESUME.md`.**
+
+11 reviewers → **53 raw findings** → triage queued 10 and dropped 32 with reasons
+→ **23 skeptics ran, 23 CONFIRMED, 0 refuted, 0 plausible**. The account's usage
+limit killed agents three times; both runs were resumed in-session twice and
+still did not finish, leaving 9 skeptics and 5 `verifynew` outstanding.
+
+*Read the unanimity as a warning, not a comfort* — S2 refuted 2 of 14 on this
+protocol. What the gate actually bought was **corrections**: one of my
+conclusions was overturned in the direction of *under*-claiming, and the skeptics
+rejected or rewrote the proposed fix on at least seven of the twelve verified
+findings, **measuring two of them to be regressions**.
+
+### The two design questions the plan posed — answered by ablation
+
+**Multi-start seeding is the strategy, not the count.** Removing the even-spread
+seed costs −0.0081 overlap (t = −3.31), correct-N 0.801 → 0.718. Four *purely
+random* restarts — double the seeds, ~4× the cost, 0 % bit-identical — recover
+about a fifth of that (−0.0064, correct-N 0.731). The plan's random-restart
+control hypothesis is refuted.
+
+**The width floor's derived form is the wrong floor.** `δr = (1/T)/|df/dr| =
+r⁴/(3·ν_dd·T)` is exact and the units check out. Imposing it costs **−0.145
+overlap (t = −12.15)** and drops correct-N from 0.80 to **0.30**. What ships is
+that limit ÷ 9, and the code comment calls the 9 "a ~1/9 fit-efficiency factor":
+the measurement says it is not a refinement of the derivation, it is what stops
+the derivation from wrecking the fit. 27 sits on a ledge — 9 costs −0.021, 81 is
+indistinguishable from no floor at all (−0.0096 vs −0.0104). *The docstring and
+`deer.md` present 27 as physics; it is calibration.*
+
+**Unasked and worth more:** `prune_spurious` fires on 6 of 156 runs, is
+net-neutral (+0.0007, t = 0.75), and on **two of its six firings deletes
+components the truth has** — once cutting the criterion's own correct N = 4 to
+N = 2. It ships with a docs tip box and two tunable constants. Same shape as the
+`echo_head` entry in *Known tensions*: justified against a baseline that lacked
+the joint V-space fit, the multi-start and the width floor, all of which landed
+under it.
+
+### Fixed and gated — the two verified findings
+
+- **`deer_validate(engine='gauss')` drew a band that cannot mean anything.** The
+  `'lsq'` objective is `V_norm`, which is `bg_start`-free (a skeptic measured
+  `max|ΔV_norm| = 0.000e+00`), so a background-start sweep moves only the
+  optimiser's starting point: `P_spread/P_scale` **8.7e-05 for gauss/joint
+  against 5.2e-02 for Tikhonov** on the same trace and sweep, drawn as a
+  confidence band and announced as a "9-trial band" for ~27 s of work.
+  `deer_validate` now returns `band_degenerate` — **structural** for
+  `engine='gauss'` with any `bg_engine` but `'general'`, since that is exactly
+  the set where the background is co-fit, with a 1 %-of-scale threshold only as a
+  secondary catch (the numeric gap is ~6×, too thin to hang a silent GUI
+  behaviour on). The GUI draws no band, says why, and the status reads
+  `(9-trial sweep, no band)`. **The flag half is deliberately kept**: both
+  skeptics refuted my "disagree is False by construction" — the per-trial flags
+  *are* rebuilt per `bg_start`, and the panel's real sin was printing
+  "trials disagree (mean spans 0.00 nm, 6/9 flagged)".
+- **The `'mc'` solver lost `r_alias` and `bg_start_early`** (`r_alias` present
+  28/28 on `lsq`, **0/28** on `mc` over the real ring test). Restored in three
+  lines at the call site — the skeptic's fix-gate rejected my proposal of
+  threading two more arguments through a 19-parameter private helper. Both
+  skeptics also corrected the *demo*: my early-window case trips `tail_abs_F`
+  anyway, so the clean case is a moderately early window (0.50 periods) where
+  every other flag is False; and under GUI defaults the defect is barely
+  reachable, because `_auto_rmin_value` rounds `r_min` up to the alias floor on
+  every load (0/28 traces clamp).
+
+**Regression: max |Δoverlap| = 0.0000000000 and max |Δmean| = 0.0000000000** over
+a 52-run slice, plus an offscreen GUI smoke run on synthetic and real traces.
+Neither fix moves a reported number; they change what is reported *about* it —
+the same shape as the 2026-08-05 sessions.
+
+### Verified 2/2 but NOT fixed — ten more, and the fix is the open question
+
+`S5-3` background collapse to `k = 0` · `S5-4` the `'mc'` band measures optimizer
+spread · `S5-5` the `_has_spurious` floor gate · `S5-6` the Pake band's hardcoded
+52.04 and `mc_trials` as a no-op · `S5T-1` stale `joint_background` reliability
+keys shipped beside the refitted k/λ (`bg_flat` among them, which **gates**
+`k_disagrees`) · `S5T-2` `weight` is analytic area while `P_density` is on-grid
+mass (overlay off by 22–30 % at a grid edge) · `S5T-3` the width floor is
+grid-derived, so the spin boxes set σ · `S5T-4` `method='mc'` fits the prepped F
+and never re-fits λ, silently reverting to the two-step estimator · `S5T-5` the
+`'mc'` mode's ESEEM/background immunity claim is false · `S5T-6` `lo == hi`
+silently drops an N (1 of 2 lenses).
+
+Details and every skeptic correction are in the report. Three are worth carrying
+here because they change what the roadmap already says:
+
+- **My "no measured consequence" verdict on `S5-5` was wrong, and it is my error
+  of the session.** I filed the floor-gate mismatch as inert on the strength of a
+  clean null — the `spur_ownfloor` ablation is bit-identical on 156/156. Both
+  skeptics showed the null is an artefact of the catalogue: **`base.json`'s
+  smallest true component weight is 0.15, 1.5× above the `spike_weight_max` = 0.10
+  gate the rule keys on, so the regime is unreachable by construction there.** On
+  the right population (1560 *candidate* components, since selection reads
+  `best_clean` over all N) the flag flips 12 times and **9 of 28 real traces
+  change their reported N, by up to 0.49 nm in peak**. *This is the same trap as
+  S3's `mellin_delta` floor and the width floor above — three times in one
+  document now. Check what range a benchmark covers before believing a null.*
+  **And the obvious fix is a measured regression:** keying on the per-centre
+  floor takes correct-N 0.843 → 0.731, and on the 13 rows it changes the shipped
+  code gets N right 12/13 against the fix's 0/13, because it deletes the genuine
+  weak far mode. What has no test at all is the σ **upper** bound — four real
+  components come back at σ = `s_hi` exactly and **10/28 traces put > 15 % of the
+  weight into a σ > 1 nm pedestal**.
+- **`S5-3`'s "no warning anywhere" is false** — all 8 collapsed runs already
+  raise a `RuntimeWarning` and show a hard flag. The defensible claim is that no
+  flag is *about* the collapse and the ones that fire are misdirected:
+  `bg_start_early` says the distance is biased short when the measured bias is
+  **long in 8/8 cells**, and advises moving `bg_start` later, which by S5-1
+  changes nothing. The 0.701-vs-0.890 severity gap is also **~84 % a
+  difficulty-mix artefact** (matched stratum: 0.070).
+- **`S5-4`'s headline was confounded** — my σ 0.005 / σ 0.02 comparison is an
+  N flip, not a noise effect. "Anti-correlates with noise" is struck; the honest
+  word is **erratic** (the band area swings 5–6 orders in both directions, and 4
+  orders between labs measuring the *same* sample). Mechanism: discrete polished
+  optima thresholded by a multiplicative MSD tolerance carrying no noise scale,
+  so the band is bimodal — exactly zero or ~0.7, never between. **Tuning
+  `mc_tol` or `mc_trials` is dead on arrival; both were measured.** Coverage
+  0.27–0.72 (mean 0.41) against a nominal 0.95.
+
+### Verify first next session
+
+**The information criterion never turns over on real data** — found twice
+(run 1's `selection` reviewer and run 2's `docs-5`, which triage cut for cap) and
+verified **zero** times. `n_gauss_ic == max_gauss` on **25 of 28** real traces, so
+**N is set by the "N max" spin box, not by the data**, with nothing in the result
+saying so. Cause measured: integrated autocorrelation L = 15–156 (median 46) gives
+`n_eff` ≈ 9 against the `npts` = 180–1254 the criterion assumes. The control is
+what sells it — with white noise the criterion behaves exactly as AIC theory says
+(`n_eff` = `npts` = 301); with **zero** noise but a 0.24 % rms systematic,
+`n_eff` = 5 and every N is accepted. I reproduced the headline independently
+(N = 4 on 21/28 at the GUI's own default window).
+
+Then `S5T-9` (a refit queued during a Multi-Gaussian fit is drained as
+**Tikhonov**), `S5T-7`, `S5T-10`, `S5T-8`, `S5T-6:mech`, and triage's
+cuts-for-cap — of which triage itself flagged `xengine-3` as "the strongest".
+
+### Also measured, and it refutes a shipped claim
+
+`deer.py:2547` says *"On artifact-free synthetic data 'mc' ties 'lsq'"*. Over 104
+artifact-free runs: overlap 0.8754 → **0.8451 (Δ −0.0302, t = −5.46)**, correct-N
+0.808 → **0.644**, k-collapses 8 → 17. On the 28 real traces the two solvers of
+the *same engine* disagree by a mean of **0.419 nm** in peak position (worst
+3.789 nm), at 76 s per trace against 48 s. Likely mechanism, unverified: the
+`'mc'` path's σ bound is the flat `s_lo`, not the distance-dependent floor — so
+the mode sold as immune to the floor-width spike is the one without the guard.
+
+The linearized per-component CI is a **pass** for a single well-determined mode
+(coverage 0.95–1.00, reported sd within 1.2× of the true scatter) and blind to
+mode swaps on a two-component fit (reported sd **0.02×** the true scatter, while
+coverage still reads nominal).
+
+### One thing I built, measured, and did NOT ship
+
+The `k_collapsed` detector for the background collapse (8/104 runs pin `k` at
+zero while a long-r Gaussian eats the decay; overlap 0.890 → 0.701). Gating on
+"prep background decays ≥ 1 % **and** `k_fit < 0.2·k_prep`" catches 6/8 but
+raises **5 false alarms on 148 healthy runs, every one in the background-free
+condition** — where the joint fit is right at ~0 and the *prep* fit is the one
+inventing a rate. The comparison route is the wrong axis. Open problem, not a fix.
+
+### Also shipped: three refuted user-facing claims deleted
+
+Not code behaviour — claims *about* it that measurement contradicts, removed from
+all three surfaces at once so they cannot disagree (`deer.md`, the
+`deer_invert_gauss` / `_gauss_mc` docstrings, the solver tooltip):
+
+- *"the frequency-domain comparison is intrinsically immune to ESEEM peaks and
+  background error"* — both `S5T-5` skeptics endorsed **the deletion half and
+  rejected the engineering half**, so the sentence goes and the code does not.
+- *"On artifact-free synthetic data 'mc' ties 'lsq'"* — refuted by my own paired
+  run (overlap Δ −0.0302, t = −5.46, correct-N 0.808 → 0.644 over 104 runs).
+- the width floor's 27 presented as physics — it is calibration, and `deer.md`
+  now says so.
+
+`deer.md` carries the **qualitative** statements only; the numbers live here and
+in the report, per the house convention that the docs site is not a lab notebook.
+
+### Not ported, not committed
+
+Both fixes touch `deer.py` (all five repos) and `deer_analysis.py` (ITC / NIOCH /
+NIOCH_Q) and are **uncommitted in ITC only**. Run `~/atomize_sync/sync_check.py`
+first, and port the two files together — they ship as a pair here, since
+`band_degenerate` is produced in `deer.py` and consumed in `deer_analysis.py`.
+
+### Where to resume
+
+Both runs were resumed in-session with `resumeFromRunId` and still did not
+finish — the limit hit three times. **Everything is banked out of session at
+`~/deer_benchmark/s5_persist/`; start from its `RESUME.md`**, which lists the 9
+outstanding skeptics, the 5 `verifynew`, triage's cuts, and the two traps that
+cost this session real time. `resumeFromRunId` is same-session only, so out of
+session rebuild the skeptic run from `triage_queue.json` (its entries carry
+`claim` / `evidence` / `caveat` / `suggested_fix` — exactly the prompt payload)
+using `~/deer_benchmark/s4_persist/build_resume.py` as the template. **The
+DeerLab `dd_gaussN` cross-check was never run and should open the next session:
+this is the only engine in the stack with no external implementation to check
+against.** The raw findings are also snapshotted at
+`~/deer_benchmark/s5_gauss/agent_findings.json` with per-agent detail in each
+workflow's `journal.jsonl`.
 
 ## Known tensions between the short-r mechanisms (read before adding another)
 
