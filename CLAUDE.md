@@ -2,6 +2,18 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+# Working rules
+
+- Plan in the main session, together with me. Hand grunt work (board searches, repetitive edits, boilerplate, log digging) to subagents on lesser models: Sonnet for searches, triage, and trivial mechanical work, and Opus for writing code. Keep decisions, architecture, and final review in the main session.
+- Always look for the simplest solution first, and prefer it. The smallest change that solves the actual problem beats a bigger design, Extend existing patters before inventing new ones. No new dependencies or moving parts without a real reason.
+- Show me a checklist while you work (use the todo list tool), keep current, so I can see what you are working on, what is done, and what is next.
+- When you spawn a subagent, tell me at that moment: which model it runs on and what it is doing. Report what it came back with when it finishes.
+- Never use Haiku.
+- Comments: never multi-line. Omit the comment entirely when the code is obvious; otherwise one short line. Explain a fix in the commit message and the review/roadmap docs, not in the source. Docstrings are exempt (long explanatory docstrings are house style) but keep new ones tight.
+- No over-explaining: Deliver the exact output requested. Do not narrate internal steps or show reasoning chains. Do not use programming jargon.
+- Strict scope control: Stop when the requested task is complete. Do not expand, refactor unrequested areas, or suggest extra features.
+
+
 ## What this repo is
 
 `Atomize_ITC` is the EPR-endstation variant of [Atomize](https://github.com/Anatoly1010/Atomize) — a modular instrument-control framework for spectrometers. It extends upstream Atomize with an "EPR Endstation Control" tab in the main window (`atomize/main/main.py`), Insys FM214x3GDA FPGA support (DAC / ADC / TTL pulser via ctypes against `libs/lib*.so`), and a set of dedicated control-center subprocesses (CW EPR, TR EPR, oscilloscopes, MW bridge, magnetic field, temperature, resonator tuning, RECT/AWG phasing).
@@ -88,7 +100,7 @@ When adding hardware-touching code, always preserve the `argv[1] == 'test'` bran
 - **Settings tab** holds the Live/Apply-delay controls and a "Link Parameter" combo; **Link mode** gives each pulse a No/0.5×/1×/2× coupling factor so one edit proportionally shifts the linked pulses together.
 - Not every change can be applied in place: a change to the phase-cycle *structure* (number of steps, per-pulse phase text) forces an announced restart rather than a silent no-op — the tool hashes the sequence structure to decide. Loading a preset or pressing Open while a preview is live stops that preview first.
 - **Worker-side validation.** Before accepting a live edit the worker rebuilds the sequence under a throwaway **test-mode** `Insys_FPGA()` (see "Test mode") so the overlap/length asserts — which only fire in test mode — reject an illegal edit as `('LiveReject', reason)`; the GUI shows the reason and keeps the previous sequence running.
-- The AWG DETECTION-pulse frequency also re-arms live: it only drives the per-scan `digitizer_demodulate` demod (`iq_freq`), not an AWG waveform, so it is plumbed separately through the snapshot/payload.
+- The AWG DETECTION-pulse frequency also re-arms live: it only drives the per-scan `digitizer_demodulate` demod (`iq_freq`), not an AWG waveform.
 
 ### EPR automation layer (`atomize/epr_auto/`) — mirror rule
 
@@ -117,11 +129,3 @@ import atomize.general_modules.csv_opener_saver as openfile
 
 The per-instrument function reference is markdown in `atomize/documentation/` (rendered as the Jekyll site at `anatoly1010.github.io/atomize_docs`). When changing a device module's public API, also touch the matching `*.md` there.
 
-## Conventions worth knowing
-
-- Time strings everywhere use the `"<float> <unit>"` form (`'10 ms'`, `'1.5 us'`). Never pass bare floats.
-- Module class name == filename. Breaking that breaks the `import X as foo; foo.X()` convention used in every example.
-- `test_flag = sys.argv[1]` is the standard way modules detect test mode. Preserve the `argv[1] == 'test'` branch when adding code that touches hardware.
-- Don't introduce `print()` statements in scripts launched by the GUI — use `general.message(...)`. Bare `print` to stdout is interpreted by the parent's line-parser and either dropped or shown raw.
-- `.param`, `.csv` temp files, `libs/status`, `libs/exam_adc.ini`, `libs/exam_edac.ini`, and `Metrolab_PT2025*` are git-ignored on purpose (see `.gitignore`). Don't commit local edits to them.
-- **Comments: never multi-line.** Omit the comment entirely when the code is obvious; otherwise one short line. Explain a fix in the commit message and the review/roadmap docs, not in the source. Docstrings are exempt (long explanatory docstrings are house style) but keep new ones tight.
