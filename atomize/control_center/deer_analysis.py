@@ -614,7 +614,7 @@ class MainWindow(QMainWindow):
         self.deer_tunit.currentIndexChanged.connect(self._unit_changed)
         grid.addWidget(self.deer_tunit, r, 1); r += 1
 
-        grid.addWidget(self._label('Zero time (t0)'), r, 0)
+        grid.addWidget(self._label('Zero time (t₀)'), r, 0)
         t0_row = QHBoxLayout()
         self.deer_t0 = QDoubleSpinBox()
         self.deer_t0.setStyleSheet(DSPIN_STYLE)
@@ -718,21 +718,18 @@ class MainWindow(QMainWindow):
         self.deer_echo_head = QCheckBox('Parabolic echo-top head (guarded)')
         self.deer_echo_head.setStyleSheet(CHECKBOX_STYLE)
         self.deer_echo_head.setToolTip(
-            'Replace the echo top with an even parabola fitted to the trace\'s own '
-            'even part, [F(u)+F(−u)]/2. F is even about t₀, so the head carries far '
-            'fewer degrees of freedom than it has samples and this denoises the '
-            'highest-leverage part of the trace.\n'
-            'Worth +0.0035 distance-overlap over 756 synthetic traces (t = 4.7); '
-            'guarded it holds +0.0034 while declining the head on 27 % of them.\n'
-            'The guard compares the recovered mean distance with the distance the '
-            'echo-top curvature alone implies and skips the head when they disagree '
-            'by more than 25 % — a BREADTH test: a broad P(r) has an echo top '
-            'dominated by its shortest component (⟨ω²⟩ ∝ r⁻⁶), and a two-parameter '
-            'head cannot stand in for that mixture. Without it the head shifted the '
-            'mean distance +0.07…+0.15 nm on the broad real traces of the ring test.\n'
-            'Joint background only, and it needs pre-t₀ samples (the mirrored pairs '
-            'are what make the fit unbiased). Costs a second regularization scan '
-            'when it fires, so it is off by default.')
+            'Denoise the echo top by replacing it with a smooth parabola fitted to '
+            'the trace\'s even part about the zero time. The signal is symmetric '
+            'about t₀, so this even fit describes the echo top with far fewer '
+            'parameters than there are samples — cleaning up the highest-leverage '
+            'part of the trace before inversion.\n'
+            'A guard skips the head when the distribution is too broad for a simple '
+            'parabola to represent (a broad P(r) has an echo top set by its '
+            'shortest distances, which one parabola cannot stand in for).\n'
+            'Works with the Joint background only, and needs samples before the '
+            'zero time (the mirrored pairs are what make the fit unbiased). Off by '
+            'default: it adds a regularization scan and helps mainly at higher '
+            'noise.')
         self.deer_echo_head.stateChanged.connect(self._live_update)
         grid.addWidget(self.deer_echo_head, r, 0, 1, 2); r += 1
 
@@ -2648,13 +2645,17 @@ class MainWindow(QMainWindow):
                 f'were left out of the selection — the distance range is likely '
                 f'wider than the trace supports</span>' if failed else '')
             # the criterion never turned over inside "N max", so N is the spin
-            # box's value rather than the data's
+            # box's value rather than the data's — on real data this usually means
+            # a correlated residual, not more modes, so point at the regularized
+            # engine rather than tell the user to keep adding Gaussians
             if res.get('ic_railed'):
                 fail_line += (
                     f'<br><span style="color: rgb(224, 130, 96);">⚠ the '
-                    f'criterion still improved at N max — N was set by the spin '
-                    f'box, not by the data; raise N max to find its minimum'
-                    f'</span>')
+                    f'criterion still improved at N max — the data does not pin '
+                    f'the component count (N is the spin box, not the fit). This '
+                    f'is likely not a few discrete Gaussians; prefer the Tikhonov '
+                    f'or Mellin engine, which regularizes P(r) instead of counting '
+                    f'modes.</span>')
             reg = (f'{res.get("n_gauss", "?")} Gaussian(s){n_auto}{prune_tag}, '
                    f'{ic_name} = {ic_val:.1f}{ci_tag}{fail_line}<br>{comp_lines}')
         else:

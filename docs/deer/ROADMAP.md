@@ -36,7 +36,7 @@ the archive session that shipped it.
 | `tau_max=None` (Mellin) | **on** | data-driven cutoff selector, not a pinned 30 |
 | multi-Gaussian: multi-start seeding + width floor `r⁴/(27·ν_dd·T)` | **on** | the seeding strategy is load-bearing (removing the even-spread seed costs −0.008 overlap); the "27" is **calibration, not physics** (the derived `r⁴/(3·ν_dd·T)` costs −0.145) |
 | per-component bound flags (`sigma_at_floor`/`_ceiling`, `center_at_bound`) | **on** | a parameter pinned on its box bound is reported as a bound, not a ± measurement |
-| `ic_railed` | **on** | warns when the criterion never turned over inside "N max" — N is set by the spin box, not the data (25/28 real traces at default cap) |
+| `ic_railed` | **on** | warns when the criterion never turned over inside "N max" — N is set by the spin box, not the data (25/28 real traces at default cap). The GUI message now reads this as *"not a few discrete Gaussians — prefer the Tikhonov/Mellin engine"* rather than "raise N max" (2026-08-08): on real YopO the railing is a correlated residual, not more modes, and the regularized engine is the DeerLab-default way to handle it (see the DeerLab cross-check). |
 | `echo_head` (Tikhonov parabolic head) | **OFF** | guarded pair-averaged echo-top head; worth only +0.0016 now and declines itself at high noise |
 | `bg_start_early`, `conc_implausible` | reported | the two calibrated background-reliability detectors, on every engine |
 | `k_disagrees` | reported as a *note* | the two background routes differ — 56 % detection at 45 % false alarm, NOT a reliability verdict |
@@ -59,24 +59,28 @@ the archive session that shipped it.
   returns `joint` with the gauss panel struck; reverse returns `gauss`; Mellin
   still renders). Committed 2026-08-08.
 
+- **DeerLab `dd_gaussN` cross-check — DONE 2026-08-08, the estimator is externally
+  validated.** Matched-N (`dd_gauss`/`dd_gauss2`/`dd_gauss3`), matched conventions
+  (reftime 0, same crop/alias grid/echo-top, `bg_hom3d` κ·D = 9.974e-4 to 5 digits).
+  **Synthetic, known truth (20 runs):** Atomize–truth **0.950** vs DeerLab–truth
+  **0.949**; engine agreement 1.000 at N=1,2 and 0.949 at N=3, the only
+  disagreements being local-minimum coin-flips going *both* directions. **Real YopO
+  (12 DL traces):** ov(ship~DL) **0.999 / 0.957 (median) / 0.887** at N=1/2/3; N=1,2
+  equivalent, N=3 scatter is genuine ill-posedness (both engines, the criterion-rails
+  regime). **Decisive corroboration:** in DeerLab's *own* free box, **8/12** N=3 fits
+  put a component above r_max (up to ~19 nm) — the far-mass pathology is not an
+  Atomize bug, an independent implementation does the same, and the round-2
+  `center_at_bound` flag is the honest report of it. Verdict + numbers:
+  `~/deer_benchmark/s5_gauss/deerlab_x/VERDICT.md`; harness `synth_xcheck.py` /
+  `real_xcheck.py` / `dlx.py`. Dataset: `~/deer_benchmark/synth/gauss/`.
+
 ## Pending — do first
 
 1. **Port to the forks.** ITC now leads by two commits: the round-2 fixes
    (`deer.py`, all 5 repos + `deer_analysis.py`, ITC/NIOCH/NIOCH_Q) and `S5T-9`
    (`deer_analysis.py` only). Straight file copy after `sync_check.py` — the two
-   files still ship as a pair.
-
-2. **Finish the DeerLab `dd_gaussN` cross-check.** Only N=1 and 0/28 real traces
-   ran — the plumbing (kernel, background prefactor 9.974e-4, λ, grid, zero-time)
-   is verified, the **multi-Gaussian estimator itself is not** externally checked.
-   Run `dd_gauss2`/`dd_gauss3` + the 28 real traces. Use DeerLab's own
-   `multistart` (its default `par0` stacks all means at 3.5 nm and fails to a 0.56
-   overlap otherwise — itself corroboration that our multi-start seeding matters).
-   This is the only engine in the stack with no external implementation to check.
-   **Now unblocked:** a saved multi-Gaussian dataset (traces + per-case
-   `truth/*_components.csv`) was prepared at `~/deer_benchmark/synth/gauss/` —
-   see its README for the correct call convention (shift the axis by t0, pass
-   `bg_start` on the shifted axis).
+   files still ship as a pair. **This is now the only do-first item** — the
+   estimator's external check is closed (above).
 
 ## Pending — backlog
 
@@ -150,7 +154,14 @@ Judge against the existing coverage harnesses `~/deer_benchmark/{sk1_ci,sk2_cico
 2. **Residual-bootstrap the whole pipeline, on demand.** Resample residuals, refit
    bg+λ+P(r) per trial, percentile bands. ~1.6–1.8 s per inversion under load → a
    few minutes for 200 trials. A **button**, never the live path; `rThread`. Be
-   explicit in the UI that it does not fix the mode's bias.
+   explicit in the UI that it does not fix the mode's bias. **This is DeerLab's own
+   `bootstrap_analysis` (`bootan`) approach** — verified 2026-08-08 that DeerLab
+   defaults to a *non-parametric* regularized P(r) (P is a free grid vector,
+   complexity set continuously by `regparam='aic'`) and leans on bootstrap for
+   honest uncertainty, rather than committing to a discrete component count. It is
+   therefore the right answer for the multi-Gaussian `ic_railed` / N-undetermined
+   case too: a bootstrapped band shows the distribution is uncertain instead of
+   forcing a verdict on N. Applies across all engines.
 
 Not queued (considered, rejected): Wahba's Bayesian σ²G⁻¹ (moves every shipped
 band/CSV), undersmoothing at α/4–α/8 (only cheap route that covers the truth, but
