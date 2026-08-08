@@ -20,8 +20,9 @@ below as a plain task with a known measurement behind it.
 
 The two ship as a pair — `band_degenerate`, the per-component bound flags and
 `ic_railed` are produced in `deer.py` and consumed in `deer_analysis.py`. Run
-`~/atomize_sync/sync_check.py` before porting. As of 2026-08-07 the port is a
-**straight file copy**: all forks are byte-identical to ITC's pre-S5 state.
+`~/atomize_sync/sync_check.py` before porting. **All five repos are in sync as of
+2026-08-08** (`deer.py` byte-identical across all 5, `deer_analysis.py` across
+ITC/NIOCH/NIOCH_Q) — see the port entry below.
 
 ## The shipped stack today
 
@@ -74,13 +75,21 @@ the archive session that shipped it.
   `~/deer_benchmark/s5_gauss/deerlab_x/VERDICT.md`; harness `synth_xcheck.py` /
   `real_xcheck.py` / `dlx.py`. Dataset: `~/deer_benchmark/synth/gauss/`.
 
+- **Port to the forks — DONE 2026-08-08.** The three ITC commits (`f4e7c82` round-2,
+  `0a61a3e` S5T-9, `3cd7c83` ic_railed reframe + UI) mirrored to all forks as a
+  byte-identical straight file copy — verified each fork sat at a clean linear ITC
+  ancestor (`a82fba1`) with no local changes, all files LF, and `sync_check.py`
+  clean afterward (only the unrelated `Sibir_1.py` still `~`). Fork commits: plain
+  `ba0d70e` (deer.py), NIOCH `87d9bec` (both), NIOCH_Q `359f03d` (both), Cryomech
+  `937d995`/branch `main` (deer.py). `deer_analysis.py` lives only in
+  ITC/NIOCH/NIOCH_Q.
+
 ## Pending — do first
 
-1. **Port to the forks.** ITC now leads by two commits: the round-2 fixes
-   (`deer.py`, all 5 repos + `deer_analysis.py`, ITC/NIOCH/NIOCH_Q) and `S5T-9`
-   (`deer_analysis.py` only). Straight file copy after `sync_check.py` — the two
-   files still ship as a pair. **This is now the only do-first item** — the
-   estimator's external check is closed (above).
+The DEER stack is fully in sync and the estimator's external check is closed, so
+there is **no do-first item** — pick from the backlog below. Cheapest high-value
+picks: `S5G-4` (settle the inward-migrating-floor contradiction) or the 2026-08-05
+audit reporting defects (3–9). Biggest lever: the residual bootstrap (uncertainty).
 
 ## Pending — backlog
 
