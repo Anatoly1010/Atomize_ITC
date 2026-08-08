@@ -825,13 +825,13 @@ class MainWindow(QMainWindow):
             'L-curve view.')
         self.deer_alpha_auto.setChecked(True)
         self.deer_alpha_auto.stateChanged.connect(self._deer_alpha_toggle)
-        self.deer_alpha_auto.stateChanged.connect(self._live_update)
+        self.deer_alpha_auto.stateChanged.connect(self._live_update_tikhonov)
         self.deer_alpha = QDoubleSpinBox()
         self.deer_alpha.setStyleSheet(DSPIN_STYLE)
         self.deer_alpha.setRange(1e-4, 1e4); self.deer_alpha.setDecimals(4)
         self.deer_alpha.setSingleStep(0.1); self.deer_alpha.setValue(1.0)
         self.deer_alpha.setEnabled(False)
-        self.deer_alpha.valueChanged.connect(self._live_update)
+        self.deer_alpha.valueChanged.connect(self._live_update_tikhonov)
         al_row.addWidget(self.deer_alpha_auto); al_row.addWidget(self.deer_alpha)
         grid.addLayout(al_row, r, 1); r += 1
 
@@ -850,7 +850,7 @@ class MainWindow(QMainWindow):
             'sees noise only, gets NARROWER — its coverage at the peak falls from '
             '~84% at 1× to ~8% at 2× and ~0% at 3×. Ignored when α is set '
             'manually.')
-        self.deer_alpha_factor.valueChanged.connect(self._live_update)
+        self.deer_alpha_factor.valueChanged.connect(self._live_update_tikhonov)
         grid.addWidget(self.deer_alpha_factor, r, 1); r += 1
 
         self.live_check = QCheckBox('Live update on parameter change')
@@ -1662,9 +1662,29 @@ class MainWindow(QMainWindow):
 
     # --------------------------------------------------------- live update
     def _live_update(self, *args):
+        """Live re-fit from a control SHARED by the engines (window, zero time,
+        distance grid). It must re-run whichever engine is on screen, not always
+        Tikhonov."""
         if self._suppress_live:
             return
         if self.live_check.isChecked() and self.real_xy[0] is not None:
+            self._rerun_shown_engine()
+
+    def _live_update_tikhonov(self, *args):
+        """Live re-fit from a TIKHONOV-ONLY control (α and its auto/factor), which
+        must keep driving Tikhonov even while another engine's result is shown."""
+        if self._suppress_live:
+            return
+        if self.live_check.isChecked() and self.real_xy[0] is not None:
+            self.do_deer()
+
+    def _rerun_shown_engine(self):
+        eng = (self.deer_result or {}).get('engine', '')
+        if eng == 'gauss':
+            self.do_gauss()
+        elif eng.startswith('mellin'):
+            self.do_mellin()
+        else:
             self.do_deer()
 
     def _unit_changed(self, *args):
@@ -1900,8 +1920,9 @@ class MainWindow(QMainWindow):
         """
         if self._deer_busy:
             # a fit is already running; remember to refit once it returns so the
-            # latest parameters / cursor positions are not lost
-            self._deer_pending = True
+            # latest parameters / cursor positions are not lost. The tag records
+            # WHICH engine asked, so the drain does not silently switch engines.
+            self._deer_pending = 'tikhonov'
             return
         compute, status = self._tikhonov_compute()
         if compute is None:
@@ -1987,7 +2008,7 @@ class MainWindow(QMainWindow):
         the shared distance grid; the Mellin tab supplies δ, τmax, τ points.
         Runs on the same worker thread + finisher as `do_deer`."""
         if self._deer_busy:
-            self.set_status('Busy — wait for the running inversion to finish.')
+            self._deer_pending = 'mellin'      # one queued slot, so N ticks -> 1 refit
             return
         compute, status = self._mellin_compute()
         if compute is None:
@@ -2073,7 +2094,7 @@ class MainWindow(QMainWindow):
         Multi-Gaussian tab supplies N / N max / criterion. Runs on the same
         worker thread + finisher as `do_deer` / `do_mellin`."""
         if self._deer_busy:
-            self.set_status('Busy — wait for the running inversion to finish.')
+            self._deer_pending = 'gauss'       # one queued slot, so N ticks -> 1 refit
             return
         compute, status = self._gauss_compute()
         if compute is None:
@@ -2740,10 +2761,10 @@ class MainWindow(QMainWindow):
             f'{bg_line}<br>{reg}<br>{alias_line}'
             f'skew = {dsc["skew"]:+.2f}{extra}</div></div>')
         self.deer_info.setText(info_html)
-        if is_mellin:
-            self.mellin_info.setText(info_html)
-        if is_gauss:
-            self.gauss_info.setText(info_html)
+        # a per-engine panel must never outlive its own result: give it the new
+        # text when it produced it, otherwise strike it as superseded
+        self._set_engine_panel(self.mellin_info, info_html, is_mellin)
+        self._set_engine_panel(self.gauss_info, info_html, is_gauss)
         self._render()
         if is_mellin:
             self.set_status(f'Mellin: λ={res["lambda"]:.3f}, δ={delta_disp:.3g} '
@@ -2758,10 +2779,32 @@ class MainWindow(QMainWindow):
             tag = self._band_tag(band)
             self.set_status(f'Tikhonov: λ={res["lambda"]:.3f}, α={res["alpha"]:.3g}, '
                             f'peak r={r_peak:.2f} nm, R²={r2:.3f}{tag}.')
-        # a parameter/cursor change arrived while we were busy -> refit once
+        # a parameter/cursor change arrived while we were busy -> refit once, in
+        # the engine that ASKED (the queued tag), not the one on screen: an
+        # explicit Run Tikhonov queued behind a gauss fit must return as Tikhonov,
+        # and an unconditional do_deer() here replaced a Multi-Gaussian result the
+        # user waited seconds for with a Tikhonov one
         if self._deer_pending:
-            self._deer_pending = False
-            self.do_deer()
+            eng, self._deer_pending = self._deer_pending, False
+            {'gauss': self.do_gauss, 'mellin': self.do_mellin}.get(
+                eng, self.do_deer)()
+
+    STALE_NOTE = ('<div style="color: rgb(150, 150, 165);"><i>superseded by the '
+                  '{eng} result now shown — press Run to refit</i></div>')
+
+    def _set_engine_panel(self, panel, info_html, mine):
+        """Write `info_html` into an engine's info panel when that engine produced
+        the result; otherwise leave its last text but mark it superseded, so the
+        panel can never describe a curve that is no longer on screen."""
+        if mine:
+            panel.setText(info_html)
+            return
+        txt = panel.text()
+        if not txt or 'superseded by' in txt:
+            return
+        eng = (self.deer_result or {}).get('engine', '—')
+        panel.setText(self.STALE_NOTE.format(eng=eng)
+                      + f'<div style="color: rgb(120, 120, 130);">{txt}</div>')
 
     def _deer_rerender(self, *args):
         """Re-show the stored result under the current top-plot view. In batch
@@ -3380,6 +3423,7 @@ class MainWindow(QMainWindow):
         self._time_key = self._pr_key = None
         self.deer_info.setText('')
         self.mellin_info.setText('')
+        self.gauss_info.setText('')
         self._set_loaded_file(None)
         self.set_status('Cleared. Load a V(t) trace to begin.')
 

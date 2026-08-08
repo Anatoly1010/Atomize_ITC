@@ -41,32 +41,42 @@ the archive session that shipped it.
 | `bg_start_early`, `conc_implausible` | reported | the two calibrated background-reliability detectors, on every engine |
 | `k_disagrees` | reported as a *note* | the two background routes differ — 56 % detection at 45 % false alarm, NOT a reliability verdict |
 
-## Pending — do first (specified, measured, just not landed)
+## Recently landed
 
-1. **Commit + port the uncommitted S5 round-2 fixes.** `deer.py` +
-   `deer_analysis.py` carry the round-2 reporting fixes (bound flags, `mass`/
-   `mass_fraction`, MC-band relabel, `ic_railed`, strict `s_hi*0.999` width cap +
-   per-seed `_solve` guard + `ic_failed`, docstring corrections). Gate: **max abs
-   Δoverlap / Δmean / Δcentre = 0.000e+00** over 156+144 synthetic + 28 real runs
-   — reporting-layer only. Both files portable as-is (the two unverified changes
-   were reverted). Copy ITC's two files to the forks, `sync_check.py` first.
+- **S5 round-2 reporting fixes** (`deer.py` + `deer_analysis.py`) — bound flags,
+  `mass`/`mass_fraction`, MC-band relabel, `ic_railed`, strict `s_hi*0.999` width
+  cap + per-seed `_solve` guard + `ic_failed`, docstring corrections. Gate: **max
+  abs Δoverlap / Δmean / Δcentre = 0.000e+00** over 156+144 synthetic + 28 real
+  runs. Committed `f4e7c82`.
+- **`S5T-9`** (`deer_analysis.py` only) — a refit queued during a fit used to drain
+  as Tikhonov regardless of the requesting engine. Fix: `_deer_pending` carries the
+  engine tag and the drain **dispatches on the tag**, not the shown engine (the V2B
+  defect that converted an explicit *Run Tikhonov* into a gauss run); a
+  `_live_update`/`_live_update_tikhonov` split so an α edit drives Tikhonov while a
+  gauss result is shown; `_set_engine_panel()` marks a superseded engine's panel;
+  `clear_all` clears `gauss_info`. **Validated** against the real file offscreen
+  (`t9c_fix.py base` → all 5 scenarios correct; explicit Run-Tikhonov-behind-gauss
+  returns `joint` with the gauss panel struck; reverse returns `gauss`; Mellin
+  still renders). Committed 2026-08-08.
 
-2. **Land `S5T-9`'s amended fix.** A refit queued during a Multi-Gaussian fit
-   currently drains as **Tikhonov** regardless of the requesting engine. V2B was
-   applied then reverted (its `:reach` lens measured it converting an explicit
-   *Run Tikhonov* click into a gauss run). The landing version is fully specified:
-   drain dispatches on the tag + `_set_engine_panel()` strikes a superseded
-   engine's panel + `clear_all` clears `gauss_info`. Re-run
-   `~/deer_benchmark/s5_gauss/round2/t9c_fix.py` after, and regenerate
-   `t9c_base.json` (overwritten by a post-fix run).
+## Pending — do first
 
-3. **Finish the DeerLab `dd_gaussN` cross-check.** Only N=1 and 0/28 real traces
+1. **Port to the forks.** ITC now leads by two commits: the round-2 fixes
+   (`deer.py`, all 5 repos + `deer_analysis.py`, ITC/NIOCH/NIOCH_Q) and `S5T-9`
+   (`deer_analysis.py` only). Straight file copy after `sync_check.py` — the two
+   files still ship as a pair.
+
+2. **Finish the DeerLab `dd_gaussN` cross-check.** Only N=1 and 0/28 real traces
    ran — the plumbing (kernel, background prefactor 9.974e-4, λ, grid, zero-time)
    is verified, the **multi-Gaussian estimator itself is not** externally checked.
    Run `dd_gauss2`/`dd_gauss3` + the 28 real traces. Use DeerLab's own
    `multistart` (its default `par0` stacks all means at 3.5 nm and fails to a 0.56
    overlap otherwise — itself corroboration that our multi-start seeding matters).
    This is the only engine in the stack with no external implementation to check.
+   **Now unblocked:** a saved multi-Gaussian dataset (traces + per-case
+   `truth/*_components.csv`) was prepared at `~/deer_benchmark/synth/gauss/` —
+   see its README for the correct call convention (shift the axis by t0, pass
+   `bg_start` on the shifted axis).
 
 ## Pending — backlog
 
