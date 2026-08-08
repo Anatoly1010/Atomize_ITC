@@ -351,6 +351,35 @@ def _qc(css):
     return QColor(css)
 
 
+GRID_STEPS = ("3.2", "2.0", "4.0")   # selectable hardware grids (ns)
+DEFAULT_GRID = 3.2   # per-fork default grid (ITC 3.2 / NIOCH 2.0 / NIOCH_Q 4.0); sync_check preserves this line
+
+
+class GridDoubleSpinBox(QDoubleSpinBox):
+    """Delay spinbox that snaps a keyboard-typed value to the hardware grid.
+
+    A plain QDoubleSpinBox would keep whatever you type (e.g. 200), while the
+    tool actually uses ``round_to_closest`` (ceil to grid, 201.6), so the box
+    disagreed with the value used. Overriding ``valueFromText`` snaps on commit
+    so the box shows exactly what the preset will carry. ``set_grid`` retargets
+    the step and re-snaps the current value."""
+
+    def __init__(self, grid=3.2, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._grid = grid
+        self.setSingleStep(grid)
+
+    def set_grid(self, grid):
+        self._grid = grid
+        self.setSingleStep(grid)
+        self.setValue(round_to_closest(self.value(), grid))
+
+    def valueFromText(self, text):
+        m = re.findall(r'-?\d+\.?\d*', text)
+        v = float(m[0]) if m else 0.0
+        return round_to_closest(v, self._grid)
+
+
 class CoherenceDiagram(QWidget):
     """Coherence-order vs time plot of the surviving coherence transfer pathways.
 
@@ -453,6 +482,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("EPR Sequence & Phase-Cycling Calculator")
         self._click_seq = 0            # monotonic counter for reload-signal nonces
         self._building = True          # suppress recompute while wiring widgets
+        self.grid = DEFAULT_GRID       # selectable hardware grid (ns); see GRID_STEPS
 
         # Hidden parameters (not part of the tau/phase view) used when writing
         # the preset. adv[i] -> P{i+2}; det/glob -> detection + acquisition.
@@ -467,13 +497,12 @@ class MainWindow(QMainWindow):
 
     # ----------------------------- helpers -------------------------------- #
     def r32(self, v):
-        return round_to_closest(float(v), 3.2)
+        return round_to_closest(float(v), self.grid)
 
     def make_tau(self, value=0.0):
-        sp = QDoubleSpinBox()
+        sp = GridDoubleSpinBox(self.grid)
         sp.setRange(0.0, 1.0e6)
         sp.setDecimals(1)
-        sp.setSingleStep(3.2)
         sp.setSuffix(" ns")
         sp.setValue(value)
         sp.setStyleSheet(DSPIN_STYLE)
@@ -571,6 +600,17 @@ class MainWindow(QMainWindow):
         self.count.setFixedSize(60, ROW_H)
         self.count.valueChanged.connect(self.on_count_changed)
         top.addWidget(self.count)
+
+        top.addSpacing(20)
+        top.addWidget(self._label("Grid:", w=45))
+        self.combo_grid = QComboBox()
+        self.combo_grid.addItems([f"{g} ns" for g in GRID_STEPS])
+        self.combo_grid.setStyleSheet(COMBO_STYLE)
+        self.combo_grid.setFixedSize(80, ROW_H)
+        self.combo_grid.setCurrentText(f"{self.grid} ns")   # match the per-fork default
+        self.combo_grid.currentTextChanged.connect(self.on_grid_changed)
+        top.addWidget(self.combo_grid)
+
         top.addStretch(1)
         outer.addLayout(top)
 
@@ -783,6 +823,19 @@ class MainWindow(QMainWindow):
         self.rebuild_det_combo()
         self.rebuild_sequence()
 
+    def on_grid_changed(self, text):
+        """Switch the hardware grid: retarget every delay spinbox's step, re-snap
+        its current value, and recompute (all positions/preset use self.grid)."""
+        m = re.findall(r'-?\d+\.?\d*', text)
+        if not m:
+            return
+        self.grid = float(m[0])
+        self._building = True
+        for sp in self.tau + [self.det_free]:
+            sp.set_grid(self.grid)
+        self._building = False
+        self.recompute()
+
     def _on_det_combo(self):
         self.recompute()
 
@@ -937,7 +990,7 @@ class MainWindow(QMainWindow):
             self.adv[i] = {"len": p["len"], "type": p["type"], "fr": p["fr"], "sw": p["sw"],
                            "amp": p["amp"], "sig": p["sig"], "sti": p["sti"], "li": p["li"]}
             if i >= 1:
-                self.tau[i - 1].setValue(p["d"])   # tau before pulse i+1
+                self.tau[i - 1].setValue(self.r32(p["d"]))   # tau before pulse i+1
         for i in range(n, MAX_PULSES):
             self.adv[i] = dict(ADV_DEFAULT)
         d = tpl["det"]
@@ -957,7 +1010,7 @@ class MainWindow(QMainWindow):
             self.det_combo.setCurrentIndex(match)
         else:
             self.det_combo.setCurrentIndex(self.det_combo.count() - 1)   # free
-            self.det_free.setValue(d["tau"])
+            self.det_free.setValue(self.r32(d["tau"]))
         self.det_combo.blockSignals(False)
 
         self._building = False
