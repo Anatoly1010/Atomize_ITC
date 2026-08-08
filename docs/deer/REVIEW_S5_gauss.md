@@ -408,33 +408,264 @@ condition is scale-invariant in T; it needs `rmax ≳ 2.25×` the trace-supporte
 
 ---
 
-## Confirmed by reviewers, never verified — the queue for the next session
+# Session 2 (2026-08-07) — the blind spot closed, and what it showed
 
-Nine skeptics and five `verifynew` agents did not run. In priority order:
+The standing warning from session 1 was that `base.json` is **blind above
+~5.3 nm and below component weight 0.15**, and that two "no measured
+consequence" conclusions were wrong because of it. Three new catalogues were
+built to remove that excuse. All were run on the second box (`fel`, 6 cores);
+see `~/deer_benchmark/s5_gauss/README_CROSS_MACHINE.md` for why paired
+comparisons must never cross machines.
 
-1. **`S5G-1` — the information criterion never turns over on real data.** Found
-   **twice** (run 1's `selection` reviewer; run 2's `docs-5`, which triage cut for
-   cap) and verified **zero** times. `n_gauss_ic == max_gauss` on **25 of 28**
-   real traces, so **N is set by the "N max" spin box, not by the data**, with
-   nothing in the result saying so. Cause measured: integrated autocorrelation
-   L = 15–156 (median 46) gives `n_eff` ≈ 9 against the `npts` = 180–1254 the
-   criterion assumes. The control is what sells it — with white noise the
-   criterion behaves exactly as AIC theory says (`n_eff` = `npts` = 301); with
-   **zero** noise but a 0.24 % rms systematic, `n_eff` = 5 and every N is
-   accepted. I reproduced the headline independently (N = 4 on 21/28 at the GUI's
-   default window). **Verify this first.**
-2. `S5T-9` — the refit queue is engine-blind: an edit queued during a
+## The new populations
+
+| catalogue | runs | what it can see that `base.json` cannot |
+|---|---|---|
+| `bench_far.py` → `far_base.json` | 144 | traces 6–10 µs so 6–7 nm modes are **resolvable**, r axis to 10 nm, true weights down to 0.05. **115 of 264 fitted components above 5.3 nm, 39 below the 0.10 spike gate** — `base.json` has none of either |
+| `floor_bind.py` | 90 | where the distance-dependent width floor actually **binds**: one narrow mode at 4.5–6.0 nm, trace length swept 1.5–8.0 µs |
+| `bench_shapes.py` → `shapes_gauss.json` | 168 | **mis-specified truths** — the 21-shape catalogue (rectangle, triangle, semicircle, hyperbola), i.e. P(r) that is *not* a Gaussian mixture |
+| `real_bounds.py` | 28 real | the bound-occupancy census on the ring test at GUI defaults |
+
+## 1. The weak far mode is real, and the engine finds it
+
+This matters because the S5-5 skeptics rejected a proposed fix on the grounds
+that it would destroy "the genuine weak far mode". That mode had never been
+measured. It exists and it is recovered:
+
+| truth | true weight | hit | median \|Δr\| | median fitted weight |
+|---|---|---|---|---|
+| `f2_narrowfar_weak` 6.2 nm | 0.10 | **12/12** | 0.037 nm | 0.098 |
+| `f2_weakfar` 6.0 nm | 0.08 | 11/12 | 0.070 nm | 0.081 |
+| `f3_weaktail` 5.8 nm | 0.06 | 8/12 | 0.185 nm | 0.059 |
+| `f2_weakfar5` 5.5 nm | 0.05 | 8/12 | 0.081 nm | 0.055 |
+| `f2_weaknear` 3.9 nm | 0.06 | **5/12** | **0.711 nm** | **0.474** |
+
+The last row is the surprise and it inverts the intuition the review has been
+carrying: **the hard case is weak-and-NEAR, not weak-and-far.** A 6 % mode at
+3.9 nm beside a dominant 3.0 nm mode is recovered less than half the time and,
+when missed, is reported with 8× its true weight. Long distance is not what
+breaks the engine; *proximity* is.
+
+Overall on this catalogue: overlap 0.905, correct-N 0.792 — statistically
+indistinguishable from `base.json`'s 0.885 / 0.801 despite the far harder
+regime.
+
+## 2. The width floor: binding is not the same as being wrong
+
+`floor_bind.py`, 90 runs:
+
+| | n | median \|Δσ\| | median \|Δcentre\| |
+|---|---|---|---|
+| floor binds | 39 | **0.164 nm** | 0.031 nm |
+| floor free | 51 | 0.002 nm | 0.001 nm |
+
+and the split that decides what to do about it:
+
+| | n | \|Δσ\| | \|Δcentre\| |
+|---|---|---|---|
+| binds **and** the distance is trace-supported | 15 | 0.072 nm | 0.013 nm |
+| binds **and** it is not | 24 | 0.253 nm | 0.101 nm |
+
+The floor never binds once the trace supports the distance with margin — at
+6.0 nm the fitted σ tracks a true 0.15 to **0.0003 nm** on an 8 µs trace. Where
+it does bind, the reported σ **is** the floor. So `S5G-3`'s premise ("modes whose
+width the data DO determine") holds only in a narrow band, and in the regime
+where the floor binds hardest the distance is not supported anyway, where
+broadening is the honest answer.
+
+**The actionable defect is therefore not the constant 27 and not the grid — it
+is that a pinned bound is reported as a measurement.** That is also, independently,
+what the fix-gates of `S5T-3`, `S5T-2`, `S5-5`, `S5U-6` and `S5U-7` all asked for.
+
+## 3. Mis-specified truths: the curve survives, the component table does not
+
+The gap named in "What S5 did not cover", now closed. 168 runs over the 21-shape
+catalogue, on a third seed base (out of sample for every constant in this engine):
+
+| | overlap | \|Δ mean distance\| |
+|---|---|---|
+| Gaussian-mixture truths | 0.926 | 0.031 nm |
+| rectangle / triangle / semicircle / hyperbola | 0.875 | **0.016 nm** |
+
+As a curve, P(r) is robust to mis-specification — the mean distance is actually
+*better* on the non-Gaussian shapes. The reported **components** are not:
+
+| | components whose 95 % centre interval reaches any TRUE local maximum |
+|---|---|
+| Gaussian truths | 146/197 (**74 %**) |
+| non-Gaussian truths | 16/74 (**22 %**) |
+
+Median distance to the nearest true mode is **0.345 nm** against a median 1.96σ
+bar of **0.111 nm** — the bar is 3.1× too small. A rectangle is reported as 2.6
+Gaussians where the truth has one mode (2 of 21 components covered); the
+hyperbola scores **0 of 22**. Nothing in the output distinguishes "these
+components are conformers" from "these components are a basis expansion of a
+shape that has no modes".
+
+## 4. Bound occupancy on the real ring test — the number that drove the fix
+
+`real_bounds.py`, 28 traces, 105 components, GUI defaults:
+
+| flag | components | traces |
+|---|---|---|
+| σ at its floor | 34/105 | 22/28 |
+| σ at the ceiling `s_hi` | 4/105 | 4/28 |
+| centre at a range bound | 15/105 | 15/28 |
+| **any bound active** | **41/105** | **28/28** |
+
+**Every trace in the lab's own reference dataset carries at least one component
+that is a bound rather than a measurement**, and before this session every one
+of them was printed in the info panel and written to the CSV with a ± bar.
+15 components sit at `r_max` = 8.000 nm carrying 10–42 % of the distribution
+weight, reported with centre error bars up to **±84.9 nm**. 38 of the 41 pinned
+components have a 95 % σ interval running below their own floor, i.e. partly
+outside the feasible region — `S5U-6` on real data.
+
+The `σ = s_hi` count comes out at exactly **4**, reproducing the hand count
+already in this report — an independent check that the new flags agree with it.
+
+`weight` and the fraction of the drawn curve differ by up to **14.8 percentage
+points** on these traces — `S5T-2`'s magnitude, on real data.
+
+## 5. `S5G-1` — the phenomenon and its consequence survive, the mechanism does not
+
+Measured independently of the skeptics (`g1_check.py` → `g1_independent.json`,
+28 real traces at the GUI default window), because the two S5G-1 skeptics were
+starved on a saturated box and this was the session's priority-1 claim.
+
+**Q1 — does the criterion ever turn over?** The finding says it has *no interior
+minimum* and "would keep buying components well past 4 if allowed". Lift the cap:
+
+| `max_gauss` | `n_gauss_ic == cap` | distribution of `n_gauss_ic` |
+|---|---|---|
+| 4 (the default) | **25/28** | {3: 3, 4: 25} |
+| 6 | 18/28 | {3: 2, 5: 8, 6: 18} |
+| 8 | **4/28** | {3: 2, 5: 5, 6: 5, 7: 12, 8: 4} |
+
+**The criterion does turn over — on 24 of 28 traces, at N = 5–7.** S5G-1's stated
+mechanism is **false**. What is true is narrower and duller: the criterion's
+minimum sits *above the default cap*, so at shipped settings N is the spin box's
+value on 25/28 traces and nothing says so.
+
+**Q2 — does that matter?** The obvious defence is that a railed N is
+consequence-free. It is not:
+
+| comparison | median \|Δpeak\| | max \|Δpeak\| | median \|Δmean\| | median overlap | min overlap |
+|---|---|---|---|---|---|
+| selected N vs N−1 | 0.131 nm | **4.181 nm** | 0.028 nm | 0.921 | 0.647 |
+| selected N vs N = 6 | 0.033 nm | 3.364 nm | 0.053 nm | 0.901 | 0.685 |
+
+**The `n_eff` argument is separately unsupported.** The finding's L = 15–156 /
+`n_eff` ≈ 9 is measured on the **forced N = 1** residual — which still contains
+the components the extra Gaussians exist to fit, so it measures signal as much as
+nuisance correlation. The `S5T-6`-style circularity check (the mech skeptic's
+`lspace.json`) shows L collapsing with N: **45.7 at N=1 → 5.2 at the selected N**,
+giving `n_eff` ≈ 91 against `npts` ≈ 456 — a factor 5, not a factor 50. And the
+proposed remedy is **inert**: patched criteria using `n_eff` and a lag-1
+correction return *identical* N to stock across all five synthetic regimes
+(`synth_neff.json`).
+
+**Net.** Phenomenon: real. Consequence: real. Mechanism: wrong. Suggested fix:
+half of it must not ship.
+
+* **Shipped** — `ic_railed`, returned by both solvers and surfaced in the GUI
+  beside the component count. This is the finding's own second suggestion and it
+  is the half that survives.
+* **Rejected** — recomputing the criterion on an effective sample size, or
+  pre-whitening the residual. Measured to change nothing, and resting on an
+  `n_eff` that is an artefact of where it was measured.
+
+## 6. An independent control for `S5G-1`
+
+Both new synthetic catalogues were scored for criterion railing:
+
+| population | `n_gauss_ic == max_gauss` |
+|---|---|
+| long-r catalogue | 8/144 |
+| mis-specified shapes | 6/168 (all 6 non-Gaussian) |
+| **real YopO** | **25/28** |
+
+Two independent synthetic controls, in regimes far harder than the original
+catalogue, say the criterion **turns over normally on synthetic data and rails
+only on real data** — the systematic-residual half of `S5G-1`'s story, from a
+third direction. Read together with section 5: on real data the criterion is not
+broken, it simply wants 5–7 components at a cap of 4.
+
+## 7. Verification — and the stage's first refutation
+
+| finding | lenses | verdict | outcome |
+|---|---|---|---|
+| `S5T-7` | mech + reach | **CONFIRMED 2/2** | fixed |
+| `S5T-6` | mech (reach done in session 1) | **CONFIRMED 2/2** | fixed |
+| `S5T-8` | mech CONFIRMED, **reach REFUTED** | **REFUTED** | behavioural half applied, then **reverted** |
+| `S5T-9` | mech CONFIRMED, reach outstanding | **1/2** | fix applied, **provisional** |
+| `S5T-10` | mech + reach | **CONFIRMED 2/2** | fixed |
+
+**`S5T-8` is the first refutation in the whole S5 stage**, after 23 straight
+confirmations in session 1 — and it refuted a fix that had *already been applied
+to the tree* on the strength of the first lens.
+
+Its `:mech` lens confirmed the finding across a 252-run `bg_start` sweep over all
+28 real traces. Its `:reach` lens found the switch that invalidates it: **every**
+window measurement in the finding *and in the mech lens's own sweep* was taken
+with `Fit t0` forced **OFF** by the shared test harness (`gui_tab/lib.py`). At GUI
+defaults `Fit t0` is **ON**, and the background window is then the zero-time fit's
+input — a data-prep channel, not a seed. At defaults, obeying the "start it later"
+instruction moved the reported mean by up to **0.904 nm in 5 of 6** flagged cases
+and **improved** the error toward truth in all five (0.017 nm with `Fit t0` off
+against 0.402 nm with it on).
+
+The demotion shipped on the mech lens would therefore have printed *"moving it
+will not shift the result"* beside a control that shifts the mean **4.1677 →
+4.5693 nm on a 5.00 nm truth**. Reverted. Only the first tab note's
+solver-conditional reword survives — both lenses accept that one because it makes
+no behavioural promise.
+
+What the reach lens *confirmed and strengthened*: `deer_invert_gauss`'s lsq path
+is genuinely window-independent — **exactly 0.0000 nm over 180 ground-truth
+cases**, including the 120 flagged early. The engine was never the problem; the
+panel text was, and less than the finding claimed.
+
+**The process lesson is the finding.** A behavioural change was applied on one
+lens because it looked well-measured, and the second lens found the harness switch
+that invalidated the whole measurement. A measurement inherits every default its
+harness silently set. `S5T-9`'s fix is held provisional for exactly this reason.
+
+---
+
+## The queue — state after session 2
+
+**Closed:** `S5G-1` (resolved by direct measurement, section 5 above — phenomenon
+and consequence real, mechanism refuted, `ic_railed` shipped), `S5T-7` (2/2,
+fixed), `S5T-6` (2/2, fixed).
+
+**Still open, in priority order:**
+
+1. `S5T-9` — the refit queue is engine-blind: an edit queued during a
    Multi-Gaussian fit is drained by an unconditional `do_deer()` and the
-   displayed result **silently becomes Tikhonov**.
-3. `S5T-7` — MC bars labelled "1σ linearized" in the panel *and permanently in
-   the exported CSV*, which never records that `method='mc'` was used.
-4. `S5T-10` — the panel hard-codes "(auto, AICc)" whatever the combo says.
-5. `S5T-8` — the tab's own description text is false for the default solver.
-6. `S5T-6:mech` — the second lens.
-7. Triage's cuts-for-cap, reasons in `triage_queue.json`: `callsites-1`
+   displayed result **silently becomes Tikhonov**. Both lenses were mid-run at
+   session end; the reach lens was told to take the deliberate-design reading of
+   its part (b) seriously.
+2. `S5T-8` — the tab's own description text is false for the default solver.
+3. `S5T-10` — the panel hard-codes "(auto, AICc)" whatever the combo says. Its
+   consequence now looks **smaller** than filed: with the criterion railing at the
+   cap on 25/28 real traces, all three criteria mostly agree there, so the
+   "cannot tell which criterion produced which N" harm rests on a thin base.
+4. **The DeerLab `dd_gaussN` cross-check.** Launched in session 2 outside the
+   workflow, after it was found blocked behind a phase whose agents were starved.
+   If it did not land, this remains the only engine in the stack with no external
+   implementation to check against.
+5. `S5G-2 … S5G-5`. Mostly redundant now: `S5G-2` ≈ `S5-5` and `S5G-5` ≈ `S5T-2`
+   (both already verified 2/2 and acted on), and `S5G-3` was answered directly by
+   `floor_bind.py` above. **Only `S5G-4` is genuinely open** — it claims the
+   stale-floor guard fails for a component migrating *inward*, which contradicts
+   an item in this report's own *Cleared* table, so one of the two is wrong.
+6. Triage's cuts-for-cap, reasons in `triage_queue.json`: `callsites-1`
    (`deer_invert(engine='gauss', method='mc')` silently runs `lsq`),
    **`xengine-3` — flagged by triage itself as "the strongest of the cuts"** —
    `xengine-2`, `batch-1`, `me1-1`, `ci-1`, `status-1`, `robust-5`, `docs-7`.
+7. `S5T-1`'s full scope — the stale reliability keys including `deer_validate`'s
+   per-trial `flagged` vote, four consumers in one change. S6-sized.
 
 ## Other measurements taken this session
 

@@ -1,5 +1,15 @@
 # DEER treatment + math — staged review plan
 
+> **RETIRED 2026-08-08 — the staged review is stopped.** S1–S5 ran (reports linked
+> in the status table); **S6 was never run as a review session** — its scope
+> (cross-engine consistency, CI semantics, GUI plumbing, docs) became plain backlog
+> items. **The remaining work now lives as an engineering backlog in
+> [ROADMAP.md](ROADMAP.md), not here.** This file is kept as the record of how the
+> review was structured and what each session covered; the reusable part is the
+> *method* — blind-derivation panel, two-skeptic adversarial verification,
+> derive-don't-confirm, ship-context-as-prompt-data. Do **not** resume a "session"
+> from this plan; pick tasks from the ROADMAP.
+
 A thorough review of the DEER/PDS analysis stack, split into **6 self-contained
 sessions**. Each is one sitting: a scope small enough to hold in one context, its
 own ground truth, and a written verdict. Sessions are ordered so each builds on
@@ -7,11 +17,16 @@ the last — but only S1 is a hard prerequisite for the rest.
 
 **Under review** (~5.6 k lines + docs):
 
+Line counts are the plan-time (2026-07) snapshot; both files have since grown
+(~3500 / ~3240 as of 2026-08). The `data_treatment.py` row is **void** — the
+2026-08-05 audit confirmed the DEER tab was fully spun out into `deer_analysis.py`,
+so `data_treatment.py` carries no DEER paths.
+
 | | lines |
 |---|---|
 | `atomize/math_modules/deer.py` | 2592 |
 | `atomize/control_center/deer_analysis.py` | 2981 |
-| `atomize/control_center/data_treatment.py` (DEER paths only) | — |
+| ~~`atomize/control_center/data_treatment.py` (DEER paths only)~~ | none — void |
 | `/home/anatoly/atomize_docs/docs/functions/math_modules/deer.md` | — |
 
 **Out of scope:** NUA sampling (separate concern, own open finding — see the
@@ -36,12 +51,21 @@ After S1, sessions 2–5 are independent and can be reordered or dropped freely.
 
 Substantial validation already exists. Each session below names what applies.
 
+> **Paths (2026-08-08):** `~/deer_benchmark/` was cleaned up and **moved to
+> `~/Yandex.Disk/deer_benchmark/`**, reached through the symlink `~/deer_benchmark →`
+> that — so the paths below still resolve. The one-off `synth/diag_*` scripts named
+> here were archived into `synth_diag_scripts_2026-08-08.tar.gz` (`diag_mellin_droop.py`
+> was kept, the rest need `tar xzf`); all generated `*.png` were deleted. The
+> per-session review dirs are in `deer_review_sessions_2026-08-08.tar.gz`. See
+> `~/deer_benchmark/README.md` for the standing keep/archive policy.
+
 - **`~/deer_benchmark/`** — real-data DeerLab cross-check on the YopO ring test
   (Zenodo 5092869): P(r) overlap 0.978, |Δpeak| 0.024 nm over 27 traces.
   `benchmark.py`, `batch.py`, `compare.py`, plus 4 labelled datasets.
-- **`~/deer_benchmark/synth/`** — ground-truth synthetic suite, `bench_gauss.py`,
-  `cmp_gauss.py`, and a `diag/` folder of targeted diagnostics
-  (`diag_mellin_droop.py`, `diag_bg_shrink.py`, `diag_adaptdelta.py`, …).
+- **`~/deer_benchmark/synth/`** — ground-truth synthetic suite: the datasets
+  (`easy/csv`, `hard/csv`, `nobg_iq`, `nobg_lam1_iq`, `truth/`), `bench_gauss.py`,
+  `cmp_gauss.py`, `synth_validation.py`, and `diag_mellin_droop.py` (other diagnostics
+  archived).
 - **`deer.simulate()`** (deer.py:2512) — forward model for round-trip tests.
 - **DeerLab 0.14.2** installed, but **currently broken**: it needs a
   `scipy.integrate.cumtrapz` shim (removed in this scipy) and `matplotlib`.
@@ -227,22 +251,30 @@ fit `V = A[1−S+K·masses]B` with `λ = Σmasses = S`, multi-start seeding, wid
 **Ground truth** — `bench_gauss.py`, `cmp_gauss.py`, synthetic ground truth with
 known N; the round-8 baseline (overlap 0.846→0.885) as a regression floor.
 
-> **REVIEWED 2026-08-06, VERIFICATION INCOMPLETE** — see
+> **REVIEWED + LARGELY VERIFIED, 9 FIXED** (2026-08-06/07, two sessions) — see
 > [REVIEW_S5_gauss.md](REVIEW_S5_gauss.md). The seeding question is answered
-> (strategy, not count: 4 random restarts at 4× the cost recover a fifth of what
-> the designed spread seed buys) and the width-floor constant is derived (the 3 is
-> exact; the 1/9 is calibration, and the derived floor alone costs −0.145 overlap).
-> Model selection is the open one: the criterion **never turns over on real data**
-> (`n_gauss_ic` == `max_gauss` on 25/28 traces), so N comes from the spin box.
-> The session's usage limit killed the `docs`, `crossengine` and `freqdomain`
-> reviewers, triage, and 13 of 19 skeptics: **the DeerLab `dd_gaussN` cross-check
-> — the only external implementation this engine can be checked against — was not
-> run.** Resume from the 48 banked findings in
-> `~/deer_benchmark/s5_gauss/agent_findings.json`.
+> (strategy, not count) and the width-floor constant is derived (the 3 is exact;
+> the 1/9 is calibration, and the derived floor alone costs −0.145 overlap). Round 2
+> closed the long-r / weak-mode / mis-specified blind spot with three new catalogues
+> and shipped 9 reporting-layer fixes, the whole set gated at **zero change** over
+> 156+144 synthetic + 28 real runs (per-component bound flags, `ic_railed`,
+> `mass_fraction`, MC-band relabel, strict width cap + seed guard, docstring
+> corrections). **Still open, now tracked as ROADMAP backlog** (not a review round):
+> `S5T-9`'s amended refit-queue fix, the DeerLab `dd_gaussN` cross-check (still
+> never run — only N=1 and the plumbing were checked), `S5G-4`, `S5T-1`'s full
+> scope, and triage's cuts-for-cap. State banked at `~/deer_benchmark/s5_persist/`.
 
 ---
 
 ## S6 — Cross-engine consistency, validation, GUI · Opus
+
+> **NOT RUN as a review session (retired 2026-08-08).** The scope below was never
+> executed as S6; the concrete items it names were folded into the
+> [ROADMAP.md](ROADMAP.md) backlog instead — the CI-semantics work is the
+> "band that deserves the name" uncertainty backlog, the cross-engine and
+> GUI-plumbing items are among the open findings and the 2026-08-05 audit's
+> reporting defects. Kept here as the record of what a cross-engine pass would have
+> covered.
 
 Only meaningful once S1 is settled.
 
@@ -322,5 +354,9 @@ panel and on symbolic checks (sympy) against closed-form transform pairs.
 | S2 Tikhonov | Opus | **DONE** 2026-07-28 — 9 confirmed, 3 plausible, 2 refuted; all confirmed fixed | [REVIEW_S2_tikhonov.md](REVIEW_S2_tikhonov.md) |
 | S3 Mellin core | Opus + blind-derivation panel | **DONE** 2026-07-29 — 7 confirmed, 3 plausible, 0 refuted; all confirmed fixed | [REVIEW_S3_mellin.md](REVIEW_S3_mellin.md) |
 | S4 Mellin engine | Opus | **DONE** 2026-07-30 — 38 raw → 13 queued; 10 confirmed, 3 plausible, 0 refuted; all confirmed fixed (none as suggested) | [REVIEW_S4_mellin_engine.md](REVIEW_S4_mellin_engine.md) |
-| S5 Multi-Gaussian | Opus | **REVIEWED, VERIFICATION 12/22** 2026-08-07 — 53 raw findings; 12 verified (all CONFIRMED 2/2), 2 fixed; 9 skeptics + 5 verifynew outstanding; the DeerLab `dd_gaussN` cross-check never ran | [REVIEW_S5_gauss.md](REVIEW_S5_gauss.md) |
-| S6 Cross-engine + GUI | Opus | not started | |
+| S5 Multi-Gaussian | Opus | **REVIEWED + LARGELY VERIFIED, 9 FIXED** 2026-08-06/07 (two sessions) — 53 raw findings; blind spot closed with 3 new catalogues; 9 reporting-layer fixes, zero regression. Remainder tracked as ROADMAP backlog (`S5T-9`, DeerLab `dd_gaussN` xcheck, `S5G-4`, `S5T-1`) | [REVIEW_S5_gauss.md](REVIEW_S5_gauss.md) |
+| S6 Cross-engine + GUI | — | **NOT RUN — retired 2026-08-08**; scope folded into [ROADMAP.md](ROADMAP.md) backlog | |
+
+---
+
+*Plan retired 2026-08-08. Active work: [ROADMAP.md](ROADMAP.md).*

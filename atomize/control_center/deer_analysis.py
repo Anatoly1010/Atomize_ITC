@@ -1023,7 +1023,9 @@ class MainWindow(QMainWindow):
         panel = QVBoxLayout(w)
         panel.addWidget(self._note(
             'Parametric inversion: model P(r) as a <b>sum of Gaussians</b> and fit '
-            'their centres, widths and weights directly to the form factor '
+            'their centres, widths and weights — for the default Least-squares '
+            'solver jointly with the background and λ against V(t); the '
+            'Monte-Carlo solver instead fits the prepared form factor '
             '(DeerAnalysis "Gaussian" mode / DeerLab <i>dd_gaussN</i>). When the '
             'distribution really is a few discrete modes this is the most robust '
             'choice and gives genuine <b>parametric error bars</b> on each peak '
@@ -1032,7 +1034,12 @@ class MainWindow(QMainWindow):
             'are not well described by a few Gaussians.'))
         panel.addWidget(self._note(
             'Uses the <b>Background</b> tab\'s zero-time / window / dimension / fit '
-            'engine and the shared distance grid below the tabs.'))
+            'engine and the shared distance grid below the tabs. The window feeds '
+            'the zero-time fit and, on <i>General</i> / <i>None</i> and with the '
+            'Monte-Carlo solver, the background itself; on the default '
+            'Least-squares solver with <i>Joint</i>/<i>Sequential</i> the '
+            'background is re-fitted here, so the window mainly acts through the '
+            'zero time and the starting guess.'))
         grid = QGridLayout()
         r = 0
 
@@ -1053,8 +1060,9 @@ class MainWindow(QMainWindow):
         self.gauss_n_auto.setChecked(True)
         self.gauss_n_auto.setToolTip(
             'Choose the number of components automatically: fit N = 1…N max and '
-            'keep the N that minimizes the corrected Akaike criterion (AICc), so '
-            'extra Gaussians are not fit into noise. Uncheck to force a fixed N.')
+            'keep the N that minimizes the criterion chosen in "Selection by" '
+            '(AICc by default), so extra Gaussians are not fit into noise. '
+            'Uncheck to force a fixed N.')
         self.gauss_n_auto.stateChanged.connect(self._gauss_n_toggle)
         self.gauss_n_auto.stateChanged.connect(self._gauss_live)
         n_row.addWidget(self.gauss_n); n_row.addWidget(self.gauss_n_auto)
@@ -1066,9 +1074,10 @@ class MainWindow(QMainWindow):
         self.gauss_nmax.setRange(1, 6)
         self.gauss_nmax.setValue(4)
         self.gauss_nmax.setToolTip(
-            'Largest component count tried during automatic AICc model selection. '
-            '3–4 is usually enough; more components rarely survive the criterion '
-            'and slow the fit.')
+            'Largest component count tried during automatic model selection. If '
+            'the criterion is still improving at this value it has not found a '
+            'minimum, and N is set by this box rather than by the data — the '
+            'panel says so when that happens.')
         self.gauss_nmax.valueChanged.connect(self._gauss_live)
         grid.addWidget(self.gauss_nmax, r, 1); r += 1
 
@@ -2570,30 +2579,63 @@ class MainWindow(QMainWindow):
             reg = (f'split δ = {delta_disp:.4g} {tunit}<br>'
                    f'τ max = {res.get("tau_max", 0):.0f}{tag_auto}{disc}')
         elif is_gauss:
-            n_auto = ' (auto, AICc)' if self.gauss_n_auto.isChecked() else ''
+            # the criterion is printed three words later from res['ic']; naming it
+            # here too was a hard-coded "AICc" that contradicted the combo
+            n_auto = ' (auto)' if self.gauss_n_auto.isChecked() else ''
             support = res.get('ci_mode') == 'support'
 
-            def _ci(c, key):
-                """Asymmetric -lo/+hi (support-plane) or symmetric ±err (linear)."""
+            # a parameter sitting ON its box bound is a bound, not a measurement:
+            # the local-quadratic bar is taken where the parameter cannot move, so
+            # it runs outside the feasible region. Say so instead of printing it.
+            _PINNED = {'sigma': (('sigma_at_floor', 'at width floor'),
+                                 ('sigma_at_ceiling', 'at width ceiling')),
+                       'center': (('center_at_bound', 'at range bound'),)}
+
+            def _ci(c, key, unit=''):
+                """Asymmetric -lo/+hi (support-plane) or symmetric ±err (linear);
+                a pinned parameter is reported as a bound instead."""
+                for flag, label in _PINNED.get(key, ()):
+                    if c.get(flag):
+                        return f'{unit} <i>({label})</i>'
                 lo = c.get(f'{key}_ci_lo'); hi = c.get(f'{key}_ci_hi')
                 v = c[key]
                 if support and lo is not None and hi is not None:
-                    return f'(−{v-lo:.3f}/+{hi-v:.3f})'
-                return f'± {c[key+"_err"]:.3f}'
+                    return f'(−{v-lo:.3f}/+{hi-v:.3f}){unit}'
+                return f'± {c[key+"_err"]:.3f}{unit}'
+            # w is the share of the DRAWN curve (`mass_fraction`); `weight` is the
+            # analytic area fraction and over-states a component the r axis cuts
             comp_lines = '<br>'.join(
                 f'&nbsp;&nbsp;{i+1}: r = {c["center"]:.3f} {_ci(c, "center")}, '
-                f'σ = {c["sigma"]:.3f} {_ci(c, "sigma")} nm, '
-                f'w = {c["weight"]:.2f}'
+                f'σ = {c["sigma"]:.3f} {_ci(c, "sigma", " nm")}, '
+                f'w = {c.get("mass_fraction", c["weight"]):.2f}'
                 for i, c in enumerate(res.get('components', [])))
             ic_name = str(res.get('ic', 'aicc')).upper()
             ic_val = res.get(res.get('ic', 'aicc'), float('nan'))
             ci_tag = (f', 95% support-plane CI' if support
+                      else ', MC ensemble spread (per-component STD)'
+                      if res.get('ci_mode') == 'mc_ensemble'
                       else ', 1σ linearized')
             # note when parsimony pruning dropped a spurious (floor-width) component
             prune_tag = (f' [pruned from {res.get("n_gauss_ic")}]'
                          if res.get('pruned') else '')
+            # a component count that never reached the criterion was previously
+            # dropped with nothing said anywhere
+            failed = res.get('ic_failed') or []
+            fail_line = (
+                f'<br><span style="color: rgb(224, 130, 96);">⚠ N = '
+                f'{", ".join(str(n) for n, _ in failed)} could not be fit and '
+                f'were left out of the selection — the distance range is likely '
+                f'wider than the trace supports</span>' if failed else '')
+            # the criterion never turned over inside "N max", so N is the spin
+            # box's value rather than the data's
+            if res.get('ic_railed'):
+                fail_line += (
+                    f'<br><span style="color: rgb(224, 130, 96);">⚠ the '
+                    f'criterion still improved at N max — N was set by the spin '
+                    f'box, not by the data; raise N max to find its minimum'
+                    f'</span>')
             reg = (f'{res.get("n_gauss", "?")} Gaussian(s){n_auto}{prune_tag}, '
-                   f'{ic_name} = {ic_val:.1f}{ci_tag}<br>{comp_lines}')
+                   f'{ic_name} = {ic_val:.1f}{ci_tag}{fail_line}<br>{comp_lines}')
         else:
             reg = f'α = {res["alpha"]:.4g}'
         # background line: the general model reports its a/b/c/d coefficients
@@ -2610,6 +2652,10 @@ class MainWindow(QMainWindow):
         notes = []
         if bgr.get('bg_start_early'):
             per = float(bgr.get('bg_start_periods') or float('nan'))
+            # NOT demoted for the gauss lsq path, though the engine's own fit is
+            # window-independent there: with "Fit t0" on (the default) the window
+            # also feeds the zero-time fit, so moving it does change the answer --
+            # and measurably for the better. See ROADMAP 2026-08-07.
             flags.append(f'background window opens at {per:.2f} dipolar periods '
                          '— reported distance is biased short; start it later')
         if bgr.get('conc_implausible'):
@@ -2777,17 +2823,19 @@ class MainWindow(QMainWindow):
                     and self.mellin_signed_chk.isChecked()):
                 pr_curves.append(('P(r) signed', res['r'],
                                   res['P_signed_density'], C_IM, 1))
-            # Multi-Gaussian: optionally overlay each fitted component (each
-            # area-normalized Gaussian scaled by its weight, so the components
-            # sum to the displayed total P(r)).
+            # Multi-Gaussian: optionally overlay each fitted component. Built from
+            # `amplitude` over the on-grid total, which is what P_density is --
+            # scaling a unit Gaussian by `weight` (the ANALYTIC area fraction)
+            # under-shoots the drawn curve whenever a component is truncated by
+            # the r axis.
             if (res.get('engine', '') == 'gauss'
                     and self.gauss_comp_chk.isChecked()):
                 rr = np.asarray(res['r'], float)
+                tot = float(np.sum(res['P'])) or 1.0
                 for i, c in enumerate(res.get('components', [])):
                     s = max(float(c['sigma']), 1e-6)
-                    comp = (float(c['weight'])
-                            * np.exp(-0.5*((rr - float(c['center']))/s)**2)
-                            / (s*np.sqrt(2.0*np.pi)))
+                    comp = (float(c['amplitude'])
+                            * np.exp(-0.5*((rr - float(c['center']))/s)**2)/tot)
                     pr_curves.append((f'comp {i+1}', rr, comp, C_IM, 1))
             self._repaint(self.p_pr, self.pr_legend, self._pr_items, pr_curves,
                           'Distance (nm)', '_pr_key', left_label='P(r) (nm⁻¹)',
@@ -3219,18 +3267,32 @@ class MainWindow(QMainWindow):
         elif is_gauss:
             support = res.get('ci_mode') == 'support'
 
+            _PIN = {'sigma': (('sigma_at_floor', 'at width floor'),
+                              ('sigma_at_ceiling', 'at width ceiling')),
+                    'center': (('center_at_bound', 'at range bound'),)}
+
             def _gci(c, key):
+                for flag, label in _PIN.get(key, ()):
+                    if c.get(flag):
+                        return f'{c[key]:.4g}({label})'
                 lo, hi = c.get(f'{key}_ci_lo'), c.get(f'{key}_ci_hi')
                 if support and lo is not None and hi is not None:
                     return f'{c[key]:.4g}[{lo:.4g},{hi:.4g}]'
                 return f'{c[key]:.4g}+/-{c[key+"_err"]:.2g}'
             comps = '; '.join(f'r{i+1}={_gci(c, "center")} sigma={_gci(c, "sigma")} '
-                              f'w={c["weight"]:.3g}'
+                              f'w={c.get("mass_fraction", c["weight"]):.3g}'
                               for i, c in enumerate(res.get('components', [])))
             ick = str(res.get('ic', 'aicc'))
-            ci_tag = ('95% support-plane CI' if support else '1sigma linearized')
+            # the mc ensemble is optimizer spread, not a linearized 1-sigma bar,
+            # and the solver has to be recorded or the file cannot say which
+            # estimator produced it (the lsq return has no 'method' key)
+            ci_tag = ('95% support-plane CI' if support
+                      else 'MC ensemble spread (per-component STD)'
+                      if res.get('ci_mode') == 'mc_ensemble'
+                      else '1sigma linearized')
             reg = (f'N = {res.get("n_gauss", "?")}, {ick.upper()} = '
-                   f'{res.get(ick, float("nan")):.6g}, {ci_tag}, [{comps}]')
+                   f'{res.get(ick, float("nan")):.6g}, '
+                   f'solver = {res.get("method", "lsq")}, {ci_tag}, [{comps}]')
         else:
             reg = f'alpha = {res["alpha"]:.6g}'
         bgp = res.get('background', {}).get('params')
@@ -3265,10 +3327,13 @@ class MainWindow(QMainWindow):
                   f'r (nm), P(r) median density, {lo:g}% band, {hi:g}% band, '
                   f'mean ({b["n_trials"]} trials)')
         elif res.get('P_lower') is not None:
+            # the mc band is the optimizer's restart spread, not a noise band
+            bandsrc = ('ensemble spread' if res.get('ci_mode') == 'mc_ensemble'
+                       else 'noise only')
             _save('distance', [res['r'], res['P_density'], res['P_lower'],
                                res['P_upper'], res['P_norm']],
-                  'r (nm), P(r) density, 95% band lower (noise only), '
-                  '95% band upper (noise only), P (masses)')
+                  f'r (nm), P(r) density, 95% band lower ({bandsrc}), '
+                  f'95% band upper ({bandsrc}), P (masses)')
         elif is_mellin and res.get('P_signed_density') is not None:
             _save('distance', [res['r'], res['P_density'], res['P_signed_density']],
                   'r (nm), P(r) density (clipped, normalized), P(r) signed density')
