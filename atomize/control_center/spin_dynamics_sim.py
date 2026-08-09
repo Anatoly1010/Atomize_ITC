@@ -42,6 +42,7 @@ import numpy as np
 import pyqtgraph as pg
 from pyqtgraph.dockarea import DockArea
 from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QLabel, QPushButton,
     QComboBox, QHBoxLayout, QDoubleSpinBox, QSpinBox,
     QCheckBox, QFrame, QScrollArea)
@@ -145,6 +146,10 @@ class MainWindow(QMainWindow):
         super().__init__(*args, **kwargs)
         self.setWindowTitle("EPR Sequence Simulator")
         self.setGeometry(140, 110, 1240, 760)
+
+        icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                 'gui', 'icon_spin.ico')
+        self.setWindowIcon(QIcon(icon_path))
 
         self.preset = None         # parsed preset_loader.Preset
         self.preset_path = None
@@ -1037,7 +1042,7 @@ class MainWindow(QMainWindow):
 
 def main():
     app = QApplication(sys.argv)
-    apply_app_style(app)
+    apply_app_style(app, desktop='spin')
     win = MainWindow()
     win.show()
     sys.exit(app.exec())

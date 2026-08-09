@@ -33,6 +33,7 @@ import numpy as np
 import pyqtgraph as pg
 from pyqtgraph.dockarea import DockArea
 from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QLabel, QPushButton,
     QComboBox, QHBoxLayout, QDoubleSpinBox, QSpinBox,
     QCheckBox, QFrame, QScrollArea)
@@ -143,6 +144,10 @@ class MainWindow(QMainWindow):
         super().__init__(*args, **kwargs)
         self.setWindowTitle("EPR Pulse Excitation Profile")
         self.setGeometry(150, 120, 1180, 720)
+
+        icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                 'gui', 'icon_excprof.ico')
+        self.setWindowIcon(QIcon(icon_path))
 
         self._holds = []          # list of (offsets_MHz, Mz, label, color)
         self._spec = None         # current lineshape weight over offsets, or None
@@ -1237,7 +1242,7 @@ class MainWindow(QMainWindow):
 
 def main():
     app = QApplication(sys.argv)
-    apply_app_style(app, app_id='Atomize.ITC.ExcitationProfile')
+    apply_app_style(app, app_id='Atomize.ITC.ExcitationProfile', desktop='excprof')
     win = MainWindow()
     win.show()
     sys.exit(app.exec())

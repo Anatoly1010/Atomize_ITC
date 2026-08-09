@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Atomize osc21
+Comment=Atomize control-centre tool
+Exec=false
+Icon=atomize-osc21
+Terminal=false
+NoDisplay=true
+Categories=Science;Physics;
+StartupWMClass=atomize-osc21

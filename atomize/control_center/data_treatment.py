@@ -240,7 +240,7 @@ class MainWindow(QMainWindow):
     def design(self):
         self.setWindowTitle('Data Treatment')
         icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                 'gui', 'icon_temp.png')
+                                 'gui', 'icon_treat.ico')
         self.setWindowIcon(QIcon(icon_path))
         self.setMinimumHeight(720)
         self.setMinimumWidth(1040)
@@ -2530,7 +2530,7 @@ class MainWindow(QMainWindow):
 
 def main():
     app = QApplication(sys.argv)
-    apply_app_style(app, app_id='Atomize.ITC.DataTreatment1D')
+    apply_app_style(app, app_id='Atomize.ITC.DataTreatment1D', desktop='treat')
     window = MainWindow()
     window.show()
     sys.exit(app.exec())

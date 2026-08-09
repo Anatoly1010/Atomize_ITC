@@ -245,7 +245,7 @@ class MainWindow(QMainWindow):
     def design(self):
         self.setWindowTitle('DEER / PDS Analysis')
         icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                 'gui', 'icon_temp.png')
+                                 'gui', 'icon_deer.ico')
         self.setWindowIcon(QIcon(icon_path))
         self.setMinimumHeight(740)
         self.setMinimumWidth(1090)
@@ -3371,7 +3371,7 @@ class MainWindow(QMainWindow):
 
 def main():
     app = QApplication(sys.argv)
-    apply_app_style(app, app_id='Atomize.ITC.DeerAnalysis')
+    apply_app_style(app, app_id='Atomize.ITC.DeerAnalysis', desktop='deer')
     window = MainWindow()
     window.show()
     sys.exit(app.exec())

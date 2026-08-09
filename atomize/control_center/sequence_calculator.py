@@ -68,7 +68,7 @@ import tempfile
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QLabel, QDoubleSpinBox,
     QSpinBox, QComboBox, QPushButton, QHBoxLayout, QVBoxLayout, QGridLayout,
     QPlainTextEdit, QTextEdit, QScrollArea, QFrame, QSizePolicy)
-from PyQt6.QtGui import QFont, QPainter, QColor, QPen
+from PyQt6.QtGui import QFont, QPainter, QColor, QPen, QIcon
 from PyQt6.QtCore import Qt
 
 import atomize.general_modules.general_functions as general
@@ -481,6 +481,11 @@ class MainWindow(QMainWindow):
     def __init__(self, *args, **kwargs):
         super(MainWindow, self).__init__(*args, **kwargs)
         self.setWindowTitle("EPR Sequence & Phase-Cycling Calculator")
+
+        icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                 'gui', 'icon_seqcalc.ico')
+        self.setWindowIcon(QIcon(icon_path))
+
         self._click_seq = 0            # monotonic counter for reload-signal nonces
         self._building = True          # suppress recompute while wiring widgets
         self.grid = DEFAULT_GRID       # selectable hardware grid (ns); see GRID_STEPS
@@ -1227,7 +1232,7 @@ def main():
         _self_test()
         return
     app = QApplication(sys.argv)
-    apply_app_style(app, app_id='Atomize.ITC.SeqCalc')
+    apply_app_style(app, app_id='Atomize.ITC.SeqCalc', desktop='seqcalc')
     window = MainWindow()
     window.show()
     sys.exit(app.exec())

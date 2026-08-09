@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Atomize mw
+Comment=Atomize control-centre tool
+Exec=false
+Icon=atomize-mw
+Terminal=false
+NoDisplay=true
+Categories=Science;Physics;
+StartupWMClass=atomize-mw

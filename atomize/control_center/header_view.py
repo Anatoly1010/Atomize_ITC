@@ -168,7 +168,7 @@ class HeaderWindow(QWidget):
         super().__init__(parent, Qt.WindowType.Window)
         self.setWindowTitle(title)
         icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                 'gui', 'icon_temp.png')
+                                 'gui', 'icon_treat.ico')
         if os.path.isfile(icon_path):
             self.setWindowIcon(QIcon(icon_path))
         self.setStyleSheet(f'background-color: {BG};')

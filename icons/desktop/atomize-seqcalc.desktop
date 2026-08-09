@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Atomize seqcalc
+Comment=Atomize control-centre tool
+Exec=false
+Icon=atomize-seqcalc
+Terminal=false
+NoDisplay=true
+Categories=Science;Physics;
+StartupWMClass=atomize-seqcalc

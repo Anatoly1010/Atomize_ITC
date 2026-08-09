@@ -732,7 +732,7 @@ def main():
     # Pin the Fusion style + shared dark palette (same as the control-center
     # tools) so native widgets and pyqtgraph's right-click context menus pick up
     # the Atomize dark theme. app_id is omitted to keep the AUMID set above.
-    apply_app_style(app)
+    apply_app_style(app, desktop = True)
     main = MainExtended(ptm = '../../libs')
     main.show()
     sys.exit( app.exec() )

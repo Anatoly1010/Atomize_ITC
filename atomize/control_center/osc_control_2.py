@@ -39,7 +39,7 @@ class MainWindow(QMainWindow):
         self.setStyleSheet("background-color: rgb(42,42,64);")
 
         path_to_main = os.path.dirname(os.path.abspath(__file__))
-        icon_path = os.path.join(path_to_main, 'gui/icon_o2.png')
+        icon_path = os.path.join(path_to_main, 'gui/icon_osc22.ico')
         self.setWindowIcon( QIcon(icon_path) )
 
         centralwidget = QWidget(self)
@@ -288,7 +288,7 @@ def main():
     """
     app = QApplication(sys.argv)
     from atomize.general_modules.gui_style import apply_app_style
-    apply_app_style(app, app_id='Atomize.ITC.OscControl2')
+    apply_app_style(app, app_id='Atomize.ITC.OscControl2', desktop='osc22')
     main = MainWindow()
     main.show()
     sys.exit(app.exec())

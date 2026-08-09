@@ -71,7 +71,7 @@ class MainWindow(QMainWindow):
         self.setStyleSheet("background-color: rgb(42,42,64);")
 
         path_to_main = os.path.dirname(os.path.abspath(__file__))
-        icon_path = os.path.join(path_to_main, 'gui/icon_temp.png')
+        icon_path = os.path.join(path_to_main, 'gui/icon_temp.ico')
         self.setWindowIcon(QIcon(icon_path))
 
         centralwidget = QWidget(self)
@@ -460,7 +460,7 @@ class MainWindow(QMainWindow):
 def main():
     app = QApplication(sys.argv)
     from atomize.general_modules.gui_style import apply_app_style
-    apply_app_style(app, app_id='Atomize.ITC.TempControl')
+    apply_app_style(app, app_id='Atomize.ITC.TempControl', desktop='temp')
     main = MainWindow()
     main.show()
     sys.exit(app.exec())

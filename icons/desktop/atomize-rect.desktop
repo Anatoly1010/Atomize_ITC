@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Atomize rect
+Comment=Atomize control-centre tool
+Exec=false
+Icon=atomize-rect
+Terminal=false
+NoDisplay=true
+Categories=Science;Physics;
+StartupWMClass=atomize-rect

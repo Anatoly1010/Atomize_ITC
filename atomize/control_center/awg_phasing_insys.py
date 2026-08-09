@@ -463,7 +463,7 @@ class MainWindow(QMainWindow):
         self.setStyleSheet("background-color: rgb(42,42,64);")
 
         path_to_main = os.path.dirname(os.path.abspath(__file__))
-        icon_path = os.path.join(path_to_main, 'gui/icon_pulse.png')
+        icon_path = os.path.join(path_to_main, 'gui/icon_awg.ico')
         self.setWindowIcon( QIcon(icon_path) )
         self.path = os.path.join(path_to_main, '..', '..', '..', '..', 'experimental_data')
 
@@ -7814,7 +7814,7 @@ def main():
     A function to run the main window of the programm.
     """
     app = QApplication(sys.argv)
-    apply_app_style(app, app_id='Atomize.ITC.AWGPhasing')
+    apply_app_style(app, app_id='Atomize.ITC.AWGPhasing', desktop='awg')
     main = MainWindow()
     main.show()
     # Optional preset path (e.g. from the Sequence Calculator's one-click open).
