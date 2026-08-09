@@ -750,7 +750,21 @@ class MainWindow(QMainWindow):
         self.phase_first.setDecimals(3)
         self.phase_first.setSingleStep(0.05)
         self.phase_first.valueChanged.connect(self._live_update)
-        grid.addWidget(self.phase_first, 2, 1)
+        ph1_row = QHBoxLayout()
+        ph1_row.addWidget(self.phase_first)
+        btn_autoph1 = QPushButton('Auto')
+        btn_autoph1.setStyleSheet(BUTTON_STYLE)
+        btn_autoph1.setToolTip(
+            'First-order auto-phase: set it to the carrier the record actually '
+            'sits at, from the phase increment per sample over the echo window, '
+            'iterated to the fixed point — then re-run the zero-order Auto.<br><br>'
+            'Do this <b>before</b> φ₀ on undemodulated data. The nominal IF is '
+            'not accurate enough: an offset of a few hundred kHz twists the phase '
+            'across the echo by tens of degrees, which no φ₀ can absorb, and it '
+            'leaves a large imaginary residue.')
+        btn_autoph1.clicked.connect(self.auto_phase_first)
+        ph1_row.addWidget(btn_autoph1)
+        grid.addLayout(ph1_row, 2, 1)
 
         grid.addWidget(self._label('Second order (MHz @ ns)'), 3, 0)
         self.phase_second = QDoubleSpinBox()
@@ -2120,7 +2134,7 @@ class MainWindow(QMainWindow):
         self.phase_zero.setValue(phi)        # fires the live preview update
 
         note = ', first/second order applied' if (v1 or v2) else ''
-        f0 = self.fft.carrier_offset(sig, dt)*1000.0 if dt else 0.0
+        f0 = self._carrier(sig, dt)*1000.0 if dt else 0.0
         # a carrier that turns by more than ~45 deg across the echo cannot be
         # absorbed into phi0 at all; report the first-order value that kills it
         env = np.abs(sig)
@@ -2131,6 +2145,105 @@ class MainWindow(QMainWindow):
                             f'= {v1 - f0:.2f} and press Auto again.')
         else:
             self.set_status(f'Auto φ₀ = {phi:.2f}° (echo{note}).')
+
+    @staticmethod
+    def _carrier(sig, dt):
+        """Carrier offset of the echo, measured on a band-limited copy.
+
+        `carrier_offset` reads the phase increment between neighbouring samples,
+        which the out-of-band noise of an undemodulated record swamps: a raw
+        SIFTER record reads +0.02 MHz where the true offset is −0.40. An echo of
+        width W cannot be spectrally wider than a few times 1/W, so everything
+        beyond 10/W is noise and is dropped before measuring."""
+        z = np.atleast_2d(np.asarray(sig, dtype=complex))
+        env = np.abs(z).mean(axis=0)
+        width = abs(dt)*max(1, int(np.count_nonzero(env >= 0.25*env.max())))
+        S = np.fft.fft(z, axis=1)
+        S[:, np.abs(np.fft.fftfreq(z.shape[1], dt)) > 10.0/width] = 0
+        return fft_module.Fast_Fourier.carrier_offset(np.fft.ifft(S, axis=1), dt)
+
+    @staticmethod
+    def _imag_fraction(W):
+        """Imaginary energy left in `W` after its best zero-order rotation."""
+        W = W*np.exp(-1j*np.angle((W**2).sum())/2)
+        denom = np.abs(W).sum()
+        return float(np.abs(W.imag).sum()/denom) if denom else 1.0
+
+    def _refine_first(self, sig, x, v1):
+        """Grid-search the first order about `v1` for the least imaginary residue
+        over the echo region, parabolically refined.
+
+        The carrier estimate is the intensity centroid of the line, which is not
+        where the trace phases best when the line is asymmetric — on the SIFTER
+        records the centroid lands at about half the residue-optimal value. The
+        residue is what phasing is actually for, so it decides the final number."""
+        env = np.abs(sig)
+        echo = env >= 0.25*env.max()
+        se = sig[echo]
+        te = x[echo] - x[int(env.argmax())]
+        grid = v1 + np.arange(-1.0, 1.0001, 0.02)
+        res = np.array([self._imag_fraction(se*np.exp(2j*np.pi*g/1000.0*te))
+                        for g in grid])
+        j = int(res.argmin())
+        best = float(grid[j])
+        if 0 < j < grid.size - 1:
+            p = np.polyfit(grid[j-1:j+2], res[j-1:j+2], 2)
+            if p[0] > 0:
+                best = float(-p[1]/(2*p[0]))
+        return best, float(res[j])
+
+    def auto_phase_first(self):
+        """Fill the first-order term with the carrier the record actually sits at,
+        and re-run the zero-order Auto on top of it.
+
+        The nominal IF is only a starting point: a residual of a few hundred kHz
+        turns the phase by tens of degrees across the echo, which φ₀ cannot absorb
+        and which shows up as a large imaginary residue. Two stages — the carrier
+        is iterated to its fixed point (it survives a badly wrong starting value),
+        then `_refine_first` takes over for the last few hundred kHz. Time domain
+        only — with 'FFT first' on, the first order is a shift of the spectrum,
+        not a carrier."""
+        il = self.i_combo.currentText()
+        ql = self.q_combo.currentText()
+        if il not in self.datasets or ql not in self.datasets:
+            self.set_status('Select both I and Q channels above.')
+            return
+        if self.phase_fft.isChecked():
+            self.set_status('First-order Auto measures a time-domain carrier — '
+                            'turn "FFT first" off.')
+            return
+        x, idata = self.datasets[il]
+        _, qdata = self.datasets[ql]
+        idata = np.asarray(idata, dtype=float)
+        qdata = np.asarray(qdata, dtype=float)
+        if idata.shape != qdata.shape or idata.size < 2:
+            self.set_status('I and Q channels must have the same length (≥ 2).')
+            return
+        x = np.asarray(x, dtype=float)
+        dt = float(np.mean(np.diff(x)))
+        if dt == 0:
+            self.set_status('X axis has zero spacing; cannot measure a carrier.')
+            return
+        sig0 = idata + 1j*qdata
+        v1 = v1_in = float(self.phase_first.value())
+        v2 = float(self.phase_second.value())
+        for _ in range(8):
+            sig = sig0*np.exp(1j*(2*np.pi*v1/1000.0*x + 2*np.pi*v2/1000.0*x*x))
+            f0 = self._carrier(sig, dt)*1000.0
+            v1 -= f0
+            if abs(f0) < 1e-3:
+                break
+        v1, res = self._refine_first(sig0, x, v1)
+        self._suppress_live = True                 # one preview, after φ₀ lands
+        try:
+            self.phase_first.setValue(v1)
+        finally:
+            self._suppress_live = False
+        self.auto_phase_zero()
+        phi0_msg = self.status.text()
+        self.set_status(f'Auto φ₁ = {v1:.3f} MHz ({v1 - v1_in:+.3f} on the entered '
+                        f'value), {100*res:.1f} % imaginary left over the echo; '
+                        f'then {phi0_msg[0].lower()}{phi0_msg[1:]}')
 
     def do_phase(self):
         il = self.i_combo.currentText()

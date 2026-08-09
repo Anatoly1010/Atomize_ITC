@@ -13,12 +13,17 @@ parameter). It mirrors the phase_cor.py workflow:
     slow/indirect parameter, columns = the fast within-trace axis).
   * Axis metadata is set by hand (start / step / name / unit per axis) — there
     is no .param sidecar.
-  * Two independent, chainable operations:
+  * Independent, chainable operations:
       - Phase correction: multiply I+iQ by exp(i·(φ₀ + φ₁·x + φ₂·x²)) along the
         X axis (φ₀ in degrees, φ₁/φ₂ in rad per X-unit / X-unit²).
       - FFT (selectable axis): complex FFT of I+iQ along the within-trace (X) or
         the indirect (Y) axis, with optional apodization + zero fill; the
         transformed axis becomes frequency.
+      - Filter (selectable axis): FFT → passband mask → inverse FFT along X, Y or
+        both axes, each with its own type and cutoffs; the axes stay unchanged.
+      - Shear: V′(t_dip, t) = V(t_dip + k·(t − t_ref), t) as an exact phase ramp on
+        the dipolar-axis spectrum, straightening a dipolar ridge tilted across the
+        echo (k = 1/2 for SIFTER), with a shear-scan estimator of k.
 
 The window embeds the same CrossSectionDock the main GUI uses (heatmap + X/Y
 cross-section sub-docks), fed in-process — no LivePlot IPC. Real and imaginary
@@ -115,6 +120,7 @@ TAB_STYLE = """
 WINDOWS = ['None', 'Hann', 'Hamming', 'Blackman', 'Bartlett', 'Flat-top',
            'Kaiser', 'Gaussian', 'Tukey']
 ZEROFILL = ['None', '×2', '×4', '×8', 'Next pow₂']
+FILTERS = ['Low-pass', 'High-pass', 'Band-pass']
 
 # Bare SI units worth auto-prefixing on the plot axes: a plain 's' axis with a
 # 2e-9 step should read '2 ns', not '2e-9 s'. Already-prefixed units ('ns',
@@ -347,6 +353,8 @@ class MainWindow(QMainWindow):
         self.tabs.setStyleSheet(TAB_STYLE)
         self.tabs.addTab(self._build_phase_tab(), 'Phase')
         self.tabs.addTab(self._build_fft_tab(), 'FFT')
+        self.tabs.addTab(self._build_filter_tab(), 'Filter')
+        self.tabs.addTab(self._build_shear_tab(), 'Shear')
         self.tabs.addTab(self._build_fit_tab(), 'Fit')
         self.tabs.addTab(self._build_slice_tab(), 'Slice')
         # Tab changes deliberately do NOT trigger _live_update: re-running the
@@ -472,7 +480,21 @@ class MainWindow(QMainWindow):
         grid.addWidget(self._label('First order (MHz @ ns)'), 2, 0)
         self.phase_first = self._dspin(-1e6, 1e6, 3, 0.0, step=0.05)
         self.phase_first.valueChanged.connect(self._live_update)
-        grid.addWidget(self.phase_first, 2, 1)
+        ph1_row = QHBoxLayout()
+        ph1_row.addWidget(self.phase_first)
+        btn_autoph1 = QPushButton('Auto')
+        btn_autoph1.setStyleSheet(BUTTON_STYLE)
+        btn_autoph1.setToolTip(
+            'First-order auto-phase: set it to the carrier the record actually '
+            'sits at, from the phase increment per sample over the echo window, '
+            'iterated to the fixed point — then re-run the zero-order Auto.<br><br>'
+            'Do this <b>before</b> φ₀ on undemodulated data. The nominal IF is '
+            'not accurate enough: an offset of a few hundred kHz twists the phase '
+            'across the echo by tens of degrees, which no φ₀ can absorb, and it '
+            'leaves a large imaginary residue.')
+        btn_autoph1.clicked.connect(self.auto_phase_first)
+        ph1_row.addWidget(btn_autoph1)
+        grid.addLayout(ph1_row, 2, 1)
         grid.addWidget(self._label('Second order (MHz @ ns)'), 3, 0)
         self.phase_second = self._dspin(-1e6, 1e6, 4, 0.0, step=0.001)
         self.phase_second.valueChanged.connect(self._live_update)
@@ -558,6 +580,145 @@ class MainWindow(QMainWindow):
             self.fft_winparam_label.setText('Window param')
             self.fft_winparam.setEnabled(False)
         self.fft_winparam.blockSignals(False)
+
+    def _build_filter_tab(self):
+        w = QWidget(); grid = QGridLayout(w)
+
+        grid.addWidget(self._note('FFT → zero the frequencies outside the passband → '
+                                  'inverse FFT, along the chosen axis. Output is the '
+                                  'cleaned I/Q data on the same axes; "Both" applies '
+                                  'the X and Y filters independently.'),
+                       0, 0, 1, 3)
+
+        grid.addWidget(self._label('Filter axis'), 1, 0)
+        self.filt_axis = self._combo(['X (within trace)', 'Y (indirect)',
+                                      'Both (independent)'])
+        self.filt_axis.currentIndexChanged.connect(self._update_filter_enable)
+        self.filt_axis.currentIndexChanged.connect(self._live_update)
+        grid.addWidget(self.filt_axis, 1, 1, 1, 2)
+
+        self.filt_x_head = self._label('X filter')
+        grid.addWidget(self.filt_x_head, 2, 0)
+        self.filt_x_type = self._combo(FILTERS)
+        self.filt_x_type.currentIndexChanged.connect(self._live_update)
+        grid.addWidget(self.filt_x_type, 2, 1, 1, 2)
+        self.filt_x_lo_label = self._label('X low cutoff (×f_max)')
+        grid.addWidget(self.filt_x_lo_label, 3, 0)
+        self.filt_x_lo = self._dspin(0.0, 1.0, 4, 0.1, 0.01)
+        self.filt_x_lo.valueChanged.connect(self._live_update)
+        grid.addWidget(self.filt_x_lo, 3, 1, 1, 2)
+        self.filt_x_hi_label = self._label('X high cutoff (×f_max)')
+        grid.addWidget(self.filt_x_hi_label, 4, 0)
+        self.filt_x_hi = self._dspin(0.0, 1.0, 4, 0.5, 0.01)
+        self.filt_x_hi.valueChanged.connect(self._live_update)
+        grid.addWidget(self.filt_x_hi, 4, 1, 1, 2)
+
+        self.filt_y_head = self._label('Y filter')
+        grid.addWidget(self.filt_y_head, 5, 0)
+        self.filt_y_type = self._combo(FILTERS)
+        self.filt_y_type.currentIndexChanged.connect(self._live_update)
+        grid.addWidget(self.filt_y_type, 5, 1, 1, 2)
+        self.filt_y_lo_label = self._label('Y low cutoff (×f_max)')
+        grid.addWidget(self.filt_y_lo_label, 6, 0)
+        self.filt_y_lo = self._dspin(0.0, 1.0, 4, 0.1, 0.01)
+        self.filt_y_lo.valueChanged.connect(self._live_update)
+        grid.addWidget(self.filt_y_lo, 6, 1, 1, 2)
+        self.filt_y_hi_label = self._label('Y high cutoff (×f_max)')
+        grid.addWidget(self.filt_y_hi_label, 7, 0)
+        self.filt_y_hi = self._dspin(0.0, 1.0, 4, 0.5, 0.01)
+        self.filt_y_hi.valueChanged.connect(self._live_update)
+        grid.addWidget(self.filt_y_hi, 7, 1, 1, 2)
+
+        grid.addWidget(self._note('Low-pass uses the high cutoff; High-pass uses the '
+                                  'low cutoff; Band-pass uses both. Cutoffs are '
+                                  'fractions of that axis\' maximum (Nyquist) '
+                                  'frequency, set by its own point step.'),
+                       8, 0, 1, 3)
+        btn = QPushButton('Apply filter')
+        btn.setStyleSheet(BUTTON_STYLE)
+        btn.clicked.connect(self.do_filter)
+        grid.addWidget(btn, 9, 0, 1, 3)
+        grid.setRowStretch(10, 1)
+        self._update_filter_enable()
+        return w
+
+    def _update_filter_enable(self, *args):
+        mode = self.filt_axis.currentIndex()      # 0 = X, 1 = Y, 2 = both
+        for wdg in (self.filt_x_head, self.filt_x_type, self.filt_x_lo_label,
+                    self.filt_x_lo, self.filt_x_hi_label, self.filt_x_hi):
+            wdg.setEnabled(mode != 1)
+        for wdg in (self.filt_y_head, self.filt_y_type, self.filt_y_lo_label,
+                    self.filt_y_lo, self.filt_y_hi_label, self.filt_y_hi):
+            wdg.setEnabled(mode != 0)
+
+    def _build_shear_tab(self):
+        w = QWidget(); grid = QGridLayout(w)
+
+        grid.addWidget(self._note('Straightens a tilted dipolar ridge: '
+                                  'V′(t_dip, t) = V(t_dip + k·(t − t_ref), t), done as the '
+                                  'exact phase ramp exp(2πi·ν_dip·k·(t − t_ref)) on the '
+                                  'dipolar-axis spectrum — unitary, no interpolation '
+                                  'loss. k is the ridge slope dt_dip/dt (1/2 for SIFTER).'),
+                       0, 0, 1, 3)
+
+        grid.addWidget(self._label('Dipolar axis (shifted)'), 1, 0)
+        self.shear_axis = self._combo(['Y (indirect)', 'X (within trace)'])
+        self.shear_axis.currentIndexChanged.connect(self._live_update)
+        grid.addWidget(self.shear_axis, 1, 1, 1, 2)
+
+        grid.addWidget(self._label('Slope k (dt_dip/dt)'), 2, 0)
+        self.shear_k = self._dspin(-5.0, 5.0, 4, 0.5, 0.01)
+        self.shear_k.valueChanged.connect(self._live_update)
+        grid.addWidget(self.shear_k, 2, 1)
+        btn_fit = QPushButton('Fit k')
+        btn_fit.setStyleSheet(BUTTON_STYLE)
+        btn_fit.setToolTip('Scan k, shear, sum over the echo axis and take the k that '
+                           'maximises the recovered peak (parabolic refine around the '
+                           'grid maximum). Uses the fit window below.')
+        btn_fit.clicked.connect(self.fit_shear_slope)
+        grid.addWidget(btn_fit, 2, 2)
+
+        grid.addWidget(self._label('Shear origin t_ref'), 3, 0)
+        self.shear_tref = self._dspin(-1e12, 1e12, 3, 0.0, 1.0)
+        self.shear_tref.valueChanged.connect(self._live_update)
+        grid.addWidget(self.shear_tref, 3, 1)
+        btn_ref = QPushButton('Auto')
+        btn_ref.setStyleSheet(BUTTON_STYLE)
+        btn_ref.setToolTip('Set t_ref to the echo centre of the |I+iQ| envelope averaged '
+                           'over the dipolar axis. t_ref only translates the dipolar '
+                           'axis — it does not change the recovered amplitude, but it '
+                           'does set the absolute zero of the dipolar time.')
+        btn_ref.clicked.connect(self.auto_shear_ref)
+        grid.addWidget(btn_ref, 3, 2)
+
+        grid.addWidget(self._label('Fit window (± around t_ref)'), 4, 0)
+        self.shear_fitwin = self._dspin(0.0, 1e12, 1, 140.0, 10.0)
+        self.shear_fitwin.setToolTip('Echo-axis half-width used by "Fit k" only '
+                                     '(0 = the whole window). The low-S/N wings of the '
+                                     'echo otherwise dilute the figure of merit.')
+        grid.addWidget(self.shear_fitwin, 4, 1, 1, 2)
+
+        grid.addWidget(self._note('Order matters, chaining each step with "Result → '
+                                  'input": Phase tab, first order = the nominal IF in '
+                                  'MHz → Filter tab, X low-pass → back to the Phase tab '
+                                  'for Auto φ₁ (it re-runs Auto φ₀ after it) → shear. '
+                                  'φ₁ is not optional: the nominal IF is off by a few '
+                                  'hundred kHz, which twists the phase across the echo '
+                                  'and cancels part of the very modulation the shear is '
+                                  'recovering. Measure it <b>after</b> the low-pass — on '
+                                  'a raw IF record the carrier estimate is swamped by '
+                                  'out-of-band noise. Afterwards collapse the sheared '
+                                  'map with the Slice tab — slice along the dipolar axis '
+                                  'and average over the echo window. The ramp is '
+                                  'circular, so rows wrap at the ends of the dipolar '
+                                  'axis; keep the edges out of the analysis.'),
+                       5, 0, 1, 3)
+        btn = QPushButton('Apply shear')
+        btn.setStyleSheet(BUTTON_STYLE)
+        btn.clicked.connect(self.do_shear)
+        grid.addWidget(btn, 6, 0, 1, 3)
+        grid.setRowStretch(7, 1)
+        return w
 
     def _build_fit_tab(self):
         w = QWidget(); grid = QGridLayout(w)
@@ -974,9 +1135,10 @@ class MainWindow(QMainWindow):
     def _live_update(self, *args):
         if self._suppress_live or not self.live_check.isChecked() or self.src_i is None:
             return
-        # Fit (index 2) is excluded — per-trace fitting is too heavy to run on
+        # Fit (index 4) is excluded — per-trace fitting is too heavy to run on
         # every parameter tweak; it is explicit ("Run fit") only.
-        op = {0: self.do_phase, 1: self.do_fft}.get(self.tabs.currentIndex())
+        op = {0: self.do_phase, 1: self.do_fft, 2: self.do_filter,
+              3: self.do_shear}.get(self.tabs.currentIndex())
         if op is not None:
             op()
 
@@ -984,7 +1146,8 @@ class MainWindow(QMainWindow):
         if self.src_i is None:
             self.set_status('Open an I/Q dataset first.')
             return
-        op = {0: self.do_phase, 1: self.do_fft, 2: self.do_fit_2d}.get(self.tabs.currentIndex())
+        op = {0: self.do_phase, 1: self.do_fft, 2: self.do_filter,
+              3: self.do_shear, 4: self.do_fit_2d}.get(self.tabs.currentIndex())
         if op is not None:
             op()
         else:
@@ -1207,7 +1370,7 @@ class MainWindow(QMainWindow):
 
         note = ' (first/second order applied)' if (v1 or v2) else ''
         step = float(self.src_col['step'])
-        f0 = fft_module.Fast_Fourier.carrier_offset(Z, step)*1000.0
+        f0 = self._carrier(Z, step)*1000.0
         # a carrier that turns by more than ~45 deg across the echo cannot be
         # absorbed into phi0 at all; report the first-order value that kills it
         env = np.abs(Z).mean(axis=0)
@@ -1218,6 +1381,96 @@ class MainWindow(QMainWindow):
                             f'= {v1 - f0:.2f} and press Auto again.')
         else:
             self.set_status(f'Auto φ₀ = {phi:.2f}° — echo window{note}.')
+
+    @staticmethod
+    def _carrier(Z, dt):
+        """Carrier offset of the echo, measured on a band-limited copy.
+
+        `carrier_offset` reads the phase increment between neighbouring samples,
+        which the out-of-band noise of an undemodulated record swamps: the raw
+        SIFTER map reads +0.28 MHz where the true offset is −0.46. An echo of
+        width W cannot be spectrally wider than a few times 1/W, so everything
+        beyond 10/W is noise and is dropped before measuring."""
+        env = np.abs(Z).mean(axis=0)
+        width = abs(dt)*max(1, int(np.count_nonzero(env >= 0.25*env.max())))
+        S = np.fft.fft(Z, axis=1)
+        S[:, np.abs(np.fft.fftfreq(Z.shape[1], dt)) > 10.0/width] = 0
+        return fft_module.Fast_Fourier.carrier_offset(np.fft.ifft(S, axis=1), dt)
+
+    @staticmethod
+    def _imag_fraction(W):
+        """Imaginary energy left in `W` after its best zero-order rotation."""
+        W = W*np.exp(-1j*np.angle((W**2).sum())/2)
+        denom = np.abs(W).sum()
+        return float(np.abs(W.imag).sum()/denom) if denom else 1.0
+
+    def _refine_first(self, Z, tvec, v1):
+        """Grid-search the first order about `v1` for the least imaginary residue
+        over the echo region, parabolically refined.
+
+        The carrier estimate is the intensity centroid of the line, which is not
+        where the trace phases best when the line is asymmetric — on the SIFTER
+        records the centroid lands at about half the residue-optimal value. The
+        residue is what phasing is actually for, so it decides the final number."""
+        env = np.abs(Z).mean(axis=0)
+        echo = env >= 0.25*env.max()
+        Ze = Z[:, echo]
+        te = tvec[echo] - tvec[int(env.argmax())]
+        grid = v1 + np.arange(-1.0, 1.0001, 0.02)
+        res = np.array([self._imag_fraction(Ze*np.exp(2j*np.pi*g/1000.0*te)[None, :])
+                        for g in grid])
+        j = int(res.argmin())
+        best = float(grid[j])
+        if 0 < j < grid.size - 1:
+            p = np.polyfit(grid[j-1:j+2], res[j-1:j+2], 2)
+            if p[0] > 0:
+                best = float(-p[1]/(2*p[0]))
+        return best, float(res[j])
+
+    def auto_phase_first(self):
+        """Fill the first-order term with the carrier the record actually sits at,
+        and re-run the zero-order Auto on top of it.
+
+        The nominal IF is only a starting point: a residual of a few hundred kHz
+        turns the phase by tens of degrees across the echo, which φ₀ cannot absorb
+        and which shows up as a large imaginary residue. Two stages — the carrier
+        is iterated to its fixed point (it survives a badly wrong starting value),
+        then `_refine_first` takes over for the last few hundred kHz."""
+        if self.src_i is None:
+            self.set_status('Open an I/Q dataset first.')
+            return
+        step = float(self.src_col['step'])
+        if step == 0 or self._is_freq_axis(self.src_col):
+            self.set_status('First-order Auto needs a time-domain X axis with a '
+                            'non-zero step.')
+            return
+        ncols = self.src_i.shape[1]
+        axisx = self.src_col['start'] + self.src_col['step']*np.arange(ncols)
+        v1 = v1_in = float(self.phase_first.value())
+        v2 = float(self.phase_second.value())
+        Z0 = self.src_i + 1j*self.src_q
+        for _ in range(8):
+            Z = Z0*np.exp(1j*(2*np.pi*v1/1000.0*axisx
+                              + 2*np.pi*v2/1000.0*axisx*axisx))[None, :]
+            f0 = self._carrier(Z, step)*1000.0
+            v1 -= f0
+            if abs(f0) < 1e-3:
+                break
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            v1, res = self._refine_first(Z0, axisx, v1)
+        finally:
+            QApplication.restoreOverrideCursor()
+        self._suppress_live = True                 # one preview, after φ₀ lands
+        try:
+            self.phase_first.setValue(v1)
+        finally:
+            self._suppress_live = False
+        self.auto_phase_zero()
+        phi0_msg = self.status.text()
+        self.set_status(f'Auto φ₁ = {v1:.3f} MHz ({v1 - v1_in:+.3f} on the entered '
+                        f'value), {100*res:.1f} % imaginary left over the echo; '
+                        f'then {phi0_msg[0].lower()}{phi0_msg[1:]}')
 
     def do_phase(self):
         if self.src_i is None:
@@ -1343,6 +1596,186 @@ class MainWindow(QMainWindow):
         self._set_result(sp.real, sp.imag, res_col, res_row, ('Re', 'Im'), meta)
         self.set_status(f'FFT along {"X" if along_x else "Y"}; skip {skip}; '
                         f'{n0}→{n} pts.')
+
+    @staticmethod
+    def _passband_mask(freq, ftype, lo, hi):
+        """Boolean keep-mask over `freq`; cutoffs are fractions of f_max (Nyquist)."""
+        af = np.abs(np.asarray(freq, dtype=float))
+        fmax = float(np.max(af)) or 1.0
+        if ftype == 'Low-pass':
+            return af <= hi*fmax
+        if ftype == 'High-pass':
+            return af >= lo*fmax
+        if ftype == 'Band-pass':
+            return (af >= lo*fmax) & (af <= hi*fmax)
+        return np.ones_like(af, dtype=bool)
+
+    def do_filter(self):
+        """FFT → zero the frequencies outside the passband → inverse FFT, along X,
+        Y or both axes with an independent filter each. The result stays in the
+        original domain, so the axes are untouched."""
+        if self.src_i is None:
+            self.set_status('Open an I/Q dataset first.')
+            return
+        mode = self.filt_axis.currentIndex()   # 0 = X, 1 = Y, 2 = both
+        Z = self.src_i + 1j*self.src_q
+        specs = []
+        if mode != 1:
+            specs.append(('X', 1, self.filt_x_type.currentText(),
+                          self.filt_x_lo.value(), self.filt_x_hi.value()))
+        if mode != 0:
+            specs.append(('Y', 0, self.filt_y_type.currentText(),
+                          self.filt_y_lo.value(), self.filt_y_hi.value()))
+
+        meta = ['Filter (FFT->mask->iFFT) along '
+                + {0: 'X (within trace)', 1: 'Y (indirect)',
+                   2: 'X and Y (independent)'}[mode]]
+        parts = []
+        for name, axis, ftype, lo, hi in specs:
+            n = Z.shape[axis]
+            if n < 2:
+                self.set_status(f'Need at least two points along {name} to filter.')
+                return
+            mask = self._passband_mask(np.fft.fftfreq(n), ftype, lo, hi)
+            shape = [1, 1]; shape[axis] = n
+            sp = np.fft.fft(Z, axis=axis)*mask.reshape(shape)
+            Z = np.fft.ifft(sp, axis=axis)
+            used = {'Low-pass': f'hi={hi:.4g}', 'High-pass': f'lo={lo:.4g}',
+                    'Band-pass': f'lo={lo:.4g}, hi={hi:.4g}'}.get(ftype, '')
+            meta.append(f'{name}: {ftype}, cutoff {used} x f_max')
+            parts.append(f'{name} {ftype} ({used})')
+
+        self._set_result(Z.real, Z.imag, self.src_col, self.src_row, ('I', 'Q'), meta)
+        self.set_status('Filter applied — ' + '; '.join(parts) + ' ×f_max.')
+
+    # --------------------------------------------------------------- shear
+    def _shear_geometry(self):
+        """(dipolar axis index, its step, echo-coordinate vector, axis names) for
+        the current Dipolar-axis choice. Rows (axis 0) are the indirect Y axis."""
+        dip = 0 if self.shear_axis.currentIndex() == 0 else 1
+        dax = self.src_row if dip == 0 else self.src_col
+        eax = self.src_col if dip == 0 else self.src_row
+        n_echo = self.src_i.shape[1 - dip]
+        tvec = eax['start'] + eax['step']*np.arange(n_echo)
+        step = float(dax['step']) or 1.0
+        return dip, step, tvec, (dax['name'], eax['name'], eax['scale'])
+
+    @staticmethod
+    def _shear_ramp(n_dip, dstep, tvec, k, tref, dip):
+        """exp(2πi·ν_dip·k·(t − t_ref)), oriented to multiply the (row, col) map."""
+        nu = np.fft.fftfreq(n_dip, dstep)
+        ramp = np.exp(2j*np.pi*k*np.outer(nu, tvec - tref))
+        return ramp if dip == 0 else ramp.T
+
+    def auto_shear_ref(self):
+        """Set t_ref to the echo centre along the echo axis (the |I+iQ| envelope
+        averaged over the dipolar axis, so the dipolar modulation cancels)."""
+        if self.src_i is None:
+            self.set_status('Open an I/Q dataset first.')
+            return
+        dip, _step, tvec, (_dn, ename, escale) = self._shear_geometry()
+        profile = np.sqrt(self.src_i**2 + self.src_q**2).mean(axis=dip)
+        idx = int(sigproc.echo_center(profile))
+        idx = min(max(idx, 0), len(tvec) - 1)
+        self.shear_tref.setValue(float(tvec[idx]))
+        self.set_status(f'Shear origin at the echo centre: {ename} = '
+                        f'{tvec[idx]:.4g} {escale} (point {idx}).')
+
+    def fit_shear_slope(self):
+        """Shear-scan estimator of k: for each k on a grid, shear and sum over the
+        echo axis, and take the k maximising the peak of the recovered dipolar
+        trace; parabolic refine on the grid maximum. The dipolar-axis transform
+        does not depend on k, so it is done once and only the ramp-weighted sum
+        is repeated."""
+        if self.src_i is None:
+            self.set_status('Open an I/Q dataset first.')
+            return
+        dip, step, tvec, (dname, ename, escale) = self._shear_geometry()
+        n_dip = self.src_i.shape[dip]
+        tref = float(self.shear_tref.value())
+        half = float(self.shear_fitwin.value())
+        gate = (np.abs(tvec - tref) <= half) if half > 0 else np.ones(tvec.size, bool)
+        if gate.sum() < 2:
+            self.set_status('Fit window too narrow — widen it (0 = whole window).')
+            return
+        Z = self.src_i + 1j*self.src_q
+        sp = np.fft.fft(Z, axis=dip)
+        sp = sp[:, gate] if dip == 0 else sp[gate, :]
+        if dip == 1:
+            sp = sp.T                                  # -> (freq, echo) either way
+        dt = tvec[gate] - tref
+        nu = np.fft.fftfreq(n_dip, step)
+        phase = 2j*np.pi*np.outer(nu, dt)
+
+        ks = np.arange(-1.0, 1.0001, 0.01)
+        amp = np.empty(ks.size)
+        # the ramp steps by a constant factor along the k grid, so it is advanced
+        # by one multiply per point instead of re-exponentiating the whole map
+        ramp = np.exp(ks[0]*phase)
+        dramp = np.exp((ks[1] - ks[0])*phase)
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            for j in range(ks.size):
+                tr = np.abs(np.fft.ifft((sp*ramp).sum(axis=1)))  # phase-blind
+                amp[j] = tr.max() - np.median(tr)
+                ramp *= dramp
+        finally:
+            QApplication.restoreOverrideCursor()
+        j = int(amp.argmax())
+        kbest = float(ks[j])
+        if 3 <= j < ks.size - 3:                       # parabolic refine off the grid
+            p = np.polyfit(ks[j-3:j+4], amp[j-3:j+4], 2)
+            if p[0] < 0:
+                kbest = float(-p[1]/(2*p[0]))
+        gain = amp[j]/amp[np.abs(ks).argmin()] if amp[np.abs(ks).argmin()] else float('nan')
+        self.shear_k.setValue(kbest)                   # fires the live preview
+        win = f'±{half:.4g} {escale}' if half > 0 else 'whole window'
+        self.set_status(f'Fitted slope k = {kbest:+.4f} ({dname} per {ename}), '
+                        f'peak ×{gain:.2f} over k = 0; {win}, {int(gate.sum())} pts.')
+
+    @staticmethod
+    def _trace_quality(trace, step):
+        """Peak above the median baseline, and S/N against the noise read off the
+        top 40 % of the trace's own spectrum — well above any dipolar frequency,
+        so it is signal-independent and gated and sheared traces are compared on
+        the same footing."""
+        tr = np.asarray(trace, dtype=float)
+        tr = tr - np.median(tr)
+        nu = np.abs(np.fft.fftfreq(tr.size, step))
+        band = nu >= 0.6*nu.max()
+        sp = np.fft.fft(tr - tr.mean())
+        noise = np.sqrt((np.abs(sp[band])**2).mean()/tr.size) if band.any() else 0.0
+        return float(tr.max()), (float(tr.max()/noise) if noise else float('nan'))
+
+    def do_shear(self):
+        """V′(t_dip, t) = V(t_dip + k·(t − t_ref), t), as the exact phase ramp
+        exp(2πi·ν_dip·k·(t − t_ref)) on the dipolar-axis spectrum. Unitary and
+        interpolation-free; the axes are unchanged, so it chains like the rest."""
+        if self.src_i is None:
+            self.set_status('Open an I/Q dataset first.')
+            return
+        dip, step, tvec, (dname, ename, escale) = self._shear_geometry()
+        n_dip = self.src_i.shape[dip]
+        if n_dip < 2:
+            self.set_status(f'Need at least two points along {dname} to shear.')
+            return
+        k = float(self.shear_k.value())
+        tref = float(self.shear_tref.value())
+        Z = self.src_i + 1j*self.src_q
+        ramp = self._shear_ramp(n_dip, step, tvec, k, tref, dip)
+        Z = np.fft.ifft(np.fft.fft(Z, axis=dip)*ramp, axis=dip)
+        pk, sn = self._trace_quality(Z.real.sum(axis=1 - dip), step)
+        pk0, _ = self._trace_quality(self.src_i.sum(axis=1 - dip), step)
+        gain = pk/pk0 if pk0 else float('nan')
+        meta = [f'Shear of {dname} against {ename} (FFT phase ramp, no interpolation)',
+                f'k = {k:+.4f} {dname}-units per {ename}-unit, '
+                f't_ref = {tref:.4g} {escale}',
+                f'flat sum over {ename}: peak {pk:.6g} (x{gain:.2f} unsheared), '
+                f'S/N {sn:.0f}']
+        self._set_result(Z.real, Z.imag, self.src_col, self.src_row, ('Re', 'Im'), meta)
+        self.set_status(f'Shear applied: k = {k:+.4f}, t_ref = {tref:.4g} {escale}; '
+                        f'flat sum peak {pk:.6g} (×{gain:.2f} over unsheared), '
+                        f'S/N {sn:.0f}.')
 
     # -------------------------------------------------------------- output
     # ---------------------------------------------------------- per-trace fit
