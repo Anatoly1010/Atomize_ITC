@@ -73,6 +73,7 @@ from PyQt6.QtCore import Qt
 
 import atomize.general_modules.general_functions as general
 # Shared dark-theme styling so this tool matches the rest of the EPR suite.
+import atomize.general_modules.gui_forms as gui_forms
 from atomize.general_modules.gui_style import (apply_app_style, BUTTON_STYLE,
     LABEL_STYLE, DSPIN_STYLE, SPIN_STYLE, COMBO_STYLE, SCROLL_STYLE, BORDER, BG, FG, ACCENT)
 
@@ -504,6 +505,7 @@ class MainWindow(QMainWindow):
         sp.setRange(0.0, 1.0e6)
         sp.setDecimals(1)
         sp.setSuffix(" ns")
+        sp.setToolTip("Delay in ns, rounded up to the selected hardware grid.")
         sp.setValue(value)
         sp.setStyleSheet(DSPIN_STYLE)
         sp.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.PlusMinus)
@@ -522,6 +524,9 @@ class MainWindow(QMainWindow):
             combo.addItem(f"= τ{j + 1}")
         combo.addItem("free")
         combo.setCurrentText("free")
+        combo.setToolTip("Link this gap to an earlier τ, so it mirrors and locks "
+                         "to that value, or keep it 'free' to type its own. "
+                         "τ1 is always free.")
         if i == 0:
             combo.setEnabled(False)
         combo.currentIndexChanged.connect(self._on_tau_combo)
@@ -543,6 +548,9 @@ class MainWindow(QMainWindow):
         te.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
         te.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         te.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        te.setToolTip("Pulse phase or phase cycle: +x / +y / -x / -y, a comma "
+                      "(or newline) separated list, (x) for a 2-step cycle and "
+                      "[x] for a 4-step quadrature cycle.")
         te.textChanged.connect(self.recompute)
         return te
 
@@ -562,13 +570,8 @@ class MainWindow(QMainWindow):
         return lbl
 
     def _hsep(self):
-        """Horizontal divider between sections (same style as the pulse-profile
-        plot/controls separator)."""
-        line = QFrame()
-        line.setFrameShape(QFrame.Shape.HLine)
-        line.setFrameShadow(QFrame.Shadow.Plain)
-        line.setStyleSheet(f'color: {BORDER};')
-        return line
+        """Horizontal divider between sections."""
+        return gui_forms.hline()
 
     # ------------------------------- UI ----------------------------------- #
     def build_ui(self):
@@ -582,11 +585,18 @@ class MainWindow(QMainWindow):
         self.combo_template = QComboBox()
         self.combo_template.addItems(list(TEMPLATES.keys()) + ["Custom"])
         self.combo_template.setStyleSheet(COMBO_STYLE)
-        self.combo_template.setFixedSize(160, ROW_H)
+        self.combo_template.setFixedSize(gui_forms.FIELD_W, ROW_H)
+        self.combo_template.setToolTip(
+            "A stock sequence to start from. 'Custom' leaves the current pulses "
+            "alone. Press Load template to apply the selection.")
         top.addWidget(self.combo_template)
         btn_load = QPushButton("Load template")
         btn_load.setStyleSheet(BUTTON_STYLE)
-        btn_load.setFixedSize(170, 40)
+        btn_load.setFixedSize(gui_forms.ACTION_W, ROW_H)
+        btn_load.setToolTip(
+            "Fill the pulse count, τ gaps, phases and receiver from the selected "
+            "template, together with the per-pulse length / amplitude / frequency "
+            "the preset writer uses.")
         btn_load.clicked.connect(self.load_template)
         top.addWidget(btn_load)
 
@@ -598,6 +608,8 @@ class MainWindow(QMainWindow):
         self.count.setStyleSheet(SPIN_STYLE)
         self.count.setButtonSymbols(QSpinBox.ButtonSymbols.PlusMinus)
         self.count.setFixedSize(60, ROW_H)
+        self.count.setToolTip("Number of excitation pulses. The first sits at "
+                              "t = 0; each further pulse adds a τ gap.")
         self.count.valueChanged.connect(self.on_count_changed)
         top.addWidget(self.count)
 
@@ -608,6 +620,9 @@ class MainWindow(QMainWindow):
         self.combo_grid.setStyleSheet(COMBO_STYLE)
         self.combo_grid.setFixedSize(80, ROW_H)
         self.combo_grid.setCurrentText(f"{self.grid} ns")   # match the per-fork default
+        self.combo_grid.setToolTip(
+            "Hardware time quantum. Every delay and position is rounded up to a "
+            "multiple of it, exactly as the AWG/RECT tool does.")
         self.combo_grid.currentTextChanged.connect(self.on_grid_changed)
         top.addWidget(self.combo_grid)
 
@@ -631,6 +646,9 @@ class MainWindow(QMainWindow):
         self.det_combo = QComboBox()
         self.det_combo.setStyleSheet(COMBO_STYLE)
         self.det_combo.setFixedSize(TAU_W, ROW_H)
+        self.det_combo.setToolTip("Gap between the last pulse and the detection: "
+                                  "one of the τ values already entered, or 'free' "
+                                  "to type a different one below.")
         self.det_combo.currentIndexChanged.connect(self._on_det_combo)
         self.det_free = self.make_tau(288.0)
         # Detection τ chooser (combo) stacked on top of its free-value spinbox.
@@ -663,8 +681,8 @@ class MainWindow(QMainWindow):
         outer.addSpacing(8)
         outer.addWidget(self._hsep())          # presets | pulses
         outer.addSpacing(8)
-        seq_lbl = QLabel("Pulse sequence — phase boxes are pulses, τ the gaps, detection last")
-        seq_lbl.setStyleSheet(f"color: {ACCENT}; font-weight: bold; font-size: 15px;")
+        seq_lbl = gui_forms.hint("Pulse sequence — phase boxes are pulses, "
+                                 "τ the gaps, detection last")
         outer.addWidget(seq_lbl)
         outer.addWidget(seq_box)
         outer.addSpacing(8)
@@ -672,9 +690,8 @@ class MainWindow(QMainWindow):
         outer.addSpacing(8)
 
         # --- coherence transfer pathway diagram ---
-        coh_lbl = QLabel("Coherence transfer pathways — bright = detected, faint = "
-                         "surviving artefact")
-        coh_lbl.setStyleSheet(f"color: {ACCENT}; font-weight: bold; font-size: 15px;")
+        coh_lbl = gui_forms.hint("Coherence transfer pathways — bright = detected, "
+                                 "faint = surviving artefact")
         outer.addWidget(coh_lbl)
         self.coh_diagram = CoherenceDiagram()
         # Left-aligned so its width can be pinned to the pulse-strip content width.
@@ -703,11 +720,16 @@ class MainWindow(QMainWindow):
         btns_widget.setStyleSheet(f"background-color: {BG};")
         btns = QHBoxLayout(btns_widget)
         btns.setContentsMargins(6, 6, 6, 6)
-        for text, slot in [("Open in AWG", self.open_in_awg),
-                           ("Open in RECT", self.open_in_rect)]:
+        tip = ("Write the sequence as a %s preset and hand it to the %s phasing "
+               "tool: pushed into an already-open window (pulse layout only — "
+               "field, rep rate, detection window and the rest stay as they are), "
+               "or it launches with the preset loaded.")
+        for text, slot, ext, tool in [("Open in AWG", self.open_in_awg, '.phase_awg', 'AWG'),
+                                      ("Open in RECT", self.open_in_rect, '.phase', 'RECT')]:
             b = QPushButton(text)
             b.setStyleSheet(BUTTON_STYLE)
-            b.setFixedSize(170, 40)
+            b.setFixedSize(gui_forms.ACTION_W, ROW_H)
+            b.setToolTip(tip % (ext, tool))
             b.clicked.connect(slot)
             btns.addWidget(b)
         btns.addStretch(1)

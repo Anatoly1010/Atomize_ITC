@@ -28,8 +28,8 @@ from pyqtgraph.dockarea import DockArea
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QLabel, QPushButton,
-    QComboBox, QGridLayout, QVBoxLayout, QHBoxLayout, QDoubleSpinBox, QSpinBox,
-    QCheckBox, QFrame, QScrollArea, QTabWidget)
+    QComboBox, QVBoxLayout, QHBoxLayout, QDoubleSpinBox, QSpinBox,
+    QCheckBox, QFrame, QTabWidget)
 
 import atomize.general_modules.general_functions as general
 import atomize.general_modules.csv_opener_saver as openfile
@@ -42,8 +42,11 @@ from atomize.main.widgets import CrosshairPlotWidget, CloseableDock
 # Shared dark-theme palette / widget styles (single source of truth across all
 # control-center tools); apply_app_style() pins this process to the Fusion style.
 from atomize.general_modules.gui_style import (apply_app_style,
-    BG, ACCENT, BUTTON_STYLE, LABEL_STYLE, DSPIN_STYLE, SPIN_STYLE,
-    COMBO_STYLE, CHECKBOX_STYLE, SCROLL_STYLE, TAB_STYLE)
+    BG, ACCENT, BUTTON_STYLE, LABEL_STYLE, HINT_STYLE, DSPIN_STYLE, SPIN_STYLE,
+    COMBO_STYLE, CHECKBOX_STYLE, TAB_STYLE)
+
+import atomize.general_modules.gui_forms as gui_forms
+from atomize.general_modules.gui_forms import FormPanel
 
 # Plot buffer written by the main-window plot sidebar ("Send to Data Treatment");
 # shared one-shot mailbox with the Data Treatment tools (libs/ runtime IPC).
@@ -52,9 +55,55 @@ BUFFER_PATH = str(Path(__file__).resolve().parent.parent.parent / 'libs' / 'trea
 # Data Treatment tools so dialogs reopen where you left off.
 LASTDIR_PATH = str(Path(__file__).resolve().parent.parent.parent / 'libs' / 'treatment_lastdir.txt')
 
-ROW_H = 28
-# Common width for the Mellin δ / τmax spin boxes (each shares its row with 'Auto')
-MELLIN_SPIN_W = 110
+from atomize.general_modules.gui_forms import FIELD_W, BTN_W, ACTION_W
+
+
+# Tab explanations, shown behind the '?' chip of each tab's summary line.
+_HELP_PHASE = ('Rotate the complex I/Q so the real part is the DEER trace. '
+               '"Auto" maximises the magnitude-weighted real part. Ignored for '
+               'a single real channel.')
+
+_HELP_BACKGROUND = ('Zero-time and the intermolecular background window/model '
+                    'used to correct V(t). Drag the gold (start) / blue (end) '
+                    'lines on the plot, or use the buttons.')
+
+_HELP_TIKHONOV = ('Invert the dipolar kernel to a distance distribution P(r) '
+                  '(Tikhonov + NNLS). Needs scipy.')
+
+_HELP_MELLIN = (
+    'Model-free inversion by the analytic integral <b>Mellin transform</b> '
+    '(Matveeva, Nekrasov, Maryasov, <i>PCCP</i> 2017, '
+    'doi 10.1039/C7CP04059H). No Tikhonov, no NNLS, no L-curve: the '
+    'distance distribution is recovered analytically, so it is not '
+    'broadened and bimodal peaks are not merged. Noise enters P(r) '
+    'additively and groups at <b>short r</b> (the method\'s signature), so '
+    'ripples below the reliable range are propagated noise, not structure.'
+    '<br><br>'
+    'Uses the <b>Background</b> tab\'s zero-time / window / dimension / '
+    'fit engine and the shared distance grid below the tabs. The Mellin '
+    'kernel decays to zero, so it cannot absorb a DC pedestal left by a '
+    'too-shallow background — the <b>Joint</b> background engine '
+    '(Background tab) is recommended for a clean fit.')
+
+_HELP_MULTIGAUSS = (
+    'Parametric inversion: model P(r) as a <b>sum of Gaussians</b> and fit '
+    'their centres, widths and weights — for the default Least-squares '
+    'solver jointly with the background and λ against V(t); the '
+    'Monte-Carlo solver instead fits the prepared form factor '
+    '(DeerAnalysis "Gaussian" mode / DeerLab <i>dd_gaussN</i>). When the '
+    'distribution really is a few discrete modes this is the most robust '
+    'choice and gives genuine <b>parametric error bars</b> on each peak '
+    'position and width — which the regularized and model-free engines '
+    'cannot. A poor fit (low R²) is itself diagnostic: it means the data '
+    'are not well described by a few Gaussians.'
+    '<br><br>'
+    'Uses the <b>Background</b> tab\'s zero-time / window / dimension / fit '
+    'engine and the shared distance grid below the tabs. The window feeds '
+    'the zero-time fit and, on <i>General</i> / <i>None</i> and with the '
+    'Monte-Carlo solver, the background itself; on the default '
+    'Least-squares solver with <i>Joint</i>/<i>Sequential</i> the '
+    'background is re-fitted here, so the window mainly acts through the '
+    'zero time and the starting guess.')
 
 
 def _load_last_dir():
@@ -208,25 +257,16 @@ class MainWindow(QMainWindow):
         central = QWidget()
         self.setCentralWidget(central)
         root = QHBoxLayout(central)
+        root.setSpacing(gui_forms.PANEL_GAP)
 
         # Two stacked plots on the left, controls on the right.
         root.addWidget(self._build_plots(), stretch=1)
 
-        sep = QFrame()
-        sep.setFrameShape(QFrame.Shape.VLine)
-        sep.setFrameShadow(QFrame.Shadow.Plain)
-        sep.setStyleSheet('color: rgb(83, 83, 117);')
-        root.addWidget(sep)
+        root.addWidget(gui_forms.vline())
 
         root.addWidget(self._build_controls(), stretch=0)
 
-        # +/- buttons on every spinbox and a common minimum row height across
-        # spinboxes / combos / buttons (repo-wide compact-row convention).
-        for wdg in self.findChildren((QComboBox, QPushButton)):
-            wdg.setMinimumHeight(ROW_H)
-        for spin in self.findChildren((QSpinBox, QDoubleSpinBox)):
-            spin.setButtonSymbols(QSpinBox.ButtonSymbols.PlusMinus)
-            spin.setMinimumHeight(ROW_H)
+        gui_forms.apply_row_metrics(self)
 
     def _build_plots(self):
         # Two CrosshairPlotWidgets stacked in one DockArea (atomize/main/widgets):
@@ -263,33 +303,16 @@ class MainWindow(QMainWindow):
 
     # ---- small widget helpers (mirror the Data Treatment tools) ----
     def _label(self, text):
-        lab = QLabel(text)
-        lab.setStyleSheet(LABEL_STYLE)
-        return lab
-
-    def _note(self, text):
-        lab = QLabel(f'<div style="line-height: 145%;">{text}</div>')
-        lab.setStyleSheet(LABEL_STYLE)
-        lab.setWordWrap(True)
-        lab.setTextFormat(Qt.TextFormat.RichText)
-        return lab
-
-    def _heading(self, text):
-        lab = QLabel(text)
-        lab.setStyleSheet(f"QLabel {{ color: {ACCENT}; font-weight: bold; font-size: 13px; }}")
-        return lab
+        return gui_forms.label(text)
 
     def _hline(self):
-        line = QFrame()
-        line.setFrameShape(QFrame.Shape.HLine)
-        line.setFrameShadow(QFrame.Shadow.Plain)
-        line.setStyleSheet('color: rgb(83, 83, 117);')
-        return line
+        return gui_forms.hline()
 
     def _build_controls(self):
         container = QWidget()
         outer = QVBoxLayout(container)
-        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setContentsMargins(*gui_forms.PANEL_MARGINS)
+        outer.setSpacing(8)
         tabs = QTabWidget()
         self.deer_tabs = tabs                  # queried by "Process all" for the engine
         tabs.setStyleSheet(TAB_STYLE)
@@ -322,17 +345,17 @@ class MainWindow(QMainWindow):
         """Distance grid (min / max / points) and the top-plot view selector —
         shared by the Tikhonov (DEER) and Mellin engines, so they live in an
         always-visible strip below the tabs rather than inside one engine's tab."""
-        w = QWidget()
-        grid = QGridLayout(w)
-        grid.setContentsMargins(0, 4, 0, 0)
-        r = 0
+        p = FormPanel(margins=(0, 4, 0, 0))
+        # One 4-column grid for the whole strip: labels in column 0, the distance
+        # pair and Auto one per column, and the wider items spanning two columns.
+        g = gui_forms.equal_grid(4)
+        p.add_layout(g)
 
-        grid.addWidget(self._label('Distance min/max (nm)'), r, 0)
-        rr_row = QHBoxLayout()
         self.deer_rmin = QDoubleSpinBox()
         self.deer_rmin.setStyleSheet(DSPIN_STYLE)
         self.deer_rmin.setRange(0.5, 50.0); self.deer_rmin.setDecimals(2)
         self.deer_rmin.setSingleStep(0.1); self.deer_rmin.setValue(1.5)
+        self.deer_rmin.setSuffix(' nm')
         self.deer_rmin.valueChanged.connect(self._live_update)
         self.deer_rmin.valueChanged.connect(self._mellin_live)
         self.deer_rmin.valueChanged.connect(self._gauss_live)
@@ -340,6 +363,7 @@ class MainWindow(QMainWindow):
         self.deer_rmax.setStyleSheet(DSPIN_STYLE)
         self.deer_rmax.setRange(0.5, 50.0); self.deer_rmax.setDecimals(2)
         self.deer_rmax.setSingleStep(0.1); self.deer_rmax.setValue(8.0)
+        self.deer_rmax.setSuffix(' nm')
         self.deer_rmax.valueChanged.connect(self._live_update)
         self.deer_rmax.valueChanged.connect(self._mellin_live)
         self.deer_rmax.valueChanged.connect(self._gauss_live)
@@ -356,20 +380,20 @@ class MainWindow(QMainWindow):
             'Both are set automatically on load; mass outside this window is '
             'not constrained by the data.')
         btn_autorange.clicked.connect(self._auto_rrange)
-        rr_row.addWidget(self.deer_rmin); rr_row.addWidget(self.deer_rmax)
-        rr_row.addWidget(btn_autorange)
-        grid.addLayout(rr_row, r, 1); r += 1
+        g.addWidget(gui_forms.label('Distance min/max'), 0, 0)
+        g.addWidget(self.deer_rmin, 0, 1)
+        g.addWidget(self.deer_rmax, 0, 2)
+        g.addWidget(btn_autorange, 0, 3)
 
-        grid.addWidget(self._label('Distance points'), r, 0)
         self.deer_rn = QSpinBox()
         self.deer_rn.setStyleSheet(SPIN_STYLE)
         self.deer_rn.setRange(20, 2000); self.deer_rn.setValue(200)
         self.deer_rn.valueChanged.connect(self._live_update)
         self.deer_rn.valueChanged.connect(self._mellin_live)
         self.deer_rn.valueChanged.connect(self._gauss_live)
-        grid.addWidget(self.deer_rn, r, 1); r += 1
+        g.addWidget(gui_forms.label('Distance points'), 1, 0)
+        g.addWidget(self.deer_rn, 1, 1)
 
-        grid.addWidget(self._label('Show (top plot)'), r, 0)
         self.deer_show = QComboBox()
         self.deer_show.setStyleSheet(COMBO_STYLE)
         self.deer_show.addItems(['V(t) + background + fit', 'Form factor + fit',
@@ -378,10 +402,11 @@ class MainWindow(QMainWindow):
         self.deer_show.setToolTip('Top-plot view (the L-curve view applies to the '
                                   'Tikhonov engine only).')
         self.deer_show.currentIndexChanged.connect(self._deer_rerender)
-        grid.addWidget(self.deer_show, r, 1); r += 1
+        g.addWidget(gui_forms.label('Show'), 2, 0)
+        g.addWidget(self.deer_show, 2, 1, 1, 2)
 
         # Uncertainty options shared by both engines.
-        self.deer_ci_chk = QCheckBox('Show 95% uncertainty band')
+        self.deer_ci_chk = QCheckBox('95% uncertainty band')
         self.deer_ci_chk.setStyleSheet(CHECKBOX_STYLE)
         self.deer_ci_chk.setChecked(True)
         self.deer_ci_chk.setToolTip(
@@ -400,9 +425,9 @@ class MainWindow(QMainWindow):
             'fit-covariance of the component parameters. For a coverage-honest '
             'interval use Validate, whose band supersedes this one.')
         self.deer_ci_chk.stateChanged.connect(self._ci_toggled)
-        grid.addWidget(self.deer_ci_chk, r, 0, 1, 2); r += 1
+        g.addWidget(self.deer_ci_chk, 3, 0, 1, 2)
 
-        self.deer_reliab_chk = QCheckBox('Reliability shading on P(r)')
+        self.deer_reliab_chk = QCheckBox('Reliability on P(r)')
         self.deer_reliab_chk.setStyleSheet(CHECKBOX_STYLE)
         self.deer_reliab_chk.setChecked(True)
         self.deer_reliab_chk.setToolTip(
@@ -423,9 +448,9 @@ class MainWindow(QMainWindow):
             'Trust the mean in the lower part of the yellow band, not near its '
             'edge, and do not read a width from it at all.')
         self.deer_reliab_chk.stateChanged.connect(self._deer_rerender)
-        grid.addWidget(self.deer_reliab_chk, r, 0, 1, 2); r += 1
+        g.addWidget(self.deer_reliab_chk, 4, 0, 1, 2)
 
-        self.deer_validate_chk = QCheckBox('Validate (background sweep → P(r) band)')
+        self.deer_validate_chk = QCheckBox('Validate P(r) band')
         self.deer_validate_chk.setStyleSheet(CHECKBOX_STYLE)
         self.deer_validate_chk.setToolTip(
             'Re-run the inversion over a sweep of background-start times and show '
@@ -434,13 +459,11 @@ class MainWindow(QMainWindow):
         self.deer_validate_chk.stateChanged.connect(self._live_update)
         self.deer_validate_chk.stateChanged.connect(self._mellin_live)
         self.deer_validate_chk.stateChanged.connect(self._gauss_live)
-        grid.addWidget(self.deer_validate_chk, r, 0, 1, 2); r += 1
+        g.addWidget(self.deer_validate_chk, 5, 0, 1, 2)
 
         # Batch: run one engine over every loaded trace and overlay the results.
         # Kept here (always visible) with its own engine picker so it does not
         # depend on which tab is open.
-        grid.addWidget(self._label('Process all (engine)'), r, 0)
-        pa_row = QHBoxLayout()
         self.batch_engine = QComboBox()
         self.batch_engine.setStyleSheet(COMBO_STYLE)
         self.batch_engine.addItems(['Tikhonov', 'Mellin', 'Multi-Gaussian'])
@@ -458,10 +481,12 @@ class MainWindow(QMainWindow):
                                        'P(r) curves as CSV.')
         self.batch_save_btn.clicked.connect(self.save_batch)
         self.batch_save_btn.setEnabled(False)
-        pa_row.addWidget(self.batch_engine); pa_row.addWidget(self.process_all_btn)
-        pa_row.addWidget(self.batch_save_btn)
-        grid.addLayout(pa_row, r, 1); r += 1
-        return w
+        g.addWidget(gui_forms.hline(), 6, 0, 1, 4)
+        g.addWidget(gui_forms.label('Process all'), 7, 0)
+        g.addWidget(self.batch_engine, 7, 1)
+        g.addWidget(self.process_all_btn, 7, 2)
+        g.addWidget(self.batch_save_btn, 7, 3)
+        return p
 
     def _ci_toggled(self, *args):
         """Confidence-band checkbox: Tikhonov keeps its CI in the result so a
@@ -488,17 +513,12 @@ class MainWindow(QMainWindow):
     def _scroll(self, inner):
         """Wrap a tab's content in a scroll area so it never clips on a short
         window."""
-        sa = QScrollArea()
-        sa.setStyleSheet(SCROLL_STYLE)
-        sa.setWidgetResizable(True)
-        sa.setWidget(inner)
-        return sa
+        return gui_forms.scroll_wrap(inner)
 
     # ---- Tab 1: Source (load / channels / trim) ----
     def _build_source_tab(self):
-        w = QWidget()
-        panel = QVBoxLayout(w)
-        src_row = QHBoxLayout()
+        p = FormPanel(field_width=FIELD_W, button_width=BTN_W)
+        src_btns = []
         for text, slot in (('Open CSV…', self.open_csv),
                            ('Open Bruker…', self.open_bruker),
                            ('Load from plot', lambda: self.load_from_buffer(silent=False)),
@@ -506,116 +526,105 @@ class MainWindow(QMainWindow):
             btn = QPushButton(text)
             btn.setStyleSheet(BUTTON_STYLE)
             btn.clicked.connect(slot)
-            src_row.addWidget(btn)
-        panel.addLayout(src_row)
+            src_btns.append(btn)
+        # one 4-column grid so Remove is exactly as wide as Clear
+        src_grid = gui_forms.equal_grid(4)
+        for i, b in enumerate(src_btns):
+            src_grid.addWidget(b, 0, i)
+        p.add_layout(src_grid)
 
         # trace selector: each opened file (or plot load) is one trace; the combo
         # picks which one is active and feeds the phase -> inversion pipeline.
-        trace_row = QHBoxLayout()
-        trace_row.addWidget(self._label('Trace'))
         self.trace_combo = QComboBox()
         self.trace_combo.setStyleSheet(COMBO_STYLE)
         self.trace_combo.setToolTip('Active trace. Open several files to compare; '
                                     'each becomes a selectable trace here.')
         self.trace_combo.currentIndexChanged.connect(self._activate_trace)
-        trace_row.addWidget(self.trace_combo, 1)
         self.trace_remove_btn = QPushButton('Remove')
         self.trace_remove_btn.setStyleSheet(BUTTON_STYLE)
         self.trace_remove_btn.setToolTip('Remove the active trace from the list.')
         self.trace_remove_btn.clicked.connect(self._remove_trace)
-        trace_row.addWidget(self.trace_remove_btn)
-        panel.addLayout(trace_row)
+        trace_cell = QHBoxLayout()
+        trace_cell.setContentsMargins(0, 0, 0, 0)
+        trace_cell.setSpacing(8)
+        trace_cell.addWidget(gui_forms.label('Trace'))
+        trace_cell.addWidget(self.trace_combo, 1)
+        src_grid.addLayout(trace_cell, 1, 0, 1, 3)
+        src_grid.addWidget(self.trace_remove_btn, 1, 3)
 
         self.loaded_label = QLabel('File: —')
-        self.loaded_label.setStyleSheet(LABEL_STYLE)
+        self.loaded_label.setStyleSheet(HINT_STYLE)
         self.loaded_label.setWordWrap(True)
-        panel.addWidget(self.loaded_label)
+        p.add_widget(self.loaded_label)
 
-        ch_grid = QGridLayout()
-        ch_grid.addWidget(self._label('I / primary (V(t))'), 0, 0)
         self.i_combo = QComboBox()
         self.i_combo.setStyleSheet(COMBO_STYLE)
         self.i_combo.currentIndexChanged.connect(self.on_source_changed)
-        ch_grid.addWidget(self.i_combo, 0, 1)
-        ch_grid.addWidget(self._label('Q channel'), 1, 0)
+        p.add_row('I / primary', self.i_combo,
+                  tooltip='Channel used as the real V(t).')
         self.q_combo = QComboBox()
         self.q_combo.setStyleSheet(COMBO_STYLE)
         self.q_combo.currentIndexChanged.connect(self.on_source_changed)
-        ch_grid.addWidget(self.q_combo, 1, 1)
-        panel.addLayout(ch_grid)
+        p.add_row('Q channel', self.q_combo)
 
-        self.pair_check = QCheckBox('I/Q pair — phase to a real V(t)')
+        self.pair_check = QCheckBox('I/Q pair')
         self.pair_check.setStyleSheet(CHECKBOX_STYLE)
+        self.pair_check.setToolTip('Treat I and Q as one complex trace and phase '
+                                   'it to a real V(t) on the Phase tab.')
         self.pair_check.stateChanged.connect(self.on_source_changed)
-        panel.addWidget(self.pair_check)
+        p.add_widget(self.pair_check)
 
         # Trim: discard leading/trailing points before phasing/inversion
-        trim_row = QHBoxLayout()
-        trim_row.addWidget(self._label('Trim start/end (pts)'))
         self.trim_start = QSpinBox()
         self.trim_start.setStyleSheet(SPIN_STYLE)
         self.trim_start.setRange(0, 10**7)
+        self.trim_start.setSuffix(' pts')
         self.trim_start.setToolTip('Discard this many points from the start of the '
                                    'trace (e.g. dead-time / rising edge) before phasing.')
         self.trim_start.valueChanged.connect(self._trim_changed)
         self.trim_end = QSpinBox()
         self.trim_end.setStyleSheet(SPIN_STYLE)
         self.trim_end.setRange(0, 10**7)
+        self.trim_end.setSuffix(' pts')
         self.trim_end.setToolTip('Discard this many points from the end of the trace '
                                  '(e.g. a corrupted tail) before phasing.')
         self.trim_end.valueChanged.connect(self._trim_changed)
-        trim_row.addWidget(self.trim_start)
-        trim_row.addWidget(self.trim_end)
-        panel.addLayout(trim_row)
-        panel.addStretch(1)
-        return w
+        p.add_row('Trim start/end', self.trim_start, self.trim_end)
+        p.add_stretch()
+        return p
 
     # ---- Tab 2: Phase (zero-order) ----
     def _build_phase_tab(self):
-        w = QWidget()
-        panel = QVBoxLayout(w)
-        panel.addWidget(self._note('Rotate the complex I/Q so the real part is the '
-                                   'DEER trace. "Auto" maximises the magnitude-'
-                                   'weighted real part. Ignored for a single real '
-                                   'channel.'))
-        ph_row = QHBoxLayout()
-        ph_row.addWidget(self._label('φ₀ (deg)'))
+        p = FormPanel(field_width=FIELD_W, button_width=BTN_W)
+        p.add_title('Rotate the I/Q pair to a real V(t)', help=_HELP_PHASE)
+
         self.phase_zero = QDoubleSpinBox()
         self.phase_zero.setStyleSheet(DSPIN_STYLE)
         self.phase_zero.setRange(0.0, 360.0)
         self.phase_zero.setDecimals(2)
         self.phase_zero.setSingleStep(0.5)
+        self.phase_zero.setSuffix(' deg')
         self.phase_zero.setWrapping(True)
         self.phase_zero.valueChanged.connect(self._phase_changed)
-        ph_row.addWidget(self.phase_zero)
         btn_autoph = QPushButton('Auto')
         btn_autoph.setStyleSheet(BUTTON_STYLE)
         btn_autoph.clicked.connect(self.auto_phase_zero)
-        ph_row.addWidget(btn_autoph)
-        panel.addLayout(ph_row)
-        panel.addStretch(1)
-        return w
+        p.add_row('Phase φ₀', self.phase_zero, btn_autoph, stretch=[3, 1])
+        p.add_stretch()
+        return p
 
     # ---- Tab 3: Background (zero-time + intermolecular background) ----
     def _build_background_tab(self):
-        w = QWidget()
-        panel = QVBoxLayout(w)
-        panel.addWidget(self._note('Zero-time and the intermolecular background '
-                                   'window/model used to correct V(t). Drag the gold '
-                                   '(start) / blue (end) lines on the plot, or use '
-                                   'the buttons.'))
-        grid = QGridLayout()
-        r = 0
+        p = FormPanel(field_width=FIELD_W, button_width=BTN_W)
+        p.add_title('Zero time and the intermolecular background',
+                    help=_HELP_BACKGROUND)
 
-        grid.addWidget(self._label('Time unit'), r, 0)
         self.deer_tunit = QComboBox()
         self.deer_tunit.setStyleSheet(COMBO_STYLE)
         self.deer_tunit.addItems(list(self.DEER_TUNITS.keys()))
         self.deer_tunit.currentIndexChanged.connect(self._unit_changed)
-        grid.addWidget(self.deer_tunit, r, 1); r += 1
+        p.add_row('Time unit', self.deer_tunit)
 
-        grid.addWidget(self._label('Zero time (t₀)'), r, 0)
-        t0_row = QHBoxLayout()
         self.deer_t0 = QDoubleSpinBox()
         self.deer_t0.setStyleSheet(DSPIN_STYLE)
         self.deer_t0.setRange(-1e9, 1e9)
@@ -636,12 +645,9 @@ class MainWindow(QMainWindow):
             'this matters more than the background depth. Uncheck to set t0 '
             'manually (spin box / Max).')
         self.deer_fit_t0.stateChanged.connect(self._live_update)
-        t0_row.addWidget(self.deer_t0); t0_row.addWidget(btn_t0)
-        t0_row.addWidget(self.deer_fit_t0)
-        grid.addLayout(t0_row, r, 1); r += 1
+        p.add_row('Zero time t₀', self.deer_t0, btn_t0, self.deer_fit_t0,
+                  stretch=[3, 1, 1])
 
-        grid.addWidget(self._label('Background start'), r, 0)
-        bg_row = QHBoxLayout()
         self.deer_bgstart = QDoubleSpinBox()
         self.deer_bgstart.setStyleSheet(DSPIN_STYLE)
         self.deer_bgstart.setRange(-1e9, 1e9)
@@ -655,11 +661,9 @@ class MainWindow(QMainWindow):
             '(end of the last stretch with a significant oscillation envelope). '
             'Set automatically on load; click to re-estimate.')
         btn_autobg.clicked.connect(self._auto_bg_start)
-        bg_row.addWidget(self.deer_bgstart); bg_row.addWidget(btn_autobg)
-        grid.addLayout(bg_row, r, 1); r += 1
+        p.add_row('Background start', self.deer_bgstart, btn_autobg,
+                  stretch=[3, 1])
 
-        grid.addWidget(self._label('Background end'), r, 0)
-        bge_row = QHBoxLayout()
         self.deer_bgend = QDoubleSpinBox()
         self.deer_bgend.setStyleSheet(DSPIN_STYLE)
         self.deer_bgend.setRange(-1e9, 1e9)
@@ -670,11 +674,8 @@ class MainWindow(QMainWindow):
         btn_end = QPushButton('End')
         btn_end.setStyleSheet(BUTTON_STYLE)
         btn_end.clicked.connect(self._deer_bgend_max)
-        bge_row.addWidget(self.deer_bgend); bge_row.addWidget(btn_end)
-        grid.addLayout(bge_row, r, 1); r += 1
+        p.add_row('Background end', self.deer_bgend, btn_end, stretch=[3, 1])
 
-        grid.addWidget(self._label('Background dim.'), r, 0)
-        dim_row = QHBoxLayout()
         self.deer_dim = QDoubleSpinBox()
         self.deer_dim.setStyleSheet(DSPIN_STYLE)
         self.deer_dim.setRange(1.0, 6.0)
@@ -685,10 +686,9 @@ class MainWindow(QMainWindow):
         self.deer_fitdim = QCheckBox('fit')
         self.deer_fitdim.setStyleSheet(CHECKBOX_STYLE)
         self.deer_fitdim.stateChanged.connect(self._live_update)
-        dim_row.addWidget(self.deer_dim); dim_row.addWidget(self.deer_fitdim)
-        grid.addLayout(dim_row, r, 1); r += 1
+        p.add_row('Background dim.', self.deer_dim, self.deer_fitdim,
+                  stretch=[3, 1])
 
-        grid.addWidget(self._label('Background fit'), r, 0)
         self.deer_engine = QComboBox()
         self.deer_engine.setStyleSheet(COMBO_STYLE)
         self.deer_engine.addItems(['Sequential', 'Joint (global)',
@@ -713,9 +713,11 @@ class MainWindow(QMainWindow):
         self.deer_engine.currentIndexChanged.connect(self._mellin_live)
         self.deer_engine.currentIndexChanged.connect(self._gauss_live)
         self.deer_engine.currentIndexChanged.connect(self._general_params_update)
-        grid.addWidget(self.deer_engine, r, 1); r += 1
+        p.add_row('Background fit', self.deer_engine)
 
-        self.deer_echo_head = QCheckBox('Parabolic echo-top head (guarded)')
+        adv = p.add_advanced()
+
+        self.deer_echo_head = QCheckBox('Parabolic echo-top head')
         self.deer_echo_head.setStyleSheet(CHECKBOX_STYLE)
         self.deer_echo_head.setToolTip(
             'Denoise the echo top by replacing it with a smooth parabola fitted to '
@@ -731,13 +733,12 @@ class MainWindow(QMainWindow):
             'default: it adds a regularization scan and helps mainly at higher '
             'noise.')
         self.deer_echo_head.stateChanged.connect(self._live_update)
-        grid.addWidget(self.deer_echo_head, r, 0, 1, 2); r += 1
+        adv.add_widget(self.deer_echo_head)
 
         # General-background coefficients g(t) = a·exp(b·(t + c·dᵗ)), one per row.
         # Auto (default) fits all four and writes the fitted values back here;
         # uncheck Auto to set them by hand (used directly as the background, no
         # fitting). Only active for the General background model.
-        grid.addWidget(self._label('General bg (a·exp[b(t+c·dᵗ)])'), r, 0)
         self.gbg_auto = QCheckBox('Auto (fit)')
         self.gbg_auto.setStyleSheet(CHECKBOX_STYLE)
         self.gbg_auto.setChecked(True)
@@ -750,7 +751,8 @@ class MainWindow(QMainWindow):
         self.gbg_auto.stateChanged.connect(self._live_update)
         self.gbg_auto.stateChanged.connect(self._mellin_live)
         self.gbg_auto.stateChanged.connect(self._gauss_live)
-        grid.addWidget(self.gbg_auto, r, 1); r += 1
+        adv.add_row('General bg', self.gbg_auto,
+                    gui_forms.hint('a·exp[b(t + c·dᵗ)]'), stretch=[1, 2])
 
         # ranges are wide so the boxes hold whatever the fit returns (the model can
         # be over-parametrized for a gentle decay), keeping the auto→manual hand-off
@@ -758,15 +760,16 @@ class MainWindow(QMainWindow):
         # decay rate in the exponent, c the weight of the dᵗ term, d its base.
         self.gbg_a = QDoubleSpinBox(); self.gbg_b = QDoubleSpinBox()
         self.gbg_c = QDoubleSpinBox(); self.gbg_d = QDoubleSpinBox()
-        for sp, label, lo, hi, dec, val, tip in (
-                (self.gbg_a, '   a (amplitude)', 1e-4, 1e4, 4, 0.6,
+        self._gbg_rows = FormPanel(label_width=adv.label_width, field_width=FIELD_W)
+        for sp, name, lo, hi, dec, val, tip in (
+                (self.gbg_a, 'a (amplitude)', 1e-4, 1e4, 4, 0.6,
                     'a — amplitude; sets the t=0 background level g(0)=a·exp(b·c) '
                     'and hence λ. Cancels in the background SHAPE B=g/g(0).'),
-                (self.gbg_b, '   b (rate)',     -1e3, 1e3, 5, -0.05,
+                (self.gbg_b, 'b (rate)',     -1e3, 1e3, 5, -0.05,
                     'b — decay rate in the exponent (per µs); negative = decaying'),
-                (self.gbg_c, '   c (dᵗ weight)', -1e4, 1e4, 4, 0.0,
+                (self.gbg_c, 'c (dᵗ weight)', -1e4, 1e4, 4, 0.0,
                     'c — weight of the dᵗ term inside the exponent'),
-                (self.gbg_d, '   d (dᵗ base)',   1e-4, 1.0, 4, 0.8,
+                (self.gbg_d, 'd (dᵗ base)',   1e-4, 1.0, 4, 0.8,
                     'd — base of the dᵗ term, 0<d≤1 (decaying)')):
             sp.setStyleSheet(DSPIN_STYLE)
             sp.setRange(lo, hi); sp.setDecimals(dec); sp.setValue(val)
@@ -774,13 +777,12 @@ class MainWindow(QMainWindow):
             sp.valueChanged.connect(self._live_update)
             sp.valueChanged.connect(self._mellin_live)
             sp.valueChanged.connect(self._gauss_live)
-            grid.addWidget(self._label(label), r, 0)
-            grid.addWidget(sp, r, 1); r += 1
+            self._gbg_rows.add_row(name, sp, tooltip=tip)
+        adv.add_widget(self._gbg_rows)
 
-        panel.addLayout(grid)
-        panel.addStretch(1)
+        p.add_stretch()
         self._general_params_update()
-        return w
+        return p
 
     def _general_params_update(self, *args):
         """Enable the General-background coefficient boxes only when that model is
@@ -790,6 +792,7 @@ class MainWindow(QMainWindow):
         self.gbg_auto.setEnabled(is_general)
         for sp in (self.gbg_a, self.gbg_b, self.gbg_c, self.gbg_d):
             sp.setEnabled(is_general and not auto)
+        self._gbg_rows.setVisible(is_general and not auto)
 
     def _general_bg_params(self):
         """bg_params dict for the General background: None when auto-fitting,
@@ -802,17 +805,9 @@ class MainWindow(QMainWindow):
 
     # ---- Tab 4: Tikhonov inversion ----
     def _build_deer_tab(self):
-        w = QWidget()
-        panel = QVBoxLayout(w)
-        panel.addWidget(self._note('Invert the dipolar kernel to a distance '
-                                   'distribution P(r) (Tikhonov + NNLS). Needs scipy. '
-                                   'Distance grid and the top-plot view are set in '
-                                   'the shared controls below the tabs.'))
-        grid = QGridLayout()
-        r = 0
+        p = FormPanel(field_width=FIELD_W, button_width=BTN_W)
+        p.add_title('Invert to P(r) by Tikhonov + NNLS', help=_HELP_TIKHONOV)
 
-        grid.addWidget(self._label('Regularization α'), r, 0)
-        al_row = QHBoxLayout()
         self.deer_alpha_auto = QCheckBox('Auto (GCV)')
         self.deer_alpha_auto.setStyleSheet(CHECKBOX_STYLE)
         self.deer_alpha_auto.setToolTip(
@@ -829,10 +824,8 @@ class MainWindow(QMainWindow):
         self.deer_alpha.setSingleStep(0.1); self.deer_alpha.setValue(1.0)
         self.deer_alpha.setEnabled(False)
         self.deer_alpha.valueChanged.connect(self._live_update_tikhonov)
-        al_row.addWidget(self.deer_alpha_auto); al_row.addWidget(self.deer_alpha)
-        grid.addLayout(al_row, r, 1); r += 1
+        p.add_row('Regularization α', self.deer_alpha, self.deer_alpha_auto)
 
-        grid.addWidget(self._label('α strength ×'), r, 0)
         self.deer_alpha_factor = QDoubleSpinBox()
         self.deer_alpha_factor.setStyleSheet(DSPIN_STYLE)
         self.deer_alpha_factor.setRange(0.1, 50.0)
@@ -847,23 +840,20 @@ class MainWindow(QMainWindow):
             'sees noise only, gets NARROWER — its coverage at the peak falls from '
             '~84% at 1× to ~8% at 2× and ~0% at 3×. Ignored when α is set '
             'manually.')
+        self.deer_alpha_factor.setSuffix(' ×')
         self.deer_alpha_factor.valueChanged.connect(self._live_update_tikhonov)
-        grid.addWidget(self.deer_alpha_factor, r, 1); r += 1
+        p.add_row('α strength', self.deer_alpha_factor)
 
-        self.live_check = QCheckBox('Live update on parameter change')
-        self.live_check.setStyleSheet(CHECKBOX_STYLE)
-        grid.addWidget(self.live_check, r, 0, 1, 2); r += 1
+        self.live_check = gui_forms.live_update_checkbox()
+        p.add_widget(self.live_check)
 
-        run_row = QHBoxLayout()
         self.deer_run_btn = QPushButton('Run Tikhonov')
         self.deer_run_btn.setStyleSheet(BUTTON_STYLE)
         self.deer_run_btn.clicked.connect(self.do_deer)
         btn_exp = QPushButton('Export all…')
         btn_exp.setStyleSheet(BUTTON_STYLE)
         btn_exp.clicked.connect(self.save_deer_all)
-        run_row.addWidget(self.deer_run_btn); run_row.addWidget(btn_exp)
-        grid.addLayout(run_row, r, 0, 1, 2); r += 1
-        panel.addLayout(grid)
+        p.add_button_row(self.deer_run_btn, btn_exp, width=ACTION_W)
 
         self.deer_info = QLabel('')
         self.deer_info.setStyleSheet(LABEL_STYLE)
@@ -871,40 +861,22 @@ class MainWindow(QMainWindow):
         self.deer_info.setTextFormat(Qt.TextFormat.RichText)
         self.deer_info.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
         self.deer_info.setToolTip(self.MOMENTS_TOOLTIP)
-        panel.addWidget(self.deer_info)
-        panel.addStretch(1)
-        return w
+        p.add_widget(self.deer_info)
+        p.add_stretch()
+        return p
 
     # ---- Tab 5: Mellin transform (analytic, model-free inversion) ----
     def _build_mellin_tab(self):
-        w = QWidget()
-        panel = QVBoxLayout(w)
-        panel.addWidget(self._note(
-            'Model-free inversion by the analytic integral <b>Mellin transform</b> '
-            '(Matveeva, Nekrasov, Maryasov, <i>PCCP</i> 2017, '
-            'doi 10.1039/C7CP04059H). No Tikhonov, no NNLS, no L-curve: the '
-            'distance distribution is recovered analytically, so it is not '
-            'broadened and bimodal peaks are not merged. Noise enters P(r) '
-            'additively and groups at <b>short r</b> (the method\'s signature), so '
-            'ripples below the reliable range are propagated noise, not structure.'))
-        panel.addWidget(self._note(
-            'Uses the <b>Background</b> tab\'s zero-time / window / dimension / '
-            'fit engine and the shared distance grid below the tabs. The Mellin '
-            'kernel decays to zero, so it cannot absorb a DC pedestal left by a '
-            'too-shallow background — the <b>Joint</b> background engine '
-            '(Background tab) is recommended for a clean fit.'))
-        grid = QGridLayout()
-        r = 0
+        p = FormPanel(field_width=FIELD_W, button_width=BTN_W)
+        p.add_title('Model-free analytic Mellin-transform inversion',
+                    help=_HELP_MELLIN)
 
-        grid.addWidget(self._label('Split δ'), r, 0)
-        delta_row = QHBoxLayout()
         self.mellin_delta = QDoubleSpinBox()
         self.mellin_delta.setStyleSheet(DSPIN_STYLE)
         self.mellin_delta.setRange(0.0, 1e9)
         self.mellin_delta.setDecimals(5)
         self.mellin_delta.setSingleStep(0.001)
         self.mellin_delta.setValue(0.0)          # 0 ⇒ auto (F(δ)≈0.85, clipped 90–120 ns)
-        self.mellin_delta.setFixedWidth(MELLIN_SPIN_W)
         self.mellin_delta.setToolTip(
             'Mellin split point δ (display time units), the lone regularizing '
             'knob: on [0, δ] the form factor is integrated analytically (keeping '
@@ -921,18 +893,15 @@ class MainWindow(QMainWindow):
             'Auto δ: where F falls to ≈0.85·F(0), clipped to 90–120 ns.')
         self.mellin_delta_auto.stateChanged.connect(self._mellin_delta_toggle)
         self.mellin_delta.setEnabled(False)
-        delta_row.addWidget(self.mellin_delta); delta_row.addWidget(self.mellin_delta_auto)
-        grid.addLayout(delta_row, r, 1); r += 1
+        p.add_row('Split δ', self.mellin_delta, self.mellin_delta_auto,
+                  stretch=[2, 1])
 
-        grid.addWidget(self._label('τ max'), r, 0)
-        tm_row = QHBoxLayout()
         self.mellin_taumax = QDoubleSpinBox()
         self.mellin_taumax.setStyleSheet(DSPIN_STYLE)
         self.mellin_taumax.setRange(2.0, 200.0)
         self.mellin_taumax.setDecimals(1)
         self.mellin_taumax.setSingleStep(1.0)
         self.mellin_taumax.setValue(25.0)
-        self.mellin_taumax.setFixedWidth(MELLIN_SPIN_W)
         self.mellin_taumax.setEnabled(False)
         self.mellin_taumax.setToolTip(
             'Upper limit of the Mellin variable τ (the transform runs over '
@@ -950,10 +919,9 @@ class MainWindow(QMainWindow):
             'σ_fit/σ_noise ratio are reported below.')
         self.mellin_taumax_auto.stateChanged.connect(self._mellin_taumax_toggle)
         self.mellin_taumax_auto.stateChanged.connect(self._mellin_live)
-        tm_row.addWidget(self.mellin_taumax); tm_row.addWidget(self.mellin_taumax_auto)
-        grid.addLayout(tm_row, r, 1); r += 1
+        p.add_row(gui_forms.sub('τ', 'max'), self.mellin_taumax, self.mellin_taumax_auto,
+                  stretch=[2, 1])
 
-        grid.addWidget(self._label('τ points'), r, 0)
         self.mellin_ntau = QSpinBox()
         self.mellin_ntau.setStyleSheet(SPIN_STYLE)
         self.mellin_ntau.setRange(101, 20001)
@@ -963,18 +931,20 @@ class MainWindow(QMainWindow):
             'Number of τ samples across [−τmax, τmax]. Must resolve the τ-domain '
             'oscillations (dτ ≲ 0.05); 2001 over ±25 (dτ = 0.025) is ample.')
         self.mellin_ntau.valueChanged.connect(self._mellin_live)
-        grid.addWidget(self.mellin_ntau, r, 1); r += 1
+        p.add_row('τ points', self.mellin_ntau)
 
-        self.mellin_signed_chk = QCheckBox('Overlay signed P(r) (with noise ripples)')
+        adv = p.add_advanced()
+
+        self.mellin_signed_chk = QCheckBox('Overlay signed P(r)')
         self.mellin_signed_chk.setStyleSheet(CHECKBOX_STYLE)
         self.mellin_signed_chk.setToolTip(
             'Also draw the raw signed distribution (before clipping negatives), '
             'whose short-r ripples are the propagated noise — the diagnostic the '
             'Mellin method is prized for.')
         self.mellin_signed_chk.stateChanged.connect(self._deer_rerender)
-        grid.addWidget(self.mellin_signed_chk, r, 0, 1, 2); r += 1
+        adv.add_widget(self.mellin_signed_chk)
 
-        self.mellin_signed_fit_chk = QCheckBox('Signed density in the τmax selection')
+        self.mellin_signed_fit_chk = QCheckBox('Signed density in τₘₐₓ scan')
         self.mellin_signed_fit_chk.setStyleSheet(CHECKBOX_STYLE)
         self.mellin_signed_fit_chk.setToolTip(
             'Score the τmax penalty against the honest SIGNED density (the masses '
@@ -987,22 +957,18 @@ class MainWindow(QMainWindow):
             'effect.')
         self.mellin_signed_fit_chk.setChecked(True)        # signed forward fit = default
         self.mellin_signed_fit_chk.stateChanged.connect(self._mellin_live)
-        grid.addWidget(self.mellin_signed_fit_chk, r, 0, 1, 2); r += 1
+        adv.add_widget(self.mellin_signed_fit_chk)
 
-        self.mellin_live = QCheckBox('Live update on parameter change')
-        self.mellin_live.setStyleSheet(CHECKBOX_STYLE)
-        grid.addWidget(self.mellin_live, r, 0, 1, 2); r += 1
+        self.mellin_live = gui_forms.live_update_checkbox()
+        p.add_widget(self.mellin_live)
 
-        run_row = QHBoxLayout()
         self.mellin_run_btn = QPushButton('Run Mellin')
         self.mellin_run_btn.setStyleSheet(BUTTON_STYLE)
         self.mellin_run_btn.clicked.connect(self.do_mellin)
         btn_exp = QPushButton('Export all…')
         btn_exp.setStyleSheet(BUTTON_STYLE)
         btn_exp.clicked.connect(self.save_deer_all)
-        run_row.addWidget(self.mellin_run_btn); run_row.addWidget(btn_exp)
-        grid.addLayout(run_row, r, 0, 1, 2); r += 1
-        panel.addLayout(grid)
+        p.add_button_row(self.mellin_run_btn, btn_exp, width=ACTION_W)
 
         self.mellin_info = QLabel('')
         self.mellin_info.setStyleSheet(LABEL_STYLE)
@@ -1010,38 +976,15 @@ class MainWindow(QMainWindow):
         self.mellin_info.setTextFormat(Qt.TextFormat.RichText)
         self.mellin_info.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
         self.mellin_info.setToolTip(self.MOMENTS_TOOLTIP)
-        panel.addWidget(self.mellin_info)
-        panel.addStretch(1)
-        return w
+        p.add_widget(self.mellin_info)
+        p.add_stretch()
+        return p
 
     # ---- Tab 6: Multi-Gaussian (parametric sum-of-Gaussians fit) ----
     def _build_gauss_tab(self):
-        w = QWidget()
-        panel = QVBoxLayout(w)
-        panel.addWidget(self._note(
-            'Parametric inversion: model P(r) as a <b>sum of Gaussians</b> and fit '
-            'their centres, widths and weights — for the default Least-squares '
-            'solver jointly with the background and λ against V(t); the '
-            'Monte-Carlo solver instead fits the prepared form factor '
-            '(DeerAnalysis "Gaussian" mode / DeerLab <i>dd_gaussN</i>). When the '
-            'distribution really is a few discrete modes this is the most robust '
-            'choice and gives genuine <b>parametric error bars</b> on each peak '
-            'position and width — which the regularized and model-free engines '
-            'cannot. A poor fit (low R²) is itself diagnostic: it means the data '
-            'are not well described by a few Gaussians.'))
-        panel.addWidget(self._note(
-            'Uses the <b>Background</b> tab\'s zero-time / window / dimension / fit '
-            'engine and the shared distance grid below the tabs. The window feeds '
-            'the zero-time fit and, on <i>General</i> / <i>None</i> and with the '
-            'Monte-Carlo solver, the background itself; on the default '
-            'Least-squares solver with <i>Joint</i>/<i>Sequential</i> the '
-            'background is re-fitted here, so the window mainly acts through the '
-            'zero time and the starting guess.'))
-        grid = QGridLayout()
-        r = 0
+        p = FormPanel(field_width=FIELD_W, button_width=BTN_W)
+        p.add_title('Fit P(r) as a sum of Gaussians', help=_HELP_MULTIGAUSS)
 
-        grid.addWidget(self._label('Components N'), r, 0)
-        n_row = QHBoxLayout()
         self.gauss_n = QSpinBox()
         self.gauss_n.setStyleSheet(SPIN_STYLE)
         self.gauss_n.setRange(1, 6)
@@ -1062,10 +1005,9 @@ class MainWindow(QMainWindow):
             'Uncheck to force a fixed N.')
         self.gauss_n_auto.stateChanged.connect(self._gauss_n_toggle)
         self.gauss_n_auto.stateChanged.connect(self._gauss_live)
-        n_row.addWidget(self.gauss_n); n_row.addWidget(self.gauss_n_auto)
-        grid.addLayout(n_row, r, 1); r += 1
+        p.add_row('Components N', self.gauss_n, self.gauss_n_auto,
+                  stretch=[2, 1])
 
-        grid.addWidget(self._label('N max (auto)'), r, 0)
         self.gauss_nmax = QSpinBox()
         self.gauss_nmax.setStyleSheet(SPIN_STYLE)
         self.gauss_nmax.setRange(1, 6)
@@ -1076,9 +1018,10 @@ class MainWindow(QMainWindow):
             'minimum, and N is set by this box rather than by the data — the '
             'panel says so when that happens.')
         self.gauss_nmax.valueChanged.connect(self._gauss_live)
-        grid.addWidget(self.gauss_nmax, r, 1); r += 1
+        p.add_row('N max', self.gauss_nmax,
+                  tooltip='Largest component count tried by the automatic '
+                          'model selection.')
 
-        grid.addWidget(self._label('Selection by'), r, 0)
         self.gauss_ic = QComboBox()
         self.gauss_ic.setStyleSheet(COMBO_STYLE)
         self.gauss_ic.addItems(['AICc', 'AIC', 'BIC'])
@@ -1087,9 +1030,8 @@ class MainWindow(QMainWindow):
             '(corrected Akaike, default) is the usual choice; BIC penalizes extra '
             'components more strongly (favours fewer Gaussians).')
         self.gauss_ic.currentIndexChanged.connect(self._gauss_live)
-        grid.addWidget(self.gauss_ic, r, 1); r += 1
+        p.add_row('Selection by', self.gauss_ic)
 
-        grid.addWidget(self._label('Fit method'), r, 0)
         self.gauss_method = QComboBox()
         self.gauss_method.setStyleSheet(COMBO_STYLE)
         self.gauss_method.addItems(['Least-squares', 'Monte-Carlo (Pake)'])
@@ -1109,17 +1051,19 @@ class MainWindow(QMainWindow):
             'Slower (~seconds).')
         self.gauss_method.currentIndexChanged.connect(self._gauss_method_toggle)
         self.gauss_method.currentIndexChanged.connect(self._gauss_live)
-        grid.addWidget(self.gauss_method, r, 1); r += 1
+        p.add_row('Fit method', self.gauss_method)
 
-        self.gauss_comp_chk = QCheckBox('Overlay individual components')
+        adv = p.add_advanced()
+
+        self.gauss_comp_chk = QCheckBox('Overlay components')
         self.gauss_comp_chk.setStyleSheet(CHECKBOX_STYLE)
         self.gauss_comp_chk.setToolTip(
             'Also draw each fitted Gaussian component separately (dashed), under '
             'the total P(r).')
         self.gauss_comp_chk.stateChanged.connect(self._deer_rerender)
-        grid.addWidget(self.gauss_comp_chk, r, 0, 1, 2); r += 1
+        adv.add_widget(self.gauss_comp_chk)
 
-        self.gauss_support_chk = QCheckBox('Rigorous CIs (support-plane, 95%)')
+        self.gauss_support_chk = QCheckBox('Rigorous CIs (95%)')
         self.gauss_support_chk.setStyleSheet(CHECKBOX_STYLE)
         self.gauss_support_chk.setToolTip(
             'Compute per-component confidence intervals by the rigorous support-'
@@ -1131,22 +1075,18 @@ class MainWindow(QMainWindow):
             'linearized ±σ (default, shown when this is off) can mis-state. Slower '
             '(many re-fits: ~1–5 s).')
         self.gauss_support_chk.stateChanged.connect(self._gauss_live)
-        grid.addWidget(self.gauss_support_chk, r, 0, 1, 2); r += 1
+        adv.add_widget(self.gauss_support_chk)
 
-        self.gauss_live = QCheckBox('Live update on parameter change')
-        self.gauss_live.setStyleSheet(CHECKBOX_STYLE)
-        grid.addWidget(self.gauss_live, r, 0, 1, 2); r += 1
+        self.gauss_live = gui_forms.live_update_checkbox()
+        p.add_widget(self.gauss_live)
 
-        run_row = QHBoxLayout()
         self.gauss_run_btn = QPushButton('Run Multi-Gaussian')
         self.gauss_run_btn.setStyleSheet(BUTTON_STYLE)
         self.gauss_run_btn.clicked.connect(self.do_gauss)
         btn_exp = QPushButton('Export all…')
         btn_exp.setStyleSheet(BUTTON_STYLE)
         btn_exp.clicked.connect(self.save_deer_all)
-        run_row.addWidget(self.gauss_run_btn); run_row.addWidget(btn_exp)
-        grid.addLayout(run_row, r, 0, 1, 2); r += 1
-        panel.addLayout(grid)
+        p.add_button_row(self.gauss_run_btn, btn_exp, width=ACTION_W)
 
         self.gauss_info = QLabel('')
         self.gauss_info.setStyleSheet(LABEL_STYLE)
@@ -1154,9 +1094,9 @@ class MainWindow(QMainWindow):
         self.gauss_info.setTextFormat(Qt.TextFormat.RichText)
         self.gauss_info.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
         self.gauss_info.setToolTip(self.MOMENTS_TOOLTIP)
-        panel.addWidget(self.gauss_info)
-        panel.addStretch(1)
-        return w
+        p.add_widget(self.gauss_info)
+        p.add_stretch()
+        return p
 
     def _gauss_n_toggle(self, *args):
         self.gauss_n.setEnabled(not self.gauss_n_auto.isChecked())

@@ -36,8 +36,8 @@ from pyqtgraph.dockarea import DockArea
 from PyQt6.QtCore import Qt, QProcess, QUrl, QFileSystemWatcher, QTimer
 from PyQt6.QtGui import QIcon, QDesktopServices
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QLabel, QPushButton,
-    QComboBox, QGridLayout, QVBoxLayout, QHBoxLayout, QTabWidget, QDoubleSpinBox,
-    QSpinBox, QLineEdit, QCheckBox, QFrame, QSizePolicy, QScrollArea)
+    QComboBox, QVBoxLayout, QHBoxLayout, QTabWidget, QDoubleSpinBox,
+    QSpinBox, QLineEdit, QFrame, QSizePolicy, QScrollArea)
 
 import atomize.general_modules.general_functions as general
 import atomize.general_modules.csv_opener_saver as openfile
@@ -57,7 +57,12 @@ from atomize.main.widgets import CrosshairPlotWidget, CloseableDock, CrosshairDo
 # so QComboBox / QSpinBox / QLineEdit render identically on Linux and Windows.
 from atomize.general_modules.gui_style import (apply_app_style,
     BG, FG, ACCENT, BUTTON_STYLE, LABEL_STYLE, DSPIN_STYLE, SPIN_STYLE,
-    COMBO_STYLE, LINEEDIT_STYLE, CHECKBOX_STYLE, SCROLL_STYLE, TAB_STYLE)
+    COMBO_STYLE, LINEEDIT_STYLE, SCROLL_STYLE, TAB_STYLE)
+
+# Shared form primitives: one label column per panel, long explanations behind
+# '?' chips, collapsible blocks for the secondary knobs.
+import atomize.general_modules.gui_forms as gui_forms
+from atomize.general_modules.gui_forms import FormPanel
 
 # Path to the buffer file that the main-window plot sidebar writes selected
 # curves into (same libs/ runtime-IPC convention as the .param files).
@@ -115,6 +120,31 @@ BUTTON_BUSY_STYLE = (
     f"QPushButton {{border-radius: 4px; background-color: {ACCENT}; "
     f"border-style: inset; color: {BG}; font-weight: bold; padding: 4px; }} "
     f"QPushButton:disabled {{background-color: {ACCENT}; color: {BG}; }}")
+
+
+_HELP_FFT = (
+    'I/Q pair → complex FFT of I+iQ; otherwise FFT of I. '
+    'Window applied before transform; passband masks the spectrum. '
+    'Skip pts drops leading points so the transform starts at the '
+    'echo centre (removes the dead-time first-order phase).')
+
+_HELP_FILTER = (
+    'FFT → zero the frequencies outside the passband → '
+    'inverse FFT. Output is the cleaned time-domain signal '
+    '(I/Q pair → both channels filtered together).'
+    '<br><br>'
+    'Low-pass uses High cutoff; High-pass uses Low cutoff; '
+    'Band-pass uses both. Cutoffs are fractions of the '
+    'maximum (Nyquist) frequency.')
+
+_HELP_PHASE = (
+    'Uses the I and Q channels selected above. First/second '
+    'order are a frequency offset: 50 → 50 MHz when x is in ns '
+    '(coeff = 2π·value/1000 per x-unit).')
+
+_HELP_SMOOTH = (
+    'I/Q pair → applied to both channels. "Baseline from" '
+    'fits the baseline using only the chosen end points.')
 
 
 def _html_table(headers, rows):
@@ -221,6 +251,7 @@ class MainWindow(QMainWindow):
         central = QWidget()
         self.setCentralWidget(central)
         root = QHBoxLayout(central)
+        root.setSpacing(gui_forms.PANEL_GAP)
 
         # ---- Left: embedded live preview (in-process, smooth) ----
         # Same plot stack as the main UI (atomize/main/widgets.py): a
@@ -269,19 +300,18 @@ class MainWindow(QMainWindow):
         root.addWidget(self.plot_area, stretch=3)
 
         # ---- Vertical separator between graph and controls ----
-        sep = QFrame()
-        sep.setFrameShape(QFrame.Shape.VLine)
-        sep.setFrameShadow(QFrame.Shadow.Plain)
-        sep.setStyleSheet('color: rgb(83, 83, 117);')
-        root.addWidget(sep)
+        root.addWidget(gui_forms.vline())
 
         # ---- Right: controls ----
         panel = QVBoxLayout()
+        panel.setContentsMargins(*gui_forms.PANEL_MARGINS)
+        panel.setSpacing(8)
         root.addLayout(panel, stretch=2)
 
         # ---- Source group ----
-        panel.addWidget(self._heading('Source'))
-        src_row = QHBoxLayout()
+        src = FormPanel(field_width=gui_forms.FIELD_W,
+                        button_width=gui_forms.BTN_W)
+        src.add_heading('Source')
         btn_open = QPushButton('Open CSV…')
         btn_open.setStyleSheet(BUTTON_STYLE)
         btn_open.clicked.connect(self.open_csv)
@@ -294,85 +324,72 @@ class MainWindow(QMainWindow):
         btn_clear = QPushButton('Clear')
         btn_clear.setStyleSheet(BUTTON_STYLE)
         btn_clear.clicked.connect(self.clear_all)
-        src_row.addWidget(btn_open)
-        src_row.addWidget(btn_bruker)
-        src_row.addWidget(btn_buf)
-        src_row.addWidget(btn_clear)
-        panel.addLayout(src_row)
+        # the file actions and the two rows under them share one 4-column grid,
+        # so Remove / Header… come out exactly as wide as Clear
+        src_grid = gui_forms.equal_grid(4)
+        for i, b in enumerate((btn_open, btn_bruker, btn_buf, btn_clear)):
+            src_grid.addWidget(b, 0, i)
+        src.add_layout(src_grid)
 
         # trace selector: each opened file (or plot load) is one trace; the combo
         # picks which one is active and feeds the channel selectors / operations.
-        trace_row = QHBoxLayout()
-        trace_row.addWidget(self._label('Trace'))
         self.trace_combo = QComboBox()
         self.trace_combo.setStyleSheet(COMBO_STYLE)
         self.trace_combo.setToolTip('Active trace. Open several files to compare; '
                                     'each becomes a selectable trace here. Promoted '
                                     'result channels stay with their trace.')
         self.trace_combo.currentIndexChanged.connect(self._activate_trace)
-        trace_row.addWidget(self.trace_combo, 1)
         self.trace_remove_btn = QPushButton('Remove')
         self.trace_remove_btn.setStyleSheet(BUTTON_STYLE)
         self.trace_remove_btn.setToolTip('Remove the active trace from the list.')
         self.trace_remove_btn.clicked.connect(self._remove_trace)
-        trace_row.addWidget(self.trace_remove_btn)
-        panel.addLayout(trace_row)
+        trace_cell = QHBoxLayout()
+        trace_cell.setContentsMargins(0, 0, 0, 0)
+        trace_cell.setSpacing(8)
+        trace_cell.addWidget(gui_forms.label('Trace'))
+        trace_cell.addWidget(self.trace_combo, 1)
+        src_grid.addLayout(trace_cell, 1, 0, 1, 3)
+        src_grid.addWidget(self.trace_remove_btn, 1, 3)
 
         # Name of the dataset currently loaded (file basename, or 'Loaded from
         # plot' for the in-memory buffer). Kept on its own line so a long path
         # wraps instead of stretching the panel.
-        file_row = QHBoxLayout()
         self.loaded_label = QLabel('File: —')
         self.loaded_label.setStyleSheet(LABEL_STYLE)
         self.loaded_label.setWordWrap(True)
-        file_row.addWidget(self.loaded_label, 1)
         self.header_btn = QPushButton('Header…')
         self.header_btn.setStyleSheet(BUTTON_STYLE)
         self.header_btn.clicked.connect(self.show_header)
-        file_row.addWidget(self.header_btn)
-        panel.addLayout(file_row)
-        # Remove / Header… sit one above the other: one width, aligned edges
-        btn_w = max(self.trace_remove_btn.sizeHint().width(),
-                    self.header_btn.sizeHint().width())
-        self.trace_remove_btn.setFixedWidth(btn_w)
-        self.header_btn.setFixedWidth(btn_w)
+        src_grid.addWidget(self.loaded_label, 2, 0, 1, 3)
+        src_grid.addWidget(self.header_btn, 2, 3)
 
-        ch_grid = QGridLayout()
-        ch_grid.addWidget(self._label('I / primary channel'), 0, 0)
         self.i_combo = QComboBox()
         self.i_combo.setStyleSheet(COMBO_STYLE)
         self.i_combo.currentIndexChanged.connect(self.on_source_changed)
-        ch_grid.addWidget(self.i_combo, 0, 1)
-        ch_grid.addWidget(self._label('Q channel'), 1, 0)
+        src.add_row('I / primary channel', self.i_combo, full=True)
         self.q_combo = QComboBox()
         self.q_combo.setStyleSheet(COMBO_STYLE)
         self.q_combo.currentIndexChanged.connect(self.on_source_changed)
-        ch_grid.addWidget(self.q_combo, 1, 1)
-        panel.addLayout(ch_grid)
+        src.add_row('Q channel', self.q_combo, full=True)
 
-        self.pair_check = QCheckBox('I/Q pair (run FFT / smoothing on both channels)')
-        self.pair_check.setStyleSheet(CHECKBOX_STYLE)
+        self.pair_check = src.add_check(
+            'I/Q pair', tooltip='Run FFT / smoothing on both channels.')
         self.pair_check.stateChanged.connect(self.on_source_changed)
         # block the signal for the initial state: the rest of the UI (xname_edit,
         # plot) is not built yet, so an on_source_changed -> redraw here would fail
         self.pair_check.blockSignals(True)
         self.pair_check.setChecked(True)
         self.pair_check.blockSignals(False)
-        panel.addWidget(self.pair_check)
 
         # X axis name (preview label / plot xname / CSV header for time-domain results)
-        xn_row = QHBoxLayout()
-        xn_row.addWidget(self._label('X axis name'))
         self.xname_edit = QLineEdit('X')
         self.xname_edit.setStyleSheet(LINEEDIT_STYLE)
         self.xname_edit.textChanged.connect(lambda *_: self.redraw())
-        xn_row.addWidget(self.xname_edit)
-        panel.addLayout(xn_row)
+        src.add_row('X axis name', self.xname_edit, full=True)
 
-        self.live_check = QCheckBox('Live update on parameter change')
-        self.live_check.setStyleSheet(CHECKBOX_STYLE)
-        #self.live_check.setChecked(True)
-        panel.addWidget(self.live_check)
+        self.live_check = gui_forms.live_update_checkbox()
+        src.add_widget(self.live_check)
+        panel.addWidget(src)
 
         panel.addWidget(self._hline())
 
@@ -390,18 +407,22 @@ class MainWindow(QMainWindow):
         # FFT). The preview recomputes only on a parameter change or Apply.
         self.tabs.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
         # Floor the tab strip at its full width so all tabs stay visible without
-        # the scroll arrows (the 6 tabs need ~465 px); the graph takes the rest.
-        self.tabs.setMinimumWidth(525)
+        # the scroll arrows (the 5 tabs need ~365 px); the graph takes the rest.
+        self.tabs.setMinimumWidth(380)
         panel.addWidget(self.tabs, stretch=1)
 
         panel.addWidget(self._hline())
 
         # ---- Output group ----
-        panel.addWidget(self._heading('Output'))
+        out = FormPanel(field_width=gui_forms.FIELD_W,
+                        button_width=gui_forms.BTN_W)
+        out.add_heading('Output')
         self.name_edit = QLineEdit('treatment_result')
         self.name_edit.setStyleSheet(LINEEDIT_STYLE)
-        panel.addWidget(self.name_edit)
-        out_row = QHBoxLayout()
+        out_grid = gui_forms.equal_grid(5)
+        out.add_layout(out_grid)
+        out_grid.addWidget(gui_forms.label('Result name'), 0, 0)
+        out_grid.addWidget(self.name_edit, 0, 1, 1, 4)
         btn_plot = QPushButton('Plot to GUI')
         btn_plot.setStyleSheet(BUTTON_STYLE)
         btn_plot.clicked.connect(self.plot_result)
@@ -420,18 +441,13 @@ class MainWindow(QMainWindow):
         btn_clear_res = QPushButton('Clear result')
         btn_clear_res.setStyleSheet(BUTTON_STYLE)
         btn_clear_res.clicked.connect(self.clear_result)
-        out_row.addWidget(btn_plot)
-        out_row.addWidget(btn_save)
-        out_row.addWidget(btn_chain)
-        out_row.addWidget(btn_undo)
-        out_row.addWidget(btn_clear_res)
-        panel.addLayout(out_row)
+        for i, b in enumerate((btn_plot, btn_save, btn_chain, btn_undo, btn_clear_res)):
+            out_grid.addWidget(b, 1, i)
 
         # Hand the current curves off to Julia/Makie for a publication figure
         # (vector PDF). Shells out to script_examples/makie/render.jl via QProcess.
         # The mode selector picks what to draw: raw source, the result, or both
         # overlaid (raw + fit on the same axes).
-        makie_row = QHBoxLayout()
         self.makie_mode = QComboBox()
         self.makie_mode.addItems(['Raw + result', 'Result only', 'Raw only'])
         self.makie_mode.setStyleSheet(COMBO_STYLE)
@@ -442,75 +458,46 @@ class MainWindow(QMainWindow):
         self.makie_btn.setToolTip('Render the selected curves to a publication-quality '
                                   'PDF with Julia/Makie (first run precompiles).')
         self.makie_btn.clicked.connect(self.make_makie_figure)
-        makie_row.addWidget(self.makie_mode)
-        makie_row.addWidget(self.makie_btn)
-        panel.addLayout(makie_row)
+        # Makie spans the last two of the five Output buttons above it
+        out_grid.addWidget(self.makie_mode, 2, 0, 1, 3)
+        out_grid.addWidget(self.makie_btn, 2, 3, 1, 2)
 
         self.status = QLabel('Load a dataset to begin.')
         self.status.setStyleSheet(LABEL_STYLE)
         self.status.setWordWrap(True)
-        panel.addWidget(self.status)
+        out.add_widget(self.status)
+        panel.addWidget(out)
 
-        # +/- buttons on every spinbox (repo-wide convention); give spinboxes,
-        # comboboxes and buttons a common minimum row height so they line up
-        # Pin spinboxes to a fixed 26 px height (as in awg_phasing_insys.py) so
-        # the native +/- frame renders fully; combos / buttons / line edits get
-        # the same min height for row alignment.
-        row_h = 26
-        for wdg in self.findChildren((QComboBox, QPushButton)):
-            wdg.setMinimumHeight(row_h)
-        for spin in self.findChildren((QSpinBox, QDoubleSpinBox)):
-            spin.setButtonSymbols(QSpinBox.ButtonSymbols.PlusMinus)
-            spin.setMinimumHeight(row_h)
-        for le in self.findChildren((QLineEdit)):
-            le.setMinimumHeight(21)
+        gui_forms.apply_row_metrics(self)
 
     def _hline(self):
-        line = QFrame()
-        line.setFrameShape(QFrame.Shape.HLine)
-        line.setFrameShadow(QFrame.Shadow.Plain)
-        line.setStyleSheet('color: rgb(83, 83, 117);')
-        return line
+        return gui_forms.hline()
 
     def _heading(self, text):
-        lab = QLabel(text)
-        lab.setStyleSheet(f"QLabel {{ color: {ACCENT}; font-weight: bold; font-size: 13px; }}")
-        return lab
+        return gui_forms.heading(text)
 
     def _label(self, text):
-        lab = QLabel(text)
-        lab.setStyleSheet(LABEL_STYLE)
-        return lab
-
-    def _note(self, text):
-        """A wrapped, multi-line hint label with roomier line spacing."""
-        lab = QLabel(f'<div style="line-height: 145%;">{text}</div>')
-        lab.setStyleSheet(LABEL_STYLE)
-        lab.setWordWrap(True)
-        lab.setTextFormat(Qt.TextFormat.RichText)
-        return lab
+        return gui_forms.label(text)
 
     def _build_fit_tab(self):
-        w = QWidget()
-        grid = QGridLayout(w)
-        grid.addWidget(self._label('Model'), 0, 0)
+        p = FormPanel(field_width=gui_forms.FIELD_W,
+                      button_width=gui_forms.BTN_W)
         self.model_combo = QComboBox()
         self.model_combo.setStyleSheet(COMBO_STYLE)
         self.model_combo.addItems(self.fitter.model_names())
         self.model_combo.setCurrentText('Exponential')
-        grid.addWidget(self.model_combo, 0, 1)
+        # widest item is 'Stretched exponential + exponential'
+        p.add_row('Model', self.model_combo, full=True)
         # live equation of the selected model, so the user sees what is fitted
         self.fit_formula = QLabel('')
         self.fit_formula.setStyleSheet(LABEL_STYLE)
         self.fit_formula.setWordWrap(True)
         self.fit_formula.setTextFormat(Qt.TextFormat.RichText)
         self.model_combo.currentTextChanged.connect(self._update_fit_formula)
-        grid.addWidget(self.fit_formula, 1, 0, 1, 2)
+        p.add_widget(self.fit_formula)
         self._update_fit_formula(self.model_combo.currentText())
-        self.fit_no_offset = QCheckBox('Fix offset = 0 (drop the b / c baseline term)')
-        self.fit_no_offset.setStyleSheet(CHECKBOX_STYLE)
-        grid.addWidget(self.fit_no_offset, 2, 0, 1, 2)
-        fit_btn_row = QHBoxLayout()
+        self.fit_no_offset = p.add_check(
+            'Fix offset = 0', tooltip='Drop the b / c baseline term of the model.')
         btn = QPushButton('Fit')
         btn.setStyleSheet(BUTTON_STYLE)
         btn.setToolTip(self._FIT_STATS_TOOLTIP)
@@ -526,10 +513,7 @@ class MainWindow(QMainWindow):
         self.fit_save_table_btn.setToolTip('Save the per-trace fit parameters as CSV.')
         self.fit_save_table_btn.clicked.connect(self.save_fit_table)
         self.fit_save_table_btn.setEnabled(False)
-        fit_btn_row.addWidget(btn)
-        fit_btn_row.addWidget(self.fit_all_btn)
-        fit_btn_row.addWidget(self.fit_save_table_btn)
-        grid.addLayout(fit_btn_row, 3, 0, 1, 2)
+        p.add_button_row(btn, self.fit_all_btn, self.fit_save_table_btn)
         self.fit_result = QLabel('')
         self.fit_result.setStyleSheet(LABEL_STYLE)
         self.fit_result.setWordWrap(True)
@@ -540,9 +524,8 @@ class MainWindow(QMainWindow):
         fit_scroll.setStyleSheet(SCROLL_STYLE)
         fit_scroll.setWidgetResizable(True)
         fit_scroll.setWidget(self.fit_result)
-        grid.addWidget(fit_scroll, 4, 0, 1, 2)
-        grid.setRowStretch(4, 1)
-        return w
+        p.set_row_stretch(p.add_row(None, fit_scroll), 1)
+        return gui_forms.scroll_wrap(p)
 
     WINDOWS = ['None', 'Hann', 'Hamming', 'Blackman', 'Bartlett', 'Flat-top',
                'Kaiser', 'Gaussian', 'Tukey']
@@ -556,49 +539,35 @@ class MainWindow(QMainWindow):
     }
 
     def _build_fft_tab(self):
-        w = QWidget()
-        grid = QGridLayout(w)
+        p = FormPanel(field_width=gui_forms.FIELD_W,
+                      button_width=gui_forms.BTN_W)
+        p.add_title('Complex FFT with apodization and zero fill', help=_HELP_FFT)
 
-        grid.addWidget(self._label('Output'), 0, 0)
         self.fft_mode = QComboBox()
         self.fft_mode.setStyleSheet(COMBO_STYLE)
         self.fft_mode.addItems(['Magnitude', 'Real', 'Imaginary', 'Real + Imaginary'])
         self.fft_mode.currentIndexChanged.connect(self._live_update)
-        grid.addWidget(self.fft_mode, 0, 1)
+        p.add_row('Output', self.fft_mode)
 
-        grid.addWidget(self._label('Window'), 1, 0)
         self.fft_window = QComboBox()
         self.fft_window.setStyleSheet(COMBO_STYLE)
         self.fft_window.addItems(self.WINDOWS)
         # relabel/enable the parameter field first, then recompute
         self.fft_window.currentIndexChanged.connect(self._update_window_param)
         self.fft_window.currentIndexChanged.connect(self._live_update)
-        grid.addWidget(self.fft_window, 1, 1)
+        p.add_row('Window', self.fft_window)
 
-        self.fft_winparam_label = self._label('Window param')
-        grid.addWidget(self.fft_winparam_label, 2, 0)
-        self.fft_winparam = QDoubleSpinBox()
-        self.fft_winparam.setStyleSheet(DSPIN_STYLE)
-        self.fft_winparam.setRange(0.0, 100.0)
-        self.fft_winparam.setDecimals(2)
-        self.fft_winparam.setValue(8.6)
-        self.fft_winparam.setEnabled(False)   # 'None' is selected initially
-        self.fft_winparam.valueChanged.connect(self._live_update)
-        grid.addWidget(self.fft_winparam, 2, 1)
-
-        grid.addWidget(self._label('Zero fill'), 3, 0)
         self.fft_zerofill = QComboBox()
         self.fft_zerofill.setStyleSheet(COMBO_STYLE)
         self.fft_zerofill.addItems(['None', '×2', '×4', '×8', 'Next pow₂'])
         self.fft_zerofill.setCurrentText('×4')
         self.fft_zerofill.currentIndexChanged.connect(self._live_update)
-        grid.addWidget(self.fft_zerofill, 3, 1)
+        p.add_row('Zero fill', self.fft_zerofill)
 
-        grid.addWidget(self._label('Echo center (skip pts)'), 4, 0)
-        skip_row = QHBoxLayout()
         self.fft_skip = QSpinBox()
         self.fft_skip.setStyleSheet(SPIN_STYLE)
         self.fft_skip.setRange(0, 1000000)
+        self.fft_skip.setSuffix(' pts')
         self.fft_skip.setToolTip(
             'Number of leading <b>points</b> (samples, not time) to drop so the '
             'transform starts at the echo centre.')
@@ -615,116 +584,107 @@ class MainWindow(QMainWindow):
             'Always sanity-check against the plot; type the point in by hand if '
             'a noisy record needs it.')
         btn_auto.clicked.connect(self.auto_echo_center)
-        skip_row.addWidget(self.fft_skip); skip_row.addWidget(btn_auto)
-        grid.addLayout(skip_row, 4, 1)
+        p.add_row('Echo center', self.fft_skip, btn_auto, stretch=[3, 1])
 
-        grid.addWidget(self._label('Passband'), 5, 0)
+        adv = p.add_advanced()
+        adv.field_width, adv.button_width = gui_forms.FIELD_W, gui_forms.BTN_W
+
+        self.fft_winparam = QDoubleSpinBox()
+        self.fft_winparam.setStyleSheet(DSPIN_STYLE)
+        self.fft_winparam.setRange(0.0, 100.0)
+        self.fft_winparam.setDecimals(2)
+        self.fft_winparam.setValue(8.6)
+        self.fft_winparam.setEnabled(False)   # 'None' is selected initially
+        self.fft_winparam.valueChanged.connect(self._live_update)
+        wp_row = adv.add_row('Window param', self.fft_winparam)
+        self.fft_winparam_label = adv.grid.itemAtPosition(wp_row, 0).widget()
+        self.fft_winparam_label.setVisible(False)
+        self.fft_winparam.setVisible(False)
+
         self.fft_filter = QComboBox()
         self.fft_filter.setStyleSheet(COMBO_STYLE)
         self.fft_filter.addItems(self.FILTERS)
         self.fft_filter.currentIndexChanged.connect(self._live_update)
-        grid.addWidget(self.fft_filter, 5, 1)
+        adv.add_row('Passband', self.fft_filter)
 
-        grid.addWidget(self._label('Low cutoff (×f_max)'), 6, 0)
         self.fft_cut_lo = QDoubleSpinBox()
         self.fft_cut_lo.setStyleSheet(DSPIN_STYLE)
         self.fft_cut_lo.setRange(0.0, 1.0)
         self.fft_cut_lo.setSingleStep(0.01)
         self.fft_cut_lo.setDecimals(4)
+        self.fft_cut_lo.setSuffix(' ×f_max')
         self.fft_cut_lo.valueChanged.connect(self._live_update)
-        grid.addWidget(self.fft_cut_lo, 6, 1)
+        adv.add_row('Low cutoff', self.fft_cut_lo)
 
-        grid.addWidget(self._label('High cutoff (×f_max)'), 7, 0)
         self.fft_cut_hi = QDoubleSpinBox()
         self.fft_cut_hi.setStyleSheet(DSPIN_STYLE)
         self.fft_cut_hi.setRange(0.0, 1.0)
         self.fft_cut_hi.setSingleStep(0.01)
         self.fft_cut_hi.setDecimals(4)
+        self.fft_cut_hi.setSuffix(' ×f_max')
         self.fft_cut_hi.setValue(1.0)
         self.fft_cut_hi.valueChanged.connect(self._live_update)
-        grid.addWidget(self.fft_cut_hi, 7, 1)
-
-        note = self._note('I/Q pair → complex FFT of I+iQ; otherwise FFT of I. '
-                          'Window applied before transform; passband masks the spectrum. '
-                          'Skip pts drops leading points so the transform starts at the '
-                          'echo centre (removes the dead-time first-order phase).')
-        grid.addWidget(note, 8, 0, 1, 2)
+        adv.add_row('High cutoff', self.fft_cut_hi)
 
         btn = QPushButton('Compute FFT')
         btn.setStyleSheet(BUTTON_STYLE)
         btn.clicked.connect(self.do_fft)
-        grid.addWidget(btn, 9, 0, 1, 2)
-        grid.setRowStretch(10, 1)
+        p.add_button_row(btn, width=gui_forms.ACTION_W)
+        p.add_stretch()
 
-        return w
+        return gui_forms.scroll_wrap(p)
 
     def _build_filter_tab(self):
-        w = QWidget()
-        grid = QGridLayout(w)
+        p = FormPanel(field_width=gui_forms.FIELD_W,
+                      button_width=gui_forms.BTN_W)
+        p.add_title('Zero the frequencies outside the passband', help=_HELP_FILTER)
 
-        note = self._note('FFT → zero the frequencies outside the passband → '
-                          'inverse FFT. Output is the cleaned time-domain signal '
-                          '(I/Q pair → both channels filtered together).')
-        grid.addWidget(note, 0, 0, 1, 2)
-
-        grid.addWidget(self._label('Type'), 1, 0)
         self.filt_type = QComboBox()
         self.filt_type.setStyleSheet(COMBO_STYLE)
         self.filt_type.addItems(['Low-pass', 'High-pass', 'Band-pass'])
         self.filt_type.currentIndexChanged.connect(self._live_update)
-        grid.addWidget(self.filt_type, 1, 1)
+        p.add_row('Type', self.filt_type)
 
-        grid.addWidget(self._label('Low cutoff (×f_max)'), 2, 0)
         self.filt_cut_lo = QDoubleSpinBox()
         self.filt_cut_lo.setStyleSheet(DSPIN_STYLE)
         self.filt_cut_lo.setRange(0.0, 1.0)
         self.filt_cut_lo.setSingleStep(0.01)
         self.filt_cut_lo.setDecimals(4)
+        self.filt_cut_lo.setSuffix(' ×f_max')
         self.filt_cut_lo.setValue(0.1)
         self.filt_cut_lo.valueChanged.connect(self._live_update)
-        grid.addWidget(self.filt_cut_lo, 2, 1)
+        p.add_row('Low cutoff', self.filt_cut_lo)
 
-        grid.addWidget(self._label('High cutoff (×f_max)'), 3, 0)
         self.filt_cut_hi = QDoubleSpinBox()
         self.filt_cut_hi.setStyleSheet(DSPIN_STYLE)
         self.filt_cut_hi.setRange(0.0, 1.0)
         self.filt_cut_hi.setSingleStep(0.01)
         self.filt_cut_hi.setDecimals(4)
+        self.filt_cut_hi.setSuffix(' ×f_max')
         self.filt_cut_hi.setValue(0.5)
         self.filt_cut_hi.valueChanged.connect(self._live_update)
-        grid.addWidget(self.filt_cut_hi, 3, 1)
-
-        hint = self._note('Low-pass uses High cutoff; High-pass uses Low cutoff; '
-                          'Band-pass uses both. Cutoffs are fractions of the '
-                          'maximum (Nyquist) frequency.')
-        grid.addWidget(hint, 4, 0, 1, 2)
+        p.add_row('High cutoff', self.filt_cut_hi)
 
         btn = QPushButton('Apply filter')
         btn.setStyleSheet(BUTTON_STYLE)
         btn.clicked.connect(self.do_filter)
-        grid.addWidget(btn, 5, 0, 1, 2)
-        grid.setRowStretch(6, 1)
-        return w
+        p.add_button_row(btn, width=gui_forms.ACTION_W)
+        p.add_stretch()
+        return gui_forms.scroll_wrap(p)
 
     def _build_phase_tab(self):
-        w = QWidget()
-        grid = QGridLayout(w)
+        p = FormPanel(field_width=gui_forms.FIELD_W,
+                      button_width=gui_forms.BTN_W)
+        p.add_title('Zero / first / second-order phase correction', help=_HELP_PHASE)
 
-        note = self._note('Uses the I and Q channels selected above. First/second '
-                          'order are a frequency offset: 50 → 50 MHz when x is in ns '
-                          '(coeff = 2π·value/1000 per x-unit).')
-        grid.addWidget(note, 0, 0, 1, 2)
-
-        grid.addWidget(self._label('Zero order (deg)'), 1, 0)
         self.phase_zero = QDoubleSpinBox()
         self.phase_zero.setStyleSheet(DSPIN_STYLE)
         self.phase_zero.setRange(0.0, 360.0)
         self.phase_zero.setDecimals(2)
         self.phase_zero.setSingleStep(0.5)
+        self.phase_zero.setSuffix(' deg')
         self.phase_zero.setWrapping(True)   # full cycle: 360 wraps back to 0
         self.phase_zero.valueChanged.connect(self._live_update)
-        ph0_row = QHBoxLayout()
-        ph0_row.addWidget(self.phase_zero)
         btn_autoph = QPushButton('Auto')
         btn_autoph.setStyleSheet(BUTTON_STYLE)
         btn_autoph.setToolTip(
@@ -740,18 +700,15 @@ class MainWindow(QMainWindow):
             'status line reports any residual offset and the First-order value '
             'that removes it.')
         btn_autoph.clicked.connect(self.auto_phase_zero)
-        ph0_row.addWidget(btn_autoph)
-        grid.addLayout(ph0_row, 1, 1)
+        p.add_row('Zero order', self.phase_zero, btn_autoph, stretch=[3, 1])
 
-        grid.addWidget(self._label('First order (MHz @ ns)'), 2, 0)
         self.phase_first = QDoubleSpinBox()
         self.phase_first.setStyleSheet(DSPIN_STYLE)
         self.phase_first.setRange(-1e6, 1e6)
         self.phase_first.setDecimals(3)
         self.phase_first.setSingleStep(0.05)
+        self.phase_first.setSuffix(' MHz')
         self.phase_first.valueChanged.connect(self._live_update)
-        ph1_row = QHBoxLayout()
-        ph1_row.addWidget(self.phase_first)
         btn_autoph1 = QPushButton('Auto')
         btn_autoph1.setStyleSheet(BUTTON_STYLE)
         btn_autoph1.setToolTip(
@@ -763,32 +720,39 @@ class MainWindow(QMainWindow):
             'across the echo by tens of degrees, which no φ₀ can absorb, and it '
             'leaves a large imaginary residue.')
         btn_autoph1.clicked.connect(self.auto_phase_first)
-        ph1_row.addWidget(btn_autoph1)
-        grid.addLayout(ph1_row, 2, 1)
+        p.add_row('First order', self.phase_first, btn_autoph1, stretch=[3, 1],
+                  tooltip='Frequency offset in MHz for an x axis in ns.')
 
-        grid.addWidget(self._label('Second order (MHz @ ns)'), 3, 0)
+        adv = p.add_advanced()
+        adv.field_width, adv.button_width = gui_forms.FIELD_W, gui_forms.BTN_W
         self.phase_second = QDoubleSpinBox()
         self.phase_second.setStyleSheet(DSPIN_STYLE)
         self.phase_second.setRange(-1e6, 1e6)
         self.phase_second.setDecimals(4)
         self.phase_second.setSingleStep(0.001)
+        self.phase_second.setSuffix(' MHz')
         self.phase_second.valueChanged.connect(self._live_update)
-        grid.addWidget(self.phase_second, 3, 1)
+        adv.add_row('Second order', self.phase_second,
+                    tooltip='Frequency offset in MHz for an x axis in ns.')
 
-        self.phase_fft = QCheckBox('FFT first (phase in frequency domain)')
-        self.phase_fft.setStyleSheet(CHECKBOX_STYLE)
+        self.phase_fft = p.add_check(
+            'FFT first', tooltip='Phase in the frequency domain: transform first, '
+                                 'then apply the correction to the spectrum.')
         self.phase_fft.stateChanged.connect(self._live_update)
-        grid.addWidget(self.phase_fft, 4, 0, 1, 2)
 
-        grid.addWidget(self._label('Zero fill (FFT first)'), 5, 0)
         self.phase_zerofill = QComboBox()
         self.phase_zerofill.setStyleSheet(COMBO_STYLE)
         self.phase_zerofill.addItems(['None', '×2', '×4', '×8', 'Next pow₂'])
         self.phase_zerofill.setCurrentText('×4')
         self.phase_zerofill.currentIndexChanged.connect(self._live_update)
-        grid.addWidget(self.phase_zerofill, 5, 1)
+        zf_row = p.add_row('Zero fill', self.phase_zerofill,
+                           tooltip='Zero fill used by the "FFT first" transform.')
+        zf_label = p.grid.itemAtPosition(zf_row, 0).widget()
+        # only meaningful with "FFT first" on
+        for wdg in (zf_label, self.phase_zerofill):
+            wdg.setVisible(False)
+            self.phase_fft.toggled.connect(wdg.setVisible)
 
-        grid.addWidget(self._label('Output'), 6, 0)
         self.phase_out = QComboBox()
         self.phase_out.setStyleSheet(COMBO_STYLE)
         self.phase_out.addItems(['Real', 'Imaginary', 'Magnitude', 'Real + Imaginary'])
@@ -796,69 +760,63 @@ class MainWindow(QMainWindow):
         # both channels are shown and carried forward by Result -> Input
         self.phase_out.setCurrentText('Real + Imaginary')
         self.phase_out.currentIndexChanged.connect(self._live_update)
-        grid.addWidget(self.phase_out, 6, 1)
+        p.add_row('Output', self.phase_out)
 
-        btn = QPushButton('Apply phase correction')
+        btn = QPushButton('Apply correction')
         btn.setStyleSheet(BUTTON_STYLE)
         btn.clicked.connect(self.do_phase)
-        grid.addWidget(btn, 7, 0, 1, 2)
-        grid.setRowStretch(8, 1)
-        return w
+        p.add_button_row(btn, width=gui_forms.ACTION_W)
+        p.add_stretch()
+        return gui_forms.scroll_wrap(p)
 
     def _build_smooth_tab(self):
-        w = QWidget()
-        grid = QGridLayout(w)
-        grid.addWidget(self._label('Method'), 0, 0)
+        p = FormPanel(field_width=gui_forms.FIELD_W,
+                      button_width=gui_forms.BTN_W)
+        p.add_title('Smooth, subtract a baseline or normalize', help=_HELP_SMOOTH)
+
         self.smooth_method = QComboBox()
         self.smooth_method.setStyleSheet(COMBO_STYLE)
         self.smooth_method.addItems(['Savitzky-Golay', 'Moving average',
             'Baseline subtract', 'Normalize'])
         self.smooth_method.setCurrentText('Baseline subtract')
         self.smooth_method.currentIndexChanged.connect(self._live_update)
-        grid.addWidget(self.smooth_method, 0, 1)
+        p.add_row('Method', self.smooth_method)
 
-        grid.addWidget(self._label('Window / order'), 1, 0)
         self.smooth_window = QSpinBox()
         self.smooth_window.setStyleSheet(SPIN_STYLE)
         self.smooth_window.setRange(1, 99999)
         self.smooth_window.setValue(11)
         self.smooth_window.valueChanged.connect(self._live_update)
-        grid.addWidget(self.smooth_window, 1, 1)
+        p.add_row('Window / order', self.smooth_window)
 
-        grid.addWidget(self._label('Poly order'), 2, 0)
         self.smooth_order = QSpinBox()
         self.smooth_order.setStyleSheet(SPIN_STYLE)
         self.smooth_order.setRange(0, 20)
         self.smooth_order.setValue(3)
         self.smooth_order.valueChanged.connect(self._live_update)
-        grid.addWidget(self.smooth_order, 2, 1)
+        p.add_row('Poly order', self.smooth_order)
 
-        grid.addWidget(self._label('Baseline from'), 3, 0)
         self.base_region = QComboBox()
         self.base_region.setStyleSheet(COMBO_STYLE)
         self.base_region.addItems(['All points', 'First N points', 'Last N points',
                                    'First & last N'])
         self.base_region.currentIndexChanged.connect(self._live_update)
-        grid.addWidget(self.base_region, 3, 1)
+        p.add_row('Baseline from', self.base_region)
 
-        grid.addWidget(self._label('N points'), 4, 0)
         self.base_npts = QSpinBox()
         self.base_npts.setStyleSheet(SPIN_STYLE)
         self.base_npts.setRange(1, 99999)
         self.base_npts.setValue(20)
+        self.base_npts.setSuffix(' pts')
         self.base_npts.valueChanged.connect(self._live_update)
-        grid.addWidget(self.base_npts, 4, 1)
-
-        note = self._note('I/Q pair → applied to both channels. "Baseline from" '
-                          'fits the baseline using only the chosen end points.')
-        grid.addWidget(note, 5, 0, 1, 2)
+        p.add_row('N points', self.base_npts)
 
         btn = QPushButton('Apply')
         btn.setStyleSheet(BUTTON_STYLE)
         btn.clicked.connect(self.do_smooth)
-        grid.addWidget(btn, 6, 0, 1, 2)
-        grid.setRowStretch(7, 1)
-        return w
+        p.add_button_row(btn, width=gui_forms.ACTION_W)
+        p.add_stretch()
+        return gui_forms.scroll_wrap(p)
 
     # ------------------------------------------------------------- loading
     def _unique_trace_name(self, name):
@@ -1254,6 +1212,8 @@ class MainWindow(QMainWindow):
         name = self.fft_window.currentText()
         cfg = self.WINDOW_PARAM.get(name)
         self.fft_winparam.blockSignals(True)
+        self.fft_winparam_label.setVisible(cfg is not None)
+        self.fft_winparam.setVisible(cfg is not None)
         if cfg is not None:
             label, lo, hi, dec, default, step = cfg
             self.fft_winparam_label.setText(label)

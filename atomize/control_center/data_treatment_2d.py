@@ -54,28 +54,23 @@ import atomize.math_modules.fft as fft_module
 # embedded preview matches the main UI; fed in-process, no LivePlot IPC.
 from pyqtgraph.dockarea import DockArea
 from atomize.main.widgets import CrossSectionDock
-# Shared checkbox look (hollow outline + gold tick) — one source of truth.
-from atomize.general_modules.gui_style import CHECKBOX_STYLE
+# Shared look and form primitives — one source of truth for every tool.
+from atomize.general_modules.gui_style import (BG, FG, ACCENT, BUTTON_STYLE,
+                                               LABEL_STYLE, CHECKBOX_STYLE,
+                                               DSPIN_STYLE, SPIN_STYLE,
+                                               COMBO_STYLE, LINEEDIT_STYLE,
+                                               TAB_STYLE)
+import atomize.general_modules.gui_forms as gf
+
 # Parameter-header viewer shared with the 1D tool (separate non-modal window).
 from atomize.control_center.header_view import (HeaderWindow, read_header,
                                                 params_to_lines)
-
-BG = 'rgb(42, 42, 64)'
-FG = 'rgb(193, 202, 227)'
-ACCENT = 'rgb(211, 194, 78)'
-
-BUTTON_STYLE = ("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); "
-    "border-style: outset; color: rgb(193, 202, 227); font-weight: bold; padding: 4px; } "
-    "QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
 
 # solid-yellow "busy" variant for the Run-fit button while a fit is in progress
 # (explicit colour so it stays yellow even while the button is disabled).
 BUTTON_BUSY_STYLE = ("QPushButton {border-radius: 4px; background-color: rgb(211, 194, 78); "
     "border-style: inset; color: rgb(42, 42, 64); font-weight: bold; padding: 4px; } "
     "QPushButton:disabled {background-color: rgb(211, 194, 78); color: rgb(42, 42, 64); }")
-
-LABEL_STYLE = "QLabel { color : rgb(193, 202, 227); font-weight: bold; }"
-
 
 def _html_table(headers, rows):
     """Compact HTML table (Qt rich-text) from a header list and a list of cell-
@@ -84,38 +79,6 @@ def _html_table(headers, rows):
     body = ''.join('<tr>' + ''.join(f'<td style="padding:1px 8px;">{c}</td>'
                                     for c in r) + '</tr>' for r in rows)
     return f'<table style="border-collapse:collapse;"><tr>{head}</tr>{body}</table>'
-
-DSPIN_STYLE = ("QDoubleSpinBox { color : rgb(193, 202, 227); "
-    "selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97); }")
-SPIN_STYLE = ("QSpinBox { color : rgb(193, 202, 227); "
-    "selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97); }")
-
-# Matches atomize.general_modules.gui_style COMBO_STYLE so this tool's combos
-# look identical to the 1D tool: no flat background on the closed box (Fusion
-# paints it from the palette), accent selection, and an explicit popup-view rule
-# (Qt drops the palette on a styled combo's dropdown otherwise — the "strange"
-# colour behind the selected item).
-COMBO_STYLE = ("QComboBox { color: rgb(193, 202, 227); "
-    "selection-color: rgb(63, 63, 97); selection-background-color: rgb(211, 194, 78); "
-    "outline: none; } "
-    "QComboBox QAbstractItemView { background-color: rgb(63, 63, 97); color: rgb(193, 202, 227); "
-    "selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97); "
-    "outline: none; }")
-
-LINEEDIT_STYLE = ("QLineEdit { color: rgb(211, 194, 78); "
-    "selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97); }")
-
-TAB_STYLE = """
-    QTabWidget::pane { border: 1px solid rgb(43, 43, 77); top: -1px;
-        background: rgb(63, 63, 97); }
-    QTabBar::tab { height: 22px; font-weight: bold; color: rgb(193, 202, 227);
-        background: rgb(63, 63, 97); border: 1px solid rgb(43, 43, 77);
-        border-bottom: none; border-top-left-radius: 4px;
-        border-top-right-radius: 4px; padding: 2px 10px; margin-right: 2px; }
-    QTabBar::tab:selected { color: rgb(211, 194, 78); background: rgb(83, 83, 117);
-        border-bottom: 2px solid rgb(211, 194, 78); }
-    QTabBar::tab:hover { background: rgb(73, 73, 107); }
-"""
 
 WINDOWS = ['None', 'Hann', 'Hamming', 'Blackman', 'Bartlett', 'Flat-top',
            'Kaiser', 'Gaussian', 'Tukey']
@@ -167,6 +130,56 @@ def _save_last_dir(path):
                 fh.write(d)
     except Exception:
         pass
+
+# Per-tab explanations. These live behind the '?' chip on each tab rather than
+# on the layout, where they used to outweigh the controls they describe.
+_HELP_PHASE = (
+    'Multiply I+iQ by exp(i·(φ₀ + φ₁·x + φ₂·x²)) along the X axis. '
+    'First/second order are entered as a frequency offset: 50 → 50 MHz when x '
+    'is in ns (coeff = 2π·value/1000 per x-unit). Run before FFT.')
+
+_HELP_FFT = (
+    'Complex FFT of I+iQ along the chosen axis (or both for a 2D transform); '
+    'that axis becomes frequency. ns → MHz. Skip pts drops leading X points so '
+    'the transform starts at the echo centre (removes the dead-time '
+    'first-order phase).')
+
+_HELP_FILTER = (
+    'FFT → zero the frequencies outside the passband → inverse FFT, along the '
+    'chosen axis. Output is the cleaned I/Q data on the same axes; "Both" '
+    'applies the X and Y filters independently.<br><br>'
+    'Low-pass uses the high cutoff; High-pass uses the low cutoff; Band-pass '
+    'uses both. Cutoffs are fractions of that axis\' maximum (Nyquist) '
+    'frequency, set by its own point step.')
+
+_HELP_SHEAR = (
+    'Straightens a tilted dipolar ridge: V′(t_dip, t) = V(t_dip + k·(t − '
+    't_ref), t), done as the exact phase ramp exp(2πi·ν_dip·k·(t − t_ref)) on '
+    'the dipolar-axis spectrum — unitary, no interpolation loss. k is the '
+    'ridge slope dt_dip/dt (1/2 for SIFTER).<br><br>'
+    'Order matters, chaining each step with "Result → input": Phase tab, first '
+    'order = the nominal IF in MHz → Filter tab, X low-pass → back to the '
+    'Phase tab for Auto φ₁ (it re-runs Auto φ₀ after it) → shear. φ₁ is not '
+    'optional: the nominal IF is off by a few hundred kHz, which twists the '
+    'phase across the echo and cancels part of the very modulation the shear '
+    'is recovering. Measure it <b>after</b> the low-pass — on a raw IF record '
+    'the carrier estimate is swamped by out-of-band noise. Afterwards collapse '
+    'the sheared map with the Slice tab — slice along the dipolar axis and '
+    'average over the echo window. The ramp is circular, so rows wrap at the '
+    'ends of the dipolar axis; keep the edges out of the analysis.')
+
+_HELP_FIT = (
+    'Fit every trace along the decay axis with a relaxation model. The chosen '
+    'parameter is plotted vs the other axis as a 1D map (e.g. T<sub>m</sub> vs '
+    'field). For k / k1 / k2 the value is the time constant in the decay-axis '
+    'units.')
+
+_HELP_SLICE = (
+    'Send one trace to the standalone 1D Data Treatment window for fitting / '
+    'phasing there. Pick the slice direction and the trace number (1-based, '
+    'matching the heatmap cursor label). The trace is written to the transfer '
+    'buffer only (not the main GUI). Then click "Load from plot" in the 1D '
+    'window (I = slice Re, Q = slice Im).')
 
 # parametric windows: name -> (label, min, max, decimals, default, step)
 WINDOW_PARAM = {
@@ -249,6 +262,7 @@ class MainWindow(QMainWindow):
         central = QWidget()
         self.setCentralWidget(central)
         root = QHBoxLayout(central)
+        root.setSpacing(gf.PANEL_GAP)
 
         # ---- Left: embedded preview (in-process) — same CrossSectionDock
         # (heatmap + X/Y cross-sections) as the main GUI, for consistency. ----
@@ -266,19 +280,16 @@ class MainWindow(QMainWindow):
         # ---- end preview ----
 
         # ---- Vertical separator between graph and controls ----
-        sep = QFrame()
-        sep.setFrameShape(QFrame.Shape.VLine)
-        sep.setFrameShadow(QFrame.Shadow.Plain)
-        sep.setStyleSheet('color: rgb(83, 83, 117);')
-        root.addWidget(sep)
+        root.addWidget(gf.vline())
 
         # ---- Right: controls ----
         panel = QVBoxLayout()
+        panel.setContentsMargins(*gf.PANEL_MARGINS)
+        panel.setSpacing(8)
         root.addLayout(panel, stretch=2)
 
         # ---- Source ----
         panel.addWidget(self._heading('Source (I/Q 2D)'))
-        src_row = QHBoxLayout()
         btn_open = QPushButton('Open I/Q (CSV + _1)…')
         btn_open.setStyleSheet(BUTTON_STYLE)
         btn_open.clicked.connect(self.open_iq)
@@ -291,49 +302,46 @@ class MainWindow(QMainWindow):
         btn_clear = QPushButton('Clear')
         btn_clear.setStyleSheet(BUTTON_STYLE)
         btn_clear.clicked.connect(self.clear_all)
-        src_row.addWidget(btn_open)
-        src_row.addWidget(btn_bruker)
-        src_row.addWidget(btn_buf)
-        src_row.addWidget(btn_clear)
-        panel.addLayout(src_row)
+        # source actions and the File row share a 4-column grid, so Header…
+        # comes out exactly as wide as Clear (a 3:1 stretch cannot: it has one
+        # gap where the button row has three)
+        src_grid = gf.equal_grid(4)
+        for i, b in enumerate((btn_open, btn_bruker, btn_buf, btn_clear)):
+            src_grid.addWidget(b, 0, i)
+        panel.addLayout(src_grid)
 
         # Name of the dataset currently loaded (file basename, or 'Loaded from
         # plot' for the in-memory buffer).
-        file_row = QHBoxLayout()
-        self.loaded_label = QLabel('File: —')
-        self.loaded_label.setStyleSheet(LABEL_STYLE)
-        self.loaded_label.setWordWrap(True)
-        file_row.addWidget(self.loaded_label, 1)
+        self.loaded_label = gf.hint('File: —')
         self.header_btn = QPushButton('Header…')
         self.header_btn.setStyleSheet(BUTTON_STYLE)
         self.header_btn.clicked.connect(self.show_header)
-        file_row.addWidget(self.header_btn)
-        panel.addLayout(file_row)
+        src_grid.addWidget(self.loaded_label, 1, 0, 1, 3)
+        src_grid.addWidget(self.header_btn, 1, 3)
 
-        self.transpose_check = QCheckBox('Transpose on load (swap trace / point axes)')
-        self.transpose_check.setStyleSheet(CHECKBOX_STYLE)
-        panel.addWidget(self.transpose_check)
+        head = gf.FormPanel(field_width=gf.FIELD_W,
+                            button_width=gf.BTN_W)
+        self.transpose_check = head.add_check(
+            'Transpose on load',
+            tooltip='Swap the trace and point axes as the file is read.')
 
         # ---- Axis metadata (reconstructed by hand; no .param) ----
-        panel.addWidget(self._heading('Axes'))
-        ax = QGridLayout()
-        ax.addWidget(self._label('X (within trace)'), 0, 0)
+        head.add_heading('Axes')
         self.xname_edit = QLineEdit('Time'); self.xname_edit.setStyleSheet(LINEEDIT_STYLE)
         self.xscale_edit = QLineEdit('ns');  self.xscale_edit.setStyleSheet(LINEEDIT_STYLE)
-        ax.addWidget(self.xname_edit, 0, 1); ax.addWidget(self.xscale_edit, 0, 2)
-        ax.addWidget(self._label('X start / step'), 1, 0)
+        head.add_row('X (within trace)', self.xname_edit, self.xscale_edit,
+                     stretch=[2, 1])
         self.x0_spin = self._dspin(-1e12, 1e12, 3, 0.0)
         self.dx_spin = self._dspin(-1e12, 1e12, 3, 0.4)
-        ax.addWidget(self.x0_spin, 1, 1); ax.addWidget(self.dx_spin, 1, 2)
-        ax.addWidget(self._label('Y (indirect)'), 2, 0)
+        head.add_row('X start / step', self.x0_spin, self.dx_spin)
         self.yname_edit = QLineEdit('Delay'); self.yname_edit.setStyleSheet(LINEEDIT_STYLE)
         self.yscale_edit = QLineEdit('ns');   self.yscale_edit.setStyleSheet(LINEEDIT_STYLE)
-        ax.addWidget(self.yname_edit, 2, 1); ax.addWidget(self.yscale_edit, 2, 2)
-        ax.addWidget(self._label('Y start / step'), 3, 0)
+        head.add_row('Y (indirect)', self.yname_edit, self.yscale_edit,
+                     stretch=[2, 1])
         self.y0_spin = self._dspin(-1e12, 1e12, 3, 0.0)
         self.dy_spin = self._dspin(-1e12, 1e12, 3, 3.2)
-        ax.addWidget(self.y0_spin, 3, 1); ax.addWidget(self.dy_spin, 3, 2)
-        panel.addLayout(ax)
+        head.add_row('Y start / step', self.y0_spin, self.dy_spin)
+        panel.addWidget(head)
         # title / unit edits only relabel the current plot in place (keep the
         # result); start / step edits change the geometry, so they reset to raw.
         for w in (self.xname_edit, self.xscale_edit, self.yname_edit, self.yscale_edit):
@@ -341,9 +349,7 @@ class MainWindow(QMainWindow):
         for s in (self.x0_spin, self.dx_spin, self.y0_spin, self.dy_spin):
             s.valueChanged.connect(self.on_axes_changed)
 
-        self.live_check = QCheckBox('Live update on parameter change')
-        self.live_check.setStyleSheet(CHECKBOX_STYLE)
-        #self.live_check.setChecked(True)
+        self.live_check = gf.live_update_checkbox()
         panel.addWidget(self.live_check)
 
         panel.addWidget(self._hline())
@@ -388,44 +394,20 @@ class MainWindow(QMainWindow):
         out_row.addWidget(btn_reset); out_row.addWidget(btn_save)
         panel.addLayout(out_row)
 
-        self.status = QLabel('Open an I/Q 2D dataset (name.csv + name_1.csv).')
-        self.status.setStyleSheet(LABEL_STYLE)
-        self.status.setWordWrap(True)
+        self.status = gf.hint('Open an I/Q 2D dataset (name.csv + name_1.csv).')
         panel.addWidget(self.status)
 
-        # Pin spinboxes to a fixed 26 px height (as in awg_phasing_insys.py) so
-        # the native +/- frame renders fully; combos / buttons / line edits get
-        # the same min height for row alignment.
-        row_h = 26
-        for wdg in self.findChildren((QComboBox, QPushButton)):
-            wdg.setMinimumHeight(row_h)
-        for spin in self.findChildren((QSpinBox, QDoubleSpinBox)):
-            spin.setButtonSymbols(QSpinBox.ButtonSymbols.PlusMinus)
-            spin.setMinimumHeight(row_h)
-        for le in self.findChildren((QLineEdit)):
-            le.setMinimumHeight(21)
+        gf.apply_row_metrics(self)
 
     # ---- small helpers ----
     def _hline(self):
-        line = QFrame(); line.setFrameShape(QFrame.Shape.HLine)
-        line.setFrameShadow(QFrame.Shadow.Plain)
-        line.setStyleSheet('color: rgb(83, 83, 117);')
-        return line
+        return gf.hline()
 
     def _heading(self, text):
-        lab = QLabel(text)
-        lab.setStyleSheet(f"QLabel {{ color: {ACCENT}; font-weight: bold; font-size: 13px; }}")
-        return lab
+        return gf.heading(text)
 
     def _label(self, text):
-        lab = QLabel(text); lab.setStyleSheet(LABEL_STYLE)
-        return lab
-
-    def _note(self, text):
-        lab = QLabel(f'<div style="line-height: 145%;">{text}</div>')
-        lab.setStyleSheet(LABEL_STYLE); lab.setWordWrap(True)
-        lab.setTextFormat(Qt.TextFormat.RichText)
-        return lab
+        return gf.label(text)
 
     def _dspin(self, lo, hi, dec, val, step=None):
         s = QDoubleSpinBox(); s.setStyleSheet(DSPIN_STYLE)
@@ -448,18 +430,14 @@ class MainWindow(QMainWindow):
 
     # ---- tabs ----
     def _build_phase_tab(self):
-        w = QWidget(); grid = QGridLayout(w)
-        grid.addWidget(self._note('Multiply I+iQ by exp(i·(φ₀ + φ₁·x + φ₂·x²)) '
-                                  'along the X axis. First/second order are entered '
-                                  'as a frequency offset: 50 → 50 MHz when x is in ns '
-                                  '(coeff = 2π·value/1000 per x-unit). Run before FFT.'),
-                       0, 0, 1, 2)
-        grid.addWidget(self._label('Zero order (deg)'), 1, 0)
+        p = gf.FormPanel(field_width=gf.FIELD_W,
+                         button_width=gf.BTN_W)
+        p.add_title('Phase-correct I+iQ along X', help=_HELP_PHASE)
+
         self.phase_zero = self._dspin(0.0, 360.0, 2, 0.0, step=0.5)
+        self.phase_zero.setSuffix(' deg')
         self.phase_zero.setWrapping(True)   # full cycle: 360 wraps back to 0
         self.phase_zero.valueChanged.connect(self._live_update)
-        ph0_row = QHBoxLayout()
-        ph0_row.addWidget(self.phase_zero)
         btn_autoph = QPushButton('Auto')
         btn_autoph.setStyleSheet(BUTTON_STYLE)
         btn_autoph.setToolTip(
@@ -475,13 +453,11 @@ class MainWindow(QMainWindow):
             'status line reports any residual offset and the First-order value '
             'that removes it.')
         btn_autoph.clicked.connect(self.auto_phase_zero)
-        ph0_row.addWidget(btn_autoph)
-        grid.addLayout(ph0_row, 1, 1)
-        grid.addWidget(self._label('First order (MHz @ ns)'), 2, 0)
+        p.add_row('Zero order', self.phase_zero, btn_autoph, stretch=[3, 1])
+
         self.phase_first = self._dspin(-1e6, 1e6, 3, 0.0, step=0.05)
+        self.phase_first.setSuffix(' MHz')
         self.phase_first.valueChanged.connect(self._live_update)
-        ph1_row = QHBoxLayout()
-        ph1_row.addWidget(self.phase_first)
         btn_autoph1 = QPushButton('Auto')
         btn_autoph1.setStyleSheet(BUTTON_STYLE)
         btn_autoph1.setToolTip(
@@ -493,42 +469,44 @@ class MainWindow(QMainWindow):
             'across the echo by tens of degrees, which no φ₀ can absorb, and it '
             'leaves a large imaginary residue.')
         btn_autoph1.clicked.connect(self.auto_phase_first)
-        ph1_row.addWidget(btn_autoph1)
-        grid.addLayout(ph1_row, 2, 1)
-        grid.addWidget(self._label('Second order (MHz @ ns)'), 3, 0)
+        p.add_row('First order', self.phase_first, btn_autoph1, stretch=[3, 1],
+                  tooltip='Frequency offset per x-unit: 50 → 50 MHz for x in ns.')
+
         self.phase_second = self._dspin(-1e6, 1e6, 4, 0.0, step=0.001)
+        self.phase_second.setSuffix(' MHz')
         self.phase_second.valueChanged.connect(self._live_update)
-        grid.addWidget(self.phase_second, 3, 1)
-        btn = QPushButton('Apply phase correction')
+        adv = p.add_advanced()
+        adv.field_width, adv.button_width = gf.FIELD_W, gf.BTN_W
+        adv.add_row('Second order', self.phase_second)
+
+        btn = QPushButton('Apply correction')
         btn.setStyleSheet(BUTTON_STYLE)
         btn.clicked.connect(self.do_phase)
-        grid.addWidget(btn, 4, 0, 1, 2)
-        grid.setRowStretch(5, 1)
-        return w
+        p.add_button_row(btn, width=gf.ACTION_W)
+        p.add_stretch()
+        return p
 
     def _build_fft_tab(self):
-        w = QWidget(); grid = QGridLayout(w)
-        grid.addWidget(self._label('Transform axis'), 0, 0)
+        p = gf.FormPanel(field_width=gf.FIELD_W,
+                         button_width=gf.BTN_W)
+        p.add_title('Complex FFT of I+iQ along an axis', help=_HELP_FFT)
+
         self.fft_axis = self._combo(['X (within trace)', 'Y (indirect)', 'Both (2D)'])
         self.fft_axis.currentIndexChanged.connect(self._live_update)
-        grid.addWidget(self.fft_axis, 0, 1)
+        p.add_row('Transform axis', self.fft_axis)
 
-        grid.addWidget(self._label('Window'), 1, 0)
         self.fft_window = self._combo(WINDOWS)
-        grid.addWidget(self.fft_window, 1, 1)
+        p.add_row('Window', self.fft_window)
         self.fft_winparam_label = self._label('Window param')
-        grid.addWidget(self.fft_winparam_label, 2, 0)
         self.fft_winparam = self._dspin(0.0, 100.0, 2, 8.6)
-        grid.addWidget(self.fft_winparam, 2, 1)
+        p.add_row(self.fft_winparam_label, self.fft_winparam)
         self.fft_window.currentIndexChanged.connect(self._update_winparam)
         self.fft_window.currentIndexChanged.connect(self._live_update)
         self.fft_winparam.valueChanged.connect(self._live_update)
-        self._update_winparam()
 
-        grid.addWidget(self._label('Echo center (skip pts)'), 3, 0)
-        skip_row = QHBoxLayout()
         self.fft_skip = QSpinBox(); self.fft_skip.setStyleSheet(SPIN_STYLE)
         self.fft_skip.setRange(0, 1000000)
+        self.fft_skip.setSuffix(' pts')
         self.fft_skip.setToolTip(
             'Number of leading <b>points</b> (samples, not time) to drop along '
             'the transform axis so it starts at the echo centre.')
@@ -543,27 +521,20 @@ class MainWindow(QMainWindow):
             'refined by a centre-of-mass over the symmetric core around it (so '
             'a slow one-sided FID decay tail does not drag it off the peak).')
         btn_auto.clicked.connect(self.auto_echo_center)
-        skip_row.addWidget(self.fft_skip); skip_row.addWidget(btn_auto)
-        grid.addLayout(skip_row, 3, 1)
+        p.add_row('Echo center', self.fft_skip, btn_auto, stretch=[3, 1])
 
-        grid.addWidget(self._label('Zero fill'), 4, 0)
         self.fft_zerofill = self._combo(ZEROFILL)
         self.fft_zerofill.setCurrentText('×2')
         self.fft_zerofill.currentIndexChanged.connect(self._live_update)
-        grid.addWidget(self.fft_zerofill, 4, 1)
+        p.add_row('Zero fill', self.fft_zerofill)
 
-        grid.addWidget(self._note('Complex FFT of I+iQ along the chosen axis (or both '
-                                  'for a 2D transform); that axis becomes frequency. '
-                                  'ns → MHz. Skip pts drops leading X points so the '
-                                  'transform starts at the echo centre (removes the '
-                                  'dead-time first-order phase).'),
-                       5, 0, 1, 2)
         btn = QPushButton('Compute FFT')
         btn.setStyleSheet(BUTTON_STYLE)
         btn.clicked.connect(self.do_fft)
-        grid.addWidget(btn, 6, 0, 1, 2)
-        grid.setRowStretch(7, 1)
-        return w
+        p.add_button_row(btn, width=gf.ACTION_W)
+        p.add_stretch()
+        self._update_winparam()
+        return p
 
     def _update_winparam(self, *args):
         cfg = WINDOW_PARAM.get(self.fft_window.currentText())
@@ -580,108 +551,96 @@ class MainWindow(QMainWindow):
             self.fft_winparam_label.setText('Window param')
             self.fft_winparam.setEnabled(False)
         self.fft_winparam.blockSignals(False)
+        # the row is meaningless for the non-parametric windows: hide it rather
+        # than leave a greyed field on the tab
+        self.fft_winparam_label.setVisible(cfg is not None)
+        self.fft_winparam.setVisible(cfg is not None)
 
     def _build_filter_tab(self):
-        w = QWidget(); grid = QGridLayout(w)
+        p = gf.FormPanel(field_width=gf.FIELD_W,
+                         button_width=gf.BTN_W)
+        p.add_title('Mask a frequency band and transform back', help=_HELP_FILTER)
 
-        grid.addWidget(self._note('FFT → zero the frequencies outside the passband → '
-                                  'inverse FFT, along the chosen axis. Output is the '
-                                  'cleaned I/Q data on the same axes; "Both" applies '
-                                  'the X and Y filters independently.'),
-                       0, 0, 1, 3)
-
-        grid.addWidget(self._label('Filter axis'), 1, 0)
         self.filt_axis = self._combo(['X (within trace)', 'Y (indirect)',
                                       'Both (independent)'])
         self.filt_axis.currentIndexChanged.connect(self._update_filter_enable)
         self.filt_axis.currentIndexChanged.connect(self._live_update)
-        grid.addWidget(self.filt_axis, 1, 1, 1, 2)
+        p.add_row('Filter axis', self.filt_axis)
 
         self.filt_x_head = self._label('X filter')
-        grid.addWidget(self.filt_x_head, 2, 0)
         self.filt_x_type = self._combo(FILTERS)
         self.filt_x_type.currentIndexChanged.connect(self._live_update)
-        grid.addWidget(self.filt_x_type, 2, 1, 1, 2)
-        self.filt_x_lo_label = self._label('X low cutoff (×f_max)')
-        grid.addWidget(self.filt_x_lo_label, 3, 0)
+        p.add_row(self.filt_x_head, self.filt_x_type)
+        self.filt_x_lo_label = self._label('X low cutoff')
         self.filt_x_lo = self._dspin(0.0, 1.0, 4, 0.1, 0.01)
+        self.filt_x_lo.setSuffix(' ×f_max')
         self.filt_x_lo.valueChanged.connect(self._live_update)
-        grid.addWidget(self.filt_x_lo, 3, 1, 1, 2)
-        self.filt_x_hi_label = self._label('X high cutoff (×f_max)')
-        grid.addWidget(self.filt_x_hi_label, 4, 0)
+        p.add_row(self.filt_x_lo_label, self.filt_x_lo)
+        self.filt_x_hi_label = self._label('X high cutoff')
         self.filt_x_hi = self._dspin(0.0, 1.0, 4, 0.5, 0.01)
+        self.filt_x_hi.setSuffix(' ×f_max')
         self.filt_x_hi.valueChanged.connect(self._live_update)
-        grid.addWidget(self.filt_x_hi, 4, 1, 1, 2)
+        p.add_row(self.filt_x_hi_label, self.filt_x_hi)
 
         self.filt_y_head = self._label('Y filter')
-        grid.addWidget(self.filt_y_head, 5, 0)
         self.filt_y_type = self._combo(FILTERS)
         self.filt_y_type.currentIndexChanged.connect(self._live_update)
-        grid.addWidget(self.filt_y_type, 5, 1, 1, 2)
-        self.filt_y_lo_label = self._label('Y low cutoff (×f_max)')
-        grid.addWidget(self.filt_y_lo_label, 6, 0)
+        p.add_row(self.filt_y_head, self.filt_y_type)
+        self.filt_y_lo_label = self._label('Y low cutoff')
         self.filt_y_lo = self._dspin(0.0, 1.0, 4, 0.1, 0.01)
+        self.filt_y_lo.setSuffix(' ×f_max')
         self.filt_y_lo.valueChanged.connect(self._live_update)
-        grid.addWidget(self.filt_y_lo, 6, 1, 1, 2)
-        self.filt_y_hi_label = self._label('Y high cutoff (×f_max)')
-        grid.addWidget(self.filt_y_hi_label, 7, 0)
+        p.add_row(self.filt_y_lo_label, self.filt_y_lo)
+        self.filt_y_hi_label = self._label('Y high cutoff')
         self.filt_y_hi = self._dspin(0.0, 1.0, 4, 0.5, 0.01)
+        self.filt_y_hi.setSuffix(' ×f_max')
         self.filt_y_hi.valueChanged.connect(self._live_update)
-        grid.addWidget(self.filt_y_hi, 7, 1, 1, 2)
+        p.add_row(self.filt_y_hi_label, self.filt_y_hi)
 
-        grid.addWidget(self._note('Low-pass uses the high cutoff; High-pass uses the '
-                                  'low cutoff; Band-pass uses both. Cutoffs are '
-                                  'fractions of that axis\' maximum (Nyquist) '
-                                  'frequency, set by its own point step.'),
-                       8, 0, 1, 3)
         btn = QPushButton('Apply filter')
         btn.setStyleSheet(BUTTON_STYLE)
         btn.clicked.connect(self.do_filter)
-        grid.addWidget(btn, 9, 0, 1, 3)
-        grid.setRowStretch(10, 1)
+        p.add_button_row(btn, width=gf.ACTION_W)
+        p.add_stretch()
         self._update_filter_enable()
-        return w
+        return p
 
     def _update_filter_enable(self, *args):
         mode = self.filt_axis.currentIndex()      # 0 = X, 1 = Y, 2 = both
+        # the inactive axis' rows are hidden, not greyed: in single-axis mode
+        # that is four dead rows off the tab
         for wdg in (self.filt_x_head, self.filt_x_type, self.filt_x_lo_label,
                     self.filt_x_lo, self.filt_x_hi_label, self.filt_x_hi):
             wdg.setEnabled(mode != 1)
+            wdg.setVisible(mode != 1)
         for wdg in (self.filt_y_head, self.filt_y_type, self.filt_y_lo_label,
                     self.filt_y_lo, self.filt_y_hi_label, self.filt_y_hi):
             wdg.setEnabled(mode != 0)
+            wdg.setVisible(mode != 0)
 
     def _build_shear_tab(self):
-        w = QWidget(); grid = QGridLayout(w)
+        p = gf.FormPanel(field_width=gf.FIELD_W,
+                         button_width=gf.BTN_W)
+        p.add_title('Straighten a tilted dipolar ridge', help=_HELP_SHEAR)
 
-        grid.addWidget(self._note('Straightens a tilted dipolar ridge: '
-                                  'V′(t_dip, t) = V(t_dip + k·(t − t_ref), t), done as the '
-                                  'exact phase ramp exp(2πi·ν_dip·k·(t − t_ref)) on the '
-                                  'dipolar-axis spectrum — unitary, no interpolation '
-                                  'loss. k is the ridge slope dt_dip/dt (1/2 for SIFTER).'),
-                       0, 0, 1, 3)
-
-        grid.addWidget(self._label('Dipolar axis (shifted)'), 1, 0)
         self.shear_axis = self._combo(['Y (indirect)', 'X (within trace)'])
         self.shear_axis.currentIndexChanged.connect(self._live_update)
-        grid.addWidget(self.shear_axis, 1, 1, 1, 2)
+        p.add_row('Dipolar axis', self.shear_axis,
+                  tooltip='The axis the ramp shifts.')
 
-        grid.addWidget(self._label('Slope k (dt_dip/dt)'), 2, 0)
         self.shear_k = self._dspin(-5.0, 5.0, 4, 0.5, 0.01)
         self.shear_k.valueChanged.connect(self._live_update)
-        grid.addWidget(self.shear_k, 2, 1)
         btn_fit = QPushButton('Fit k')
         btn_fit.setStyleSheet(BUTTON_STYLE)
         btn_fit.setToolTip('Scan k, shear, sum over the echo axis and take the k that '
                            'maximises the recovered peak (parabolic refine around the '
                            'grid maximum). Uses the fit window below.')
         btn_fit.clicked.connect(self.fit_shear_slope)
-        grid.addWidget(btn_fit, 2, 2)
+        p.add_row('Slope k', self.shear_k, btn_fit, stretch=[3, 1],
+                  tooltip='Ridge slope dt_dip/dt (1/2 for SIFTER).')
 
-        grid.addWidget(self._label('Shear origin t_ref'), 3, 0)
         self.shear_tref = self._dspin(-1e12, 1e12, 3, 0.0, 1.0)
         self.shear_tref.valueChanged.connect(self._live_update)
-        grid.addWidget(self.shear_tref, 3, 1)
         btn_ref = QPushButton('Auto')
         btn_ref.setStyleSheet(BUTTON_STYLE)
         btn_ref.setToolTip('Set t_ref to the echo centre of the |I+iQ| envelope averaged '
@@ -689,81 +648,57 @@ class MainWindow(QMainWindow):
                            'axis — it does not change the recovered amplitude, but it '
                            'does set the absolute zero of the dipolar time.')
         btn_ref.clicked.connect(self.auto_shear_ref)
-        grid.addWidget(btn_ref, 3, 2)
+        p.add_row('Shear origin t_ref', self.shear_tref, btn_ref, stretch=[3, 1])
 
-        grid.addWidget(self._label('Fit window (± around t_ref)'), 4, 0)
         self.shear_fitwin = self._dspin(0.0, 1e12, 1, 140.0, 10.0)
         self.shear_fitwin.setToolTip('Echo-axis half-width used by "Fit k" only '
                                      '(0 = the whole window). The low-S/N wings of the '
                                      'echo otherwise dilute the figure of merit.')
-        grid.addWidget(self.shear_fitwin, 4, 1, 1, 2)
+        adv = p.add_advanced()
+        adv.field_width, adv.button_width = gf.FIELD_W, gf.BTN_W
+        adv.add_row('Fit window ±', self.shear_fitwin)
 
-        grid.addWidget(self._note('Order matters, chaining each step with "Result → '
-                                  'input": Phase tab, first order = the nominal IF in '
-                                  'MHz → Filter tab, X low-pass → back to the Phase tab '
-                                  'for Auto φ₁ (it re-runs Auto φ₀ after it) → shear. '
-                                  'φ₁ is not optional: the nominal IF is off by a few '
-                                  'hundred kHz, which twists the phase across the echo '
-                                  'and cancels part of the very modulation the shear is '
-                                  'recovering. Measure it <b>after</b> the low-pass — on '
-                                  'a raw IF record the carrier estimate is swamped by '
-                                  'out-of-band noise. Afterwards collapse the sheared '
-                                  'map with the Slice tab — slice along the dipolar axis '
-                                  'and average over the echo window. The ramp is '
-                                  'circular, so rows wrap at the ends of the dipolar '
-                                  'axis; keep the edges out of the analysis.'),
-                       5, 0, 1, 3)
         btn = QPushButton('Apply shear')
         btn.setStyleSheet(BUTTON_STYLE)
         btn.clicked.connect(self.do_shear)
-        grid.addWidget(btn, 6, 0, 1, 3)
-        grid.setRowStretch(7, 1)
-        return w
+        p.add_button_row(btn, width=gf.ACTION_W)
+        p.add_stretch()
+        return p
 
     def _build_fit_tab(self):
-        w = QWidget(); grid = QGridLayout(w)
-        grid.addWidget(self._note('Fit every trace along the decay axis with a '
-                                  'relaxation model. The chosen parameter is plotted '
-                                  'vs the other axis as a 1D map (e.g. T<sub>m</sub> vs '
-                                  'field). For k / k1 / k2 the value is the time '
-                                  'constant in the decay-axis units.'),
-                       0, 0, 1, 2)
+        p = gf.FormPanel(field_width=gf.FIELD_W,
+                         button_width=gf.BTN_W)
+        p.add_title('Fit each trace and map a parameter', help=_HELP_FIT)
 
-        grid.addWidget(self._label('Decay axis'), 1, 0)
         self.fit_axis = self._combo(['X (within trace)', 'Y (indirect)'])
-        grid.addWidget(self.fit_axis, 1, 1)
+        p.add_row('Decay axis', self.fit_axis)
 
-        grid.addWidget(self._label('Channel'), 2, 0)
         self.fit_channel = self._combo(['Real (I)', 'Magnitude', 'Imag (Q)'])
-        grid.addWidget(self.fit_channel, 2, 1)
+        p.add_row('Channel', self.fit_channel)
 
-        grid.addWidget(self._label('Model'), 3, 0)
         self.fit_model = self._combo(RELAX_MODELS)
         self.fit_model.setCurrentText('Stretched exponential')
         self.fit_model.currentIndexChanged.connect(self._update_fit_params)
-        grid.addWidget(self.fit_model, 3, 1)
+        p.add_row('Model', self.fit_model)
 
         # live equation of the selected model, so the user sees what is fitted
-        self.fit_formula = QLabel('')
-        self.fit_formula.setStyleSheet(LABEL_STYLE)
-        self.fit_formula.setWordWrap(True)
-        self.fit_formula.setTextFormat(Qt.TextFormat.RichText)
-        grid.addWidget(self.fit_formula, 4, 0, 1, 2)
+        self.fit_formula = gf.hint('')
+        p.add_widget(self.fit_formula)
 
-        self.fit_no_offset = QCheckBox('Fix offset = 0 (drop the b baseline term)')
-        self.fit_no_offset.setStyleSheet(CHECKBOX_STYLE)
+        self.fit_no_offset = p.add_check(
+            'Fix offset = 0',
+            tooltip='Drop the b baseline term from the model.')
         self.fit_no_offset.stateChanged.connect(self._update_fit_params)
-        grid.addWidget(self.fit_no_offset, 5, 0, 1, 2)
 
-        grid.addWidget(self._label('Map parameter'), 6, 0)
         self.fit_param = self._combo([])
-        grid.addWidget(self.fit_param, 6, 1)
+        p.add_row('Map parameter', self.fit_param)
 
-        grid.addWidget(self._label('Min R² (drop worse)'), 7, 0)
         self.fit_minr2 = self._dspin(0.0, 1.0, 3, 0.0, step=0.05)
-        grid.addWidget(self.fit_minr2, 7, 1)
+        adv = p.add_advanced()
+        adv.field_width, adv.button_width = gf.FIELD_W, gf.BTN_W
+        adv.add_row('Min R²', self.fit_minr2,
+                    tooltip='Traces fitting worse than this are dropped from the map.')
 
-        out_row = QHBoxLayout()
         self.fit_run_btn = QPushButton('Run fit')
         self.fit_run_btn.setStyleSheet(BUTTON_STYLE)
         self.fit_run_btn.setToolTip(self._FIT_STATS_TOOLTIP)
@@ -775,70 +710,55 @@ class MainWindow(QMainWindow):
         btn_savemap = QPushButton('Save map…')
         btn_savemap.setStyleSheet(BUTTON_STYLE)
         btn_savemap.clicked.connect(self.save_fit_map)
-        out_row.addWidget(self.fit_run_btn); out_row.addWidget(self.fit_cancel_btn)
-        out_row.addWidget(btn_savemap)
-        grid.addLayout(out_row, 8, 0, 1, 2)
+        p.add_button_row(self.fit_run_btn, self.fit_cancel_btn, btn_savemap,
+                         width=gf.ACTION_W)
 
-        self.fit_info = QLabel('')
-        self.fit_info.setStyleSheet(LABEL_STYLE); self.fit_info.setWordWrap(True)
-        self.fit_info.setTextFormat(Qt.TextFormat.RichText)
-        grid.addWidget(self.fit_info, 9, 0, 1, 2)
-        grid.setRowStretch(10, 1)
+        self.fit_info = gf.hint('')
+        p.add_widget(self.fit_info)
+        p.add_stretch()
 
         self._update_fit_params()
-        return w
+        return p
 
     def _build_slice_tab(self):
-        w = QWidget(); grid = QGridLayout(w)
-        grid.addWidget(self._note('Send one trace to the standalone 1D Data Treatment '
-                                  'window for fitting / phasing there. Pick the slice '
-                                  'direction and the trace number (1-based, matching the '
-                                  'heatmap cursor label). The trace is written to the '
-                                  'transfer buffer only (not the main GUI). Then click '
-                                  '"Load from plot" in the 1D window (I = slice Re, '
-                                  'Q = slice Im).'),
-                       0, 0, 1, 2)
+        p = gf.FormPanel(field_width=gf.FIELD_W,
+                         button_width=gf.BTN_W)
+        p.add_title('Send one trace to the 1D tool', help=_HELP_SLICE)
 
-        grid.addWidget(self._label('Slice along'), 1, 0)
         self.slice_axis = self._combo(['X (within trace)', 'Y (indirect)'])
         self.slice_axis.currentIndexChanged.connect(self._update_slice_label)
         self.slice_axis.currentIndexChanged.connect(self._sync_slice_from_cursor)
-        grid.addWidget(self.slice_axis, 1, 1)
+        p.add_row('Slice along', self.slice_axis)
 
-        grid.addWidget(self._label('Trace #'), 2, 0)
-        srow = QHBoxLayout()
         # 1-based to match the heatmap cursor label (which counts traces/points
         # from 1); converted to a 0-based array index where the data is sliced.
         self.slice_spin = QSpinBox(); self.slice_spin.setStyleSheet(SPIN_STYLE)
         self.slice_spin.setRange(1, 1000000)
         self.slice_spin.valueChanged.connect(self._update_slice_label)
-        self.slice_label = self._label('')
-        srow.addWidget(self.slice_spin); srow.addWidget(self.slice_label, 1)
-        grid.addLayout(srow, 2, 1)
+        self.slice_label = gf.hint('')
+        p.add_row('Trace #', self.slice_spin, self.slice_label, stretch=[1, 2])
 
-        arow = QHBoxLayout()
-        self.slice_avg = QCheckBox('Average up to #')
+        self.slice_avg = QCheckBox('Average up to')
         self.slice_avg.setStyleSheet(CHECKBOX_STYLE)
         self.slice_avg.setToolTip('Average all traces between "Trace #" and this '
                                   'index (inclusive) before sending — improves SNR.')
         self.slice_avg.stateChanged.connect(self._update_slice_label)
+        # label column less the cell spacing: its spinbox then sits in the field column
+        self.slice_avg.setFixedWidth(gf.LABEL_COL_W - 6 + 8)
         self.slice_spin2 = QSpinBox(); self.slice_spin2.setStyleSheet(SPIN_STYLE)
         self.slice_spin2.setRange(1, 1000000)
         self.slice_spin2.valueChanged.connect(self._update_slice_label)
-        arow.addWidget(self.slice_avg); arow.addWidget(self.slice_spin2, 1)
-        grid.addLayout(arow, 3, 1)
+        p.add_row(self.slice_avg, self.slice_spin2)
 
-        brow = QHBoxLayout()
         btn_send = QPushButton('Send slice → 1D')
         btn_send.setStyleSheet(BUTTON_STYLE)
         btn_send.clicked.connect(self.send_slice_to_1d)
         btn_save = QPushButton('Save slice…')
         btn_save.setStyleSheet(BUTTON_STYLE)
         btn_save.clicked.connect(self.save_slice)
-        brow.addWidget(btn_send); brow.addWidget(btn_save)
-        grid.addLayout(brow, 4, 0, 1, 2)
-        grid.setRowStretch(5, 1)
-        return w
+        p.add_button_row(btn_send, btn_save, width=gf.ACTION_W)
+        p.add_stretch()
+        return p
 
     def _update_fit_params(self, *args):
         """Repopulate the map-parameter combo from the current model, honouring

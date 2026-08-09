@@ -34,37 +34,47 @@ import pyqtgraph as pg
 from pyqtgraph.dockarea import DockArea
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QLabel, QPushButton,
-    QComboBox, QGridLayout, QVBoxLayout, QHBoxLayout, QDoubleSpinBox, QSpinBox,
+    QComboBox, QHBoxLayout, QDoubleSpinBox, QSpinBox,
     QCheckBox, QFrame, QScrollArea)
 
 import atomize.math_modules.pulse_excitation as pe
 import atomize.general_modules.csv_opener_saver as openfile
+import atomize.general_modules.gui_forms as gui_forms
 # Reuse the main-window plot stack (crosshair, Shift-drag ruler, FFT/log
 # right-click toggles) so this preview behaves like the rest of the EPR suite.
 from atomize.main.widgets import CrosshairPlotWidget, CloseableDock
 from atomize.general_modules.gui_style import (apply_app_style,
-    BG, FG, ACCENT, BUTTON_STYLE, LABEL_STYLE, DSPIN_STYLE, SPIN_STYLE,
+    BG, FG, BUTTON_STYLE, DSPIN_STYLE, SPIN_STYLE,
     COMBO_STYLE, CHECKBOX_STYLE, SCROLL_STYLE)
 
-# Common minimum row height so spinboxes / combos / buttons line up and the
-# native +/- spin frame renders fully (repo-wide convention, see data_treatment).
-ROW_H = 26
+# Panel width. Fields stretch to fill their column rather than taking a
+# fixed width, so they end level with the button grids with or without
+# the scroll bar.
+PANEL_W = 370
 
 # Point size for HTML <sub> subscripts. The Qt rich-text default (~0.7 em)
 # renders subscripts tiny; bump them so they read clearly. The plot axis/legend
 # use a larger base font than the 9 pt control labels, hence two sizes.
 SUB_PT = 11       # plot axis / legend (pyqtgraph rich text)
-LBL_SUB_PT = 10   # control-panel QLabels (base font is 9 pt)
 
 
 def _sub(base, sub, pt=SUB_PT):
-    """base + a slightly-enlarged HTML subscript (rich-text labels)."""
-    return '%s<sub><span style="font-size: %dpt">%s</span></sub>' % (base, pt, sub)
+    """base + an enlarged HTML subscript, at the plot font's size."""
+    return gui_forms.sub(base, sub, pt)
 
 
 def _lsub(base, sub):
-    """base + enlarged subscript sized for the 9 pt control-panel labels."""
-    return _sub(base, sub, LBL_SUB_PT)
+    """base + a subscript at the shared control-label size."""
+    return gui_forms.sub(base, sub)
+
+
+def _row(panel, text, widget, bucket=None):
+    """One FormPanel row, handing back its (label, widget) pair for show/hide."""
+    r = panel.add_row(text, widget)
+    lab = panel.grid.itemAtPosition(r, 0).widget()
+    if bucket is not None:
+        bucket.append((lab, widget))
+    return lab, widget
 
 
 # Hardware timing grid (ns). Pulse length snaps to a multiple of this, matching
@@ -158,25 +168,16 @@ class MainWindow(QMainWindow):
         central = QWidget()
         self.setCentralWidget(central)
         root = QHBoxLayout(central)
+        root.setSpacing(gui_forms.PANEL_GAP)
 
         # Plot on the left, controls on the right.
         root.addWidget(self._build_plots(), stretch=1)
 
-        sep = QFrame()
-        sep.setFrameShape(QFrame.Shape.VLine)
-        sep.setFrameShadow(QFrame.Shadow.Plain)
-        sep.setStyleSheet('color: rgb(83, 83, 117);')
-        root.addWidget(sep)
+        root.addWidget(gui_forms.vline())
 
         root.addWidget(self._build_controls(), stretch=0)
 
-        # +/- buttons on every spinbox and a common minimum row height across
-        # spinboxes / combos / buttons (repo-wide compact-row convention).
-        for wdg in self.findChildren((QComboBox, QPushButton)):
-            wdg.setMinimumHeight(ROW_H)
-        for spin in self.findChildren((QSpinBox, QDoubleSpinBox)):
-            spin.setButtonSymbols(QSpinBox.ButtonSymbols.PlusMinus)
-            spin.setMinimumHeight(ROW_H)
+        gui_forms.apply_row_metrics(self)
 
         # Open on the WURST case (the tool's headline: adiabatic inversion done
         # right), matching the parameters of the reference Pluto notebook.
@@ -197,7 +198,6 @@ class MainWindow(QMainWindow):
         if suffix:
             s.setSuffix(suffix)
         s.setStyleSheet(DSPIN_STYLE)
-        s.setFixedWidth(150)
         s.valueChanged.connect(self.schedule)
         return s
 
@@ -208,14 +208,8 @@ class MainWindow(QMainWindow):
         if suffix:
             s.setSuffix(suffix)
         s.setStyleSheet(SPIN_STYLE)
-        s.setFixedWidth(150)
         s.valueChanged.connect(self.schedule)
         return s
-
-    def _label(self, text):
-        lab = QLabel(text)
-        lab.setStyleSheet(LABEL_STYLE)
-        return lab
 
     def _make_pulse_group(self, title):
         """Build one pulse's control block. Returns (container, store, rows).
@@ -224,62 +218,48 @@ class MainWindow(QMainWindow):
         widgets; ``rows`` maps each shape-specific param to its (label, widget)
         pair for per-shape show/hide. Pulse 1 and Pulse 2 are identical blocks.
         """
-        box = QWidget()
-        g = QGridLayout(box)
-        g.setContentsMargins(0, 0, 0, 0)
-        g.setVerticalSpacing(6)
+        box = gui_forms.FormPanel(button_width=gui_forms.BTN_W)
         store, rows = {}, {}
-        r = 0
 
-        head = self._label(title)
-        head.setStyleSheet("QLabel { color: %s; font-weight: bold; }" % ACCENT)
-        g.addWidget(head, r, 0, 1, 2); r += 1
+        box.add_heading(title)
 
-        g.addWidget(self._label("Shape"), r, 0)
         shape = QComboBox()
         shape.addItems(list(SHAPE_PARAMS.keys()))
         shape.setStyleSheet(COMBO_STYLE)
-        shape.setFixedWidth(150)
-        g.addWidget(shape, r, 1); r += 1
+        box.add_row("Shape", shape)
         store['shape'] = shape
 
         # Length on the 3.2 ns hardware grid (step 3.2, snapped on edit).
-        g.addWidget(self._label("Length " + _lsub('t', 'p') + " (ns)"), r, 0)
-        tp = self._dspin(GRID, 100000.0, round_to_closest(200.0, GRID), GRID, 1)
+        tp = self._dspin(GRID, 100000.0, round_to_closest(200.0, GRID), GRID, 1, ' ns')
         tp.editingFinished.connect(lambda s=tp: self._snap_spin(s))
-        g.addWidget(tp, r, 1); r += 1
+        box.add_row("Length " + _lsub('t', 'p'), tp)
         store['tp'] = tp
 
-        g.addWidget(self._label("B" + _lsub('', '1') + " peak " + _lsub('ν', '1') + " (MHz)"), r, 0)
-        nu1 = self._dspin(0.0, 1000.0, 31.0, 0.1, 2)
-        g.addWidget(nu1, r, 1); r += 1
+        nu1 = self._dspin(0.0, 1000.0, 31.0, 0.1, 2, ' MHz')
+        box.add_row("B" + _lsub('', '1') + " peak " + _lsub('ν', '1'), nu1)
         store['nu1'] = nu1
 
-        g.addWidget(self._label("Phase " + _lsub('φ', '0') + " (deg)"), r, 0)
-        phi0 = self._dspin(-360.0, 360.0, 0.0, 1.0, 1)
-        g.addWidget(phi0, r, 1); r += 1
+        phi0 = self._dspin(-360.0, 360.0, 0.0, 1.0, 1, ' deg')
+        box.add_row("Phase " + _lsub('φ', '0'), phi0)
         store['phi0'] = phi0
 
         # Parameters & units match Insys awg_pulse: sigma (ns, 3.2 grid), N
         # (int 1-100), b (1/ns), sweep (MHz), center (MHz). Sigma rows snap to the
         # 3.2 ns grid on edit, like the AWG tool.
-        sigma_w = self._dspin(GRID, 1900.0, round_to_closest(40.0, GRID), GRID, 1)
+        sigma_w = self._dspin(GRID, 1900.0, round_to_closest(40.0, GRID), GRID, 1, ' ns')
         sigma_w.editingFinished.connect(lambda s=sigma_w: self._snap_spin(s))
         specs = [
-            ('sigma',  "σ (ns)",                 sigma_w),
-            ('edge',   "Quarter-sine edge (ns)", self._dspin(0.1, 100000.0, 20.0, 2.0, 1)),
-            ('n',      "N",                       self._dspin(1.0, 100.0, 10.0, 1.0, 0)),
-            ('b',      "b (1/ns)",                self._dspin(0.005, 10.0, 0.02, 0.001, 3)),
-            ('bw',     "Sweep Δν (MHz)",          self._dspin(-1000.0, 1000.0, 200.0, 5.0, 1)),
-            ('center', "Carrier " + _lsub('ν', '0') + " (MHz)", self._dspin(-2500.0, 2500.0, 0.0, 5.0, 1)),
+            ('sigma',  "σ",                 sigma_w),
+            ('edge',   "Quarter-sine edge", self._dspin(0.1, 100000.0, 20.0, 2.0, 1, ' ns')),
+            ('n',      "N",                 self._dspin(1.0, 100.0, 10.0, 1.0, 0)),
+            ('b',      "b",                 self._dspin(0.005, 10.0, 0.02, 0.001, 3, ' 1/ns')),
+            ('bw',     "Sweep Δν",          self._dspin(-1000.0, 1000.0, 200.0, 5.0, 1, ' MHz')),
+            ('center', "Carrier " + _lsub('ν', '0'),
+             self._dspin(-2500.0, 2500.0, 0.0, 5.0, 1, ' MHz')),
         ]
         for name, text, widget in specs:
-            lab = self._label(text)
-            g.addWidget(lab, r, 0)
-            g.addWidget(widget, r, 1)
-            rows[name] = (lab, widget)
+            rows[name] = _row(box, text, widget)
             store[name] = widget
-            r += 1
 
         shape.currentTextChanged.connect(
             lambda _t, st=store, rw=rows: self._on_group_shape_changed(st, rw))
@@ -289,17 +269,15 @@ class MainWindow(QMainWindow):
         panel = QScrollArea()
         panel.setWidgetResizable(True)
         panel.setStyleSheet(SCROLL_STYLE)
-        panel.setFixedWidth(350)
+        panel.setFixedWidth(PANEL_W)
 
-        inner = QWidget()
-        panel.setWidget(inner)
-        v = QVBoxLayout(inner)
-        v.setContentsMargins(8, 8, 8, 8)
-        v.setSpacing(6)
+        v = gui_forms.FormPanel(margins=gui_forms.PANEL_MARGINS,
+                                button_width=gui_forms.BTN_W)
+        panel.setWidget(v)
 
         # ---- Pulse 1 ----
         box1, self.p1, self.p1_rows = self._make_pulse_group("Pulse 1")
-        v.addWidget(box1)
+        v.add_widget(box1)
         # Aliases so the single-pulse code paths keep working unchanged.
         self.shape = self.p1['shape']
         self.tp = self.p1['tp']
@@ -308,23 +286,22 @@ class MainWindow(QMainWindow):
         self._param_rows = self.p1_rows
 
         # ---- Two-pulse toggle + inter-pulse delay ----
-        self.two_pulse = QCheckBox("Two-pulse sequence (P1 → τ → P2)")
+        self.two_pulse = QCheckBox("Two-pulse sequence")
         self.two_pulse.setStyleSheet(CHECKBOX_STYLE)
+        self.two_pulse.setToolTip(
+            "Propagate P1 → τ → P2 → detection delay instead of a single pulse, "
+            "so the profile is the two-pulse (echo) response.")
         self.two_pulse.toggled.connect(self._on_two_pulse_toggled)
-        v.addWidget(self.two_pulse)
+        v.add_widget(self.two_pulse)
 
-        self.delay_box = QWidget()
-        dg = QGridLayout(self.delay_box)
-        dg.setContentsMargins(0, 0, 0, 0)
-        dg.addWidget(self._label("Delay " + _lsub('τ', '12') + " (ns)"), 0, 0)
-        self.delay = self._dspin(0.0, 1e6, 200.0, GRID, 1)
-        dg.addWidget(self.delay, 0, 1)
+        self.delay_box = gui_forms.FormPanel(button_width=gui_forms.BTN_W)
+        self.delay = self._dspin(0.0, 1e6, 200.0, GRID, 1, ' ns')
+        self.delay_box.add_row("Delay " + _lsub('τ', '12'), self.delay)
         # Detection delay after P2. Read-out happens here; set = τ12 to sit on the
         # Hahn echo (refocuses the inter-pulse precession → smooth profile). 0 =
         # read immediately after P2 (shows the un-refocused FID/ripple).
-        dg.addWidget(self._label("Detect " + _lsub('τ', 'd') + " (ns)"), 1, 0)
-        self.det_delay = self._dspin(0.0, 1e6, 200.0, GRID, 1)
-        dg.addWidget(self.det_delay, 1, 1)
+        self.det_delay = self._dspin(0.0, 1e6, 200.0, GRID, 1, ' ns')
+        self.delay_box.add_row("Detect " + _lsub('τ', 'd'), self.det_delay)
         # One-click lock: auto-set τ_d to the actual echo time (found numerically,
         # since finite pulses shift it off τ12). QCheckBox is plain-text only.
         self.lock_taud = QCheckBox("auto τd → echo")
@@ -335,9 +312,9 @@ class MainWindow(QMainWindow):
             "coherent transverse signal). For finite pulses this is a few ns "
             "past τ12. Uncheck to set τd by hand.")
         self.lock_taud.toggled.connect(self._on_lock_taud_toggled)
-        dg.addWidget(self.lock_taud, 2, 0, 1, 2)
+        self.delay_box.add_widget(self.lock_taud)
         self.det_delay.setEnabled(False)   # locked by default
-        v.addWidget(self.delay_box)
+        v.add_widget(self.delay_box)
 
         # Continuous-LO model: reference P2's RF phase to absolute sequence time
         # (it picks up 2*pi*nu0_2*(tp1+tau)). Off = each pulse phase referenced to
@@ -350,68 +327,43 @@ class MainWindow(QMainWindow):
             "delay (phase += 2π·ν₀·(t_p1+τ)). "
             "Off: each pulse's phase starts at its own φ₀.")
         self.cont_phase.toggled.connect(self.schedule)
-        v.addWidget(self.cont_phase)
+        v.add_widget(self.cont_phase)
 
         # ---- Pulse 2 ----
         self.p2_box, self.p2, self.p2_rows = self._make_pulse_group("Pulse 2")
-        v.addWidget(self.p2_box)
+        v.add_widget(self.p2_box)
         self.p2['shape'].setCurrentText('rectangular')
 
-        sep = QFrame(); sep.setFrameShape(QFrame.Shape.HLine)
-        sep.setStyleSheet("color: %s;" % ACCENT)
-        v.addWidget(sep)
+        v.add_sep()
 
         # ---- Offset axis & integration (shared) ----
-        shared = QWidget()
-        g = QGridLayout(shared)
-        g.setContentsMargins(0, 0, 0, 0)
-        g.setVerticalSpacing(6)
-        r = 0
+        v.add_heading("Offset axis & integration")
 
-        axis_title = self._label("Offset axis & integration")
-        axis_title.setStyleSheet("QLabel { color: %s; font-weight: bold; }" % ACCENT)
-        g.addWidget(axis_title, r, 0, 1, 2); r += 1
+        self.span = self._dspin(1.0, 5000.0, 250.0, 10.0, 1, ' MHz')
+        v.add_row("Offset span ±Δν", self.span)
 
-        g.addWidget(self._label("Offset span ±Δν (MHz)"), r, 0)
-        self.span = self._dspin(1.0, 5000.0, 250.0, 10.0, 1)
-        g.addWidget(self.span, r, 1); r += 1
-
-        g.addWidget(self._label("Offset points"), r, 0)
         self.npts = self._ispin(11, 4001, 401)
-        g.addWidget(self.npts, r, 1); r += 1
+        v.add_row("Offset points", self.npts)
 
-        g.addWidget(self._label("Time step Δt (ns)"), r, 0)
-        self.dt = self._dspin(0.01, 50.0, 0.5, 0.1, 2)
-        g.addWidget(self.dt, r, 1); r += 1
+        self.dt = self._dspin(0.01, 50.0, 0.5, 0.1, 2, ' ns')
+        v.add_row("Time step Δt", self.dt)
 
-        g.addWidget(self._label("Initial M"), r, 0)
         self.init = QComboBox()
         self.init.addItems(list(INIT_STATES.keys()))
         self.init.setStyleSheet(COMBO_STYLE)
-        self.init.setFixedWidth(150)
         self.init.currentTextChanged.connect(self.schedule)
-        g.addWidget(self.init, r, 1); r += 1
+        v.add_row("Initial M", self.init)
 
-        g.addWidget(self._label("Show"), r, 0)
         self.show_mode = QComboBox()
         self.show_mode.addItems(['Mz (inversion)', 'Mxy (transverse)',
                                  'Mx, My', 'Mx, My, Mz', 'all',
                                  'Adiabaticity Q (swept)'])
         self.show_mode.setStyleSheet(COMBO_STYLE)
-        self.show_mode.setFixedWidth(150)
         self.show_mode.currentTextChanged.connect(self.replot)
-        g.addWidget(self.show_mode, r, 1); r += 1
-        v.addWidget(shared)
+        v.add_row("Show", self.show_mode)
 
         # ---- Resonator transfer function (shared) ----
-        sepR = QFrame(); sepR.setFrameShape(QFrame.Shape.HLine)
-        sepR.setStyleSheet("color: %s;" % ACCENT)
-        v.addWidget(sepR)
-
-        rbox = QWidget()
-        rg = QGridLayout(rbox)
-        rg.setContentsMargins(0, 0, 0, 0)
-        rg.setVerticalSpacing(6)
+        v.add_sep()
         self._reson_rows = []          # (label, widget) pairs for show/hide
         self._reson_meas_rows = []     # rows shown only for the measured model
 
@@ -424,35 +376,24 @@ class MainWindow(QMainWindow):
             "uncorrected pulse; 'compensate' = the profile once the AWG "
             "pre-distortion (awg_correction) is applied.")
         self.reson_on.toggled.connect(self._on_reson_toggled)
-        rg.addWidget(self.reson_on, 0, 0, 1, 2)
-
-        rr = 1
-
-        def _rrow(text, widget):
-            nonlocal rr
-            lab = self._label(text)
-            rg.addWidget(lab, rr, 0)
-            rg.addWidget(widget, rr, 1)
-            self._reson_rows.append((lab, widget))
-            rr += 1
+        v.add_widget(self.reson_on)
 
         # Defaults are the spectrometer's MD-series values (Insys_FPGA: f0 = 9700
         # MHz, Q ≈ 88 → power bandwidth ν0/Q ≈ 110 MHz).
-        self.reson_nu0 = self._dspin(0.1, 300.0, 9.7, 0.1, 3)
-        _rrow("Centre " + _lsub('ν', '0') + " (GHz)", self.reson_nu0)
-        self.reson_bw = self._dspin(1.0, 5000.0, 110.0, 5.0, 1)
-        _rrow("Bandwidth Δν (MHz)", self.reson_bw)
-        self.reson_det = self._dspin(-2500.0, 2500.0, 0.0, 5.0, 1)
+        self.reson_nu0 = self._dspin(0.1, 300.0, 9.7, 0.1, 3, ' GHz')
+        _row(v, "Centre " + _lsub('ν', '0'), self.reson_nu0, self._reson_rows)
+        self.reson_bw = self._dspin(1.0, 5000.0, 110.0, 5.0, 1, ' MHz')
+        _row(v, "Bandwidth Δν", self.reson_bw, self._reson_rows)
+        self.reson_det = self._dspin(-2500.0, 2500.0, 0.0, 5.0, 1, ' MHz')
         self.reson_det.setToolTip(
             "Resonator centre minus carrier (MHz). 0 = carrier tuned to the "
             "resonator. Note the bridge's LO−RF mixing can invert this sign.")
-        _rrow("Detuning (MHz)", self.reson_det)
+        _row(v, "Detuning", self.reson_det, self._reson_rows)
         self.reson_mode = QComboBox()
         self.reson_mode.addItems(['simulate (distort)', 'compensate (pre-distort)'])
         self.reson_mode.setStyleSheet(COMBO_STYLE)
-        self.reson_mode.setFixedWidth(150)
         self.reson_mode.currentTextChanged.connect(self.schedule)
-        _rrow("Mode", self.reson_mode)
+        _row(v, "Mode", self.reson_mode, self._reson_rows)
 
         # Model: ideal RLC (uses ν0 + bandwidth above) vs a loaded measured complex
         # transfer function (VNA S21). With a measured H the across-band magnitude
@@ -461,13 +402,12 @@ class MainWindow(QMainWindow):
         self.reson_model = QComboBox()
         self.reson_model.addItems(['Ideal RLC', 'Measured file'])
         self.reson_model.setStyleSheet(COMBO_STYLE)
-        self.reson_model.setFixedWidth(150)
         self.reson_model.setToolTip(
             "Ideal RLC = analytic H = 1/(1 + iQ(ν/ν₀ − ν₀/ν)). Measured file = a "
             "loaded complex transfer function (magnitude + phase); ν₀/detuning "
             "still map the carrier, ν₀/Q still set the ring-down time.")
         self.reson_model.currentTextChanged.connect(self._on_reson_model_changed)
-        _rrow("Model", self.reson_model)
+        _row(v, "Model", self.reson_model, self._reson_rows)
 
         # --- measured transfer-function file (shown only for 'Measured file') ---
         self.reson_fmt = QComboBox()
@@ -475,26 +415,23 @@ class MainWindow(QMainWindow):
                                  'GHz · lin · rad', 'GHz · Re · Im',
                                  'MHz · dB · deg', 'MHz · Re · Im'])
         self.reson_fmt.setStyleSheet(COMBO_STYLE)
-        self.reson_fmt.setFixedWidth(150)
         self.reson_fmt.setToolTip(
             "Column format of the loaded file: freq · magnitude · phase (or "
             "freq · Re · Im). dB = 20·log₁₀|H|; deg/rad = phase unit.")
         self.reson_fmt.currentTextChanged.connect(self.open_resonator_reparse)
-        lab_fmt = self._label("File format")
-        rg.addWidget(lab_fmt, rr, 0); rg.addWidget(self.reson_fmt, rr, 1)
-        self._reson_meas_rows.append((lab_fmt, self.reson_fmt)); rr += 1
+        _row(v, "File format", self.reson_fmt, self._reson_meas_rows)
 
         self.reson_load = QPushButton("Load transfer fn…")
         self.reson_load.setStyleSheet(BUTTON_STYLE)
+        # a file picker, not a field-row helper: it needs the field width, not BTN_W
+        self.reson_load.setFixedWidth(gui_forms.FIELD_W)
         self.reson_load.clicked.connect(self.open_resonator)
-        lab_load = self._label("File")
-        rg.addWidget(lab_load, rr, 0); rg.addWidget(self.reson_load, rr, 1)
-        self._reson_meas_rows.append((lab_load, self.reson_load)); rr += 1
+        _row(v, "File", self.reson_load, self._reson_meas_rows)
         self.reson_file_lbl = QLabel("(no file)")
         self.reson_file_lbl.setStyleSheet("QLabel { color: %s; }" % FG)
         self.reson_file_lbl.setWordWrap(True)
-        rg.addWidget(self.reson_file_lbl, rr, 0, 1, 2)
-        self._reson_meas_rows.append((self.reson_file_lbl, self.reson_file_lbl)); rr += 1
+        v.add_widget(self.reson_file_lbl)
+        self._reson_meas_rows.append((self.reson_file_lbl, self.reson_file_lbl))
 
         # Ring-down: in simulate mode, let the resonator keep emitting after the
         # drive stops (the field decays with tau = Q/(pi ν₀)). The spins nutate
@@ -506,20 +443,11 @@ class MainWindow(QMainWindow):
             "Propagate the post-pulse resonator ring-down (decay τ = Q/πν₀) into "
             "the free-evolution window. Simulate mode only.")
         self.reson_ring.toggled.connect(self.schedule)
-        rg.addWidget(self.reson_ring, rr, 0, 1, 2)
+        v.add_widget(self.reson_ring)
         self._reson_rows.append((self.reson_ring, self.reson_ring))
-        rr += 1
-        v.addWidget(rbox)
 
         # ---- B1 inhomogeneity (shared) ----
-        sepB = QFrame(); sepB.setFrameShape(QFrame.Shape.HLine)
-        sepB.setStyleSheet("color: %s;" % ACCENT)
-        v.addWidget(sepB)
-
-        bbox = QWidget()
-        bg = QGridLayout(bbox)
-        bg.setContentsMargins(0, 0, 0, 0)
-        bg.setVerticalSpacing(6)
+        v.add_sep()
         self._b1_rows = []          # (label, widget) pairs for show/hide
 
         self.b1_on = QCheckBox("B₁ inhomogeneity")
@@ -530,34 +458,16 @@ class MainWindow(QMainWindow):
             "sequence (one spin sees one B₁), modelling the resonator-mode / "
             "sample B₁ distribution — e.g. why a π pulse never fully inverts.")
         self.b1_on.toggled.connect(self._on_b1_toggled)
-        bg.addWidget(self.b1_on, 0, 0, 1, 2)
-
-        br = 1
-
-        def _brow(text, widget):
-            nonlocal br
-            lab = self._label(text)
-            bg.addWidget(lab, br, 0)
-            bg.addWidget(widget, br, 1)
-            self._b1_rows.append((lab, widget))
-            br += 1
+        v.add_widget(self.b1_on)
 
         # Relative Gaussian spread (std as % of nominal B1) and sampling points.
-        self.b1_spread = self._dspin(0.1, 60.0, 10.0, 1.0, 1)
-        _brow("Spread σ (%)", self.b1_spread)
+        self.b1_spread = self._dspin(0.1, 60.0, 10.0, 1.0, 1, ' %')
+        _row(v, "Spread σ", self.b1_spread, self._b1_rows)
         self.b1_pts = self._ispin(3, 51, 11)
-        _brow("Points", self.b1_pts)
-        v.addWidget(bbox)
+        _row(v, "Points", self.b1_pts, self._b1_rows)
 
         # ---- Spectral / EPR-lineshape weighting (shared) ----
-        sepS = QFrame(); sepS.setFrameShape(QFrame.Shape.HLine)
-        sepS.setStyleSheet("color: %s;" % ACCENT)
-        v.addWidget(sepS)
-
-        sbox = QWidget()
-        sg = QGridLayout(sbox)
-        sg.setContentsMargins(0, 0, 0, 0)
-        sg.setVerticalSpacing(6)
+        v.add_sep()
         self._spec_rows = []          # every (label, widget) row, for the hide-all
         self._spec_always = []        # rows shown whenever weighting is on
         self._spec_analytic_rows = [] # rows shown only for the analytic source
@@ -574,24 +484,16 @@ class MainWindow(QMainWindow):
             "DEER modulation depth. The lineshape is overlaid (filled) for visual "
             "overlap with the excitation band.")
         self.spec_on.toggled.connect(self._on_spec_toggled)
-        sg.addWidget(self.spec_on, 0, 0, 1, 2)
-
-        sr = 1
+        v.add_widget(self.spec_on)
 
         def _srow(text, widget, bucket):
-            nonlocal sr
-            lab = self._label(text)
-            sg.addWidget(lab, sr, 0)
-            sg.addWidget(widget, sr, 1)
-            self._spec_rows.append((lab, widget))
-            bucket.append((lab, widget))
-            sr += 1
+            pair = _row(v, text, widget, self._spec_rows)
+            bucket.append(pair)
 
         # Source: analytic line vs a loaded experimental spectrum.
         self.spec_src = QComboBox()
         self.spec_src.addItems(['Analytic', 'Experimental file'])
         self.spec_src.setStyleSheet(COMBO_STYLE)
-        self.spec_src.setFixedWidth(150)
         self.spec_src.currentTextChanged.connect(self._on_spec_src_changed)
         _srow("Source", self.spec_src, self._spec_always)
 
@@ -599,29 +501,27 @@ class MainWindow(QMainWindow):
         self.spec_shape = QComboBox()
         self.spec_shape.addItems(['Gaussian', 'Lorentzian'])
         self.spec_shape.setStyleSheet(COMBO_STYLE)
-        self.spec_shape.setFixedWidth(150)
         self.spec_shape.currentTextChanged.connect(self.schedule)
         _srow("Lineshape", self.spec_shape, self._spec_analytic_rows)
-        self.spec_width = self._dspin(0.1, 10000.0, 100.0, 5.0, 1)
-        _srow("FWHM (MHz)", self.spec_width, self._spec_analytic_rows)
+        self.spec_width = self._dspin(0.1, 10000.0, 100.0, 5.0, 1, ' MHz')
+        _srow("FWHM", self.spec_width, self._spec_analytic_rows)
 
         # --- experimental file ---
         self.spec_load = QPushButton("Load spectrum…")
         self.spec_load.setStyleSheet(BUTTON_STYLE)
+        self.spec_load.setFixedWidth(gui_forms.FIELD_W)
         self.spec_load.clicked.connect(self.open_spectrum)
         _srow("File", self.spec_load, self._spec_file_rows)
         self.spec_file_lbl = QLabel("(no file)")
         self.spec_file_lbl.setStyleSheet("QLabel { color: %s; }" % FG)
         self.spec_file_lbl.setWordWrap(True)
-        sg.addWidget(self.spec_file_lbl, sr, 0, 1, 2)
+        v.add_widget(self.spec_file_lbl)
         self._spec_rows.append((self.spec_file_lbl, self.spec_file_lbl))
         self._spec_file_rows.append((self.spec_file_lbl, self.spec_file_lbl))
-        sr += 1
         # X-axis unit of the loaded file + g-factor for the field→frequency map.
         self.spec_xunit = QComboBox()
         self.spec_xunit.addItems(['MHz', 'GHz', 'mT', 'G'])
         self.spec_xunit.setStyleSheet(COMBO_STYLE)
-        self.spec_xunit.setFixedWidth(150)
         self.spec_xunit.currentTextChanged.connect(self._on_spec_src_changed)
         _srow("X unit", self.spec_xunit, self._spec_file_rows)
         self.spec_g = self._dspin(1.0, 10.0, 2.0023, 0.0001, 4)
@@ -637,45 +537,43 @@ class MainWindow(QMainWindow):
             "axis is used instead — either keeps a field-axis file (whose "
             "absolute values are far off-axis) visible.")
         self.spec_autocenter.toggled.connect(self.schedule)
-        sg.addWidget(self.spec_autocenter, sr, 0, 1, 2)
+        v.add_widget(self.spec_autocenter)
         self._spec_rows.append((self.spec_autocenter, self.spec_autocenter))
         self._spec_file_rows.append((self.spec_autocenter, self.spec_autocenter))
-        sr += 1
 
         # --- shared: centre offset applies to both sources ---
-        self.spec_center = self._dspin(-5000.0, 5000.0, 0.0, 5.0, 1)
-        _srow("Centre Δν₀ (MHz)", self.spec_center, self._spec_always)
+        self.spec_center = self._dspin(-5000.0, 5000.0, 0.0, 5.0, 1, ' MHz')
+        _srow("Centre Δν₀", self.spec_center, self._spec_always)
         # Where to draw the lineshape overlay (baseline → peak). The full-range
         # and inverted maps let it sit alongside the excited/inverted part of the
         # profile so the overlap is easy to read.
         self.spec_overlay = QComboBox()
         self.spec_overlay.addItems(['0 → 1', '1 → 0', '0 → −1', '−1 → 1', '1 → −1'])
         self.spec_overlay.setStyleSheet(COMBO_STYLE)
-        self.spec_overlay.setFixedWidth(150)
         self.spec_overlay.currentTextChanged.connect(self.replot)
         _srow("Overlay", self.spec_overlay, self._spec_always)
-        v.addWidget(sbox)
 
-        sep2 = QFrame(); sep2.setFrameShape(QFrame.Shape.HLine)
-        sep2.setStyleSheet("color: %s;" % ACCENT)
-        v.addWidget(sep2)
+        v.add_sep()
 
-        btn_row = QHBoxLayout()
         btn_hold = QPushButton("Hold profile")
         btn_hold.setStyleSheet(BUTTON_STYLE)
+        btn_hold.setToolTip("Freeze the current Mz profile as a faint overlay so "
+                            "the next pulse can be compared against it.")
         btn_hold.clicked.connect(self.hold_current)
         btn_clear = QPushButton("Clear holds")
         btn_clear.setStyleSheet(BUTTON_STYLE)
+        btn_clear.setToolTip("Drop every held overlay.")
         btn_clear.clicked.connect(self.clear_holds)
-        btn_row.addWidget(btn_hold); btn_row.addWidget(btn_clear)
-        v.addLayout(btn_row)
+        # two equal columns so the pair fills the panel width
+        hold_grid = gui_forms.equal_grid(2)
+        hold_grid.addWidget(btn_hold, 0, 0)
+        hold_grid.addWidget(btn_clear, 0, 1)
+        v.add_layout(hold_grid)
 
-        self.info = QLabel("")
-        self.info.setStyleSheet("QLabel { color: %s; }" % FG)
-        self.info.setWordWrap(True)
-        v.addWidget(self.info)
+        self.info = gui_forms.hint("")
+        v.add_widget(self.info)
 
-        v.addStretch(1)
+        v.add_stretch()
 
         # Two-pulse controls start hidden.
         self.delay_box.setVisible(False)

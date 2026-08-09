@@ -43,30 +43,45 @@ import pyqtgraph as pg
 from pyqtgraph.dockarea import DockArea
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QLabel, QPushButton,
-    QComboBox, QGridLayout, QVBoxLayout, QHBoxLayout, QDoubleSpinBox, QSpinBox,
+    QComboBox, QHBoxLayout, QDoubleSpinBox, QSpinBox,
     QCheckBox, QFrame, QScrollArea)
 
 import atomize.math_modules.spin_dynamics as sd
 import atomize.math_modules.preset_loader as pl
 import atomize.math_modules.pulse_excitation as pe
 import atomize.general_modules.csv_opener_saver as openfile
+import atomize.general_modules.gui_forms as gui_forms
 from atomize.main.widgets import CrosshairPlotWidget, CloseableDock
 from atomize.general_modules.gui_style import (apply_app_style,
-    BG, FG, ACCENT, BUTTON_STYLE, LABEL_STYLE, DSPIN_STYLE, SPIN_STYLE,
+    BG, FG, ACCENT, BUTTON_STYLE, DSPIN_STYLE, SPIN_STYLE,
     COMBO_STYLE, CHECKBOX_STYLE, SCROLL_STYLE)
 
-ROW_H = 26
+# Panel width. Fields stretch to fill their column rather than taking a
+# fixed width, so they end level with the button grids with or without
+# the scroll bar.
+PANEL_W = 360
+
 SUB_PT = 11
-LBL_SUB_PT = 10
 MAX_NUC = 3                       # nuclei the spin-system builder exposes
 
 
 def _sub(base, sub, pt=SUB_PT):
-    return '%s<sub><span style="font-size: %dpt">%s</span></sub>' % (base, pt, sub)
+    """base + an enlarged HTML subscript, at the plot font's size."""
+    return gui_forms.sub(base, sub, pt)
 
 
 def _lsub(base, sub):
-    return _sub(base, sub, LBL_SUB_PT)
+    """base + a subscript at the shared control-label size."""
+    return gui_forms.sub(base, sub)
+
+
+def _row(panel, text, widget, bucket=None):
+    """One FormPanel row, handing back its (label, widget) pair for show/hide."""
+    r = panel.add_row(text, widget)
+    lab = panel.grid.itemAtPosition(r, 0).widget()
+    if bucket is not None:
+        bucket.append((lab, widget))
+    return lab, widget
 
 
 # Remember the last preset/CSV folder across relaunches (this tool is its own
@@ -157,23 +172,19 @@ class MainWindow(QMainWindow):
         central = QWidget()
         self.setCentralWidget(central)
         root = QHBoxLayout(central)
+        root.setSpacing(gui_forms.PANEL_GAP)
         root.addWidget(self._build_plots(), stretch=1)
 
-        sep = QFrame()
-        sep.setFrameShape(QFrame.Shape.VLine)
-        sep.setStyleSheet('color: rgb(83, 83, 117);')
-        root.addWidget(sep)
+        root.addWidget(gui_forms.vline())
         root.addWidget(self._build_controls(), stretch=0)
 
-        for wdg in self.findChildren((QComboBox, QPushButton)):
-            wdg.setMinimumHeight(ROW_H)
-        for spin in self.findChildren((QSpinBox, QDoubleSpinBox)):
-            spin.setButtonSymbols(QSpinBox.ButtonSymbols.PlusMinus)
-            spin.setMinimumHeight(ROW_H)
+        gui_forms.apply_row_metrics(self)
 
         self._on_nuc_count_changed()
         self._on_partner_toggled(False)
         self._on_line_changed()
+        self._on_b1_toggled(False)
+        self._on_relax_toggled(False)
         self._on_reson_toggled(False)
         self._on_sweep_mode_changed()
         self._update_status("Load a .phase_awg / .phase preset to begin.")
@@ -190,7 +201,6 @@ class MainWindow(QMainWindow):
         if suffix:
             s.setSuffix(suffix)
         s.setStyleSheet(DSPIN_STYLE)
-        s.setFixedWidth(140)
         s.valueChanged.connect(self.schedule)
         return s
 
@@ -199,25 +209,11 @@ class MainWindow(QMainWindow):
         s.setRange(lo, hi)
         s.setValue(val)
         s.setStyleSheet(SPIN_STYLE)
-        s.setFixedWidth(140)
         s.valueChanged.connect(self.schedule)
         return s
 
     def _label(self, text):
-        lab = QLabel(text)
-        lab.setStyleSheet(LABEL_STYLE)
-        return lab
-
-    def _head(self, text):
-        lab = self._label(text)
-        lab.setStyleSheet("QLabel { color: %s; font-weight: bold; }" % ACCENT)
-        return lab
-
-    def _hsep(self):
-        s = QFrame()
-        s.setFrameShape(QFrame.Shape.HLine)
-        s.setStyleSheet("color: %s;" % ACCENT)
-        return s
+        return gui_forms.label(text)
 
     # ------------------------------------------------------------------ #
     # Plots
@@ -256,30 +252,25 @@ class MainWindow(QMainWindow):
         panel = QScrollArea()
         panel.setWidgetResizable(True)
         panel.setStyleSheet(SCROLL_STYLE)
-        panel.setFixedWidth(360)
-        inner = QWidget()
-        panel.setWidget(inner)
-        v = QVBoxLayout(inner)
-        v.setContentsMargins(8, 8, 8, 8)
-        v.setSpacing(6)
+        panel.setFixedWidth(PANEL_W)
+        p = gui_forms.FormPanel(margins=gui_forms.PANEL_MARGINS,
+                                button_width=gui_forms.BTN_W)
+        panel.setWidget(p)
 
         # ---- Preset ----
-        v.addWidget(self._head("Preset"))
+        p.add_heading("Preset")
         self.load_btn = QPushButton("Load preset…")
         self.load_btn.setStyleSheet(BUTTON_STYLE)
         self.load_btn.clicked.connect(self.open_preset)
-        v.addWidget(self.load_btn)
+        p.add_button_row(self.load_btn, width=gui_forms.ACTION_W)
         self.preset_lbl = QLabel("(no preset)")
         self.preset_lbl.setStyleSheet("QLabel { color: %s; }" % FG)
         self.preset_lbl.setWordWrap(True)
-        v.addWidget(self.preset_lbl)
+        p.add_widget(self.preset_lbl)
 
         # ---- Flip calibration ----
-        v.addWidget(self._hsep())
-        v.addWidget(self._head("Flip calibration"))
-        fc = QWidget(); fg = QGridLayout(fc)
-        fg.setContentsMargins(0, 0, 0, 0); fg.setVerticalSpacing(6)
-        r = 0
+        p.add_sep()
+        p.add_heading("Flip calibration")
         cal_tip = (
             "Pins the one hardware-dependent number: the flip angle a pulse "
             "amplitude actually produces (the amplifier is nonlinear, so it "
@@ -288,83 +279,67 @@ class MainWindow(QMainWindow):
             "spin by FLIP degrees' — from your own nutation measurement. Every "
             "AWG pulse's amplitude is then scaled by its coef relative to this. "
             "Defaults give π/2 at amplitude 100 %, length 22.4 ns.")
-        fg.addWidget(self._label("Ref amplitude coef (%)"), r, 0)
-        self.cal_coef = self._dspin(0.1, 100.0, 100.0, 1.0, 1)
-        self.cal_coef.setToolTip(cal_tip + "\n\nReference amplitude in % of full "
-            "AWG drive — the 'coef' field of the pulse you calibrated against.")
-        fg.addWidget(self.cal_coef, r, 1); r += 1
-        fg.addWidget(self._label("Ref length (ns)"), r, 0)
-        self.cal_len = self._dspin(1.0, 1000.0, 22.4, 0.1, 1)
-        self.cal_len.setToolTip(cal_tip + "\n\nLength (ns) of that reference pulse.")
-        fg.addWidget(self.cal_len, r, 1); r += 1
-        fg.addWidget(self._label("Ref flip (deg)"), r, 0)
-        self.cal_flip = self._dspin(1.0, 720.0, 90.0, 5.0, 1)
-        self.cal_flip.setToolTip(cal_tip + "\n\nFlip angle (deg) that reference "
-            "pulse produces on resonance — 90 for a π/2, 180 for a π.")
-        fg.addWidget(self.cal_flip, r, 1); r += 1
-        v.addWidget(fc)
-        self.ideal_chk = QCheckBox("Ideal pulses (instantaneous rotations)")
+        self.cal_coef = self._dspin(0.1, 100.0, 100.0, 1.0, 1, ' %')
+        tip = (cal_tip + "\n\nReference amplitude in % of full AWG drive — the "
+               "'coef' field of the pulse you calibrated against.")
+        self.cal_coef.setToolTip(tip)
+        p.add_row("Ref amplitude coef", self.cal_coef, tooltip=tip)
+        self.cal_len = self._dspin(1.0, 1000.0, 22.4, 0.1, 1, ' ns')
+        tip = cal_tip + "\n\nLength (ns) of that reference pulse."
+        self.cal_len.setToolTip(tip)
+        p.add_row("Ref length", self.cal_len, tooltip=tip)
+        self.cal_flip = self._dspin(1.0, 720.0, 90.0, 5.0, 1, ' deg')
+        tip = (cal_tip + "\n\nFlip angle (deg) that reference pulse produces on "
+               "resonance — 90 for a π/2, 180 for a π.")
+        self.cal_flip.setToolTip(tip)
+        p.add_row("Ref flip", self.cal_flip, tooltip=tip)
+        self.ideal_chk = QCheckBox("Ideal pulses")
         self.ideal_chk.setStyleSheet(CHECKBOX_STYLE)
         self.ideal_chk.setToolTip(
             "Replace each shaped pulse with an instantaneous rotation of the same "
             "on-resonance flip angle. Faster, and isolates the sequence/phase-cycle "
             "physics from finite-pulse bandwidth effects.")
-        v.addWidget(self.ideal_chk)
+        p.add_widget(self.ideal_chk)
 
         # ---- Spin system ----
-        v.addWidget(self._hsep())
-        v.addWidget(self._head("Spin system"))
-        sc = QWidget(); sg = QGridLayout(sc)
-        sg.setContentsMargins(0, 0, 0, 0); sg.setVerticalSpacing(6)
-        sg.addWidget(self._label("Number of nuclei"), 0, 0)
+        p.add_sep()
+        p.add_heading("Spin system")
         self.nuc_count = QComboBox()
         self.nuc_count.addItems([str(i) for i in range(MAX_NUC + 1)])
-        self.nuc_count.setStyleSheet(COMBO_STYLE); self.nuc_count.setFixedWidth(140)
+        self.nuc_count.setStyleSheet(COMBO_STYLE)
         self.nuc_count.currentTextChanged.connect(self._on_nuc_count_changed)
-        sg.addWidget(self.nuc_count, 0, 1)
-        v.addWidget(sc)
+        p.add_row("Number of nuclei", self.nuc_count)
 
-        # Per-nucleus blocks (I, Larmor, A, B), shown/hidden by the count.
+        # Per-nucleus rows (I, Larmor, A, B), shown/hidden by the count.
         for k in range(MAX_NUC):
-            box = QWidget(); bg = QGridLayout(box)
-            bg.setContentsMargins(0, 0, 0, 0); bg.setVerticalSpacing(4)
-            rows = {}
+            shown = []
             head = self._label("Nucleus %d" % (k + 1))
             head.setStyleSheet("QLabel { color: %s; }" % ACCENT)
-            bg.addWidget(head, 0, 0, 1, 2)
-            bg.addWidget(self._label("I"), 1, 0)
+            p.add_widget(head)
+            shown.append((head, head))
             I = QComboBox(); I.addItems(['1/2', '1']); I.setStyleSheet(COMBO_STYLE)
-            I.setFixedWidth(140); I.currentTextChanged.connect(self.schedule)
-            bg.addWidget(I, 1, 1)
-            lab_nu = self._label("Larmor " + _lsub('ν', 'I') + " (MHz)")
-            lab_nu.setToolTip(
-                "Nuclear Larmor (Zeeman) frequency = γ_n·B0/2π. It is a "
-                "FREQUENCY (MHz), not the field itself — the external field B0 "
-                "enters only through it. E.g. ¹H at 348 mT ≈ 14.9 MHz, ¹⁴N ≈ "
-                "1.07 MHz. This is what sets the ESEEM/modulation frequency.")
-            bg.addWidget(lab_nu, 2, 0)
-            nu = self._dspin(-200.0, 200.0, 14.9, 0.1, 3)
-            nu.setToolTip(lab_nu.toolTip())
-            bg.addWidget(nu, 2, 1)
-            lab_A = self._label("A (MHz)")
-            lab_A.setToolTip(
-                "Secular hyperfine coupling A (MHz): the A·Sz·Iz term — shifts "
-                "the nuclear frequency depending on the electron state.")
-            bg.addWidget(lab_A, 3, 0)
-            A = self._dspin(-200.0, 200.0, 4.0, 0.1, 3)
-            A.setToolTip(lab_A.toolTip()); bg.addWidget(A, 3, 1)
-            lab_B = self._label("B (MHz)")
-            lab_B.setToolTip(
-                "Pseudo-secular hyperfine coupling B (MHz): the B·Sz·Ix term — "
-                "the anisotropic/dipolar part that mixes nuclear states and "
-                "DRIVES the ESEEM modulation. NOT the external magnetic field. "
-                "B = 0 gives no two-/three-pulse ESEEM.")
-            bg.addWidget(lab_B, 4, 0)
-            B = self._dspin(-200.0, 200.0, 3.0, 0.1, 3)
-            B.setToolTip(lab_B.toolTip()); bg.addWidget(B, 4, 1)
-            rows = {'I': I, 'nu': nu, 'A': A, 'B': B, 'box': box}
-            v.addWidget(box)
-            self._nuc_rows.append(rows)
+            I.currentTextChanged.connect(self.schedule)
+            _row(p, "I", I, shown)
+            tip = ("Nuclear Larmor (Zeeman) frequency = γ_n·B0/2π. It is a "
+                   "FREQUENCY (MHz), not the field itself — the external field B0 "
+                   "enters only through it. E.g. ¹H at 348 mT ≈ 14.9 MHz, ¹⁴N ≈ "
+                   "1.07 MHz. This is what sets the ESEEM/modulation frequency.")
+            nu = self._dspin(-200.0, 200.0, 14.9, 0.1, 3, ' MHz')
+            nu.setToolTip(tip)
+            _row(p, "Larmor " + _lsub('ν', 'I'), nu, shown)[0].setToolTip(tip)
+            tip = ("Secular hyperfine coupling A (MHz): the A·Sz·Iz term — shifts "
+                   "the nuclear frequency depending on the electron state.")
+            A = self._dspin(-200.0, 200.0, 4.0, 0.1, 3, ' MHz')
+            A.setToolTip(tip)
+            _row(p, "A", A, shown)[0].setToolTip(tip)
+            tip = ("Pseudo-secular hyperfine coupling B (MHz): the B·Sz·Ix term — "
+                   "the anisotropic/dipolar part that mixes nuclear states and "
+                   "DRIVES the ESEEM modulation. NOT the external magnetic field. "
+                   "B = 0 gives no two-/three-pulse ESEEM.")
+            B = self._dspin(-200.0, 200.0, 3.0, 0.1, 3, ' MHz')
+            B.setToolTip(tip)
+            _row(p, "B", B, shown)[0].setToolTip(tip)
+            self._nuc_rows.append({'I': I, 'nu': nu, 'A': A, 'B': B, 'rows': shown})
 
         # Dipolar partner (2nd electron) for single-frequency pair experiments.
         self.partner_chk = QCheckBox("Dipolar partner electron")
@@ -375,64 +350,59 @@ class MainWindow(QMainWindow):
             "this is valid for single-frequency pair experiments (SIFTER), NOT a "
             "frequency-selective DEER pump.")
         self.partner_chk.toggled.connect(self._on_partner_toggled)
-        v.addWidget(self.partner_chk)
-        self.partner_box = QWidget(); pgd = QGridLayout(self.partner_box)
-        pgd.setContentsMargins(0, 0, 0, 0); pgd.setVerticalSpacing(4)
-        pgd.addWidget(self._label("Dipolar d (MHz)"), 0, 0)
-        self.partner_d = self._dspin(-50.0, 50.0, 3.0, 0.1, 3); pgd.addWidget(self.partner_d, 0, 1)
-        v.addWidget(self.partner_box)
+        p.add_widget(self.partner_chk)
+        self.partner_box = gui_forms.FormPanel(spacing=4,
+                                               )
+        self.partner_d = self._dspin(-50.0, 50.0, 3.0, 0.1, 3, ' MHz')
+        self.partner_box.add_row("Dipolar d", self.partner_d)
+        p.add_widget(self.partner_box)
 
         # ---- Ensemble ----
-        v.addWidget(self._hsep())
-        v.addWidget(self._head("Ensemble"))
-        ec = QWidget(); eg = QGridLayout(ec)
-        eg.setContentsMargins(0, 0, 0, 0); eg.setVerticalSpacing(6); r = 0
-        eg.addWidget(self._label("Line shape"), r, 0)
+        p.add_sep()
+        p.add_heading("Ensemble")
         self.line_shape = QComboBox()
         self.line_shape.addItems(['Single packet', 'Gaussian', 'Lorentzian'])
-        self.line_shape.setStyleSheet(COMBO_STYLE); self.line_shape.setFixedWidth(140)
+        self.line_shape.setStyleSheet(COMBO_STYLE)
         self.line_shape.currentTextChanged.connect(self._on_line_changed)
-        eg.addWidget(self.line_shape, r, 1); r += 1
+        p.add_row("Line shape", self.line_shape)
         self._line_rows = []
-        self.line_fwhm = self._dspin(1.0, 2000.0, 100.0, 5.0, 1)
-        lab = self._label("Line FWHM (MHz)"); eg.addWidget(lab, r, 0); eg.addWidget(self.line_fwhm, r, 1)
-        self._line_rows.append((lab, self.line_fwhm)); r += 1
-        self.off_span = self._dspin(1.0, 5000.0, 250.0, 10.0, 1)
-        lab = self._label("Offset span ±(MHz)"); eg.addWidget(lab, r, 0); eg.addWidget(self.off_span, r, 1)
-        self._line_rows.append((lab, self.off_span)); r += 1
+        self.line_fwhm = self._dspin(1.0, 2000.0, 100.0, 5.0, 1, ' MHz')
+        _row(p, "Line FWHM", self.line_fwhm, self._line_rows)
+        self.off_span = self._dspin(1.0, 5000.0, 250.0, 10.0, 1, ' MHz')
+        _row(p, "Offset span ±", self.off_span, self._line_rows)
         self.off_pts = self._ispin(11, 2001, 301)
-        lab = self._label("Offset points"); eg.addWidget(lab, r, 0); eg.addWidget(self.off_pts, r, 1)
-        self._line_rows.append((lab, self.off_pts)); r += 1
-        v.addWidget(ec)
+        _row(p, "Offset points", self.off_pts, self._line_rows)
 
-        self.b1_chk = QCheckBox("B1 inhomogeneity")
+        self.b1_chk = QCheckBox("B₁ inhomogeneity")
         self.b1_chk.setStyleSheet(CHECKBOX_STYLE)
         self.b1_chk.toggled.connect(self._on_b1_toggled)
-        v.addWidget(self.b1_chk)
-        self.b1_box = QWidget(); b1g = QGridLayout(self.b1_box)
-        b1g.setContentsMargins(0, 0, 0, 0); b1g.setVerticalSpacing(4)
-        b1g.addWidget(self._label("B1 spread (% FWHM)"), 0, 0)
-        self.b1_spread = self._dspin(0.0, 80.0, 10.0, 1.0, 1); b1g.addWidget(self.b1_spread, 0, 1)
-        b1g.addWidget(self._label("B1 points"), 1, 0)
-        self.b1_pts = self._ispin(3, 31, 5); b1g.addWidget(self.b1_pts, 1, 1)
-        v.addWidget(self.b1_box)
+        p.add_widget(self.b1_chk)
+        self.b1_box = gui_forms.FormPanel(spacing=4,
+                                          )
+        self.b1_spread = self._dspin(0.0, 80.0, 10.0, 1.0, 1, ' %')
+        tip = "Width of the Gaussian B1 distribution, as a FWHM in % of nominal B1."
+        self.b1_spread.setToolTip(tip)
+        self.b1_box.add_row(_lsub('B', '1') + " spread", self.b1_spread, tooltip=tip)
+        self.b1_pts = self._ispin(3, 31, 5)
+        self.b1_box.add_row(_lsub('B', '1') + " points", self.b1_pts)
+        p.add_widget(self.b1_box)
 
         # ---- Relaxation ----
-        v.addWidget(self._hsep())
-        self.relax_chk = QCheckBox("Relaxation (T1 / Tm)")
+        p.add_sep()
+        self.relax_chk = QCheckBox("Relaxation (T₁ / Tₘ)")
         self.relax_chk.setStyleSheet(CHECKBOX_STYLE)
         self.relax_chk.toggled.connect(self._on_relax_toggled)
-        v.addWidget(self.relax_chk)
-        self.relax_box = QWidget(); rg = QGridLayout(self.relax_box)
-        rg.setContentsMargins(0, 0, 0, 0); rg.setVerticalSpacing(4)
-        rg.addWidget(self._label("T1 (µs)"), 0, 0)
-        self.t1 = self._dspin(0.001, 1e6, 100.0, 0.1, 3); rg.addWidget(self.t1, 0, 1)
-        rg.addWidget(self._label("Tm (µs)"), 1, 0)
-        self.tm = self._dspin(0.001, 1e6, 2.0, 0.1, 3); rg.addWidget(self.tm, 1, 1)
-        v.addWidget(self.relax_box)
+        p.add_widget(self.relax_chk)
+        self.relax_box = gui_forms.FormPanel(spacing=4,
+                                             )
+        self.t1 = self._dspin(0.001, 1e6, 100.0, 0.1, 3, ' µs')
+        self.relax_box.add_row(_lsub('T', '1'), self.t1)
+        self.tm = self._dspin(0.001, 1e6, 2.0, 0.1, 3, ' µs')
+        self.relax_box.add_row(_lsub('T', 'm'), self.tm)
+        p.add_widget(self.relax_box)
 
         # ---- Resonator ----
-        v.addWidget(self._hsep())
+        p.add_sep()
         self.reson_chk = QCheckBox("Resonator (ideal RLC)")
         self.reson_chk.setStyleSheet(CHECKBOX_STYLE)
         self.reson_chk.setToolTip(
@@ -440,30 +410,27 @@ class MainWindow(QMainWindow):
             "H = 1/(1 + iQ(ν/ν₀ − ν₀/ν)) before the spins see it — the same model "
             "the AWG correction uses. Disabled for ideal pulses.")
         self.reson_chk.toggled.connect(self._on_reson_toggled)
-        v.addWidget(self.reson_chk)
-        self.reson_box = QWidget(); xg = QGridLayout(self.reson_box)
-        xg.setContentsMargins(0, 0, 0, 0); xg.setVerticalSpacing(4); r = 0
-        xg.addWidget(self._label("Centre " + _lsub('ν', '0') + " (GHz)"), r, 0)
-        self.reson_nu0 = self._dspin(0.1, 300.0, 9.7, 0.1, 3); xg.addWidget(self.reson_nu0, r, 1); r += 1
-        xg.addWidget(self._label("Q"), r, 0)
-        self.reson_q = self._dspin(5.0, 100000.0, 100.0, 5.0, 1); xg.addWidget(self.reson_q, r, 1); r += 1
-        xg.addWidget(self._label("Detuning (MHz)"), r, 0)
-        self.reson_det = self._dspin(-2500.0, 2500.0, 0.0, 5.0, 1); xg.addWidget(self.reson_det, r, 1); r += 1
+        p.add_widget(self.reson_chk)
+        self.reson_box = gui_forms.FormPanel(spacing=4,
+                                             )
+        self.reson_nu0 = self._dspin(0.1, 300.0, 9.7, 0.1, 3, ' GHz')
+        self.reson_box.add_row("Centre " + _lsub('ν', '0'), self.reson_nu0)
+        self.reson_q = self._dspin(5.0, 100000.0, 100.0, 5.0, 1)
+        self.reson_box.add_row("Q", self.reson_q)
+        self.reson_det = self._dspin(-2500.0, 2500.0, 0.0, 5.0, 1, ' MHz')
+        self.reson_box.add_row("Detuning", self.reson_det)
         self.reson_ring = QCheckBox("Include ring-down")
         self.reson_ring.setStyleSheet(CHECKBOX_STYLE)
         self.reson_ring.toggled.connect(self.schedule)
-        xg.addWidget(self.reson_ring, r, 0, 1, 2); r += 1
-        v.addWidget(self.reson_box)
+        self.reson_box.add_widget(self.reson_ring)
+        p.add_widget(self.reson_box)
 
         # ---- Sweep / run ----
-        v.addWidget(self._hsep())
-        v.addWidget(self._head("Sweep & run"))
-        wc = QWidget(); wg = QGridLayout(wc)
-        wg.setContentsMargins(0, 0, 0, 0); wg.setVerticalSpacing(6); r = 0
-        wg.addWidget(self._label("Sweep mode"), r, 0)
+        p.add_sep()
+        p.add_heading("Sweep & run")
         self.sweep_mode = QComboBox()
         self.sweep_mode.addItems(['Time delay (preset)', 'Offset / field (EDFS)'])
-        self.sweep_mode.setStyleSheet(COMBO_STYLE); self.sweep_mode.setFixedWidth(140)
+        self.sweep_mode.setStyleSheet(COMBO_STYLE)
         self.sweep_mode.setToolTip(
             "Time delay: replay the preset, stepping its swept delay (ESEEM / "
             "DEER / echo decay).\nOffset / field: keep the sequence fixed and "
@@ -471,51 +438,45 @@ class MainWindow(QMainWindow):
             "echo-detected field sweep (EDFS). The x-axis becomes frequency "
             "offset; the line shape is the EPR spectrum being mapped.")
         self.sweep_mode.currentTextChanged.connect(self._on_sweep_mode_changed)
-        wg.addWidget(self.sweep_mode, r, 1); r += 1
-        wg.addWidget(self._label("Sweep points"), r, 0)
-        self.sweep_pts = self._ispin(1, 4000, 80); wg.addWidget(self.sweep_pts, r, 1); r += 1
-        self.field_lbl = self._label("Field sweep ±(MHz)")
-        self.field_span = self._dspin(1.0, 20000.0, 500.0, 10.0, 1)
-        self.field_span.setToolTip(
-            "Half-width of the offset/field sweep (MHz). The echo is recorded "
-            "as the spin packets are shifted from −span to +span past the fixed "
-            "excitation.")
-        wg.addWidget(self.field_lbl, r, 0); wg.addWidget(self.field_span, r, 1); r += 1
-        wg.addWidget(self._label("Window left (ns)"), r, 0)
-        self.win_left = self._dspin(-6400.0, 6400.0, 0.0, 1.0, 1)
-        self.win_left.setToolTip(
-            "Echo-integration window, left edge — an offset from the detection "
-            "pulse's start, exactly the spectrometer's 'Window left'. The "
-            "detection-pulse length is only the digitizer record; the echo is "
-            "integrated over [left, right] inside it.")
+        p.add_row("Sweep mode", self.sweep_mode)
+        self.sweep_pts = self._ispin(1, 4000, 80)
+        p.add_row("Sweep points", self.sweep_pts)
+        self.field_span = self._dspin(1.0, 20000.0, 500.0, 10.0, 1, ' MHz')
+        tip = ("Half-width of the offset/field sweep (MHz). The echo is recorded "
+               "as the spin packets are shifted from −span to +span past the fixed "
+               "excitation.")
+        self.field_span.setToolTip(tip)
+        self.field_lbl, _ = _row(p, "Field sweep ±", self.field_span)
+        self.field_lbl.setToolTip(tip)
+        self.win_left = self._dspin(-6400.0, 6400.0, 0.0, 1.0, 1, ' ns')
+        tip = ("Echo-integration window, left edge — an offset from the detection "
+               "pulse's start, exactly the spectrometer's 'Window left'. The "
+               "detection-pulse length is only the digitizer record; the echo is "
+               "integrated over [left, right] inside it.")
+        self.win_left.setToolTip(tip)
         self.win_left.valueChanged.connect(self.redraw_sequence)
-        wg.addWidget(self.win_left, r, 1); r += 1
-        wg.addWidget(self._label("Window right (ns)"), r, 0)
-        self.win_right = self._dspin(-6400.0, 6400.0, 320.0, 1.0, 1)
-        self.win_right.setToolTip(
-            "Echo-integration window, right edge — an offset from the detection "
-            "pulse's start ('Window right'). Loaded from the preset; adjust to "
-            "match the echo position you see in the sequence panel.")
+        p.add_row("Window left", self.win_left, tooltip=tip)
+        self.win_right = self._dspin(-6400.0, 6400.0, 320.0, 1.0, 1, ' ns')
+        tip = ("Echo-integration window, right edge — an offset from the detection "
+               "pulse's start ('Window right'). Loaded from the preset; adjust to "
+               "match the echo position you see in the sequence panel.")
+        self.win_right.setToolTip(tip)
         self.win_right.valueChanged.connect(self.redraw_sequence)
-        wg.addWidget(self.win_right, r, 1); r += 1
-        wg.addWidget(self._label("Detect sample dt (ns)"), r, 0)
-        self.detect_dt = self._dspin(0.1, 50.0, 2.0, 0.1, 2); wg.addWidget(self.detect_dt, r, 1); r += 1
-        wg.addWidget(self._label("Echo integrate"), r, 0)
+        p.add_row("Window right", self.win_right, tooltip=tip)
+        self.detect_dt = self._dspin(0.1, 50.0, 2.0, 0.1, 2, ' ns')
+        p.add_row("Detect sample dt", self.detect_dt)
         self.integ = QComboBox()
         self.integ.addItems(['Peak |V|', 'Window integral', 'Center point'])
-        self.integ.setStyleSheet(COMBO_STYLE); self.integ.setFixedWidth(140)
-        wg.addWidget(self.integ, r, 1); r += 1
-        wg.addWidget(self._label("Show"), r, 0)
+        self.integ.setStyleSheet(COMBO_STYLE)
+        p.add_row("Echo integrate", self.integ)
         self.show_mode = QComboBox()
         self.show_mode.addItems(['Magnitude', 'Real', 'Imag', 'Real & Imag'])
-        self.show_mode.setStyleSheet(COMBO_STYLE); self.show_mode.setFixedWidth(140)
+        self.show_mode.setStyleSheet(COMBO_STYLE)
         self.show_mode.currentTextChanged.connect(self._replot_only)
-        wg.addWidget(self.show_mode, r, 1); r += 1
-        wg.addWidget(self._label("Inspect step"), r, 0)
+        p.add_row("Show", self.show_mode)
         self.step_spin = self._ispin(0, 4000, 0)
         self.step_spin.valueChanged.connect(self.redraw_sequence)
-        wg.addWidget(self.step_spin, r, 1); r += 1
-        v.addWidget(wc)
+        p.add_row("Inspect step", self.step_spin)
 
         self.snap_chk = QCheckBox("Snap pulses to 3.2 ns grid")
         self.snap_chk.setStyleSheet(CHECKBOX_STYLE)
@@ -525,7 +486,7 @@ class MainWindow(QMainWindow):
             "3.2 ns AWG time quantum, so the simulated sequence matches what the "
             "spectrometer actually plays (the other tools use the same grid).")
         self.snap_chk.toggled.connect(self.redraw_sequence)
-        v.addWidget(self.snap_chk)
+        p.add_widget(self.snap_chk)
         self.echo_chk = QCheckBox("Echo marker")
         self.echo_chk.setStyleSheet(CHECKBOX_STYLE)
         self.echo_chk.setChecked(True)
@@ -534,38 +495,30 @@ class MainWindow(QMainWindow):
             "panel. Drag it (or type below) to where you expect the echo from "
             "the pulse positions; use it to place Window left/right.")
         self.echo_chk.toggled.connect(self.redraw_sequence)
-        v.addWidget(self.echo_chk)
-        ew = QWidget(); ewg = QGridLayout(ew)
-        ewg.setContentsMargins(0, 0, 0, 0); ewg.setVerticalSpacing(4)
-        ewg.addWidget(self._label("Echo position (ns)"), 0, 0)
-        self.echo_pos = self._dspin(0.0, 100000.0, 480.0, 3.2, 1)
-        self.echo_pos.setToolTip(
-            "Ideal echo time, measured from the first pulse (t = 0 on the "
-            "sequence panel). Set it manually or drag the marker.")
-        ewg.addWidget(self.echo_pos, 0, 1)
-        v.addWidget(ew)
+        p.add_widget(self.echo_chk)
+        self.echo_pos = self._dspin(0.0, 100000.0, 480.0, 3.2, 1, ' ns')
+        tip = ("Ideal echo time, measured from the first pulse (t = 0 on the "
+               "sequence panel). Set it manually or drag the marker.")
+        self.echo_pos.setToolTip(tip)
+        p.add_row("Echo position", self.echo_pos, tooltip=tip)
 
-        rowb = QWidget(); rb = QHBoxLayout(rowb); rb.setContentsMargins(0, 0, 0, 0)
         self.run_btn = QPushButton("Simulate")
         self.run_btn.setStyleSheet(BUTTON_STYLE)
         self.run_btn.clicked.connect(self.simulate)
-        rb.addWidget(self.run_btn)
         self.stop_btn = QPushButton("Stop")
         self.stop_btn.setStyleSheet(BUTTON_STYLE)
         self.stop_btn.clicked.connect(self._on_stop)
         self.stop_btn.setEnabled(False)
-        rb.addWidget(self.stop_btn)
         self.save_btn = QPushButton("Save trace…")
         self.save_btn.setStyleSheet(BUTTON_STYLE)
         self.save_btn.clicked.connect(self.save_trace)
-        rb.addWidget(self.save_btn)
-        v.addWidget(rowb)
+        p.add_button_row(self.run_btn, self.stop_btn, self.save_btn)
 
         self.status = QLabel("")
         self.status.setStyleSheet("QLabel { color: %s; }" % FG)
         self.status.setWordWrap(True)
-        v.addWidget(self.status)
-        v.addStretch(1)
+        p.add_widget(self.status)
+        p.add_stretch()
         return panel
 
     # ------------------------------------------------------------------ #
@@ -578,7 +531,9 @@ class MainWindow(QMainWindow):
     def _on_nuc_count_changed(self, *_):
         n = int(self.nuc_count.currentText())
         for k, rows in enumerate(self._nuc_rows):
-            rows['box'].setVisible(k < n)
+            for lab, wdg in rows['rows']:
+                lab.setVisible(k < n)
+                wdg.setVisible(k < n)
         self.schedule()
 
     def _on_partner_toggled(self, on):
