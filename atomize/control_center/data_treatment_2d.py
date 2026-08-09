@@ -142,7 +142,10 @@ _HELP_FFT = (
     'Complex FFT of I+iQ along the chosen axis (or both for a 2D transform); '
     'that axis becomes frequency. ns → MHz. Skip pts drops leading X points so '
     'the transform starts at the echo centre (removes the dead-time '
-    'first-order phase).')
+    'first-order phase).<br><br>'
+    'The advanced passband masks the spectrum and leaves the result in the '
+    'frequency domain; the Filter tab transforms back instead. Cutoffs are '
+    'fractions of that axis\' maximum (Nyquist) frequency.')
 
 _HELP_FILTER = (
     'FFT → zero the frequencies outside the passband → inverse FFT, along the '
@@ -492,6 +495,7 @@ class MainWindow(QMainWindow):
         p.add_title('Complex FFT of I+iQ along an axis', help=_HELP_FFT)
 
         self.fft_axis = self._combo(['X (within trace)', 'Y (indirect)', 'Both (2D)'])
+        self.fft_axis.currentIndexChanged.connect(self._update_fft_passband)
         self.fft_axis.currentIndexChanged.connect(self._live_update)
         p.add_row('Transform axis', self.fft_axis)
 
@@ -528,13 +532,51 @@ class MainWindow(QMainWindow):
         self.fft_zerofill.currentIndexChanged.connect(self._live_update)
         p.add_row('Zero fill', self.fft_zerofill)
 
+        adv = p.add_advanced()
+        adv.field_width, adv.button_width = gf.FIELD_W, gf.BTN_W
+        (self.fft_x_head, self.fft_x_type, self.fft_x_lo_label, self.fft_x_lo,
+         self.fft_x_hi_label, self.fft_x_hi) = self._passband_rows(adv, 'X')
+        (self.fft_y_head, self.fft_y_type, self.fft_y_lo_label, self.fft_y_lo,
+         self.fft_y_hi_label, self.fft_y_hi) = self._passband_rows(adv, 'Y')
+
         btn = QPushButton('Compute FFT')
         btn.setStyleSheet(BUTTON_STYLE)
         btn.clicked.connect(self.do_fft)
         p.add_button_row(btn, width=gf.ACTION_W)
         p.add_stretch()
         self._update_winparam()
+        self._update_fft_passband()
         return p
+
+    def _passband_rows(self, panel, name):
+        """Passband type + low/high cutoff rows for one axis of the FFT tab;
+        returns the widgets so the inactive axis' rows can be hidden."""
+        head = self._label(f'{name} passband')
+        ftype = self._combo(['None'] + FILTERS)
+        ftype.currentIndexChanged.connect(self._live_update)
+        panel.add_row(head, ftype)
+        lo_label = self._label(f'{name} low cutoff')
+        lo = self._dspin(0.0, 1.0, 4, 0.0, 0.01)
+        lo.setSuffix(' ×f_max')
+        lo.valueChanged.connect(self._live_update)
+        panel.add_row(lo_label, lo)
+        hi_label = self._label(f'{name} high cutoff')
+        hi = self._dspin(0.0, 1.0, 4, 1.0, 0.01)
+        hi.setSuffix(' ×f_max')
+        hi.valueChanged.connect(self._live_update)
+        panel.add_row(hi_label, hi)
+        return head, ftype, lo_label, lo, hi_label, hi
+
+    def _update_fft_passband(self, *args):
+        mode = self.fft_axis.currentIndex()       # 0 = X, 1 = Y, 2 = both
+        for wdg in (self.fft_x_head, self.fft_x_type, self.fft_x_lo_label,
+                    self.fft_x_lo, self.fft_x_hi_label, self.fft_x_hi):
+            wdg.setEnabled(mode != 1)
+            wdg.setVisible(mode != 1)
+        for wdg in (self.fft_y_head, self.fft_y_type, self.fft_y_lo_label,
+                    self.fft_y_lo, self.fft_y_hi_label, self.fft_y_hi):
+            wdg.setEnabled(mode != 0)
+            wdg.setVisible(mode != 0)
 
     def _update_winparam(self, *args):
         cfg = WINDOW_PARAM.get(self.fft_window.currentText())
@@ -1478,13 +1520,22 @@ class MainWindow(QMainWindow):
             dfy = float(fry[1] - fry[0]) if ny > 1 else 1.0
             res_col = self._axis(float(frx[0]), dfx, 'Frequency Offset', funx, auto=True)
             res_row = self._axis(float(fry[0]), dfy, 'Frequency Offset', funy, auto=True)
+            mx, tx = self._fft_mask(frx, self.fft_x_type, self.fft_x_lo, self.fft_x_hi)
+            my, ty = self._fft_mask(fry, self.fft_y_type, self.fft_y_lo, self.fft_y_hi)
+            if mx is not None:
+                sp = sp*mx[None, :]
+            if my is not None:
+                sp = sp*my[:, None]
             meta = ['2D FFT (X and Y)',
                     f'skip {skip} leading pts on X (echo centre)' if skip else 'no leading skip',
                     f'window: {win_name}, X {ncols}→{nx}, Y {nrows}→{ny} '
                     f'(zero fill {zf})',
                     f'frequency in {funx} (X), {funy} (Y)']
+            meta += [f'passband {n}: {t}' for n, t in (('X', tx), ('Y', ty)) if t]
+            bands = '; '.join(f'{n} {t}' for n, t in (('X', tx), ('Y', ty)) if t)
             self._set_result(sp.real, sp.imag, res_col, res_row, ('Re', 'Im'), meta)
-            self.set_status(f'2D FFT; skip {skip}; X {ncols}→{nx}, Y {nrows}→{ny}.')
+            self.set_status(f'2D FFT; skip {skip}; X {ncols}→{nx}, Y {nrows}→{ny}'
+                            + (f'; passband {bands}.' if bands else '.'))
             return
 
         along_x = (mode == 0)
@@ -1506,16 +1557,23 @@ class MainWindow(QMainWindow):
         freq_ax = self._axis(float(fr[0]), df, 'Frequency Offset', funit, auto=True)
         if along_x:
             res_col, res_row = freq_ax, self.src_row
+            mask, tag = self._fft_mask(fr, self.fft_x_type, self.fft_x_lo, self.fft_x_hi)
         else:
             res_col, res_row = self.src_col, freq_ax
+            mask, tag = self._fft_mask(fr, self.fft_y_type, self.fft_y_lo, self.fft_y_hi)
+        if mask is not None:
+            mshape = [1, 1]; mshape[axis] = n
+            sp = sp*mask.reshape(mshape)
         meta = [f'FFT along {"X (within trace)" if along_x else "Y (indirect)"}',
                 f'skip {skip} leading pts (echo centre)' if skip else 'no leading skip',
                 f'window: {self.fft_window.currentText()}, '
                 f'points {n0} -> {n} (zero fill {self.fft_zerofill.currentText()})',
                 f'frequency in {funit}']
+        if tag:
+            meta.append(f'passband: {tag}')
         self._set_result(sp.real, sp.imag, res_col, res_row, ('Re', 'Im'), meta)
         self.set_status(f'FFT along {"X" if along_x else "Y"}; skip {skip}; '
-                        f'{n0}→{n} pts.')
+                        f'{n0}→{n} pts' + (f'; passband {tag}.' if tag else '.'))
 
     @staticmethod
     def _passband_mask(freq, ftype, lo, hi):
@@ -1529,6 +1587,18 @@ class MainWindow(QMainWindow):
         if ftype == 'Band-pass':
             return (af >= lo*fmax) & (af <= hi*fmax)
         return np.ones_like(af, dtype=bool)
+
+    def _fft_mask(self, freq, type_widget, lo_widget, hi_widget):
+        """(keep-mask, description) for one FFT-tab passband; (None, '') when the
+        axis is set to 'None'."""
+        ftype = type_widget.currentText()
+        if ftype == 'None':
+            return None, ''
+        lo, hi = lo_widget.value(), hi_widget.value()
+        used = {'Low-pass': f'hi={hi:.4g}', 'High-pass': f'lo={lo:.4g}',
+                'Band-pass': f'lo={lo:.4g}, hi={hi:.4g}'}.get(ftype, '')
+        return (self._passband_mask(freq, ftype, lo, hi),
+                f'{ftype}, cutoff {used} x f_max')
 
     def do_filter(self):
         """FFT → zero the frequencies outside the passband → inverse FFT, along X,
