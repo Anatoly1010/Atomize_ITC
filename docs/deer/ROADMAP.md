@@ -86,10 +86,10 @@ the archive session that shipped it.
 
 ## Pending — do first
 
-The DEER stack is fully in sync and the estimator's external check is closed, so
-there is **no do-first item** — pick from the backlog below. Cheapest high-value
-picks: `S5G-4` (settle the inward-migrating-floor contradiction) or the 2026-08-05
-audit reporting defects (3–9). Biggest lever: the residual bootstrap (uncertainty).
+The DEER stack is fully in sync, the estimator's external check is closed and
+`S5G-4` is settled, so there is **no do-first item** — pick from the backlog
+below. Cheapest high-value pick: the 2026-08-05 audit reporting defects (3–9).
+Biggest lever: the residual bootstrap (uncertainty).
 
 ## Pending — backlog
 
@@ -97,9 +97,6 @@ Open findings. Each carries its own measurement in the archive / `REVIEW_S5`.
 None needs another review round; they need a fix and a gate.
 
 **Multi-Gaussian (S5):**
-- `S5G-4` — the only genuinely open item: claims the stale-floor guard fails for a
-  component migrating *inward*, which contradicts the report's own *Cleared*
-  table. One of the two is wrong; settle it.
 - `S5T-1` full scope — stale `joint_background` reliability keys (incl.
   `deer_validate`'s per-trial `flagged` vote) shipped beside refitted k/λ, across
   four consumers. Large; land the namespace/label route across all four at once —
@@ -179,6 +176,18 @@ needs a calibration pass). Revisit once 1 and 2 land.
 ## Explicitly rejected — do not re-propose without new data
 
 Each was implemented and **measured worse** than what it replaces:
+- **`S5G-4`'s symmetric re-floor loop** (2026-08-10) — the defect is real: `_solve`
+  only ever *raises* a component's width bound, so one migrating **inward** keeps
+  its seed centre's higher floor. It reaches the user (**10/368** reported
+  components on the 156-row catalogue, worst **2.13× too broad**; **5/105** on the
+  28 real traces). Letting the bound also fall to `_sigma_floor(fitted centre)`
+  clears every stale slot and buys **Δoverlap −0.0011 (t −1.16)**, correct-N
+  0.801 → 0.814, with one row at **−0.131**; on real data it changes nothing
+  (N identical 0/28, peak ≤ 0.033 nm). Mechanism: at long r the *calibrated* floor
+  `r⁴/(27·ν_dd·T)` sits **below** the true width and the width direction is
+  near-flat, so a relaxed bound lets least_squares collapse the component to a
+  spike — the stale bound was accidental spike protection. Same shape as `S5-5`
+  option A. Numbers + harnesses: `~/deer_benchmark/s5g4/VERDICT.md`.
 - `S5-5` option A — re-key `_has_spurious` on the per-centre floor: correct-N
   0.843 → 0.731; on the 13 rows it changes, N right 12/13 before, 0/13 after (it
   deletes the genuine weak far mode).
@@ -209,7 +218,10 @@ against all four**, or it books a gain already paid for elsewhere.
   three times: S3's `mellin_delta` floor, the multi-Gaussian width floor, and
   `S5-5`'s `spike_weight_max` gate (base catalogue's smallest true weight 0.15 is
   above the 0.10 gate → the regime was unreachable, a clean null was an artefact).
-  **Check what range a benchmark covers before believing a null.**
+  **Check what range a benchmark covers before believing a null.** Hit a fourth
+  time in `S5G-4`: 8 hand-picked cases said *no* reported component ever carries a
+  stale width bound (0/19), the 156-row catalogue said 10/368 and the real traces
+  5/105. Small targeted case sets hide anything the multi-start seeding absorbs.
 - **Any engine-signature change needs one GUI-path smoke run before the session
   closes** — applies to result-dict *keys* as much as array lengths (the
   2026-08-05 audit found detectors that never reached the window).
@@ -241,8 +253,15 @@ Figures stated as fact and later retracted. Full argument in the archive.
 | "On artifact-free synthetic data 'mc' ties 'lsq'" | refuted — overlap Δ −0.0302 (t=−5.46), correct-N 0.808 → 0.644; deleted from docs |
 | width floor's "27" presented as physics | it is calibration; `deer.md` now says so |
 | `S5T-8` `bg_start_early` demotion (that moving the window "won't shift the result") | refuted at GUI defaults; reverted |
+| `S5G-4` "contradicts the report's own *Cleared* table" | there was no contradiction — the *Cleared* entry measured **outward** migration, `S5G-4` is about **inward**; both are right |
 
 ## Environment
+
+Every `~/deer_benchmark/...` path below resolves to
+`C:\Users\User\YandexDisk\deer_benchmark` on the Windows dev box and to
+`~/Yandex.Disk/deer_benchmark` (via the `~/deer_benchmark` symlink) on Linux — the
+same synced folder, so a harness can run on either. Windows has 6 cores, matching
+`fel`, so catalogue jobs no longer have to be shipped out.
 
 Heavy catalogue jobs run on `fel@172.16.16.1` (6 cores, ~4–5×). Pin
 `OMP/OPENBLAS/MKL_NUM_THREADS=1` for agent multiprocessing pools. The

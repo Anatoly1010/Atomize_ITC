@@ -22,15 +22,21 @@ Python is the scripting language. Experimental scripts are ordinary Python files
 
 ## Common commands
 
-**This machine runs Linux and has `python3` only — there is no `python` on PATH.**
+**Two machines.** Development happens on **Windows**, where the interpreter is
+`python` (there is no `python3` on PATH) and the shell is PowerShell. The
+spectrometer box that drives the hardware runs **Linux**, where it is `python3`
+only. Anything that touches `libs/lib*.so`, the Insys FPGA or the SpinCore board
+can only run for real on the Linux box; on Windows use test mode (see below).
+Substitute the right interpreter for the platform you are on.
+
 Install (`pip install -e .`), the optional extras, and the `atomize-itc` /
 `epr-auto` entry points are all defined in `pyproject.toml` — read it rather than
 trusting a copy here. The invocations that are NOT guessable from the manifest:
 
 ```bash
-python3 -m atomize path/to/script.py    # launch the GUI and open a script in it
-python3 path/to/script.py test          # smoke-test one script, no GUI (see "Test mode")
-python3 -m atomize.epr_auto run <protocol>.yaml --test   # protocol runner, dry-run
+python -m atomize path/to/script.py    # launch the GUI and open a script in it
+python path/to/script.py test          # smoke-test one script, no GUI (see "Test mode")
+python -m atomize.epr_auto run <protocol>.yaml --test   # protocol runner, dry-run
 ```
 
 There is no unit-test suite; the project's pre-flight check is **test mode** (see "Test mode" below). Example/demo scripts live in `atomize/script_examples/` (not `atomize/tests/` — that path in the upstream README is stale here).
@@ -106,7 +112,7 @@ When adding hardware-touching code, always preserve the `argv[1] == 'test'` bran
 
 `atomize/epr_auto/` is the protocol-runner/automation layer (design + roadmap in `docs/automation/`). Its engine does **not** duplicate the phasing tool: `engine/executor.py` runs the very same `Worker` class from `awg_phasing_insys.py`, and `engine/snapshot.py` re-implements only the GUI's snapshot pipeline — preset parsing (`open_file`/`setter` line indices), value formatting (grid snap — 3.2 ns default / 0.8 ns for fine-grid presets with a trailing `AWG grid:  0.8` line, `' ns'`/`' MHz'` strings, `TimeLogSpinBox` log-grid), `expand_phase_cycling`, unit conversions, and the `dig_start_exp`/`worker.exp*` argument packing.
 
-**Any change to the phasing GUIs (`awg_phasing_insys.py`, and `phasing_insys.py` once RECT support lands) that touches the preset format, the `update_*` value formatting, `expand_phase_cycling`, the `Worker` method signatures / pipe protocol, or the `dig_start_exp` argument packing MUST be mirrored in `atomize/epr_auto/engine/`, and the equivalence harness `~/epr_auto_dev/gui_vs_engine.py` re-run** — it drives the real GUI offscreen and diffs the built worker args against the engine for every preset in `atomize/control_center/experiments/`; it must report ALL PASS.
+**Any change to the phasing GUIs (`awg_phasing_insys.py`, and `phasing_insys.py` once RECT support lands) that touches the preset format, the `update_*` value formatting, `expand_phase_cycling`, the `Worker` method signatures / pipe protocol, or the `dig_start_exp` argument packing MUST be mirrored in `atomize/epr_auto/engine/`, and the equivalence harness `~/epr_auto_dev/gui_vs_engine.py` re-run** — it drives the real GUI offscreen and diffs the built worker args against the engine for every preset in `atomize/control_center/experiments/`; it must report ALL PASS. That harness lives on the Linux box only; the fork-sync checker is `~/atomize_sync/sync_check.py` on Linux and `D:\Melnikov\11_Programming\atomize_sync\sync_check.py` on Windows.
 
 ### General script-side API
 
