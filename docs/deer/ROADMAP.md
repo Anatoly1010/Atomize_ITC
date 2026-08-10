@@ -44,6 +44,24 @@ the archive session that shipped it.
 
 ## Recently landed
 
+- **2026-08-05 audit, items 3/4/5/7/9 + the batch clamp line** (`deer.py` +
+  `deer_analysis.py`, 2026-08-10). `deer_validate` forwards `clamp_alias` (the
+  `False` escape hatch raised a shape mismatch); `pre_zero` is honoured on every
+  engine through a `None` "engine default" sentinel, with `pre_zero_engine` kept
+  as the older spelling and the false "always crop" docstring corrected;
+  `engine='joint'` forwards `head_level`/`head_cap`/`head_ratio_max`;
+  `deer_validate` receives `echo_head` so ticking both no longer drops the head;
+  the reliability shading reads a new `res['t_max_us']` (largest positive t)
+  instead of `ptp(res['t'])`, which under `pre_zero='even'` included the pre-t₀
+  span; the echo-head checkbox greys out under the three background models that
+  drop it; "Process all" reports the alias clamp. Gate: **max abs Δ = 0.000e+00**
+  over 28 real + 1 synthetic trace × 7 engine configs × 2 validate paths against
+  `HEAD`, the gauss catalogue **100 % bit-identical** to the same-box baseline,
+  and an offscreen GUI run ALL PASS (`~/deer_benchmark/s0805/gui_smoke.py`).
+  Item **(8)**'s "the GUI never reads the `echo_head` dict" was **already fixed**
+  before this session — `deer_analysis.py` reports all three outcomes; only its
+  checkbox half needed doing. Item (6) deliberately left open.
+
 - **S5 round-2 reporting fixes** (`deer.py` + `deer_analysis.py`) — bound flags,
   `mass`/`mass_fraction`, MC-band relabel, `ic_railed`, strict `s_hi*0.999` width
   cap + per-seed `_solve` guard + `ic_failed`, docstring corrections. Gate: **max
@@ -86,10 +104,10 @@ the archive session that shipped it.
 
 ## Pending — do first
 
-The DEER stack is fully in sync, the estimator's external check is closed and
-`S5G-4` is settled, so there is **no do-first item** — pick from the backlog
-below. Cheapest high-value pick: the 2026-08-05 audit reporting defects (3–9).
-Biggest lever: the residual bootstrap (uncertainty).
+The DEER stack is fully in sync, the estimator's external check is closed,
+`S5G-4` is settled and the 2026-08-05 audit is down to its one behaviour-change
+item, so there is **no do-first item** — pick from the backlog below. Biggest
+lever: the residual bootstrap (uncertainty).
 
 ## Pending — backlog
 
@@ -111,23 +129,11 @@ None needs another review round; they need a fix and a gate.
   **`xengine-3`** (triage's own "strongest"), `xengine-2`, `callsites-1`,
   `batch-1`, `me1-1`, `ci-1`, `status-1`, `robust-5`, `docs-7`.
 
-**Reporting defects from the 2026-08-05 audit (items 3–9 still open):**
-- (3) `deer_validate(clamp_alias=False)` raises — clamps its own grid but forwards
-  `True` to the per-trial `deer_invert` → shape mismatch. Public escape hatch.
-- (4) `pre_zero` silently ignored on Mellin/gauss (pops `pre_zero_engine`);
-  `deer_invert`'s docstring still says they "always crop", false since `2f10ce7`.
-- (5) `deer_invert(engine='joint')` drops `**kwargs` — `head_level`/`head_cap`/
-  `head_ratio_max` inert on that path.
+**Reporting defects from the 2026-08-05 audit — only (6) is left:**
 - (6) `'even_fold'` pairs by `searchsorted`, so an off-grid t₀ folds outward
   (~74 % of dt at the echo top). **Fixing it re-opens the +0.0064 that justified
-  the Mellin default** — needs a benchmark re-run, not a one-liner.
-- (7) `echo_head` + Validate silently drops the head (`:1946` omits it).
-- (8) `echo_head` is a no-op with no pre-t₀ samples and the outcome is never read
-  from the result dict.
-- (9) reliability shading is engine-dependent — `ptp(res['t'])` includes the
-  pre-t₀ span under `pre_zero='even'`, so Tikhonov and Mellin draw the green/yellow
-  boundary at different r on identical data.
-- The batch "Process all" summary still reports no clamp for any engine.
+  the Mellin default** — needs a benchmark re-run, not a one-liner. This is the
+  only one of the ten that is a behaviour change rather than a reporting fix.
 
 **S4 note queue (unverified, each carries the reviewer's numbers):**
 - widen the τmax candidate grid `[6…40]` → `[3…60]` (+0.017 mean overlap, needs a

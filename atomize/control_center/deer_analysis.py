@@ -733,6 +733,8 @@ class MainWindow(QMainWindow):
             'default: it adds a regularization scan and helps mainly at higher '
             'noise.')
         self.deer_echo_head.stateChanged.connect(self._live_update)
+        self.deer_engine.currentIndexChanged.connect(self._echo_head_update)
+        self._echo_head_update()
         adv.add_widget(self.deer_echo_head)
 
         # General-background coefficients g(t) = a·exp(b·(t + c·dᵗ)), one per row.
@@ -793,6 +795,13 @@ class MainWindow(QMainWindow):
         for sp in (self.gbg_a, self.gbg_b, self.gbg_c, self.gbg_d):
             sp.setEnabled(is_general and not auto)
         self._gbg_rows.setVisible(is_general and not auto)
+
+    def _echo_head_update(self, *args):
+        """The parabolic head is only implemented on the Joint background, where
+        `_tikhonov_compute` drops it under the other three models. Grey the box out
+        there instead of leaving a tick that does nothing."""
+        joint = self.deer_engine.currentIndex() == 1
+        self.deer_echo_head.setEnabled(joint)
 
     def _general_bg_params(self):
         """bg_params dict for the General background: None when auto-fitting,
@@ -1917,7 +1926,7 @@ class MainWindow(QMainWindow):
                 val = deer_module.deer_validate(
                     t_us, v, r=r, bg_start=bg_us, bg_end=bg_end_us, dim=dim,
                     fit_dim=fit_dim, alpha=alpha, alpha_factor=afac, engine=engine,
-                    bg_params=bgp)
+                    bg_params=bgp, echo_head=echo_head)
                 res, band = val['base'], val
             else:
                 res = deer_module.deer_invert(
@@ -1928,6 +1937,8 @@ class MainWindow(QMainWindow):
             # display axis in acquisition time, over exactly the samples the engine kept
             res['r_min_requested'] = float(np.min(r))
             t_eng = np.asarray(res['t'], float)
+            # the reliability rule wants the largest positive t, not the span
+            res['t_max_us'] = float(np.max(t_eng)) if len(t_eng) else 0.0
             res['pre'] = self._pre_zero(res, x, v, t_us, tf, t_eng)
             res['t'] = t_eng + t0_disp * tf
             if bg_end_us is not None:
@@ -2012,6 +2023,8 @@ class MainWindow(QMainWindow):
             # display axis in acquisition time, over exactly the samples the engine kept
             res['r_min_requested'] = float(np.min(r))
             t_eng = np.asarray(res['t'], float)
+            # the reliability rule wants the largest positive t, not the span
+            res['t_max_us'] = float(np.max(t_eng)) if len(t_eng) else 0.0
             res['pre'] = self._pre_zero(res, x, v, t_us, tf, t_eng)
             res['t'] = t_eng + t0_disp * tf
             if bg_end_us is not None:
@@ -2103,6 +2116,8 @@ class MainWindow(QMainWindow):
             # display axis in acquisition time, over exactly the samples the engine kept
             res['r_min_requested'] = float(np.min(r))
             t_eng = np.asarray(res['t'], float)
+            # the reliability rule wants the largest positive t, not the span
+            res['t_max_us'] = float(np.max(t_eng)) if len(t_eng) else 0.0
             res['pre'] = self._pre_zero(res, x, v, t_us, tf, t_eng)
             res['t'] = t_eng + t0_disp * tf
             if bg_end_us is not None:
@@ -2178,7 +2193,13 @@ class MainWindow(QMainWindow):
         self.deer_band = None
         self._batch_mode = True            # keep the overlay across re-renders
         self._render_batch(results)
-        self.batch_table = {'engine': engine,
+        # same alias test as the single-result panel: compare against what was asked
+        clamped = []
+        for nm, res in results:
+            ra, req = res.get('r_alias'), res.get('r_min_requested')
+            if ra and req is not None and float(req) < float(ra) - 1e-9:
+                clamped.append((nm, float(req), float(ra)))
+        self.batch_table = {'engine': engine, 'clamped': clamped,
                             'rows': [(nm, self._trace_stats(res)) for nm, res in results]}
         self._show_batch_summary()
         self.batch_save_btn.setEnabled(True)
@@ -2338,10 +2359,18 @@ class MainWindow(QMainWindow):
         tbl = self.batch_table
         if not tbl:
             return
+        clamped = tbl.get('clamped') or []
+        alias_line = ''
+        if clamped:
+            hi = max(c[2] for c in clamped)
+            alias_line = ('<span style="color: rgb(214, 39, 40);">r min raised on '
+                          f'{len(clamped)}/{len(tbl["rows"])} trace(s), up to '
+                          f'{hi:.2f} nm: sampling limit</span><br>')
         html = (f'<div style="line-height:150%;"><b style="color: rgb(211,194,78);">'
                 f'Process all — {len(tbl["rows"])} trace(s), {tbl["engine"]}</b><br>'
                 + self._summary_table_html(tbl['rows'], tbl['engine'])
-                + '<br><i>r in nm; DW ≈ 2 ⇒ white residual.</i></div>')
+                + f'<br>{alias_line}'
+                + '<i>r in nm; DW ≈ 2 ⇒ white residual.</i></div>')
         panel = {'tikhonov': self.deer_info, 'mellin': self.mellin_info,
                  'gauss': self.gauss_info}.get(tbl['engine'], self.deer_info)
         panel.setText(html)
@@ -2773,7 +2802,9 @@ class MainWindow(QMainWindow):
 
         # ---- bottom plot: distance distribution ----
         rr = np.asarray(res['r'], float)
-        t_max_us = float(np.ptp(np.asarray(res['t'], float))) if len(res['t']) else 0.0
+        t_max_us = res.get('t_max_us')
+        if t_max_us is None:                   # results from before this key existed
+            t_max_us = float(np.ptp(np.asarray(res['t'], float))) if len(res['t']) else 0.0
         self._show_reliab_bands(self.deer_reliab_chk.isChecked(), t_max_us,
                                 rr[0] if len(rr) else None,
                                 rr[-1] if len(rr) else None)
