@@ -331,10 +331,11 @@ class MainWindow(QMainWindow):
         self.tr_epr_check = head.add_check(
             'TR EPR: remove off-resonance',
             tooltip='Row 0 of a TR EPR file is the off-resonance reference '
-                    'trace, not a field point. Subtract it from every trace '
-                    'and drop it as the file is read, exactly as the main '
-                    "window's Open TR Data does; every remaining trace then "
-                    'lands on the field it was measured at.')
+                    'trace, not a field point. Subtract it from every trace, '
+                    'zero the first time sample and drop it as the file is '
+                    "read — bit-identical to the main window's Open TR Data. "
+                    'Every remaining trace then lands on the field it was '
+                    'measured at.')
 
         # ---- Axis metadata (reconstructed by hand; no .param) ----
         head.add_heading('Axes')
@@ -883,9 +884,13 @@ class MainWindow(QMainWindow):
             dx, xu, dy, yu = self._parse_axis_header(header_lines)
             offres = self.tr_epr_check.isChecked() and i.shape[0] > 1
             if offres:
-                # subtract the off-resonance reference row, then drop it; the
-                # stored sweep axis already labels the field rows that follow it
+                # the main window's Open TR Data, step for step: subtract the
+                # off-resonance reference row, force the first time sample to
+                # zero, drop the reference. The stored sweep axis already labels
+                # the field rows that follow it, so it needs no shift.
                 i, q = (i - i[0])[1:], (q - q[0])[1:]
+                i[:, 0] = 0.0
+                q[:, 0] = 0.0
             if self.transpose_check.isChecked():
                 i, q = i.T, q.T
                 dx, xu, dy, yu = dy, yu, dx, xu   # axes swap with the matrix
