@@ -34,6 +34,12 @@ One file per array that today is one CSV (I and Q merge into a single file — t
 replaces the `*_2d.csv` + `*_2d_1.csv` split of the `ndim == 3` branch,
 csv_opener_saver.py:159-174).
 
+The core is written **dimension-agnostic**: `.h5` is a drop-in alternative to
+`.csv` for anything `save_data` already accepts, 1D included. Nothing in
+`control_center/` writes 1D `.h5` — the 1D result files stay CSV per the ruling
+in §0 — but the capability exists for experimental scripts and for whatever wants
+it later, and costs nothing extra because it falls out of the same rule (§2).
+
 ```
 example_2d.h5
 ├── attrs
@@ -44,6 +50,15 @@ example_2d.h5
 ├── Q      float32  (npoints, nsamples)   only when the source has a quadrature
 ├── t      float64  (nsamples,)           within-trace axis, seconds
 └── sweep  float64  (npoints,)            tau (s) / field (G) / amplitude axis
+```
+
+A 1D file is the same layout with one axis fewer — no separate concept:
+
+```
+example_1d.h5
+├── attrs                              same three
+└── I      float32  (npoints, ncols)   the array verbatim, e.g. np.c_[x, I, Q]
+                                       → (POINTS, 3), x in column 0 as in CSV
 ```
 
 TR EPR with "Save Each Scan" adds one dataset:
@@ -100,10 +115,22 @@ all 5 repos today — keep it that way, see Stage 7).
 - `save_data(filename, data, header='', mode='w', axes=None)`
   (csv_opener_saver.py:142): if `filename` ends `.h5` → delegate to a new private
   `_save_h5(filename, data, header, axes)`; else the existing CSV code runs
-  unchanged (new `axes` kwarg ignored). `_save_h5` maps `ndim == 2` → dataset `I`;
-  `ndim == 3` → `I` = `np.transpose(data[0])`, `Q` = `np.transpose(data[1])`
-  (mirror of the CSV split); `axes=(t, sweep)` optional. `import h5py` lazily
-  inside `_save_h5` (house pattern, commit f96a907).
+  unchanged (new `axes` kwarg ignored). `import h5py` lazily inside `_save_h5`
+  (house pattern, commit f96a907).
+- **The rule `_save_h5` follows: store the array verbatim, exactly as
+  `np.savetxt` would lay it out.** `ndim == 1` → dataset `I` shape `(n,)`;
+  `ndim == 2` → dataset `I` with the same rows and columns the CSV would have;
+  `ndim == 3` → `I` = `np.transpose(data[0])`, `Q` = `np.transpose(data[1])`,
+  mirroring the CSV split. `axes` optional throughout. This is what makes the
+  core dimension-agnostic: the writer never has to guess whether a `(POINTS, 3)`
+  array is a 1D result or a 2D map — it doesn't care, and neither does CSV today.
+- **Interpretation lives in the reader, as it already does for CSV.** The only
+  difference between `open_1d` and `open_2d` today is a transpose — `open_1d`
+  returns `np.transpose(temp)` (:193), `open_2d` returns `temp` as-is (:211).
+  The `.h5` branches keep exactly that asymmetry, so `save_data(f'{p}.h5',
+  np.c_[x, I, Q])` → `open_1d` gives back `(3, POINTS)` columns, bit-identical in
+  role to the CSV round-trip. No `kind` attribute, no shape sniffing, no second
+  writer entry point.
 - Every call site then selects the format by the *filename it passes* — no second
   code path at the ~10 write sites.
 - `save_header` (csv_opener_saver.py:121): `.h5` → create the file with the
@@ -111,13 +138,25 @@ all 5 repos today — keep it that way, see Stage 7).
   `mode='w'` later rewrites it whole.
 - `open_1d` / `open_2d` / `open_2d_appended` (csv_opener_saver.py:181, 199, 217):
   first line of each real branch: if path ends `.h5` → common `_open_h5` returning
-  `(header_array, data)`. `open_2d` on an `.h5` with both `I` and `Q` returns them
+  `(header_array, data)`. `open_1d` transposes what it gets, per the rule above.
+  `open_2d` on an `.h5` with both `I` and `Q` returns them
   stacked as `(2, npoints, nsamples)` (ruled); with only `I`, the single matrix as
   today. Safe because the CSV path is untouched and still returns one matrix, so
   no existing call site changes shape — only `.h5` reads see a 3D return, and
   every `.h5` reader is new code. `open_2d_appended`: `np.array_split` on the
   `scans` dataset is unnecessary — return the slices list. `header_array` built
   as in §1. Test-mode branches untouched.
+- **`.h5` precision is derived from `fmt`, so the two formats can never drift
+  apart.** `save_data` gains `dtype=None`; when it is not given, `_save_h5`
+  picks the dtype from the same `fmt` the CSV path would have used — ≤ 7
+  significant digits (`%.6e`, the default) → float32, more (`%.9e`) → float64.
+  Axes are always float64. An explicit `dtype` overrides.
+  One rule in one place: a call site that raises its CSV precision raises its
+  HDF5 precision by the same act, and cannot forget the second half. Without
+  this the 1D sites — now `%.9e` per ruling B, i.e. 10 digits — would silently
+  write ~7-digit float32 into an `.h5` sitting next to a 10-digit CSV. Nothing
+  in `control_center/` writes 1D `.h5` today, so no caller changes; the rule is
+  there so the general core stays honest for scripts.
 - `save_data` gains an explicit `fmt='%.6e'` parameter, threaded into the
   `np.savetxt` calls of both the `ndim == 2` (:147) and `ndim == 3` (:167)
   branches; default unchanged so every existing caller keeps `%.6e`; ignored on
@@ -179,6 +218,10 @@ scan).
   else (a global bump would grow the 2D CSV path ~25%). Mechanics in §2
   (`fmt` parameter) and Stage 2.6; readers need no change (`np.genfromtxt`
   parses either width).
+- **The two formats are kept in step by construction**: `_save_h5` derives its
+  dtype from `fmt` unless told otherwise (§2), so `%.6e` ↔ float32 (both ~7
+  digits) and `%.9e` ↔ float64 (10 digits, comfortably carried). Precision is
+  chosen once per call site and applies to whichever container it writes.
 
 ## 4. Worker flag routing — mirror-rule analysis
 
@@ -208,14 +251,20 @@ symmetry and to keep `exp_on`/`exp_test` signatures aligned.
 
 ### Stage 1 — writer/reader core (`csv_opener_saver.py`)
 1. `_save_h5` + extension sniff in `save_data` (:142) and `save_header` (:121);
-   `axes=None` and `fmt='%.6e'` kwargs on `save_data` (fmt into both savetxt
-   branches, default keeps every existing caller at `%.6e`).
+   `axes=None`, `dtype='float32'` and `fmt='%.6e'` kwargs on `save_data` (fmt
+   into both savetxt branches, default keeps every existing caller at `%.6e`).
+   Handle `ndim` 1, 2 and 3 by the verbatim rule (§2) — no dimension is a special
+   case, and none of them needs a `control_center` caller to be worth having.
 2. `_open_h5` + sniff in `open_1d` (:181), `open_2d` (:199),
-   `open_2d_appended` (:217).
+   `open_2d_appended` (:217); `open_1d` transposes, `open_2d` does not.
 3. `fmt='csv'` parameter on `create_file_dialog` (:79 → :91).
 4. Lazy `import h5py` with a clear `general.message`-safe error if missing.
-5. Round-trip check by hand (write with the new code, read back, diff against the
-   in-memory array; header string identity).
+5. Round-trip check by hand, all three ranks: 1D `(n,)`, a `np.c_[x, I, Q]`
+   `(POINTS, 3)` through `save_data`→`open_1d`, a 2D map through
+   `save_data`→`open_2d`, and a `(2, ·, ·)` I/Q array through both writer and
+   `open_2d`. Diff against the in-memory arrays (exact under `dtype=None`, within
+   float32 rounding at the default); header string identity; and confirm the
+   CSV and `.h5` round-trips return the same shapes for the same input.
 
 ### Stage 2 — AWG phasing tool (`awg_phasing_insys.py`)
 1. Move Save2D to Settings and add the HDF5 checkbox beside it:
@@ -296,7 +345,7 @@ symmetry and to keep `exp_on`/`exp_test` signatures aligned.
      leave untouched.
 5. Resolve the p9==3 `data[3]` bug first (§0.4) as its own commit.
 
-### Stage 5 — readers (treatment tools)
+### Stage 5 — readers (treatment tools + main window)
 1. `data_treatment_2d.py` `open_iq` (:845-881): extension branch — `.h5` loads
    through `open_2d` (§2). A stacked `(2, npoints, nsamples)` return splits as
    `raw_i, raw_q = arr[0], arr[1]`; an I-only `.h5` returns 2D → `raw_i = arr`,
@@ -314,11 +363,48 @@ symmetry and to keep `exp_on`/`exp_test` signatures aligned.
    Pass `name_filters=['Data (*.csv *.h5)', 'All files (*)']` to the open dialog
    (today it falls into the hardcoded csv filter). Model on `open_bruker`
    (:937) which already does multi-format + axis population.
-2. `data_treatment.py` (1D, open_1d at :983) and `deer_analysis.py` (open_1d at
-   :1231): inherit `.h5` reading for free via the Stage 1 sniff; only widen the
-   dialog filters if 1D-from-h5 is ever wanted — not in scope now (1D results
-   stay CSV).
-3. `header_view.py`: no change (2D tool passes it the lines it already has).
+2. `data_treatment.py` (1D tool) — **in scope: it must open 1D `.h5`.** Its
+   loader already routes through `self.opener.open_1d` (:983), so the data half
+   is inherited from Stage 1 with no change, including the `> 6 columns → use
+   the 2D tool` guard, which keeps working since `open_1d` transposes `.h5` the
+   same way it transposes CSV. Two things do need doing:
+   - `open_csv` (:1002) calls `read_header(file_path)` (:1008) before loading —
+     a text scan that returns nothing useful for an `.h5`. Give it an `.h5`
+     branch (see 3) so column labels and the header viewer still populate.
+   - `_open_dialog` for this path takes no `name_filters` (:1003), so it falls
+     to the default CSV filter — widen it to `['Data (*.csv *.h5)',
+     'All files (*)']`, the same list Stage 5.1 gives the 2D tool. Model the
+     multi-format dialog on `open_bruker` (:1029-1035), which already does it.
+   `deer_analysis.py` (open_1d at :1231) inherits the data path identically;
+   widen its filter too if it is to accept `.h5`, otherwise leave it.
+3. `header_view.py` `read_header` (:60): add an `.h5` branch returning
+   `attrs['header'].splitlines()`. One place, and both treatment tools plus the
+   header viewer window pick it up. The 2D tool passes lines it already holds,
+   so it is unaffected either way.
+4. **Main-window openers — the "Open 1D / 2D / TR Data" context-menu actions.**
+   These are a fourth consumer the earlier draft missed, and they do *not* go
+   through `Saver_Opener` at all — each scans leading `#` lines itself and calls
+   `np.genfromtxt` directly, so none of them inherits `.h5` from Stage 1:
+   - `main_window.py` `open_file` (1D, :1417; genfromtxt :1439,
+     `skip_header=1, comments='#'`, then `np.transpose`).
+   - `main_window.py` `open_file_2d` (:1481; genfromtxt :1502 with a counted
+     header; `setImage(data, axes={'y': 0, 'x': 1})`).
+   - `main.py` `open_file_tr` (:163; genfromtxt :199), which additionally regex-
+     parses Start Field / Field Step / Time Resolution out of the header text
+     (:184-186) to set the axes, then stacks raw + baseline-subtracted planes
+     into `data_3d` for the frame view (:205).
+   Change for each: sniff the extension, and for `.h5` take data and header text
+   from the shared reader (`open_1d` / `open_2d`, §2) instead of the
+   `#`-line scan. The regex axis parsing in `open_file_tr` needs no rework — the
+   header attr yields the same text those regexes already expect — but prefer
+   the `t`/`sweep` datasets when present, falling back to the regexes. An `.h5`
+   returning a stacked `(2, ·, ·)` array goes straight to `setImage` as frames,
+   the same convention as `data_3d` there today. Leave the CSV paths untouched
+   rather than refactoring them onto `Saver_Opener`; that is a separate cleanup.
+5. Both file dialogs hardcode `filter = "CSV (*.csv)"` — `file_dialog`
+   (main_window.py:1517) and `file_dialog_2d` (:1762, shared by Open 2D and, via
+   `is_2d=True` at main.py:27, Open TR). Widen both to `"Data (*.csv *.h5)"`.
+   Without this the new files are simply invisible in the picker.
 
 ### Stage 6 — packaging + docs
 1. `pyproject.toml` (:27): add `"h5py>=3.8"` to core `dependencies`.
@@ -330,11 +416,17 @@ symmetry and to keep `exp_on`/`exp_test` signatures aligned.
 2. Docs repo `/home/anatoly/atomize_docs` (MkDocs):
    - `docs/functions/general_functions/data_managment.md` — new `.h5` behavior of
      `save_data` / `save_header` / `open_1d` / `open_2d` / `open_2d_appended`
-     (incl. the stacked I/Q return), the new `fmt` / `axes` parameters of
-     `save_data`, the `fmt` parameter of `create_file_dialog`, and the file
-     layout tree from §1.
+     (incl. the stacked I/Q return), the new `fmt` / `axes` / `dtype` parameters
+     of `save_data`, the `fmt` parameter of `create_file_dialog`, and the file
+     layout tree from §1. Document `.h5` as available at every rank, not as a
+     2D-only feature — a script may save and reopen 1D data this way even though
+     no control-center tool does; include the `dtype=None` note for scripts that
+     want more than float32 precision.
    - `docs/projects/endstation.md` — TR EPR machine section (:25) and the
      phasing-tool section: the two checkboxes, file naming, `scans` dataset.
+   - The main-window "Open 1D / 2D / TR Data" actions and the 1D/2D Data
+     Treatment tools now accept `.h5` as well as `.csv` — say so wherever those
+     openers are described.
    - `docs/projects/epr_auto/protocol_settings-adjacent pages` only if the Stage 3
      protocol knob is exposed (then `docs/projects/epr_auto/protocols.md`).
    - In-tree mirror `atomize/documentation/functions/general_functions/
@@ -349,7 +441,9 @@ Authoritative list from `/home/anatoly/atomize_sync/sync_check.py`: lead
 | File | Atomize (plain) | NIOCH | NIOCH_Q | Cryomech | Port route |
 |---|---|---|---|---|---|
 | `general_modules/csv_opener_saver.py` | present, byte-identical to ITC (all 5, LF) | same | same | same | plain-led (`PLAIN_LEAD`): `--lift` ITC→plain, then `--sync` plain→forks; stays identical everywhere |
-| `control_center/data_treatment_2d.py`, `data_treatment.py`, `deer_analysis.py` | absent | present | present | absent | ITC-led shared CC tools: `--sync-cc` ITC→{NIOCH, NIOCH_Q} |
+| `control_center/data_treatment_2d.py`, `data_treatment.py`, `deer_analysis.py`, `header_view.py` | absent | present | present | absent | ITC-led shared CC tools: `--sync-cc` ITC→{NIOCH, NIOCH_Q} |
+| `main/main_window.py` (Open 1D/2D handlers + both dialog filters, Stage 5.4-5.5) | **byte-identical to ITC in all 4** (verified) | same | same | same | plain-led like `csv_opener_saver.py`: `--lift` ITC→plain, `--sync` plain→forks; must stay identical |
+| `main/main.py` (`open_file_tr`, Stage 5.4) | **absent** (no extended main) | present, differs | present, differs | present, differs | **hand-port** into the three forks that have it; each carries its own tab set, so locate `open_file_tr` fresh per fork |
 | `control_center/awg_phasing_insys.py` | absent | absent | absent | absent | ITC-only, nothing to port |
 | `control_center/awg_phasing.py` (Spectrum variant, has `save2d`, 23 hits, own Settings tab at NIOCH :1747) | absent | present | present | absent | **hand-port** Stage-2 pattern (checkbox, worker attr, write-site renames); Spectrum digitizer differs — adapt per file, verify each write site, no blind copy |
 | `control_center/phasing_insys.py` / `phasing.py` | absent | `phasing.py`, no save2d | `phasing.py`, no save2d | absent | out of scope — no 2D data (§0.1) |
@@ -363,7 +457,11 @@ before committing — `sync_check.py` normalizes CRLF in comparisons, git does n
 Port checklist (ordered):
 1. Lift `csv_opener_saver.py` ITC→plain (`sync_check.py --lift`), review, then
    `--sync` plain→NIOCH, NIOCH_Q, Cryomech.
-2. `--sync-cc` the three treatment tools ITC→NIOCH, NIOCH_Q.
+2. `--sync-cc` the treatment tools + `header_view.py` ITC→NIOCH, NIOCH_Q.
+2b. Lift `main/main_window.py` ITC→plain then `--sync` to all forks (identical
+   everywhere today — the Open 1D/2D handlers and both dialog filters). Then
+   hand-port `open_file_tr` into `main/main.py` for NIOCH, NIOCH_Q and Cryomech;
+   plain has no `main.py` and needs nothing.
 3. Hand-port the AWG checkbox/flag/write-site changes into
    `Atomize_NIOCH/…/awg_phasing.py` and `Atomize_NIOCH_Q/…/awg_phasing.py`
    (their Settings tabs and `save2d` sites exist but line numbers and the
