@@ -464,7 +464,6 @@ class MainWindow(QMainWindow):
         self.param_i are used as parameters for script function
         """
         worker = Worker()
-        worker.save_hdf5 = self.save_hdf5
         # prevent running two processes
         try:
             if self.exp_process.is_alive() == True:
@@ -609,7 +608,6 @@ class MainWindow(QMainWindow):
     def run_main_experiment(self):
 
         worker = Worker()
-        worker.save_hdf5 = self.save_hdf5
 
         self.parent_conn, self.child_conn = Pipe()
 
@@ -1139,10 +1137,6 @@ class Worker():
 
         self.command = 'start'
 
-        # write the 2D data as a single .h5 file; set by the MainWindow before
-        # the process is launched, default keeps the CSV behaviour
-        self.save_hdf5 = 0
-
     def _append_scan_h5(self, filename, matrix, scan):
         """
         'Save Each Scan' for an .h5 file: the cumulative average after scan j
@@ -1267,9 +1261,9 @@ class Worker():
                 data = np.zeros( (3, real_length, points + 1) )
                 data_2 = np.zeros( (2, real_length_2, points + 1) )
 
-            # row 0 of the saved matrix is the off-resonance trace, so the
-            # field axis starts one step below START_FIELD to stay uniform
-            sweep_axis = START_FIELD + ( np.arange(points + 1) - 1 ) * FIELD_STEP
+            # row 0 of the saved matrix is the off-resonance trace; the axis
+            # still starts at START_FIELD, as the header and the CSV readers do
+            sweep_axis = START_FIELD + np.arange(points + 1) * FIELD_STEP
             axes_2d = ( np.arange(real_length) * t_step, sweep_axis )
             if p9 > 1:
                 axes_2d_2 = ( np.arange(real_length_2) * t_step_2, sweep_axis )
@@ -1693,7 +1687,9 @@ class Worker():
                         field = OFFRES_FIELD
                     
                     if p9 == 1 and p11 == 1 and p12 == 0:
-                        if self.save_hdf5 == 1:
+                        # the chosen name decides the format; a cancelled dialog
+                        # ('None') falls through to the guarded CSV calls
+                        if ext.lower() == '.h5':
                             if j == 1:
                                 file_handler.save_data(file_save_1, np.transpose( data[0, :, :] ), header = header, axes = axes_2d)
                             self._append_scan_h5(file_save_1, np.transpose( data[0, :, :] ), j)

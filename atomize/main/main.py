@@ -174,7 +174,7 @@ class MyExtendedNameList(NameList):
 
         if str(file_path).endswith('.h5'):
             header_array, temp = self.window.file_handler.open_2d(file_path)
-            header_lines = [''.join(part) for part in header_array]
+            header_lines = [':'.join(part) for part in header_array]
             axes = self.window.file_handler.open_h5_axes(file_path)
             if np.ndim(temp) == 3:      # a two-quadrature file: TR data is I
                 temp = temp[0]
