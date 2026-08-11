@@ -432,7 +432,7 @@ class Worker(QWidget):
 
             file_data, file_param = file_handler.create_file_parameters('.param')
             file_handler.save_header(file_param, header = header, mode = 'w')
-            file_handler.save_data(file_data, np.c_[x_axis, data_x, data_y], header = header, mode = 'w')
+            file_handler.save_data(file_data, np.c_[x_axis, data_x, data_y], header = header, mode = 'w', fmt = '%.9e')
 
 def main():
     """

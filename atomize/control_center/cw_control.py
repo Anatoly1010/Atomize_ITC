@@ -1267,7 +1267,7 @@ class Worker():
                             break
                     general.wait('200 ms')
 
-                file_handler.save_data(file_data, np.c_[x_axis, data], header = header, mode = 'w')
+                file_handler.save_data(file_data, np.c_[x_axis, data], header = header, mode = 'w', fmt = '%.9e')
 
                 while field > START_FIELD:
                     field = itc_fc.magnet_field( field - initialization_step )

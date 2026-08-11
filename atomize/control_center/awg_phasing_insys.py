@@ -1281,7 +1281,7 @@ class MainWindow(QMainWindow):
         self.tab_pulse.tabBar().setTabTextColor(2, QColor(193, 202, 227))
 
         # ---- Labels & Inputs ----
-        labels = [("Points to Drop", "label_11"), ("Zero Order", "label_12"), ("First Order", "label_13"), ("Second Order", "label_14"), ("Live FFT", "label_15"), ("Phase Correction", "label_16"), ("Shift Offset", "label_fft1"), ("Save 2D", "label_fft2")]
+        labels = [("Points to Drop", "label_11"), ("Zero Order", "label_12"), ("First Order", "label_13"), ("Second Order", "label_14"), ("Live FFT", "label_15"), ("Phase Correction", "label_16"), ("Shift Offset", "label_fft1")]
 
         #
         for name, attr_name in labels:
@@ -1340,8 +1340,7 @@ class MainWindow(QMainWindow):
         # ---- Check Boxes ----
         check_boxes = [("fft_box", self.fft_online),
                        ("Quad_cor", self.quad_online),
-                       ("IQ_corr", self.iq_online),
-                       ("Save2D", self.save_2d)]
+                       ("IQ_corr", self.iq_online)]
 
         for attr_name, func in check_boxes:
             check = QCheckBox("")
@@ -1357,8 +1356,6 @@ class MainWindow(QMainWindow):
         self.Quad_cor.setToolTip('Apply phase correction in the frequency domain: exp(i·(φ₀ + φ₁·f + φ₂·f²))')
 
         self.IQ_corr.setToolTip('When checked, apply time-domain zero-order phase correction: exp(i·φ₀),\nwhere φ₀ is set by the Frequency of the DETECTION pulse.In this case, only the integrated signal is plotted.\nWhen unchecked, the full 2D arrays are plotted.')
-        
-        self.Save2D.setToolTip('When checked, save both 1D and 2D arrays in the Shift Offset mode.')
 
         # ---- Separators ----
         def hline():
@@ -1376,23 +1373,21 @@ class MainWindow(QMainWindow):
         gridLayout.addWidget(self.Quad_cor, 1, 1)
         gridLayout.addWidget(self.label_fft1, 2, 0)
         gridLayout.addWidget(self.IQ_corr, 2, 1)
-        gridLayout.addWidget(self.label_fft2, 3, 0)
-        gridLayout.addWidget(self.Save2D, 3, 1)
 
-        gridLayout.addWidget(hline(), 4, 0, 1, 2)
-        
-        gridLayout.addWidget(self.label_11, 5, 0)
-        gridLayout.addWidget(self.P_to_drop, 5, 1)
-        gridLayout.addWidget(self.label_12, 6, 0)
-        gridLayout.addWidget(self.Zero_order, 6, 1)
-        gridLayout.addWidget(self.label_13, 7, 0)
-        gridLayout.addWidget(self.First_order, 7, 1)
-        gridLayout.addWidget(self.label_14, 8, 0)
-        gridLayout.addWidget(self.Second_order, 8, 1)
+        gridLayout.addWidget(hline(), 3, 0, 1, 2)
 
-        gridLayout.addWidget(hline(), 9, 0, 1, 2)
+        gridLayout.addWidget(self.label_11, 4, 0)
+        gridLayout.addWidget(self.P_to_drop, 4, 1)
+        gridLayout.addWidget(self.label_12, 5, 0)
+        gridLayout.addWidget(self.Zero_order, 5, 1)
+        gridLayout.addWidget(self.label_13, 6, 0)
+        gridLayout.addWidget(self.First_order, 6, 1)
+        gridLayout.addWidget(self.label_14, 7, 0)
+        gridLayout.addWidget(self.Second_order, 7, 1)
 
-        gridLayout.setRowStretch(10, 2)
+        gridLayout.addWidget(hline(), 8, 0, 1, 2)
+
+        gridLayout.setRowStretch(9, 2)
         gridLayout.setColumnStretch(10, 2)
 
         # flag for not writing the data when digitizer is off
@@ -1401,7 +1396,6 @@ class MainWindow(QMainWindow):
         self.quad = 0
         self.double_change = 0
         self.iq_cor = 1
-        self.save2d = 0
 
     def design_tab_4(self):
         laser_setting_page = QWidget()
@@ -1757,8 +1751,38 @@ class MainWindow(QMainWindow):
         gridLayout.addWidget(self.accum_box, 7, 1)
         gridLayout.addWidget(hline(), 8, 0, 1, 2)
 
+        # ---- Saving of the full 2D data ----
+        save2d_label = QLabel("Save 2D")
+        save2d_label.setFixedSize(170, 26)
+        save2d_label.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
+        self.Save2D = QCheckBox("")
+        self.Save2D.setStyleSheet(CHECKBOX_STYLE)
+        self.Save2D.setFixedSize(170, 26)
+        self.Save2D.setToolTip('When checked, save both 1D and 2D arrays in the Shift Offset mode.')
+        self.Save2D.stateChanged.connect(self.save_2d)
+
+        hdf5_label = QLabel("Save 2D as HDF5")
+        hdf5_label.setFixedSize(170, 26)
+        hdf5_label.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
+        self.Save_hdf5 = QCheckBox("")
+        self.Save_hdf5.setStyleSheet(CHECKBOX_STYLE)
+        self.Save_hdf5.setFixedSize(170, 26)
+        self.Save_hdf5.setToolTip(
+            "When Save 2D is on, every 2D dump is written as a single .h5 file "
+            "instead of CSV; 1D result files stay CSV.")
+        self.Save_hdf5.stateChanged.connect(self.save_2d_hdf5)
+
+        gridLayout.addWidget(save2d_label, 9, 0)
+        gridLayout.addWidget(self.Save2D, 9, 1)
+        gridLayout.addWidget(hdf5_label, 10, 0)
+        gridLayout.addWidget(self.Save_hdf5, 10, 1)
+        gridLayout.addWidget(hline(), 11, 0, 1, 2)
+
+        self.save2d = 0
+        self.save_hdf5 = 0
+
         gridLayout.setColumnStretch(2, 1)
-        gridLayout.setRowStretch(9, 1)
+        gridLayout.setRowStretch(12, 1)
 
         # All pulse spin-boxes now exist; snapshot their values so the first
         # linked edit computes the correct delta.
@@ -2543,11 +2567,19 @@ class MainWindow(QMainWindow):
             self.save2d = 1
         elif self.Save2D.checkState().value == 0: # unchecked
             self.save2d = 0
-        
+
         #try:
         #    self.parent_conn_dig.send( 'SV' + str( self.quad ) )
         #except AttributeError:
         #    pass
+
+    def save_2d_hdf5(self):
+        """
+        """
+        if self.Save_hdf5.checkState().value == 2: # checked
+            self.save_hdf5 = 1
+        elif self.Save_hdf5.checkState().value == 0: # unchecked
+            self.save_hdf5 = 0
 
     def zero_order_func(self):
         """
@@ -3687,6 +3719,7 @@ class MainWindow(QMainWindow):
     def dig_start_exp(self):
         worker = Worker()
         worker.awg_grid_cur = self.awg_grid()
+        worker.save_hdf5 = self.save_hdf5
         self._hand_correction_to_worker(worker)
 
         self.p1_exp = [self.p1_typ, self.p1_start, self.p1_length,
@@ -4167,6 +4200,7 @@ class MainWindow(QMainWindow):
 
         worker = Worker()
         worker.awg_grid_cur = self.awg_grid()
+        worker.save_hdf5 = self.save_hdf5
         self._hand_correction_to_worker(worker)
         self.parent_conn_dig, self.child_conn_dig = Pipe()
         
@@ -4367,6 +4401,10 @@ class Worker():
         # via pb.awg_time_resolution() and used by every worker-side snap of
         # AWG/detection starts.
         self.awg_grid_cur = 3.2
+
+        # write the full 2D arrays as a single .h5 file instead of CSV; set by
+        # the MainWindow before launch, default keeps the CSV behaviour
+        self.save_hdf5 = 0
 
     def _apply_awg_correction(self, pb, mode):
         """Read correction.param and push resonator-correction settings to pb.
@@ -5524,12 +5562,15 @@ class Worker():
                                 break
                         general.wait('200 ms')
 
+                    axes_2d = ( np.arange(points_window) * dec_calc, x_axis_plot )
+
                     if iq_cor == 0:
                         file_handler.save_data(
-                            file_data,
+                            file_data.replace(".csv", ".h5") if self.save_hdf5 == 1 else file_data,
                             data,
                             header = header,
-                            mode = 'w'
+                            mode = 'w',
+                            axes = axes_2d
                         )
                     elif iq_cor == 1:
 
@@ -5537,16 +5578,18 @@ class Worker():
                             file_data,
                             np.c_[x_axis_plot, data_x, data_y],
                             header = header2,
-                            mode = 'w'
+                            mode = 'w',
+                            fmt = '%.9e'
                             )
                         if save2d == 1:
-                            file_data2 = file_data.replace(".csv", "_2d.csv")
+                            file_data2 = file_data.replace(".csv", "_2d.h5" if self.save_hdf5 == 1 else "_2d.csv")
 
                             file_handler.save_data(
                                 file_data2,
                                 data,
                                 header = header,
-                                mode = 'w'
+                                mode = 'w',
+                                axes = axes_2d
                         )
 
                     conn.send( ('', f'Experiment {EXP_NAME} finished') )
@@ -6193,12 +6236,15 @@ class Worker():
                                 break
                         general.wait('200 ms')
 
+                    axes_2d = ( np.arange(points_window) * dec_calc, x_axis_plot )
+
                     if iq_cor == 0:
                         file_handler.save_data(
-                            file_data,
+                            file_data.replace(".csv", ".h5") if self.save_hdf5 == 1 else file_data,
                             data,
                             header = header,
-                            mode = 'w'
+                            mode = 'w',
+                            axes = axes_2d
                         )
                     elif iq_cor == 1:
 
@@ -6206,16 +6252,18 @@ class Worker():
                             file_data,
                             np.c_[x_axis_plot, data_x, data_y],
                             header = header2,
-                            mode = 'w'
+                            mode = 'w',
+                            fmt = '%.9e'
                             )
                         if save2d == 1:
-                            file_data2 = file_data.replace(".csv", "_2d.csv")
+                            file_data2 = file_data.replace(".csv", "_2d.h5" if self.save_hdf5 == 1 else "_2d.csv")
 
                             file_handler.save_data(
                                 file_data2,
                                 data,
                                 header = header,
-                                mode = 'w'
+                                mode = 'w',
+                                axes = axes_2d
                         )
 
                     # Optionally save every cycle's own trace alongside the
@@ -6233,12 +6281,13 @@ class Worker():
                                 cdat = Mc
                             else:
                                 cdat = (idx + 1) * Mc - idx * cycle_snapshots[idx - 1]
-                            cpath = file_data.replace(".csv", f"_cycle{idx}.csv")
                             if iq_cor == 0:
-                                file_handler.save_data(cpath, cdat, header = header, mode = 'w')
+                                cpath = file_data.replace(".csv", f"_cycle{idx}.h5" if self.save_hdf5 == 1 else f"_cycle{idx}.csv")
+                                file_handler.save_data(cpath, cdat, header = header, mode = 'w', axes = axes_2d)
                             elif iq_cor == 1:
+                                cpath = file_data.replace(".csv", f"_cycle{idx}.csv")
                                 cdx, cdy = pb.digitizer_demodulate(cdat[0], cdat[1], iq_freq, zp, first_order, sec_order, integral = True)
-                                file_handler.save_data(cpath, np.c_[x_axis_plot, cdx, cdy], header = header2, mode = 'w')
+                                file_handler.save_data(cpath, np.c_[x_axis_plot, cdx, cdy], header = header2, mode = 'w', fmt = '%.9e')
 
                     conn.send( ('', f'Experiment {EXP_NAME} finished') )
 
@@ -6691,12 +6740,15 @@ class Worker():
                                 break
                         general.wait('200 ms')
 
+                    axes_2d = ( np.arange(points_window) * dec_calc, x_axis )
+
                     if iq_cor == 0:
                         file_handler.save_data(
-                            file_data,
+                            file_data.replace(".csv", ".h5") if self.save_hdf5 == 1 else file_data,
                             data,
                             header = header,
-                            mode = 'w'
+                            mode = 'w',
+                            axes = axes_2d
                         )
                     elif iq_cor == 1:
 
@@ -6704,17 +6756,19 @@ class Worker():
                             file_data,
                             np.c_[x_axis, data_x, data_y],
                             header = header2,
-                            mode = 'w'
+                            mode = 'w',
+                            fmt = '%.9e'
                             )
 
                         if save2d == 1:
-                            file_data2 = file_data.replace(".csv", "_2d.csv")
+                            file_data2 = file_data.replace(".csv", "_2d.h5" if self.save_hdf5 == 1 else "_2d.csv")
 
                             file_handler.save_data(
                                 file_data2,
                                 data,
                                 header = header,
-                                mode = 'w'
+                                mode = 'w',
+                                axes = axes_2d
                             )
 
                     conn.send( ('', f'Experiment {EXP_NAME} finished') )
@@ -7254,12 +7308,15 @@ class Worker():
                                 break
                         general.wait('200 ms')
 
+                    axes_2d = ( np.arange(points_window) * dec_calc, x_axis_plot )
+
                     if iq_cor == 0:
                         file_handler.save_data(
-                            file_data,
+                            file_data.replace(".csv", ".h5") if self.save_hdf5 == 1 else file_data,
                             data,
                             header = header,
-                            mode = 'w'
+                            mode = 'w',
+                            axes = axes_2d
                         )
                     elif iq_cor == 1:
 
@@ -7267,16 +7324,18 @@ class Worker():
                             file_data,
                             np.c_[x_axis_plot, data_x, data_y],
                             header = header2,
-                            mode = 'w'
+                            mode = 'w',
+                            fmt = '%.9e'
                             )
 
                         if save2d == 1:
-                            file_data2 = file_data.replace(".csv", "_2d.csv")
+                            file_data2 = file_data.replace(".csv", "_2d.h5" if self.save_hdf5 == 1 else "_2d.csv")
                             file_handler.save_data(
                                 file_data2,
                                 data,
                                 header = header,
-                                mode = 'w'
+                                mode = 'w',
+                                axes = axes_2d
                             )
 
                     conn.send( ('', f'Experiment {EXP_NAME} finished') )
@@ -7770,12 +7829,15 @@ class Worker():
                                 break
                         general.wait('200 ms')
 
+                    axes_2d = ( np.arange(points_window) * dec_calc, x_axis_plot )
+
                     if iq_cor == 0:
                         file_handler.save_data(
-                            file_data,
+                            file_data.replace(".csv", ".h5") if self.save_hdf5 == 1 else file_data,
                             data,
                             header = header,
-                            mode = 'w'
+                            mode = 'w',
+                            axes = axes_2d
                         )
                     elif iq_cor == 1:
 
@@ -7783,16 +7845,18 @@ class Worker():
                             file_data,
                             np.c_[x_axis_plot, data_x, data_y],
                             header = header2,
-                            mode = 'w'
+                            mode = 'w',
+                            fmt = '%.9e'
                             )
                         if save2d == 1:
-                            file_data2 = file_data.replace(".csv", "_2d.csv")
+                            file_data2 = file_data.replace(".csv", "_2d.h5" if self.save_hdf5 == 1 else "_2d.csv")
 
                             file_handler.save_data(
                                 file_data2,
                                 data,
                                 header = header,
-                                mode = 'w'
+                                mode = 'w',
+                                axes = axes_2d
                             )
 
                     conn.send( ('', f'Experiment {EXP_NAME} finished') )
