@@ -1515,7 +1515,7 @@ class Worker():
                             data[1, :, :] = ( data[1, :, :] - data[1, 0, :] )
                             data_2[1, :, i+1] = ( data_2[0, :, i+1] - data_2[0, :, 0] )
                             data_2[1, :, :] = ( data_2[1, :, :] - data_2[1, 0, :] )
-                            data[3, :, i+1] = ( data[3, :, i+1] * (j - 1) + y3 ) / j
+                            data[2, :, i+1] = ( data[2, :, i+1] * (j - 1) + y3 ) / j
 
                         #start_time = time.time()
 
@@ -1601,7 +1601,7 @@ class Worker():
                                 data[1, :, :] = ( data[1, :, :] - data[1, 0, :] )
                                 data_2[1, :, i+1] = ( data_2[0, :, i+1] - data_2[0, :, 0] )
                                 data_2[1, :, :] = ( data_2[1, :, :] - data_2[1, 0, :] )
-                                data[3, :, i+1] = ( data[3, :, i+1] * j + y3 ) / ( j + 1 )
+                                data[2, :, i+1] = ( data[2, :, i+1] * j + y3 ) / ( j + 1 )
 
                             #start_time = time.time()
                             conn.send( ('Status', int( 100 * (( j ) * points - i + points) / points / SCANS / 2)) )
@@ -1770,7 +1770,7 @@ class Worker():
 
                     file_handler.save_data(file_save_1, np.transpose( data[0, :, :] ), header = header)
                     file_handler.save_data(file_save_2, np.transpose( data_2[0, :, :] ), header = header_2)
-                    file_handler.save_data(file_save_3, np.transpose( data[3, :, :] ), header = header)
+                    file_handler.save_data(file_save_3, np.transpose( data[2, :, :] ), header = header)
 
                 while field > OFFRES_FIELD:
                     field = bh15.magnet_field( field - initialization_step)
@@ -2183,7 +2183,7 @@ class Worker():
                             data[1, :, :] = ( data[1, :, :] - data[1, 0, :] )
                             data_2[1, :, i+1] = ( data_2[0, :, i+1] - data_2[0, :, 0] )
                             data_2[1, :, :] = ( data_2[1, :, :] - data_2[1, 0, :] )
-                            data[3, :, i+1] = ( data[3, :, i+1] * (j - 1) + y3 ) / j
+                            data[2, :, i+1] = ( data[2, :, i+1] * (j - 1) + y3 ) / j
 
                         #start_time = time.time()
 
@@ -2269,7 +2269,7 @@ class Worker():
                                 data[1, :, :] = ( data[1, :, :] - data[1, 0, :] )
                                 data_2[1, :, i+1] = ( data_2[0, :, i+1] - data_2[0, :, 0] )
                                 data_2[1, :, :] = ( data_2[1, :, :] - data_2[1, 0, :] )
-                                data[3, :, i+1] = ( data[3, :, i+1] * j + y3 ) / ( j + 1 )
+                                data[2, :, i+1] = ( data[2, :, i+1] * j + y3 ) / ( j + 1 )
 
                             #start_time = time.time()
                             #conn.send( ('Status', int( 100 * (( j ) * points - i + points) / points / SCANS / 2)) )
@@ -2438,7 +2438,7 @@ class Worker():
 
                     #file_handler.save_data(file_save_1, np.transpose( data[0, :, :] ), header = header)
                     #file_handler.save_data(file_save_2, np.transpose( data_2[0, :, :] ), header = header_2)
-                    #file_handler.save_data(file_save_3, np.transpose( data[3, :, :] ), header = header)
+                    #file_handler.save_data(file_save_3, np.transpose( data[2, :, :] ), header = header)
 
                 while field > OFFRES_FIELD:
                     field = bh15.magnet_field( field - initialization_step)
