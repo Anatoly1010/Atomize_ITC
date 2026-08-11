@@ -169,8 +169,9 @@ _HELP_SHEAR = (
     'phase across the echo and cancels part of the very modulation the shear '
     'is recovering. Measure it <b>after</b> the low-pass — on a raw IF record '
     'the carrier estimate is swamped by out-of-band noise. Afterwards collapse '
-    'the sheared map with the Slice tab — slice along the dipolar axis and '
-    'average over the echo window. The ramp is circular, so rows wrap at the '
+    'the sheared map with "Sum echo → 1D", which sums over t_ref ± the fit '
+    'window and hands the dipolar trace to the 1D (or DEER) window. The ramp '
+    'is circular, so rows wrap at the '
     'ends of the dipolar axis; keep the edges out of the analysis.<br><br>'
     '"Auto shear" walks that whole chain from the raw record on its own, '
     'taking the IF from the file header and the low-pass cutoff from it; the '
@@ -188,10 +189,9 @@ _HELP_SLICE = (
     'matching the heatmap cursor label). The trace is written to the transfer '
     'buffer only (not the main GUI), as an I/Q pair; then click "Load from '
     'plot" in the 1D window.<br><br>'
-    '"Average ±" averages every trace within that half-width of the chosen '
-    'one, in the units of the axis crossed. To collapse a sheared map: slice '
-    'along the dipolar axis, put the trace number on the echo centre and give '
-    'the same ± window the shear was fitted with.')
+    '"Average up to" averages the whole index range before sending. To collapse '
+    'a sheared map over its echo window instead, use "Sum echo → 1D" on the '
+    'Shear tab, which already knows t_ref and the window.')
 
 # parametric windows: name -> (label, min, max, decimals, default, step)
 WINDOW_PARAM = {
@@ -734,6 +734,19 @@ class MainWindow(QMainWindow):
         btn.setStyleSheet(BUTTON_STYLE)
         btn.clicked.connect(self.do_shear)
         p.add_button_row(btn_auto, btn, width=gf.ACTION_W)
+        btn_sum = QPushButton('Sum echo → 1D')
+        btn_sum.setStyleSheet(BUTTON_STYLE)
+        btn_sum.setToolTip(
+            'Collapse the straightened map: sum every trace over the echo '
+            'window t_ref ± "Fit window" and send the dipolar trace to the 1D '
+            'Data Treatment window (or the DEER window — same buffer) as an '
+            'I/Q pair.<br><br>'
+            'The window is the one the slope was fitted with, so the delivered '
+            'peak is the "flat sum" reported above. For anything else — a '
+            'plain map, another direction, an arbitrary index range, averaged '
+            'rather than summed — use the Slice tab.')
+        btn_sum.clicked.connect(self.collapse_shear)
+        p.add_button_row(btn_sum, width=gf.ACTION_W)
         p.add_stretch()
         return p
 
@@ -810,19 +823,17 @@ class MainWindow(QMainWindow):
         self.slice_label = gf.hint('')
         p.add_row('Trace #', self.slice_spin, self.slice_label, stretch=[1, 2])
 
-        self.slice_avg = QCheckBox('Average ±')
+        self.slice_avg = QCheckBox('Average up to')
         self.slice_avg.setStyleSheet(CHECKBOX_STYLE)
-        self.slice_avg.setToolTip('Average every trace within this half-width of '
-                                  '"Trace #" before sending — improves SNR. Given '
-                                  'in the units of the axis crossed, so an echo '
-                                  'window is entered as the ± ns the shear tab '
-                                  'works in, not as point numbers.')
+        self.slice_avg.setToolTip('Average all traces between "Trace #" and this '
+                                  'index (inclusive) before sending — improves SNR.')
         self.slice_avg.stateChanged.connect(self._update_slice_label)
         # label column less the cell spacing: its spinbox then sits in the field column
         self.slice_avg.setFixedWidth(gf.LABEL_COL_W - 6 + 8)
-        self.slice_width = self._dspin(0.0, 1e12, 1, 140.0, 10.0)
-        self.slice_width.valueChanged.connect(self._update_slice_label)
-        p.add_row(self.slice_avg, self.slice_width)
+        self.slice_spin2 = QSpinBox(); self.slice_spin2.setStyleSheet(SPIN_STYLE)
+        self.slice_spin2.setRange(1, 1000000)
+        self.slice_spin2.valueChanged.connect(self._update_slice_label)
+        p.add_row(self.slice_avg, self.slice_spin2)
 
         btn_send = QPushButton('Send slice → 1D')
         btn_send.setStyleSheet(BUTTON_STYLE)
@@ -1166,7 +1177,6 @@ class MainWindow(QMainWindow):
         yn, ys = self.yname_edit.text(), self.yscale_edit.text()
         self._relabel_axis(self.src_col, xn, xs)
         self._relabel_axis(self.src_row, yn, ys)
-        self._update_slice_label()         # the ± width carries the axis unit
         if self.has_result():
             self._relabel_axis(self.res_col, xn, xs)
             self._relabel_axis(self.res_row, yn, ys)
@@ -1724,13 +1734,17 @@ class MainWindow(QMainWindow):
         self.set_status('Filter applied — ' + '; '.join(parts) + ' ×f_max.')
 
     # --------------------------------------------------------------- shear
-    def _shear_geometry(self):
+    def _shear_geometry(self, i=None, col=None, row=None):
         """(dipolar axis index, its step, echo-coordinate vector, axis names) for
-        the current Dipolar-axis choice. Rows (axis 0) are the indirect Y axis."""
+        the current Dipolar-axis choice. Rows (axis 0) are the indirect Y axis.
+        Defaults to the operation input; the collapse passes the result instead."""
+        i = self.src_i if i is None else i
+        col = self.src_col if col is None else col
+        row = self.src_row if row is None else row
         dip = 0 if self.shear_axis.currentIndex() == 0 else 1
-        dax = self.src_row if dip == 0 else self.src_col
-        eax = self.src_col if dip == 0 else self.src_row
-        n_echo = self.src_i.shape[1 - dip]
+        dax = row if dip == 0 else col
+        eax = col if dip == 0 else row
+        n_echo = i.shape[1 - dip]
         tvec = eax['start'] + eax['step']*np.arange(n_echo)
         step = float(dax['step']) or 1.0
         return dip, step, tvec, (dax['name'], eax['name'], eax['scale'])
@@ -1851,6 +1865,45 @@ class MainWindow(QMainWindow):
         self.set_status(f'Shear applied: k = {k:+.4f}, t_ref = {tref:.4g} {escale}; '
                         f'flat sum peak {pk:.6g} (×{gain:.2f} over unsheared), '
                         f'S/N {sn:.0f}.')
+
+    def collapse_shear(self):
+        """Sum the straightened map over the echo window and send the dipolar
+        trace to the 1D tool. The window is the t_ref ± "Fit window" the slope
+        was measured with, so the delivered peak is the "flat sum" the shear
+        reports. The Slice tab does the general version — any index range, any
+        direction, averaged rather than summed."""
+        if self.src_i is None:
+            self.set_status('Open an I/Q dataset first.')
+            return
+        i, q, col, row = self._current_iq()
+        dip, step, tvec, (dname, ename, escale) = self._shear_geometry(i, col, row)
+        dax = row if dip == 0 else col
+        tref = float(self.shear_tref.value())
+        half = float(self.shear_fitwin.value())
+        gate = (np.abs(tvec - tref) <= half) if half > 0 else np.ones(tvec.size, bool)
+        if not gate.any():
+            self.set_status('Echo window empty — widen "Fit window ±" (0 = whole '
+                            'window) or move t_ref onto the echo.')
+            return
+        re = (i[:, gate] if dip == 0 else i[gate, :]).sum(axis=1 - dip)
+        im = (q[:, gate] if dip == 0 else q[gate, :]).sum(axis=1 - dip)
+        x = dax['start'] + dax['step']*np.arange(re.size)
+        pk, sn = self._trace_quality(re, step)
+        xname = f"{dax['name']} ({dax['scale']})" if dax['scale'] else dax['name']
+        # the buffer is written with the platform's default codec: keep the
+        # label ASCII, and name it by the echo window it was summed over
+        gt = tvec[gate]
+        name = f'dipolar {gt[0]:.4g}-{gt[-1]:.4g}'
+        try:
+            self._write_buffer([(name, x, re), (name + '_1', x, im)], xname=xname)
+        except Exception as e:
+            self.set_status(f'Could not write transfer buffer: {e}')
+            return
+        win = f'{tref:.4g} ± {half:.4g} {escale}' if half > 0 else f'the whole {ename}'
+        self.set_status(f'Summed {int(gate.sum())} {ename} points over {win} '
+                        f'into a {dname} trace (peak {pk:.6g}, S/N {sn:.0f}); sent '
+                        f'to buffer as an I/Q pair. Click "Load from plot" in the '
+                        f'1D Data Treatment window.')
 
     # ---------------------------------------------------------- auto shear
     @staticmethod
@@ -2144,7 +2197,7 @@ class MainWindow(QMainWindow):
             self.slice_spin.setValue(val)              # fires _update_slice_label
 
     def _update_slice_label(self, *args):
-        if not hasattr(self, 'slice_width'):       # last of the slice widgets built
+        if not hasattr(self, 'slice_spin'):
             return
         if self.src_i is None:
             self.slice_label.setText('')
@@ -2159,12 +2212,14 @@ class MainWindow(QMainWindow):
         self.slice_spin.blockSignals(False)
         idx = int(self.slice_spin.value()) - 1         # 0-based for the coordinate
         coord = axis['start'] + axis['step']*idx
-        self.slice_width.setSuffix(f" {axis['scale']}" if axis['scale'] else '')
         if getattr(self, 'slice_avg', None) is not None and self.slice_avg.isChecked():
-            lo, hi = self._slice_range(idx, ntr, axis)
-            c1 = axis['start'] + axis['step']*lo
-            c2 = axis['start'] + axis['step']*hi
-            self.slice_label.setText(f"{axis['name']} = {c1:.4g}…{c2:.4g} "
+            self.slice_spin2.blockSignals(True)
+            self.slice_spin2.setRange(1, max(1, ntr))
+            self.slice_spin2.blockSignals(False)
+            idx2 = int(self.slice_spin2.value()) - 1
+            lo, hi = sorted((idx, idx2))
+            c2 = axis['start'] + axis['step']*idx2
+            self.slice_label.setText(f"{axis['name']} = {coord:.4g}…{c2:.4g} "
                                      f"{axis['scale']} (avg {hi - lo + 1} of {ntr})")
         else:
             self.slice_label.setText(f"{axis['name']} = {coord:.4g} {axis['scale']} (of {ntr})")
@@ -2188,18 +2243,10 @@ class MainWindow(QMainWindow):
         header = '\n'.join(header_lines)
         np.savetxt(BUFFER_PATH, buf, delimiter=',', fmt='%.6e', header=header, comments='# ')
 
-    def _slice_range(self, idx, ntr, axis):
-        """Index range averaged around trace `idx`: the ± half-width is given in
-        the units of the axis crossed, so an echo window is entered as the ns the
-        shear tab works in. Clipped to the axis; a zero step averages nothing."""
-        step = abs(float(axis['step']))
-        n = int(round(float(self.slice_width.value())/step)) if step else 0
-        return max(idx - n, 0), min(idx + n, ntr - 1)
-
     def _compute_slice(self):
-        """Build the current slice (Re/Im vs the decay axis), averaging the traces
-        within the 'Average ±' half-width when it is on. Returns a dict, or None
-        (with a status set) when no dataset is loaded."""
+        """Build the current slice (Re/Im vs the decay axis), averaging the
+        selected index range when 'Average up to #' is on. Returns a dict, or
+        None (with a status set) when no dataset is loaded."""
         if self.src_i is None:
             self.set_status('Open an I/Q dataset first.')
             return None
@@ -2218,7 +2265,8 @@ class MainWindow(QMainWindow):
         # 0-based array index. lo/hi/tag are reported 1-based to the user.
         idx = min(max(int(self.slice_spin.value()) - 1, 0), ntr - 1)
         self.slice_spin.setValue(idx + 1)
-        lo, hi = self._slice_range(idx, ntr, oax)
+        idx2 = min(max(int(self.slice_spin2.value()) - 1, 0), ntr - 1)
+        lo, hi = sorted((idx, idx2))
         mean = averaging and hi > lo
         if mean:
             if along_x:
