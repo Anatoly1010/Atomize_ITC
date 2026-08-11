@@ -1262,7 +1262,7 @@ class Worker():
                 data_2 = np.zeros( (2, real_length_2, points + 1) )
 
             # row 0 of the saved matrix is the off-resonance trace; the axis
-            # still starts at START_FIELD, as the header and the CSV readers do
+            # labels the sweep rows that follow it, from START_FIELD up
             sweep_axis = START_FIELD + np.arange(points + 1) * FIELD_STEP
             axes_2d = ( np.arange(real_length) * t_step, sweep_axis )
             if p9 > 1:
