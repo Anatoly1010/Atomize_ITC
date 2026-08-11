@@ -62,6 +62,15 @@ def read_header(path):
     Returns [] for a file without one (or one that cannot be read): a header is
     a nicety, never a reason to fail a load."""
     lines = []
+    if str(path).endswith('.h5'):
+        try:
+            import h5py
+            with h5py.File(path, 'r') as fh:
+                lines = str(fh.attrs.get('header', '')).splitlines()
+        except Exception:
+            return []
+        return lines[:MAX_HEADER_LINES]
+
     try:
         with open(path, 'r', errors='ignore') as fh:
             for line in fh:

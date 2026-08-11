@@ -170,13 +170,21 @@ class MyExtendedNameList(NameList):
         ldir.save('data', self.open_dir)      # remember the data folder
 
         header_lines = []
+        axes = {}
 
-        with open(file_path, 'r') as file_to_read:
-            for line in file_to_read:
-                if line.startswith('#'):
-                    header_lines.append(line)
-                else:
-                    break
+        if str(file_path).endswith('.h5'):
+            header_array, temp = self.window.file_handler.open_2d(file_path)
+            header_lines = [''.join(part) for part in header_array]
+            axes = self.window.file_handler.open_h5_axes(file_path)
+            if np.ndim(temp) == 3:      # a two-quadrature file: TR data is I
+                temp = temp[0]
+        else:
+            with open(file_path, 'r') as file_to_read:
+                for line in file_to_read:
+                    if line.startswith('#'):
+                        header_lines.append(line)
+                    else:
+                        break
 
         header_count = len(header_lines)
         header_text = "".join(header_lines)
@@ -196,7 +204,15 @@ class MyExtendedNameList(NameList):
         start_field = float(start_field_match.group(1)) if start_field_match else 0
         field_step = float(field_step_match.group(1)) if field_step_match else 1
 
-        temp = np.genfromtxt(file_path, dtype = float, delimiter = ',', skip_header = header_count) 
+        # stored axis datasets are exact, so they win over the header regexes
+        if np.size(axes.get('t', [])) > 1:
+            t_step_2 = float(axes['t'][1] - axes['t'][0])
+        if np.size(axes.get('sweep', [])) > 1:
+            start_field = float(axes['sweep'][0])
+            field_step = float(axes['sweep'][1] - axes['sweep'][0])
+
+        if not str(file_path).endswith('.h5'):
+            temp = np.genfromtxt(file_path, dtype = float, delimiter = ',', skip_header = header_count)
 
         data_modified = temp.copy()
 

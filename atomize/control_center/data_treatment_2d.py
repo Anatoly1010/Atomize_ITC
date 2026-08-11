@@ -843,24 +843,40 @@ class MainWindow(QMainWindow):
 
     # ------------------------------------------------------------- loading
     def open_iq(self):
-        path = self._open_dialog()
+        path = self._open_dialog(name_filters=['Data (*.csv *.h5)', 'All files (*)'])
         if not path or path == 'None':
             return
         try:
-            i = np.atleast_2d(np.genfromtxt(path, delimiter=','))
-            base = path[:-4] if path.lower().endswith('.csv') else path
-            qpath = base + '_1.csv'
-            if os.path.isfile(qpath):
-                q = np.atleast_2d(np.genfromtxt(qpath, delimiter=','))
-                qmsg = os.path.basename(qpath)
+            xarr = yarr = None
+            if str(path).endswith('.h5'):
+                # one file holds both quadratures; the axes come as datasets
+                arr = self.opener.open_2d(path)[1]
+                if np.ndim(arr) == 3:
+                    i = np.atleast_2d(np.asarray(arr[0], dtype=float))
+                    q = np.atleast_2d(np.asarray(arr[1], dtype=float))
+                    qmsg = 'Q dataset'
+                else:
+                    i = np.atleast_2d(np.asarray(arr, dtype=float))
+                    q = np.zeros_like(i)
+                    qmsg = 'no Q dataset (Q = 0)'
+                axes = self.opener.open_h5_axes(path)
+                xarr, yarr = axes.get('t'), axes.get('sweep')
             else:
-                q = np.zeros_like(i)
-                qmsg = 'no _1 file (Q = 0)'
+                i = np.atleast_2d(np.genfromtxt(path, delimiter=','))
+                base = path[:-4] if path.lower().endswith('.csv') else path
+                qpath = base + '_1.csv'
+                if os.path.isfile(qpath):
+                    q = np.atleast_2d(np.genfromtxt(qpath, delimiter=','))
+                    qmsg = os.path.basename(qpath)
+                else:
+                    q = np.zeros_like(i)
+                    qmsg = 'no _1 file (Q = 0)'
             header_lines = read_header(path)    # one read: axis steps + viewer
             dx, xu, dy, yu = self._parse_axis_header(header_lines)
             if self.transpose_check.isChecked():
                 i, q = i.T, q.T
                 dx, xu, dy, yu = dy, yu, dx, xu   # axes swap with the matrix
+                xarr, yarr = yarr, xarr
             if i.shape != q.shape or min(i.shape) < 2:
                 self.set_status('I and Q must be matching 2D matrices (≥ 2×2).')
                 return
@@ -868,6 +884,11 @@ class MainWindow(QMainWindow):
             # auto-fill X/Y step + unit from the acquisition header when present;
             # files without it keep the current axis fields (see _parse_axis_header).
             parsed = self._apply_header_axes(dx, xu, dy, yu)
+            # an .h5 axis dataset fills only what the header could not give: it
+            # carries no unit, so it must never overwrite a header-set axis
+            filled = self._apply_axis_arrays(None if dx is not None else xarr,
+                                             None if dy is not None else yarr)
+            parsed = ', '.join(p for p in (parsed, filled) if p)
             self.live_check.setChecked(False)   # new data: don't auto-reprocess
             self.reset_to_raw()
             self._set_loaded_file(os.path.basename(path))
@@ -915,6 +936,25 @@ class MainWindow(QMainWindow):
             else:
                 dy, yu = val, unit
         return dx, xu, dy, yu
+
+    def _apply_axis_arrays(self, xarr, yarr):
+        """Push stored axis vectors (an .h5 file's t / sweep datasets) into the
+        start + step widgets. A step the spin box cannot hold — a raw SI time
+        axis against a 3-decimal box — is left alone rather than rounded to a
+        zero step, which would collapse the image."""
+        done = []
+        pairs = [('X', xarr, self.x0_spin, self.dx_spin),
+                 ('Y', yarr, self.y0_spin, self.dy_spin)]
+        for name, arr, zspin, dspin in pairs:
+            if arr is None or np.size(arr) < 2:
+                continue
+            start, step = self._axis_start_step(arr)
+            if abs(step) < 10 ** -dspin.decimals():
+                continue
+            zspin.blockSignals(True); zspin.setValue(float(start)); zspin.blockSignals(False)
+            dspin.blockSignals(True); dspin.setValue(float(step)); dspin.blockSignals(False)
+            done.append(f'{name} start={start:g} Δ={step:g}')
+        return ', '.join(done)
 
     def _apply_header_axes(self, dx, xu, dy, yu):
         """Push any parsed (step, unit) into the axis widgets without firing the

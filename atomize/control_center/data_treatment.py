@@ -1000,7 +1000,8 @@ class MainWindow(QMainWindow):
         return mapping, labels
 
     def open_csv(self):
-        paths = self._open_dialog(multiple=True)
+        paths = self._open_dialog(multiple=True,
+                                  name_filters=['Data (*.csv *.h5)', 'All files (*)'])
         if not paths:
             return
         items, headers, failed, xname = [], [], [], None
