@@ -223,6 +223,9 @@ def _hand_attrs(worker, worker_args):
     # sets this, so GUI-launched workers behave exactly as before
     if getattr(worker_args, 'scan_data_flag', 0):
         worker.scan_data_flag = 1
+    # opt-in HDF5 for the full 2D dumps; the GUI checkbox route, same default
+    if getattr(worker_args, 'save_hdf5', 0):
+        worker.save_hdf5 = 1
     for attr in CORRECTION_ATTRS:
         if hasattr(worker_args, attr):
             setattr(worker, attr, getattr(worker_args, attr))
