@@ -186,8 +186,12 @@ _HELP_SLICE = (
     'Send one trace to the standalone 1D Data Treatment window for fitting / '
     'phasing there. Pick the slice direction and the trace number (1-based, '
     'matching the heatmap cursor label). The trace is written to the transfer '
-    'buffer only (not the main GUI). Then click "Load from plot" in the 1D '
-    'window (I = slice Re, Q = slice Im).')
+    'buffer only (not the main GUI), as an I/Q pair; then click "Load from '
+    'plot" in the 1D window.<br><br>'
+    '"Average ±" averages every trace within that half-width of the chosen '
+    'one, in the units of the axis crossed. To collapse a sheared map: slice '
+    'along the dipolar axis, put the trace number on the echo centre and give '
+    'the same ± window the shear was fitted with.')
 
 # parametric windows: name -> (label, min, max, decimals, default, step)
 WINDOW_PARAM = {
@@ -806,17 +810,19 @@ class MainWindow(QMainWindow):
         self.slice_label = gf.hint('')
         p.add_row('Trace #', self.slice_spin, self.slice_label, stretch=[1, 2])
 
-        self.slice_avg = QCheckBox('Average up to')
+        self.slice_avg = QCheckBox('Average ±')
         self.slice_avg.setStyleSheet(CHECKBOX_STYLE)
-        self.slice_avg.setToolTip('Average all traces between "Trace #" and this '
-                                  'index (inclusive) before sending — improves SNR.')
+        self.slice_avg.setToolTip('Average every trace within this half-width of '
+                                  '"Trace #" before sending — improves SNR. Given '
+                                  'in the units of the axis crossed, so an echo '
+                                  'window is entered as the ± ns the shear tab '
+                                  'works in, not as point numbers.')
         self.slice_avg.stateChanged.connect(self._update_slice_label)
         # label column less the cell spacing: its spinbox then sits in the field column
         self.slice_avg.setFixedWidth(gf.LABEL_COL_W - 6 + 8)
-        self.slice_spin2 = QSpinBox(); self.slice_spin2.setStyleSheet(SPIN_STYLE)
-        self.slice_spin2.setRange(1, 1000000)
-        self.slice_spin2.valueChanged.connect(self._update_slice_label)
-        p.add_row(self.slice_avg, self.slice_spin2)
+        self.slice_width = self._dspin(0.0, 1e12, 1, 140.0, 10.0)
+        self.slice_width.valueChanged.connect(self._update_slice_label)
+        p.add_row(self.slice_avg, self.slice_width)
 
         btn_send = QPushButton('Send slice → 1D')
         btn_send.setStyleSheet(BUTTON_STYLE)
@@ -1160,6 +1166,7 @@ class MainWindow(QMainWindow):
         yn, ys = self.yname_edit.text(), self.yscale_edit.text()
         self._relabel_axis(self.src_col, xn, xs)
         self._relabel_axis(self.src_row, yn, ys)
+        self._update_slice_label()         # the ± width carries the axis unit
         if self.has_result():
             self._relabel_axis(self.res_col, xn, xs)
             self._relabel_axis(self.res_row, yn, ys)
@@ -2137,7 +2144,7 @@ class MainWindow(QMainWindow):
             self.slice_spin.setValue(val)              # fires _update_slice_label
 
     def _update_slice_label(self, *args):
-        if not hasattr(self, 'slice_spin'):
+        if not hasattr(self, 'slice_width'):       # last of the slice widgets built
             return
         if self.src_i is None:
             self.slice_label.setText('')
@@ -2152,14 +2159,12 @@ class MainWindow(QMainWindow):
         self.slice_spin.blockSignals(False)
         idx = int(self.slice_spin.value()) - 1         # 0-based for the coordinate
         coord = axis['start'] + axis['step']*idx
+        self.slice_width.setSuffix(f" {axis['scale']}" if axis['scale'] else '')
         if getattr(self, 'slice_avg', None) is not None and self.slice_avg.isChecked():
-            self.slice_spin2.blockSignals(True)
-            self.slice_spin2.setRange(1, max(1, ntr))
-            self.slice_spin2.blockSignals(False)
-            idx2 = int(self.slice_spin2.value()) - 1
-            lo, hi = sorted((idx, idx2))
-            c2 = axis['start'] + axis['step']*idx2
-            self.slice_label.setText(f"{axis['name']} = {coord:.4g}…{c2:.4g} "
+            lo, hi = self._slice_range(idx, ntr, axis)
+            c1 = axis['start'] + axis['step']*lo
+            c2 = axis['start'] + axis['step']*hi
+            self.slice_label.setText(f"{axis['name']} = {c1:.4g}…{c2:.4g} "
                                      f"{axis['scale']} (avg {hi - lo + 1} of {ntr})")
         else:
             self.slice_label.setText(f"{axis['name']} = {coord:.4g} {axis['scale']} (of {ntr})")
@@ -2183,10 +2188,18 @@ class MainWindow(QMainWindow):
         header = '\n'.join(header_lines)
         np.savetxt(BUFFER_PATH, buf, delimiter=',', fmt='%.6e', header=header, comments='# ')
 
+    def _slice_range(self, idx, ntr, axis):
+        """Index range averaged around trace `idx`: the ± half-width is given in
+        the units of the axis crossed, so an echo window is entered as the ns the
+        shear tab works in. Clipped to the axis; a zero step averages nothing."""
+        step = abs(float(axis['step']))
+        n = int(round(float(self.slice_width.value())/step)) if step else 0
+        return max(idx - n, 0), min(idx + n, ntr - 1)
+
     def _compute_slice(self):
-        """Build the current slice (Re/Im vs the decay axis), averaging the
-        selected index range when 'Average up to #' is on. Returns a dict, or
-        None (with a status set) when no dataset is loaded."""
+        """Build the current slice (Re/Im vs the decay axis), averaging the traces
+        within the 'Average ±' half-width when it is on. Returns a dict, or None
+        (with a status set) when no dataset is loaded."""
         if self.src_i is None:
             self.set_status('Open an I/Q dataset first.')
             return None
@@ -2205,8 +2218,7 @@ class MainWindow(QMainWindow):
         # 0-based array index. lo/hi/tag are reported 1-based to the user.
         idx = min(max(int(self.slice_spin.value()) - 1, 0), ntr - 1)
         self.slice_spin.setValue(idx + 1)
-        idx2 = min(max(int(self.slice_spin2.value()) - 1, 0), ntr - 1)
-        lo, hi = sorted((idx, idx2))
+        lo, hi = self._slice_range(idx, ntr, oax)
         mean = averaging and hi > lo
         if mean:
             if along_x:
@@ -2257,8 +2269,12 @@ class MainWindow(QMainWindow):
         # carry the decay axis name+unit so the 1D tool labels and SI-prefixes it
         # (a slice taken in 's' then displays in ns rather than raw 2e-9).
         xname = f"{dax['name']} ({dax['scale']})" if dax['scale'] else dax['name']
+        # '<base>' + '<base>_1' is the companion-channel convention of the main
+        # window and of the I/Q file pair; the 1D tool groups the two into one
+        # trace and ticks its pair box only for labels shaped like that.
+        name = f'slice {tag}'
         try:
-            self._write_buffer([('slice Re', x, re), ('slice Im', x, im)], xname=xname)
+            self._write_buffer([(name, x, re), (name + '_1', x, im)], xname=xname)
         except Exception as e:
             self.set_status(f'Could not write transfer buffer: {e}')
             return
@@ -2266,8 +2282,8 @@ class MainWindow(QMainWindow):
         # tool's transfer buffer, so it doesn't clutter the main window's docks.
         what = (f'Mean slice {tag}' if mean else f'Slice #{tag}')
         self.set_status(f'{what} ({oax["name"]} = {coord:.4g} {oax["scale"]}) '
-                        f'sent to buffer. In the 1D Data Treatment window click '
-                        f'"Load from plot" (I = slice Re, Q = slice Im).')
+                        f'sent to buffer as an I/Q pair. In the 1D Data Treatment '
+                        f'window click "Load from plot".')
 
     def save_fit_map(self):
         if not self.fit_map:
