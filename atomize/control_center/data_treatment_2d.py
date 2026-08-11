@@ -33,6 +33,7 @@ slider switches between them).
 "Result → input" chains one operation into the next (e.g. phase → FFT).
 """
 
+import ast
 import os
 import re
 import sys
@@ -170,7 +171,10 @@ _HELP_SHEAR = (
     'the carrier estimate is swamped by out-of-band noise. Afterwards collapse '
     'the sheared map with the Slice tab — slice along the dipolar axis and '
     'average over the echo window. The ramp is circular, so rows wrap at the '
-    'ends of the dipolar axis; keep the edges out of the analysis.')
+    'ends of the dipolar axis; keep the edges out of the analysis.<br><br>'
+    '"Auto shear" walks that whole chain from the raw record on its own, '
+    'taking the IF from the file header and the low-pass cutoff from it; the '
+    'Phase / Filter tabs are left showing what it ran.')
 
 _HELP_FIT = (
     'Fit every trace along the decay axis with a relaxation model. The chosen '
@@ -709,10 +713,23 @@ class MainWindow(QMainWindow):
         adv.field_width, adv.button_width = gf.FIELD_W, gf.BTN_W
         adv.add_row('Fit window ±', self.shear_fitwin)
 
+        btn_auto = QPushButton('Auto shear')
+        btn_auto.setStyleSheet(BUTTON_STYLE)
+        btn_auto.setToolTip(
+            'Run the whole chain below in one click, from the raw record: '
+            'demodulate at the IF read from the file header → X low-pass at '
+            'IF/2 → Auto φ₁ (which re-runs Auto φ₀) → Auto t_ref → Fit k → '
+            'Apply shear.<br><br>'
+            'The IF is the frequency shared by most AWG pulses in the header '
+            '(a DEER pump pulse is outvoted by the three observer pulses); '
+            'without a header the Phase-tab First order is used instead. The '
+            'low-pass sits at half the IF, below both the LO leak at the IF '
+            'and the mirror image at twice it.')
+        btn_auto.clicked.connect(self.auto_shear)
         btn = QPushButton('Apply shear')
         btn.setStyleSheet(BUTTON_STYLE)
         btn.clicked.connect(self.do_shear)
-        p.add_button_row(btn, width=gf.ACTION_W)
+        p.add_button_row(btn_auto, btn, width=gf.ACTION_W)
         p.add_stretch()
         return p
 
@@ -1206,12 +1223,13 @@ class MainWindow(QMainWindow):
         self.src_i, self.src_q = self.res_i.copy(), self.res_q.copy()
         self.src_col, self.src_row = self.res_col, self.res_row
         self.res_i = self.res_q = None
+        prev = self._suppress_live       # restore, not clear: auto_shear nests this
         self._suppress_live = True
         try:
             self._push(self.src_i, self.src_q, self.src_col, self.src_row,
                        ('Re', 'Im'))
         finally:
-            self._suppress_live = False
+            self._suppress_live = prev
         self.set_status('Result registered as the new input; apply the next op.')
 
     def clear_all(self):
@@ -1482,11 +1500,12 @@ class MainWindow(QMainWindow):
             v1, res = self._refine_first(Z0, axisx, v1)
         finally:
             QApplication.restoreOverrideCursor()
+        prev = self._suppress_live       # restore, not clear: auto_shear nests this
         self._suppress_live = True                 # one preview, after φ₀ lands
         try:
             self.phase_first.setValue(v1)
         finally:
-            self._suppress_live = False
+            self._suppress_live = prev
         self.auto_phase_zero()
         phi0_msg = self.status.text()
         self.set_status(f'Auto φ₁ = {v1:.3f} MHz ({v1 - v1_in:+.3f} on the entered '
@@ -1825,6 +1844,105 @@ class MainWindow(QMainWindow):
         self.set_status(f'Shear applied: k = {k:+.4f}, t_ref = {tref:.4g} {escale}; '
                         f'flat sum peak {pk:.6g} (×{gain:.2f} over unsheared), '
                         f'S/N {sn:.0f}.')
+
+    # ---------------------------------------------------------- auto shear
+    @staticmethod
+    def _pulse_freq(value):
+        """Centre frequency in MHz of an AWG pulse-dict 'frequency' entry: a
+        plain string ('100 MHz') or a chirp pair (('90 MHz', '110 MHz'))."""
+        vals = value if isinstance(value, (list, tuple)) else [value]
+        out = [float(m.group(1)) for m in
+               (re.match(r'\s*([-+0-9.eE]+)\s*MHz', str(v)) for v in vals) if m]
+        return sum(out)/len(out) if out else None
+
+    def _header_if(self):
+        """Nominal IF in MHz from the loaded file's header: the frequency shared
+        by most of its AWG pulses. Only the AWG pulse dicts carry a frequency;
+        a DEER header also holds a pump pulse at another frequency, and the
+        three observer pulses outvote it."""
+        freqs = []
+        for ln in self.header_lines:
+            s = ln.strip()
+            if not s.startswith('{'):
+                continue
+            try:
+                d = ast.literal_eval(s)
+            except Exception:
+                continue
+            if not isinstance(d, dict) or 'frequency' not in d:
+                continue
+            if str(d.get('function', '')).upper() == 'BLANK':
+                continue
+            f = self._pulse_freq(d['frequency'])
+            if f:
+                freqs.append(round(f, 6))
+        return max(freqs, key=freqs.count) if freqs else None
+
+    def _if_sign(self, f_if):
+        """Sign of the first-order term that brings the record to baseband: the
+        line sits at ±IF and the ramp has to shift it the other way. Decided on
+        the raw spectrum, summed over the traces, within half an IF of the line."""
+        step = float(self.src_col['step'])
+        fr = np.fft.fftfreq(self.src_i.shape[1], step)*1000.0        # MHz
+        S = np.abs(np.fft.fft(self.src_i + 1j*self.src_q, axis=1)).sum(axis=0)
+        band = np.abs(np.abs(fr) - abs(f_if)) <= 0.5*abs(f_if)
+        return -1.0 if S[band & (fr > 0)].sum() > S[band & (fr < 0)].sum() else 1.0
+
+    def auto_shear(self):
+        """Walk the documented shear chain from the raw record in one click:
+        demodulate at the header IF, low-pass X below the LO leak, measure φ₁/φ₀
+        on the cleaned trace, then t_ref, k and the shear itself. Each step is
+        chained as "Result → input", so the Phase / Filter tabs are left showing
+        exactly what ran and the result can be collapsed in the Slice tab."""
+        if self.src_i is None:
+            self.set_status('Open an I/Q dataset first.')
+            return
+        prev_live = self._suppress_live
+        self._suppress_live = True
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            self.reset_to_raw()
+            if self._is_freq_axis(self.src_col) or not self.src_col['step']:
+                self.set_status('Auto shear needs a time-domain X axis with a '
+                                'non-zero step.')
+                return
+            f_if, source = self._header_if(), 'file header'
+            if f_if is None:
+                f_if, source = float(self.phase_first.value()), 'Phase tab'
+            if not f_if:
+                self.set_status('No AWG frequency in the file header — type the '
+                                'nominal IF into the Phase tab First order and '
+                                'press Auto shear again.')
+                return
+            f_if = self._if_sign(f_if)*abs(f_if)
+            self.phase_zero.setValue(0.0)
+            self.phase_first.setValue(f_if)
+            self.phase_second.setValue(0.0)
+            self.do_phase()
+            self.promote_result()
+            # everything above IF/2 is the LO leak (at the IF) and the mirror
+            # image (at twice it); the demodulated echo sits at 0
+            cut = abs(f_if)*abs(self.src_col['step'])/1000.0
+            self.filt_axis.setCurrentIndex(0)
+            self.filt_x_type.setCurrentText('Low-pass')
+            self.filt_x_hi.setValue(min(1.0, max(10**-self.filt_x_hi.decimals(), cut)))
+            cut = self.filt_x_hi.value()        # what the cutoff box could hold
+            self.do_filter()
+            self.promote_result()
+            self.auto_phase_first()                 # re-runs the zero order too
+            self.do_phase()
+            self.promote_result()
+            self.auto_shear_ref()
+            self.fit_shear_slope()
+            self.do_shear()
+            done = self.status.text()
+            self.set_status(f'Auto shear — IF {f_if:g} MHz ({source}), X low-pass '
+                            f'{cut:.4g} ×f_max, φ₁ = {self.phase_first.value():.3f} '
+                            f'MHz, φ₀ = {self.phase_zero.value():.2f}°; '
+                            f'{done[0].lower()}{done[1:]}')
+        finally:
+            QApplication.restoreOverrideCursor()
+            self._suppress_live = prev_live
 
     # -------------------------------------------------------------- output
     # ---------------------------------------------------------- per-trace fit
