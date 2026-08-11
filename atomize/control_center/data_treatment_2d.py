@@ -328,6 +328,12 @@ class MainWindow(QMainWindow):
         self.transpose_check = head.add_check(
             'Transpose on load',
             tooltip='Swap the trace and point axes as the file is read.')
+        self.tr_epr_check = head.add_check(
+            'TR EPR: drop row 0',
+            tooltip='Row 0 of a TR EPR file is the off-resonance reference '
+                    'trace, not a field point. Drop it as the file is read, so '
+                    'every trace lands on the field it was measured at — the '
+                    'same rows the acquisition window plots live.')
 
         # ---- Axis metadata (reconstructed by hand; no .param) ----
         head.add_heading('Axes')
@@ -874,6 +880,11 @@ class MainWindow(QMainWindow):
                     qmsg = 'no _1 file (Q = 0)'
             header_lines = read_header(path)    # one read: axis steps + viewer
             dx, xu, dy, yu = self._parse_axis_header(header_lines)
+            dropped = self.tr_epr_check.isChecked() and i.shape[0] > 1
+            if dropped:
+                # the off-resonance reference row; the stored sweep axis already
+                # labels the field rows that follow it, so it needs no shift
+                i, q = i[1:], q[1:]
             if self.transpose_check.isChecked():
                 i, q = i.T, q.T
                 dx, xu, dy, yu = dy, yu, dx, xu   # axes swap with the matrix
@@ -895,7 +906,8 @@ class MainWindow(QMainWindow):
             self._set_loaded_file(os.path.basename(path))
             self._set_header(os.path.basename(path), header_lines)
             msg = (f'Loaded I={os.path.basename(path)}, Q={qmsg} '
-                   f'(matrix {i.shape[0]}×{i.shape[1]} [traces × points]).')
+                   f'(matrix {i.shape[0]}×{i.shape[1]} [traces × points]'
+                   f'{", off-resonance row dropped" if dropped else ""}).')
             if parsed:
                 msg += f' Axes from header: {parsed}.'
             self.set_status(msg)
