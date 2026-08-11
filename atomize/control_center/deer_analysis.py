@@ -519,7 +519,7 @@ class MainWindow(QMainWindow):
     def _build_source_tab(self):
         p = FormPanel(field_width=FIELD_W, button_width=BTN_W)
         src_btns = []
-        for text, slot in (('Open CSV…', self.open_csv),
+        for text, slot in (('Open CSV / HDF5…', self.open_csv),
                            ('Open Bruker…', self.open_bruker),
                            ('Load from plot', lambda: self.load_from_buffer(silent=False)),
                            ('Clear', self.clear_all)):
@@ -1178,6 +1178,18 @@ class MainWindow(QMainWindow):
         """Column labels from a CSV's '#'-comment header (last comment line before
         the data, split on commas). Best-effort: returns [] on any trouble."""
         labels = []
+        if str(file_path).endswith('.h5'):
+            try:
+                import h5py
+                with h5py.File(file_path, 'r') as fh:
+                    for s in str(fh.attrs.get('header', '')).splitlines():
+                        parts = [c.strip() for c in s.split(',')]
+                        if any(parts):
+                            labels = parts
+            except Exception:
+                return []
+            return labels if any(labels) else []
+
         try:
             with open(file_path, 'r', errors='ignore') as fh:
                 for line in fh:
@@ -1247,7 +1259,8 @@ class MainWindow(QMainWindow):
         return mapping, labels
 
     def open_csv(self):
-        paths = self._open_dialog(multiple=True)
+        paths = self._open_dialog(multiple=True,
+                                  name_filters=['Data (*.csv *.h5)', 'All files (*)'])
         if not paths:
             return
         items, failed, unit_label = [], [], None

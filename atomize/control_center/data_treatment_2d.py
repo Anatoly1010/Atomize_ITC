@@ -10,7 +10,8 @@ parameter). It mirrors the phase_cor.py workflow:
 
   * I/Q loading by name convention — open `name.csv` (I); `name_1.csv` (Q) is
     loaded automatically. Each file is a matrix [trace, point] (rows = the
-    slow/indirect parameter, columns = the fast within-trace axis).
+    slow/indirect parameter, columns = the fast within-trace axis). An `.h5`
+    file holds both quadratures, and its axis datasets fill the axis fields.
   * Axis metadata is set by hand (start / step / name / unit per axis) — there
     is no .param sidecar.
   * Independent, chainable operations:
@@ -293,7 +294,7 @@ class MainWindow(QMainWindow):
 
         # ---- Source ----
         panel.addWidget(self._heading('Source (I/Q 2D)'))
-        btn_open = QPushButton('Open I/Q (CSV + _1)…')
+        btn_open = QPushButton('Open I/Q (CSV / HDF5)…')
         btn_open.setStyleSheet(BUTTON_STYLE)
         btn_open.clicked.connect(self.open_iq)
         btn_bruker = QPushButton('Open Bruker…')
@@ -397,7 +398,7 @@ class MainWindow(QMainWindow):
         out_row.addWidget(btn_reset); out_row.addWidget(btn_save)
         panel.addLayout(out_row)
 
-        self.status = gf.hint('Open an I/Q 2D dataset (name.csv + name_1.csv).')
+        self.status = gf.hint('Open an I/Q 2D dataset (name.csv + name_1.csv, or name.h5).')
         panel.addWidget(self.status)
 
         gf.apply_row_metrics(self)

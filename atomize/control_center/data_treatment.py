@@ -312,7 +312,7 @@ class MainWindow(QMainWindow):
         src = FormPanel(field_width=gui_forms.FIELD_W,
                         button_width=gui_forms.BTN_W)
         src.add_heading('Source')
-        btn_open = QPushButton('Open CSV…')
+        btn_open = QPushButton('Open CSV / HDF5…')
         btn_open.setStyleSheet(BUTTON_STYLE)
         btn_open.clicked.connect(self.open_csv)
         btn_bruker = QPushButton('Open Bruker…')
