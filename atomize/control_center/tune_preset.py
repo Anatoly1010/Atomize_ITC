@@ -1196,7 +1196,7 @@ class Worker():
                             break
                     general.wait('200 ms')
 
-                file_handler.save_data(file_data, np.transpose( data ), header = header, mode = 'w', fmt = '%.9e')
+                file_handler.save_data(file_data, np.transpose( data ), header = header, mode = 'w')
 
                 conn.send( ('', f'Script {p2} finished') )
                 general.wait('200 ms')

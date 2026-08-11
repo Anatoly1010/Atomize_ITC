@@ -5578,8 +5578,7 @@ class Worker():
                             file_data,
                             np.c_[x_axis_plot, data_x, data_y],
                             header = header2,
-                            mode = 'w',
-                            fmt = '%.9e'
+                            mode = 'w'
                             )
                         if save2d == 1:
                             file_data2 = file_data.replace(".csv", "_2d.h5" if self.save_hdf5 == 1 else "_2d.csv")
@@ -6252,8 +6251,7 @@ class Worker():
                             file_data,
                             np.c_[x_axis_plot, data_x, data_y],
                             header = header2,
-                            mode = 'w',
-                            fmt = '%.9e'
+                            mode = 'w'
                             )
                         if save2d == 1:
                             file_data2 = file_data.replace(".csv", "_2d.h5" if self.save_hdf5 == 1 else "_2d.csv")
@@ -6287,7 +6285,7 @@ class Worker():
                             elif iq_cor == 1:
                                 cpath = file_data.replace(".csv", f"_cycle{idx}.csv")
                                 cdx, cdy = pb.digitizer_demodulate(cdat[0], cdat[1], iq_freq, zp, first_order, sec_order, integral = True)
-                                file_handler.save_data(cpath, np.c_[x_axis_plot, cdx, cdy], header = header2, mode = 'w', fmt = '%.9e')
+                                file_handler.save_data(cpath, np.c_[x_axis_plot, cdx, cdy], header = header2, mode = 'w')
 
                     conn.send( ('', f'Experiment {EXP_NAME} finished') )
 
@@ -6756,8 +6754,7 @@ class Worker():
                             file_data,
                             np.c_[x_axis, data_x, data_y],
                             header = header2,
-                            mode = 'w',
-                            fmt = '%.9e'
+                            mode = 'w'
                             )
 
                         if save2d == 1:
@@ -7324,8 +7321,7 @@ class Worker():
                             file_data,
                             np.c_[x_axis_plot, data_x, data_y],
                             header = header2,
-                            mode = 'w',
-                            fmt = '%.9e'
+                            mode = 'w'
                             )
 
                         if save2d == 1:
@@ -7845,8 +7841,7 @@ class Worker():
                             file_data,
                             np.c_[x_axis_plot, data_x, data_y],
                             header = header2,
-                            mode = 'w',
-                            fmt = '%.9e'
+                            mode = 'w'
                             )
                         if save2d == 1:
                             file_data2 = file_data.replace(".csv", "_2d.h5" if self.save_hdf5 == 1 else "_2d.csv")

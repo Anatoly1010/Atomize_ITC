@@ -152,17 +152,15 @@ all 5 repos today — keep it that way, see Stage 7).
   significant digits (`%.6e`, the default) → float32, more (`%.9e`) → float64.
   Axes are always float64. An explicit `dtype` overrides.
   One rule in one place: a call site that raises its CSV precision raises its
-  HDF5 precision by the same act, and cannot forget the second half. Without
-  this the 1D sites — now `%.9e` per ruling B, i.e. 10 digits — would silently
-  write ~7-digit float32 into an `.h5` sitting next to a 10-digit CSV. Nothing
-  in `control_center/` writes 1D `.h5` today, so no caller changes; the rule is
-  there so the general core stays honest for scripts.
+  HDF5 precision by the same act, and cannot forget the second half. No caller
+  passes `fmt` today (ruling B withdrawn, §3), so every file is `%.6e` /
+  float32; the rule is there so the general core stays honest for scripts.
 - `save_data` gains an explicit `fmt='%.6e'` parameter, threaded into the
   `np.savetxt` calls of both the `ndim == 2` (:147) and `ndim == 3` (:167)
   branches; default unchanged so every existing caller keeps `%.6e`; ignored on
   the `.h5` path. Needed because 1D result files (`np.c_[x, I, Q]`, shape
   `(POINTS, 3)`) and TR EPR's genuine 2D CSV (`np.transpose(data[0])`) are both
-  `ndim == 2` — the caller, not the shape, selects the precision (ruling B, §3
+  `ndim == 2` — the caller, not the shape, selects the precision (§3
   "Numeric precision").
 - `create_file_dialog` (csv_opener_saver.py:79): add `fmt='csv'` parameter,
   passed through to `FileDialog` (replacing the hardcoded `fmt='csv'` at :91).
@@ -212,12 +210,11 @@ scan).
   subtraction in memory (float64) before saving, so it is safe today; the HDF5
   path must keep the subtraction pre-save and never move differencing to
   post-load.
-- Decided and in scope (ruling B): 1D result CSVs move to `%.9e` — they are
-  kilobytes, so the ~25% growth is irrelevant there, and it buys ~3 decades of
-  headroom over the crossover above. Not global: `%.6e` stays for everything
-  else (a global bump would grow the 2D CSV path ~25%). Mechanics in §2
-  (`fmt` parameter) and Stage 2.6; readers need no change (`np.genfromtxt`
-  parses either width).
+- **Ruling B (1D result CSVs move to `%.9e`) was WITHDRAWN by the owner during
+  implementation**: CSV and HDF5 precision stay in step at the default `%.6e` /
+  float32 everywhere, so no call site passes `fmt`. Stage 2.6 is dropped. The
+  `fmt` parameter itself still ships — it is the mechanism that couples the two
+  formats (next bullet), and a script may raise both at once with it.
 - **The two formats are kept in step by construction**: `_save_h5` derives its
   dtype from `fmt` unless told otherwise (§2), so `%.6e` ↔ float32 (both ~7
   digits) and `%.9e` ↔ float64 (10 digits, comfortably carried). Precision is
@@ -300,18 +297,8 @@ symmetry and to keep `exp_on`/`exp_test` signatures aligned.
    (ruled in, §0.3).
 5. ESEEM `save_each` (:6229-6241): the `iq_cor == 0` per-cycle 2D dumps switch
    to `_cycle{idx}.h5` (ruled in, §0.3); `iq_cor == 1` 1D rows stay CSV.
-6. 1D result CSVs go to `fmt='%.9e'` (ruling B): the `iq_cor == 1`
-   `np.c_[x_axis(_plot), data_x, data_y]` `save_data` calls at :5536, :6205,
-   :6703, :7266, :7782 and the ESEEM per-cycle 1D write :6241 (list verified
-   against the file; the neighboring 2D calls :5528/:5545 etc. keep the
-   default). Same one-token change in the other 1D-result writers found:
-   `cw_control.py:1270`, `tune_preset.py:1199`, and the six active
-   `other_versions/` preset scripts (`echo_det_preset_insys.py:647`,
-   `eseem_preset_insys.py:658`, `t1_preset_insys.py:654`,
-   `t2_preset_insys.py:644`, plus the `*_osc.py`/plain twins :435/:500/:445-446/
-   :433-434). `script_examples/` also call `save_data` but are user-editable
-   templates — leave at the default. Readers need no change (`np.genfromtxt`
-   parses either width).
+6. ~~1D result CSVs go to `fmt='%.9e'`~~ — **dropped**, ruling B withdrawn (§3):
+   every writer keeps the default `%.6e`, matching the float32 HDF5 data.
 7. Pre-flight in test mode; then live check on the bench.
 
 ### Stage 3 — epr_auto engine mirror
@@ -466,11 +453,8 @@ Port checklist (ordered):
    `Atomize_NIOCH/…/awg_phasing.py` and `Atomize_NIOCH_Q/…/awg_phasing.py`
    (their Settings tabs and `save2d` sites exist but line numbers and the
    Spectrum acquisition code differ — locate each `if save2d == 1:` site fresh).
-   Include the `%.9e` 1D sites (ruling B): both forks have the equivalent
-   `np.c_` writes — NIOCH :5470, :6163, :6199 (per-cycle), :6661, :7240, :7784;
-   NIOCH_Q :5454, :6140, :6174 (per-cycle), :6630, :7202, :7733 — plus each
-   fork's own `cw_control` / `tune_preset` / `other_versions` twins where
-   present (check per fork).
+   The `%.9e` 1D sites are NOT part of this (ruling B withdrawn, §3): every 1D
+   writer in the forks keeps the default `%.6e`, as in ITC.
 4. Hand-port the TR EPR changes into `Atomize_NIOCH_Q/…/tr_control.py` against
    its own diff from ITC.
 5. Add `h5py>=3.8` to the four other `pyproject.toml`s.
