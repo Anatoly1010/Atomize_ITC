@@ -28,6 +28,7 @@ class MainWindow(QMainWindow):
 
         self.save_scan = 0
         self.two_side = 0
+        self.save_hdf5 = 0
         self.design()
         self.exit_clicked = 0
 
@@ -64,7 +65,7 @@ class MainWindow(QMainWindow):
         centralwidget.setLayout(gridLayout)
 
         # ---- Labels & Inputs ----
-        labels = [("Start Field", "label_1"), ("End Field", "label_2"), ("Field Step", "label_3"), ("Off-Resonance Field", "label_4"), ("Off-Resonance Acquisitions", "label_5"), ("Acquisitions", "label_6"), ("Number of Scans", "label_7"), ("Save Each Scan", "label_8"), ("Two-Side Measurement", "label_9"), ("Number of Oscilloscopes", "label_10"), ("Trigger Channel", "label_11"), ("Experiment Name", "label_12"), ("Progress", "label_13")]
+        labels = [("Start Field", "label_1"), ("End Field", "label_2"), ("Field Step", "label_3"), ("Off-Resonance Field", "label_4"), ("Off-Resonance Acquisitions", "label_5"), ("Acquisitions", "label_6"), ("Number of Scans", "label_7"), ("Save Each Scan", "label_8"), ("Two-Side Measurement", "label_9"), ("Number of Oscilloscopes", "label_10"), ("Trigger Channel", "label_11"), ("Experiment Name", "label_12"), ("Progress", "label_13"), ("Save as HDF5", "label_14")]
 
         for name, attr_name in labels:
             lbl = QLabel(name)
@@ -160,7 +161,8 @@ class MainWindow(QMainWindow):
 
         # ---- Check Boxes ----
         check_boxes = [("checkbox_back_scan", self.two_side_measure),
-                       ("check_scan", self.save_each_scan)
+                       ("check_scan", self.save_each_scan),
+                       ("check_hdf5", self.save_as_hdf5)
                        ]
 
         for attr_name, func in check_boxes:
@@ -239,31 +241,33 @@ class MainWindow(QMainWindow):
         gridLayout.addWidget(self.check_scan, 8, 1)
         gridLayout.addWidget(self.label_9, 9, 0)
         gridLayout.addWidget(self.checkbox_back_scan, 9, 1)
+        gridLayout.addWidget(self.label_14, 10, 0)
+        gridLayout.addWidget(self.check_hdf5, 10, 1)
 
-        gridLayout.addWidget(hline(), 10, 0, 1, 2)
+        gridLayout.addWidget(hline(), 11, 0, 1, 2)
 
-        gridLayout.addWidget(self.label_10, 11, 0)
-        gridLayout.addWidget(self.combo_num_osc, 11, 1)
-        gridLayout.addWidget(self.label_11, 12, 0)
-        gridLayout.addWidget(self.combo_trig_ch, 12, 1)
+        gridLayout.addWidget(self.label_10, 12, 0)
+        gridLayout.addWidget(self.combo_num_osc, 12, 1)
+        gridLayout.addWidget(self.label_11, 13, 0)
+        gridLayout.addWidget(self.combo_trig_ch, 13, 1)
 
-        gridLayout.addWidget(hline(), 13, 0, 1, 2)
+        gridLayout.addWidget(hline(), 14, 0, 1, 2)
 
-        gridLayout.addWidget(self.label_12, 14, 0)
-        gridLayout.addWidget(self.text_edit_exp_name, 14, 1)
+        gridLayout.addWidget(self.label_12, 15, 0)
+        gridLayout.addWidget(self.text_edit_exp_name, 15, 1)
 
-        gridLayout.addWidget(hline(), 15, 0, 1, 2)
+        gridLayout.addWidget(hline(), 16, 0, 1, 2)
 
-        gridLayout.addWidget(self.label_13, 16, 0)
-        gridLayout.addWidget(self.progress_bar, 16, 1)
+        gridLayout.addWidget(self.label_13, 17, 0)
+        gridLayout.addWidget(self.progress_bar, 17, 1)
 
-        gridLayout.addWidget(hline(), 17, 0, 1, 2)
+        gridLayout.addWidget(hline(), 18, 0, 1, 2)
 
-        gridLayout.addWidget(self.button_start, 18, 0)
-        gridLayout.addWidget(self.button_stop, 19, 0)
-        gridLayout.addWidget(self.button_off, 20, 0)
+        gridLayout.addWidget(self.button_start, 19, 0)
+        gridLayout.addWidget(self.button_stop, 20, 0)
+        gridLayout.addWidget(self.button_off, 21, 0)
 
-        gridLayout.setRowStretch(21, 2)
+        gridLayout.setRowStretch(22, 2)
         gridLayout.setColumnStretch(21, 2)
 
     def menu(self):
@@ -327,6 +331,17 @@ class MainWindow(QMainWindow):
             self.save_scan = 1
         elif self.check_scan.checkState().value == 0: # unchecked
             self.save_scan = 0
+
+    def save_as_hdf5(self):
+        """
+        Write the 2D data as a single .h5 file instead of CSV; with Save Each
+        Scan on, the per-scan snapshots become slices of one 'scans' dataset
+        instead of a whole extra file per scan
+        """
+        if self.check_hdf5.checkState().value == 2: # checked
+            self.save_hdf5 = 1
+        elif self.check_hdf5.checkState().value == 0: # unchecked
+            self.save_hdf5 = 0
 
     def exp_name(self):
         self.cur_exp_name = self.text_edit_exp_name.toPlainText()
@@ -449,8 +464,9 @@ class MainWindow(QMainWindow):
         self.param_i are used as parameters for script function
         """
         worker = Worker()
+        worker.save_hdf5 = self.save_hdf5
         # prevent running two processes
-        try: 
+        try:
             if self.exp_process.is_alive() == True:
                 return
         except AttributeError:
@@ -580,11 +596,12 @@ class MainWindow(QMainWindow):
 
     def open_dialog(self):
         file_data = self.file_handler.create_file_dialog(multiprocessing = True,
-            directory = ldir.load('tr', self.path))
+            directory = ldir.load('tr', self.path),
+            fmt = 'h5' if self.save_hdf5 == 1 else 'csv')
 
         if file_data:
             if file_data != 'None':
-                self.save_file(file_data.split(".csv")[0])
+                self.save_file(file_data.rsplit('.', 1)[0])
             self.parent_conn.send( 'FL' + str( file_data ) )
         else:
             self.parent_conn.send( 'FL' + '' )
@@ -592,7 +609,8 @@ class MainWindow(QMainWindow):
     def run_main_experiment(self):
 
         worker = Worker()
-        
+        worker.save_hdf5 = self.save_hdf5
+
         self.parent_conn, self.child_conn = Pipe()
 
         self.exp_process = Process( target = worker.exp_on, args = ( self.child_conn, self.cur_offres_field, self.cur_exp_name, self.cur_end_field, self.cur_start_field, self.cur_step, self.cur_ave_offres, self.cur_scan, self.cur_ave, self.cur_num_osc, self.cur_trig_ch, self.save_scan, self.two_side, ) )
@@ -1121,6 +1139,36 @@ class Worker():
 
         self.command = 'start'
 
+        # write the 2D data as a single .h5 file; set by the MainWindow before
+        # the process is launched, default keeps the CSV behaviour
+        self.save_hdf5 = 0
+
+    def _append_scan_h5(self, filename, matrix, scan):
+        """
+        'Save Each Scan' for an .h5 file: the cumulative average after scan j
+        replaces I and is appended as slice j-1 of the resizable 'scans'
+        dataset, instead of the CSV path's whole extra file per scan.
+        """
+        import h5py
+
+        matrix = np.asarray( matrix, dtype = 'float32' )
+
+        with h5py.File(filename, 'a') as file_for_save:
+            file_for_save['I'][...] = matrix
+
+            if 'scans' not in file_for_save:
+                file_for_save.create_dataset(
+                    'scans',
+                    shape = (0, ) + matrix.shape,
+                    maxshape = (None, ) + matrix.shape,
+                    chunks = (1, ) + matrix.shape,
+                    dtype = 'float32'
+                )
+
+            scans = file_for_save['scans']
+            scans.resize(scan, axis = 0)
+            scans[scan - 1] = matrix
+
     def exp_on(self, conn, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11, p12):
         """
         function that contains experimental script
@@ -1218,6 +1266,13 @@ class Worker():
             else:
                 data = np.zeros( (3, real_length, points + 1) )
                 data_2 = np.zeros( (2, real_length_2, points + 1) )
+
+            # row 0 of the saved matrix is the off-resonance trace, so the
+            # field axis starts one step below START_FIELD to stay uniform
+            sweep_axis = START_FIELD + ( np.arange(points + 1) - 1 ) * FIELD_STEP
+            axes_2d = ( np.arange(real_length) * t_step, sweep_axis )
+            if p9 > 1:
+                axes_2d_2 = ( np.arange(real_length_2) * t_step_2, sweep_axis )
             
             temp_start = str( ls335.tc_temperature('A') )
 
@@ -1247,13 +1302,16 @@ class Worker():
                         break
                 general.wait('200 ms')
 
+            # the derived files follow whatever format the chosen name carries
+            base_name, ext = os.path.splitext(file_save_1)
+
             if p9 == 1:
                 pass
             elif p9 == 2:
-                file_save_2 = f"{file_save_1[0:-4]}_osc2.csv"
+                file_save_2 = f"{base_name}_osc2{ext}"
             elif p9 == 3:
-                file_save_2 = f"{file_save_1[0:-4]}_osc2.csv"
-                file_save_3 = f"{file_save_1[0:-4]}_pulse.csv"
+                file_save_2 = f"{base_name}_osc2{ext}"
+                file_save_3 = f"{base_name}_pulse{ext}"
 
             # the idea of automatic and dynamic changing is
             # sending a new value of repetition rate via self.command
@@ -1635,10 +1693,14 @@ class Worker():
                         field = OFFRES_FIELD
                     
                     if p9 == 1 and p11 == 1 and p12 == 0:
-                        if j == 1:
+                        if self.save_hdf5 == 1:
+                            if j == 1:
+                                file_handler.save_data(file_save_1, np.transpose( data[0, :, :] ), header = header, axes = axes_2d)
+                            self._append_scan_h5(file_save_1, np.transpose( data[0, :, :] ), j)
+                        elif j == 1:
                             file_handler.save_data(file_save_1, np.transpose( data[0, :, :] ), header = header)
                         else:
-                            file_save_j = file_save_1.split('.csv')[0] + f'_{j}_scans.csv'
+                            file_save_j = f"{base_name}_{j}_scans{ext}"
                             file_handler.save_data(file_save_j, np.transpose( data[0, :, :] ), header = header)
 
                     j += 1
@@ -1675,7 +1737,7 @@ class Worker():
                         f"2D Data"
                     )
 
-                    file_handler.save_data(file_save_1, np.transpose( data[0, :, :] ), header = header)
+                    file_handler.save_data(file_save_1, np.transpose( data[0, :, :] ), header = header, axes = axes_2d)
                 elif p9 == 2:
 
                     now = datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")
@@ -1721,8 +1783,8 @@ class Worker():
                         f"2D Data"
                     )
 
-                    file_handler.save_data(file_save_1, np.transpose( data[0, :, :] ), header = header)
-                    file_handler.save_data(file_save_2, np.transpose( data_2[0, :, :] ), header = header_2)
+                    file_handler.save_data(file_save_1, np.transpose( data[0, :, :] ), header = header, axes = axes_2d)
+                    file_handler.save_data(file_save_2, np.transpose( data_2[0, :, :] ), header = header_2, axes = axes_2d_2)
                 elif p9 == 3:
 
                     now = datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")
@@ -1768,9 +1830,9 @@ class Worker():
                         f"2D Data"
                     )
 
-                    file_handler.save_data(file_save_1, np.transpose( data[0, :, :] ), header = header)
-                    file_handler.save_data(file_save_2, np.transpose( data_2[0, :, :] ), header = header_2)
-                    file_handler.save_data(file_save_3, np.transpose( data[2, :, :] ), header = header)
+                    file_handler.save_data(file_save_1, np.transpose( data[0, :, :] ), header = header, axes = axes_2d)
+                    file_handler.save_data(file_save_2, np.transpose( data_2[0, :, :] ), header = header_2, axes = axes_2d_2)
+                    file_handler.save_data(file_save_3, np.transpose( data[2, :, :] ), header = header, axes = axes_2d)
 
                 while field > OFFRES_FIELD:
                     field = bh15.magnet_field( field - initialization_step)
