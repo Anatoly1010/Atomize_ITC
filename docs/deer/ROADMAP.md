@@ -44,6 +44,29 @@ the archive session that shipped it.
 
 ## Recently landed
 
+- **`S5T-1` full scope + the bundled `bg_cofit` fix** (`deer.py` + `deer_analysis.py`,
+  2026-08-12). The multi-Gaussian `lsq` engine re-fits the background, so
+  `joint_background`'s reliability keys described an estimate that no longer
+  existed. They are now **moved, never recomputed** (recomputing `k_ratio` is the
+  measured regression that got the original fix rejected) into
+  `background['prep']` via a `_PREP_BG_KEYS` list, and all four consumers follow:
+  the GUI panel prints them as one labelled *"the background this fit STARTED
+  from"* note instead of as verdicts; `deer_validate`'s per-trial `flagged` vote
+  reads `prep`; `joint_background` takes `prep_only=True` and reworded its
+  RuntimeWarning; the docstrings and `deer.md` say which background each key
+  judges. `bg_start_early` stays top-level (it is re-derived from the final P(r)),
+  `A` is refreshed to `1 − λ_fit`, and the `mc` path is untouched — it never
+  re-fits. Bundled: `deer_validate`'s `bg_cofit` no longer disowns the band for
+  `method='mc'`, which inverts the *prepared* form factor and so does follow
+  `bg_start`. That test reads the **solver off the base result**, not off
+  `kwargs`: `deer_validate`'s own `method` is the α selector, and `deer_invert`
+  drops the gauss solver entirely (triage's `callsites-1`), so the kwargs route
+  would have been inert. Consequence: the mc branch is correct but **unreachable
+  until `callsites-1` lands** — the gate exercises it through a patched forwarder.
+  Gate (`~/deer_benchmark/s5t1/`): **max |ΔP| = |Δλ| = |Δk| = 0.000e+00** over 28
+  real + 1 synthetic trace × 6 engine configs against `HEAD`, prep values
+  bit-equal to HEAD's stale top-level ones, and `gui_smoke.py` **ALL PASS**.
+
 - **2026-08-05 audit, items 3/4/5/7/9 + the batch clamp line** (`deer.py` +
   `deer_analysis.py`, 2026-08-10). `deer_validate` forwards `clamp_alias` (the
   `False` escape hatch raised a shape mismatch); `pre_zero` is honoured on every
@@ -115,19 +138,17 @@ Open findings. Each carries its own measurement in the archive / `REVIEW_S5`.
 None needs another review round; they need a fix and a gate.
 
 **Multi-Gaussian (S5):**
-- `S5T-1` full scope — stale `joint_background` reliability keys (incl.
-  `deer_validate`'s per-trial `flagged` vote) shipped beside refitted k/λ, across
-  four consumers. Large; land the namespace/label route across all four at once —
-  shipping half is worse than none.
-- `deer_validate` `bg_cofit` test keys on `engine=='gauss' and bg_engine!='general'`
-  and **ignores `method`** — latent, harmless only because the GUI skips `mc`
-  validation.
 - `engine='gauss'` has the **identical** `deer_validate` hole S4-1 fixed for
   Mellin: `n_gauss` is re-selected per trial, so the validation band mixes
   component counts.
 - Triage's cuts-for-cap, reasons in `~/deer_benchmark/s5_persist/triage_queue.json`:
   **`xengine-3`** (triage's own "strongest"), `xengine-2`, `callsites-1`,
-  `batch-1`, `me1-1`, `ci-1`, `status-1`, `robust-5`, `docs-7`.
+  `batch-1`, `me1-1`, `ci-1`, `status-1`, `robust-5`, `docs-7`. **`callsites-1` was
+  promoted by the S5T-1 session**: `deer_invert(engine='gauss', method='mc')`
+  silently running `lsq` is not only a script-level surprise, it makes the `mc`
+  solver unreachable through `deer_validate`, which is what leaves the new
+  `bg_cofit` branch latent. One-line forward; its own gate is that `mc` really
+  runs (compare `res['method']`).
 
 **Reporting defects from the 2026-08-05 audit — only (6) is left:**
 - (6) `'even_fold'` pairs by `searchsorted`, so an off-grid t₀ folds outward

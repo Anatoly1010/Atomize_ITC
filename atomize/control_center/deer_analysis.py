@@ -2652,8 +2652,16 @@ class MainWindow(QMainWindow):
             bg_line = f'bg decay k = {res["k"]:.4g}, dim = {res["dim"]:.2f}'
         # `flags` predict a wrong distance; `notes` false-alarm too often to say that
         bgr = res.get('background', {})
+        # An engine that re-fits the background parks the preparation's reliability
+        # keys under 'prep' — they judge the starting estimate, not what is shown,
+        # so they are reported together under that label instead of as verdicts.
+        prep = bgr.get('prep') or {}
+        src = prep or bgr
         flags = []
         notes = []
+        prep_lines = []
+        bg_flags = prep_lines if prep else flags
+        bg_notes = prep_lines if prep else notes
         if bgr.get('bg_start_early'):
             per = float(bgr.get('bg_start_periods') or float('nan'))
             # NOT demoted for the gauss lsq path, though the engine's own fit is
@@ -2662,16 +2670,16 @@ class MainWindow(QMainWindow):
             # and measurably for the better. See ROADMAP 2026-08-07.
             flags.append(f'background window opens at {per:.2f} dipolar periods '
                          '— reported distance is biased short; start it later')
-        if bgr.get('conc_implausible'):
-            flags.append(f'background implies '
-                         f'{float(bgr.get("conc_implied_uM") or float("nan")):.0f} µM '
-                         'spin concentration — the fit has absorbed the dipolar decay')
-        if bgr.get('lambda_clamped') or bgr.get('lambda_degenerate'):
-            flags.append(f'λ clamped (raw {bgr.get("lambda_raw", float("nan")):.3g})')
-        if float(bgr.get('tail_abs_F') or 0.0) > 0.05:
-            flags.append(f'tail not decayed (mean|F| = {bgr["tail_abs_F"]:.2f})')
-        if bgr.get('k_at_bound'):
-            flags.append('k pinned at its search bracket edge (no information)')
+        if src.get('conc_implausible'):
+            bg_flags.append(f'background implies '
+                            f'{float(src.get("conc_implied_uM") or float("nan")):.0f} µM '
+                            'spin concentration — the fit has absorbed the dipolar decay')
+        if src.get('lambda_clamped') or src.get('lambda_degenerate'):
+            bg_flags.append(f'λ clamped (raw {src.get("lambda_raw", float("nan")):.3g})')
+        if float(src.get('tail_abs_F') or 0.0) > 0.05:
+            bg_flags.append(f'tail not decayed (mean|F| = {src["tail_abs_F"]:.2f})')
+        if src.get('k_at_bound'):
+            bg_flags.append('k pinned at its search bracket edge (no information)')
         if (res.get('l_curve') or {}).get('at_bound'):
             flags.append('α sits on the grid edge, not at an interior optimum')
         # the flags above are the central trial's; this one is the whole sweep's
@@ -2680,16 +2688,22 @@ class MainWindow(QMainWindow):
             flags.append(f'validation trials disagree (mean spans '
                          f'{bsp["r_mean_spread"]:.2f} nm, '
                          f'{bsp["n_flagged"]}/{bsp["n"]} flagged)')
-        if bgr.get('k_disagrees'):
-            notes.append(('sequential tail fit sees no decay'
-                          if float(bgr.get('k_ref') or 0.0) <= 1e-4
-                          else f'k = {bgr["k_ratio"]:.3g}× the sequential tail fit')
-                         + ' — the two background routes differ, which is not on '
-                           'its own a sign the distance is wrong')
-        if bgr.get('bg_flat'):
-            notes.append(f'background decays only '
-                         f'{100.0*float(bgr.get("bg_drop") or 0.0):.1f}% over the '
-                         'trace, so the two rate fits are not comparable')
+        if src.get('k_disagrees'):
+            bg_notes.append(('sequential tail fit sees no decay'
+                             if float(src.get('k_ref') or 0.0) <= 1e-4
+                             else f'k = {src["k_ratio"]:.3g}× the sequential tail fit')
+                            + ' — the two background routes differ, which is not on '
+                              'its own a sign the distance is wrong')
+        if src.get('bg_flat'):
+            bg_notes.append(f'background decays only '
+                            f'{100.0*float(src.get("bg_drop") or 0.0):.1f}% over the '
+                            'trace, so the two rate fits are not comparable')
+        # one labelled line, so a starting-background diagnostic is never read as a
+        # verdict on the λ and k this engine went on to fit
+        if prep_lines:
+            notes.append('the background this fit STARTED from (it re-fit λ and k '
+                         'afterwards, so these judge the starting estimate): '
+                         + '; '.join(prep_lines))
         eh = res.get('echo_head') or {}
         if eh.get('requested'):
             if eh.get('applied'):
