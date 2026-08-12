@@ -2061,9 +2061,11 @@ class MainWindow(QMainWindow):
         """Fill the zero-order phase field with the principal-axis value,
         measured in the domain `do_phase` corrects in: on the spectrum when
         'FFT first' is on, else on the time-domain echo
-        (Fast_Fourier.auto_phase_zero_echo) with the first/second-order phase
-        already applied. First/second order stay manual, but a leftover carrier
-        — which no φ₀ can absorb — is reported."""
+        (Fast_Fourier.auto_phase_zero_echo) — either way with the first/second
+        order already applied, since `do_phase` rotates by them in that same
+        domain and φ₀ measured without them lands in the wrong frame. First/
+        second order stay manual, but a leftover carrier — which no φ₀ can
+        absorb — is reported."""
         il = self.i_combo.currentText()
         ql = self.q_combo.currentText()
         if il not in self.datasets or ql not in self.datasets:
@@ -2079,17 +2081,23 @@ class MainWindow(QMainWindow):
         sig = idata + 1j*qdata
         x = np.asarray(x, dtype=float)
         dt = float(np.mean(np.diff(x))) if x.size > 1 else 0.0
+        v1 = float(self.phase_first.value()); v2 = float(self.phase_second.value())
         if self.phase_fft.isChecked():
             if dt == 0:
                 self.set_status('X axis has zero spacing; cannot FFT.')
                 return
+            # do_phase's 'FFT first' path phases the spectrum on the frequency
+            # axis, so measure there and under the same first/second order.
             n = self._zerofill_n(len(idata), self.phase_zerofill.currentText())
-            phi = self.fft.auto_phase_zero(np.fft.fft(sig, n))
+            freq = np.fft.fftfreq(n, dt)
+            sp = np.fft.fft(sig, n)*np.exp(
+                1j*(2*np.pi*v1/1000.0*freq + 2*np.pi*v2/1000.0*freq*freq))
+            phi = self.fft.auto_phase_zero(sp)
             self.phase_zero.setValue(phi)
-            self.set_status(f'Auto φ₀ = {phi:.2f}° (frequency domain).')
+            note = ' (first/second order applied)' if (v1 or v2) else ''
+            self.set_status(f'Auto φ₀ = {phi:.2f}° (frequency domain){note}.')
             return
 
-        v1 = float(self.phase_first.value()); v2 = float(self.phase_second.value())
         sig = sig*np.exp(1j*(2*np.pi*v1/1000.0*x + 2*np.pi*v2/1000.0*x*x))
         phi = self.fft.auto_phase_zero_echo(sig)
         self.phase_zero.setValue(phi)        # fires the live preview update

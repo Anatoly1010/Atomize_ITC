@@ -487,7 +487,11 @@ class MainWindow(QMainWindow):
             'Do this <b>before</b> φ₀ on undemodulated data. The nominal IF is '
             'not accurate enough: an offset of a few hundred kHz twists the phase '
             'across the echo by tens of degrees, which no φ₀ can absorb, and it '
-            'leaves a large imaginary residue.')
+            'leaves a large imaginary residue.<br><br>'
+            'On input that is already a spectrum there is no carrier to measure. '
+            'A first order there is a shift of the time origin, so the button '
+            'reports how far before the echo centre the transform starts — move '
+            'the FFT tab\'s skip by that much and transform again.')
         btn_autoph1.clicked.connect(self.auto_phase_first)
         p.add_row('First order', self.phase_first, btn_autoph1, stretch=[3, 1],
                   tooltip='Frequency offset per x-unit: 50 → 50 MHz for x in ns.')
@@ -1400,27 +1404,30 @@ class MainWindow(QMainWindow):
         spectrum built from a skipped trace reports φ₀ in the shifted frame
         instead, which for an off-centre line is wrong by 360·f·dt per skipped
         point. Input that is already a spectrum ('Result → input') is phased on
-        that spectrum as-is. First/second order stay manual, but a leftover
-        carrier — which no φ₀ can absorb — is reported."""
+        that spectrum with no second FFT, but still under the first/second order
+        currently entered — those rotate a spectrum exactly as they rotate a
+        trace, and measuring φ₀ without them reports it in the wrong frame.
+        First/second order stay manual, but a leftover carrier — which no φ₀ can
+        absorb — is reported."""
         if self.src_i is None:
             self.set_status('Open an I/Q dataset first.')
             return
-        if self._is_freq_axis(self.src_col):
-            # Input is already a spectrum (FFT'd, then 'Result → input'): use it
-            # straight, with NO second FFT — transforming again is what produced
-            # a meaningless φ₀. Echo/carrier are time-domain concepts here.
-            S = self.src_i + 1j*self.src_q
-            phi = fft_module.Fast_Fourier.auto_phase_zero(S.ravel())
-            self.phase_zero.setValue(phi)
-            self.set_status(f'Auto φ₀ = {phi:.2f}° — X spectrum '
-                            f'(input already frequency-domain).')
-            return
-
         ncols = self.src_i.shape[1]
         axisx = self.src_col['start'] + self.src_col['step']*np.arange(ncols)
         v1 = float(self.phase_first.value()); v2 = float(self.phase_second.value())
         Z = (self.src_i + 1j*self.src_q)*np.exp(
             1j*(2*np.pi*v1/1000.0*axisx + 2*np.pi*v2/1000.0*axisx*axisx))[None, :]
+        if self._is_freq_axis(self.src_col):
+            # Input is already a spectrum (FFT'd, then 'Result → input'): use it
+            # straight, with NO second FFT — transforming again is what produced
+            # a meaningless φ₀. Echo/carrier are time-domain concepts here.
+            phi = fft_module.Fast_Fourier.auto_phase_zero(Z.ravel())
+            self.phase_zero.setValue(phi)
+            note = ' (first/second order applied)' if (v1 or v2) else ''
+            self.set_status(f'Auto φ₀ = {phi:.2f}° — X spectrum, input already '
+                            f'frequency-domain{note}.')
+            return
+
         phi = fft_module.Fast_Fourier.auto_phase_zero_echo(Z)
         self.phase_zero.setValue(phi)        # fires the live preview update
 
@@ -1452,6 +1459,61 @@ class MainWindow(QMainWindow):
         S = np.fft.fft(Z, axis=1)
         S[:, np.abs(np.fft.fftfreq(Z.shape[1], dt)) > 10.0/width] = 0
         return fft_module.Fast_Fourier.carrier_offset(np.fft.ifft(S, axis=1), dt)
+
+    @staticmethod
+    def _spectrum_delay(S, df):
+        """(delay, index) between the start of the transformed record and the
+        echo centre, read off a spectrum.
+
+        A linear phase across frequency is nothing but a shift of the time
+        origin, so the quantity a frequency-domain first order would carry can be
+        measured directly: transform back, and find the envelope centre with the
+        same estimator the FFT tab uses for its skip. `delay` comes out in the
+        units the First-order box takes (ns for an axis in MHz, since that box is
+        2π·value/1000 per x-unit either way); `index` is its point count on the
+        transform grid, which equals the skip only when the FFT was not zero
+        filled. Indices past the half point are the negative times of the wrapped
+        record, i.e. a transform that starts *after* the echo centre."""
+        z = np.fft.ifft(np.fft.ifftshift(S, axes=1), axis=1)
+        n = z.shape[1]
+        k = int(sigproc.echo_center(np.abs(z).mean(axis=0)))
+        if k > n//2:
+            k -= n
+        return (1000.0*k/(n*df) if (n and df) else 0.0), k
+
+    def _report_spectrum_delay(self):
+        """Status line for a first-order Auto pressed on a spectrum: what the
+        transform's time origin is, and why the FFT-tab skip — not a first-order
+        phase — is the thing to move.
+
+        The value is reported rather than filled in on purpose. A ramp moves the
+        time origin but cannot remove what sits *before* the echo, and on a
+        trityl echo (line ~2 MHz wide) it lowers nothing: entering the measured
+        delay on a transform started 300 ns early takes the imaginary residue
+        over the line from 30 % to 47 %, while re-running the FFT from the echo
+        centre takes it to 5 %."""
+        df = float(self.src_col['step'])
+        if df == 0:
+            self.set_status('Frequency axis has a zero step; cannot read a delay.')
+            return
+        unit = ' ns' if str(self.src_col.get('scale', '')).strip().lower() == 'mhz' else ''
+        d, k = self._spectrum_delay(self.src_i + 1j*self.src_q, df)
+        if abs(k) < 2:
+            self.set_status('Input is a spectrum: its transform already starts at '
+                            'the echo centre (within one point), so there is no '
+                            'first order to set — φ₀ alone will phase it.')
+        elif k > 0:
+            self.set_status(f'Input is a spectrum: its transform starts {d:.1f}{unit} '
+                            f'({k} pts) before the echo centre. Set the FFT-tab skip '
+                            f'there and transform again — a first-order phase moves '
+                            f'the time origin but cannot remove the dead time and '
+                            f'ringing that sit before the echo.')
+        else:
+            self.set_status(f'Input is a spectrum: its transform starts '
+                            f'{abs(d):.1f}{unit} ({abs(k)} pts) after the echo '
+                            f'centre — the leading half of the echo was cut away '
+                            f'and no phase can bring it back. Lower the FFT-tab '
+                            f'skip and transform again.')
 
     @staticmethod
     def _imag_fraction(W):
@@ -1491,12 +1553,20 @@ class MainWindow(QMainWindow):
         turns the phase by tens of degrees across the echo, which φ₀ cannot absorb
         and which shows up as a large imaginary residue. Two stages — the carrier
         is iterated to its fixed point (it survives a badly wrong starting value),
-        then `_refine_first` takes over for the last few hundred kHz."""
+        then `_refine_first` takes over for the last few hundred kHz.
+
+        A carrier is a time-domain quantity, so on input that is already a
+        spectrum this measures the other thing a first order means there — the
+        time origin of the transform — and reports it as a hint instead
+        (`_report_spectrum_delay`)."""
         if self.src_i is None:
             self.set_status('Open an I/Q dataset first.')
             return
+        if self._is_freq_axis(self.src_col):
+            self._report_spectrum_delay()
+            return
         step = float(self.src_col['step'])
-        if step == 0 or self._is_freq_axis(self.src_col):
+        if step == 0:
             self.set_status('First-order Auto needs a time-domain X axis with a '
                             'non-zero step.')
             return
