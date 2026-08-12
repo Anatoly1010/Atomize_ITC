@@ -18,11 +18,12 @@ below as a plain task with a known measurement behind it.
 | `atomize/math_modules/deer.py` | ~3500 | all 5 (plain / ITC / NIOCH / NIOCH_Q / Cryomech) |
 | `atomize/control_center/deer_analysis.py` | ~3240 | ITC / NIOCH / NIOCH_Q only (lead: ITC) |
 
-The two ship as a pair — `band_degenerate`, the per-component bound flags and
-`ic_railed` are produced in `deer.py` and consumed in `deer_analysis.py`. Run
-`~/atomize_sync/sync_check.py` before porting. **All five repos are in sync as of
-2026-08-08** (`deer.py` byte-identical across all 5, `deer_analysis.py` across
-ITC/NIOCH/NIOCH_Q) — see the port entry below.
+The two ship as a pair — `band_degenerate`, the per-component bound flags,
+`ic_railed` and now `background['prep']` are produced in `deer.py` and consumed in
+`deer_analysis.py`. Run `~/atomize_sync/sync_check.py` before porting. **All five
+repos are in sync as of 2026-08-12** (`deer.py` byte-identical across all 5,
+`deer_analysis.py` across ITC/NIOCH/NIOCH_Q; the only remaining `sync_check`
+report is the unrelated `ITC_FC.py`) — see the port entries below.
 
 ## The shipped stack today
 
@@ -41,6 +42,7 @@ the archive session that shipped it.
 | `echo_head` (Tikhonov parabolic head) | **OFF** | guarded pair-averaged echo-top head; worth only +0.0016 now and declines itself at high noise |
 | `bg_start_early`, `conc_implausible` | reported | the two calibrated background-reliability detectors, on every engine |
 | `k_disagrees` | reported as a *note* | the two background routes differ — 56 % detection at 45 % false alarm, NOT a reliability verdict |
+| `background['prep']` (gauss `lsq`) | **on** | the engine re-fits its background, so `joint_background`'s reliability keys judge the *starting* estimate; they are parked there and labelled, never recomputed (2026-08-12, `S5T-1`) |
 
 ## Recently landed
 
@@ -78,11 +80,20 @@ the archive session that shipped it.
   `bg_start`. That test reads the **solver off the base result**, not off
   `kwargs`: `deer_validate`'s own `method` is the α selector, and `deer_invert`
   drops the gauss solver entirely (triage's `callsites-1`), so the kwargs route
-  would have been inert. Consequence: the mc branch is correct but **unreachable
-  until `callsites-1` lands** — the gate exercises it through a patched forwarder.
+  would have been inert. Consequence at the time: the mc branch was correct but
+  unreachable — the gate exercised it through a patched forwarder, and
+  `callsites-1` (above, same session) then made it live.
   Gate (`~/deer_benchmark/s5t1/`): **max |ΔP| = |Δλ| = |Δk| = 0.000e+00** over 28
   real + 1 synthetic trace × 6 engine configs against `HEAD`, prep values
   bit-equal to HEAD's stale top-level ones, and `gui_smoke.py` **ALL PASS**.
+
+- **Port of both — DONE 2026-08-12.** Byte-identical straight file copies from ITC,
+  each landed on the repo's default branch (branch → ff-merge), **not pushed**.
+  `S5T-1`: ITC `0c86b21`, plain `35be646`, NIOCH `14e4307`, NIOCH_Q `eb9d6db`,
+  Cryomech `ad4285d`, docs `640f053`. `callsites-1`: ITC `ad14dfc`,
+  plain `755939c`, NIOCH `c84425a`, NIOCH_Q `393abc2`, Cryomech `41f51c9`, docs
+  `c905aa4`. `sync_check.py` clean afterwards apart from the unrelated
+  `ITC_FC.py`.
 
 - **2026-08-05 audit, items 3/4/5/7/9 + the batch clamp line** (`deer.py` +
   `deer_analysis.py`, 2026-08-10). `deer_validate` forwards `clamp_alias` (the
@@ -144,10 +155,32 @@ the archive session that shipped it.
 
 ## Pending — do first
 
-The DEER stack is fully in sync, the estimator's external check is closed,
-`S5G-4` is settled and the 2026-08-05 audit is down to its one behaviour-change
-item, so there is **no do-first item** — pick from the backlog below. Biggest
-lever: the residual bootstrap (uncertainty).
+**Decide whether the GUI should offer background-start validation on the gauss
+`mc` solver.** `_gauss_compute` skips it (`validate_flag and gmethod != 'mc'`) on
+two stated grounds: mc supplies its own ensemble band, and a per-bg-start sweep
+would be prohibitively slow. `callsites-1` weakened the first and measured the
+second:
+
+- the mc self-ensemble is *the* band S5-4 measured at **0.27–0.72 coverage against
+  a nominal 0.95** (0.00 when the ensemble collapses) — it is optimizer spread
+  thresholded by a tolerance carrying no noise scale, so "it has its own band" is
+  the weakest of the three gauss bands, not the strongest;
+- the sweep band on mc is real, not flat-valley jitter: **P_spread 0.329** over 9
+  trials, against **5.2e-07** for the `lsq` run `band_degenerate` exists to
+  disown;
+- cost is the honest objection — roughly 9 × 76 s ≈ **11 min** per trace on the
+  YopO traces, against ~48 s for one `lsq` inversion.
+
+So this is a product decision, not a defect: leave it off, offer it behind an
+explicit "this takes ~10 minutes" confirmation, or cut the trial grid for mc.
+Whichever way it goes, the *reason* in the code comment needs correcting — it
+currently rests on the ensemble band being adequate, which is measured false. No
+code was changed for this; the guard is untouched.
+
+Otherwise: the stack is in sync, the estimator's external check is closed, `S5G-4`
+is settled, the 2026-08-05 audit is down to its one behaviour-change item, and
+`S5T-1` / `callsites-1` are landed — pick from the backlog below. Biggest lever
+there: the residual bootstrap (uncertainty).
 
 ## Pending — backlog
 
@@ -157,7 +190,13 @@ None needs another review round; they need a fix and a gate.
 **Multi-Gaussian (S5):**
 - `engine='gauss'` has the **identical** `deer_validate` hole S4-1 fixed for
   Mellin: `n_gauss` is re-selected per trial, so the validation band mixes
-  component counts.
+  component counts. (`S5T-1` pinned the analogous discrete selection nowhere — it
+  only namespaced keys — so this is still fully open.)
+- `deer.md`'s `ic_railed` box still says the right response is to **raise `N max`
+  until the criterion turns over**, which the GUI stopped saying on 2026-08-08
+  (it now points at the regularized engine). Spotted 2026-08-12 while editing the
+  neighbouring section; one of the two is wrong and the roadmap's *shipped stack*
+  row says it is the doc. Docs-only fix.
 - Triage's cuts-for-cap, reasons in `~/deer_benchmark/s5_persist/triage_queue.json`:
   **`xengine-3`** (triage's own "strongest"), `xengine-2`, `batch-1`, `me1-1`,
   `ci-1`, `status-1`, `robust-5`, `docs-7`. (`callsites-1` is **done** — see
@@ -265,6 +304,13 @@ against all four**, or it books a gain already paid for elsewhere.
 - **Any engine-signature change needs one GUI-path smoke run before the session
   closes** — applies to result-dict *keys* as much as array lengths (the
   2026-08-05 audit found detectors that never reached the window).
+- **A guard keyed on an argument the caller never carries is inert, and looks
+  fixed.** `S5T-1`'s bundled `bg_cofit` test was first written as
+  `kwargs.get('method')` — but `deer_validate`'s `method` is the α selector (so it
+  never lands in `kwargs`) *and* `deer_invert` dropped the gauss solver anyway, so
+  the branch could not fire from any call. **Key a guard on the result, not on the
+  arguments** (`base.get('method')`), and make the gate prove the branch actually
+  executes — writing one exposed both plumbing gaps before either shipped.
 - **`deer.simulate` is even in t** — a finding about time-asymmetry cannot be
   confirmed or refuted on it; use the real Bruker traces in `~/deer_benchmark/`.
 - **A measurement inherits every switch its harness silently set** — `S5T-8`'s fix
