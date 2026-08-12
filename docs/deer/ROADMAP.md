@@ -44,6 +44,23 @@ the archive session that shipped it.
 
 ## Recently landed
 
+- **`callsites-1` — the gauss solver now reaches the engine** (`deer.py`,
+  2026-08-12). `deer_invert(engine='gauss', method='mc')` dropped `method` and ran
+  `lsq`: a different **estimator**, not a different search. `method` does double
+  duty — α criterion on the regularized engines, solver on gauss — and the two
+  name sets are disjoint, so it is now forwarded when it names a solver and
+  ignored when it names a criterion. Stated in both docstrings and `deer.md`.
+  This also **takes `S5T-1`'s `bg_cofit` branch out of latency**: `deer_validate`
+  can finally validate `mc`. Gate (`~/deer_benchmark/s5t1/gate_callsites.py`, 6
+  real + 1 synthetic, baseline = the S5T-1 commit): every existing route
+  (`seq`, `seq_lcurve`, `joint`, `mellin`, `gauss_default`, `gauss_gcv`,
+  `gauss_lsq`) **0.000e+00**; the two solvers differ by **0.295** in P(r), so the
+  silent substitution was material; HEAD returned the lsq answer bit-exactly and
+  the fix returns the direct-mc answer bit-exactly; and unpatched `deer_validate`
+  now reports `band_degenerate=False` with **P_spread 0.329 vs HEAD's 5.2e-07** —
+  six orders apart, which is the direct evidence the mc band was real and the
+  structural disowning was wrong for that solver.
+
 - **`S5T-1` full scope + the bundled `bg_cofit` fix** (`deer.py` + `deer_analysis.py`,
   2026-08-12). The multi-Gaussian `lsq` engine re-fits the background, so
   `joint_background`'s reliability keys described an estimate that no longer
@@ -142,13 +159,9 @@ None needs another review round; they need a fix and a gate.
   Mellin: `n_gauss` is re-selected per trial, so the validation band mixes
   component counts.
 - Triage's cuts-for-cap, reasons in `~/deer_benchmark/s5_persist/triage_queue.json`:
-  **`xengine-3`** (triage's own "strongest"), `xengine-2`, `callsites-1`,
-  `batch-1`, `me1-1`, `ci-1`, `status-1`, `robust-5`, `docs-7`. **`callsites-1` was
-  promoted by the S5T-1 session**: `deer_invert(engine='gauss', method='mc')`
-  silently running `lsq` is not only a script-level surprise, it makes the `mc`
-  solver unreachable through `deer_validate`, which is what leaves the new
-  `bg_cofit` branch latent. One-line forward; its own gate is that `mc` really
-  runs (compare `res['method']`).
+  **`xengine-3`** (triage's own "strongest"), `xengine-2`, `batch-1`, `me1-1`,
+  `ci-1`, `status-1`, `robust-5`, `docs-7`. (`callsites-1` is **done** — see
+  *Recently landed*.)
 
 **Reporting defects from the 2026-08-05 audit — only (6) is left:**
 - (6) `'even_fold'` pairs by `searchsorted`, so an off-grid t₀ folds outward
