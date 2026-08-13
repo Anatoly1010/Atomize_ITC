@@ -892,14 +892,19 @@ class MainWindow(QMainWindow):
             'the parabolic echo top F≈F0+b·T²); [δ, end] is integrated '
             'numerically. 0 = auto: F(δ)≈0.85, then clipped to 90–120 ns (the '
             'floor keeps the echo-top anchor wide enough on sharp peaks; the cap '
-            'avoids over-smoothing long-r). Larger δ regularizes more (smoother, '
-            'less short-r noise); too large loses resolution.')
+            'avoids over-smoothing long-r), and the floor is given up wherever the '
+            'echo top stops being parabolic before it — on a fast-decaying trace '
+            '(short or broad distances) it would otherwise put a known-wrong '
+            'parabola over part of the modulation and leave a systematic '
+            'early-time residual. Larger δ regularizes more (smoother, less '
+            'short-r noise); too large loses resolution.')
         self.mellin_delta.valueChanged.connect(self._mellin_live)
         self.mellin_delta_auto = QCheckBox('Auto')
         self.mellin_delta_auto.setStyleSheet(CHECKBOX_STYLE)
         self.mellin_delta_auto.setChecked(True)
         self.mellin_delta_auto.setToolTip(
-            'Auto δ: where F falls to ≈0.85·F(0), clipped to 90–120 ns.')
+            'Auto δ: where F falls to ≈0.85·F(0), clipped to 90–120 ns and held '
+            'inside the parabolic part of the echo top.')
         self.mellin_delta_auto.stateChanged.connect(self._mellin_delta_toggle)
         self.mellin_delta.setEnabled(False)
         p.add_row('Split δ', self.mellin_delta, self.mellin_delta_auto,
