@@ -46,6 +46,29 @@ the archive session that shipped it.
 
 ## Recently landed
 
+- **Gauss `mc` background-start validation stays OFF — decided 2026-08-13**
+  (`deer_analysis.py`, comment only). `_gauss_compute`'s guard
+  (`validate_flag and gmethod != 'mc'`) rested on two stated grounds; after
+  `callsites-1` only one of them survives, and it is enough. Measured: the mc
+  self-ensemble is the band `S5-4` put at **0.27–0.72 coverage against a nominal
+  0.95** (0.00 when it collapses) — optimizer spread thresholded by a tolerance
+  carrying no noise scale, so "it has its own band" is **false**; the sweep band
+  on mc is real, not flat-valley jitter (**P_spread 0.329** over 9 trials against
+  **5.2e-07** for the `lsq` run `band_degenerate` exists to disown); but the cost
+  is ~9 × 76 s ≈ **11 min** per YopO trace against ~48 s for one `lsq`
+  inversion. A ten-minute wait behind a checkbox that reads as free is the worse
+  product, so the guard is untouched and only its **reason** is corrected — it now
+  says cost, and says the ensemble band is the weakest of the three, not the
+  strongest. No behaviour change, so no gate. Revisit if the trial grid is ever
+  cut for mc.
+
+- **`deer.md`'s `ic_railed` box now agrees with the GUI** (docs repo, 2026-08-13).
+  It told the reader to raise `N max` until the criterion turns over; the GUI
+  stopped saying that on 2026-08-08. It now says a railed selection means the data
+  is not a few discrete Gaussians and points at the Tikhonov/Mellin engine, while
+  keeping the measured fact that the criterion *does* turn over at N=5–7 once the
+  cap is lifted — with the reason those extra components are not modes.
+
 - **`callsites-1` — the gauss solver now reaches the engine** (`deer.py`,
   2026-08-12). `deer_invert(engine='gauss', method='mc')` dropped `method` and ran
   `lsq`: a different **estimator**, not a different search. `method` does double
@@ -155,32 +178,13 @@ the archive session that shipped it.
 
 ## Pending — do first
 
-**Decide whether the GUI should offer background-start validation on the gauss
-`mc` solver.** `_gauss_compute` skips it (`validate_flag and gmethod != 'mc'`) on
-two stated grounds: mc supplies its own ensemble band, and a per-bg-start sweep
-would be prohibitively slow. `callsites-1` weakened the first and measured the
-second:
-
-- the mc self-ensemble is *the* band S5-4 measured at **0.27–0.72 coverage against
-  a nominal 0.95** (0.00 when the ensemble collapses) — it is optimizer spread
-  thresholded by a tolerance carrying no noise scale, so "it has its own band" is
-  the weakest of the three gauss bands, not the strongest;
-- the sweep band on mc is real, not flat-valley jitter: **P_spread 0.329** over 9
-  trials, against **5.2e-07** for the `lsq` run `band_degenerate` exists to
-  disown;
-- cost is the honest objection — roughly 9 × 76 s ≈ **11 min** per trace on the
-  YopO traces, against ~48 s for one `lsq` inversion.
-
-So this is a product decision, not a defect: leave it off, offer it behind an
-explicit "this takes ~10 minutes" confirmation, or cut the trial grid for mc.
-Whichever way it goes, the *reason* in the code comment needs correcting — it
-currently rests on the ensemble band being adequate, which is measured false. No
-code was changed for this; the guard is untouched.
-
-Otherwise: the stack is in sync, the estimator's external check is closed, `S5G-4`
-is settled, the 2026-08-05 audit is down to its one behaviour-change item, and
-`S5T-1` / `callsites-1` are landed — pick from the backlog below. Biggest lever
-there: the residual bootstrap (uncertainty).
+Nothing is blocked. The stack is in sync, the estimator's external check is
+closed, `S5G-4` and the gauss `mc` validation question are settled, the
+2026-08-05 audit is down to its one behaviour-change item, and `S5T-1` /
+`callsites-1` are landed — pick from the backlog below. The two strongest
+candidates: the gauss `deer_validate` `n_gauss` hole (specified, and the
+identical Mellin fix `S4-1` is the precedent) and, for a bigger lever, the
+residual bootstrap (uncertainty item 2).
 
 ## Pending — backlog
 
@@ -192,11 +196,6 @@ None needs another review round; they need a fix and a gate.
   Mellin: `n_gauss` is re-selected per trial, so the validation band mixes
   component counts. (`S5T-1` pinned the analogous discrete selection nowhere — it
   only namespaced keys — so this is still fully open.)
-- `deer.md`'s `ic_railed` box still says the right response is to **raise `N max`
-  until the criterion turns over**, which the GUI stopped saying on 2026-08-08
-  (it now points at the regularized engine). Spotted 2026-08-12 while editing the
-  neighbouring section; one of the two is wrong and the roadmap's *shipped stack*
-  row says it is the doc. Docs-only fix.
 - Triage's cuts-for-cap, reasons in `~/deer_benchmark/s5_persist/triage_queue.json`:
   **`xengine-3`** (triage's own "strongest"), `xengine-2`, `batch-1`, `me1-1`,
   `ci-1`, `status-1`, `robust-5`, `docs-7`. (`callsites-1` is **done** — see

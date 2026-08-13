@@ -2115,8 +2115,8 @@ class MainWindow(QMainWindow):
                       method=gmethod)
             if validate_flag and gmethod != 'mc':
                 # band comes from the background-start ensemble; no per-trial MC.
-                # (Skipped for Monte-Carlo, which supplies its own ensemble band and
-                # would make the per-bg-start sweep prohibitively slow.)
+                # mc is skipped on cost alone (~11 min/trace vs ~48 s), NOT because its
+                # own ensemble band suffices — that band covers 0.27-0.72 of a nominal 0.95
                 val = deer_module.deer_validate(
                     t_us, v, r=r, bg_start=bg_us, bg_end=bg_end_us, dim=dim,
                     fit_dim=fit_dim, engine='gauss', **gk)
