@@ -99,6 +99,58 @@ the archive session that shipped it.
   top-level and the labelled `prep` route, Mellin still auto-selects its cutoff,
   and the gauss validate path completes with all 9 trials at one N.
 
+- **`S6-triage` — six of the eight triage cuts in groups 1–2** (`deer.py` +
+  `deer_analysis.py`, 2026-08-13). **Every claim was re-measured first**
+  (`~/deer_benchmark/s6q/repro.log`) and three did not survive contact — see
+  *Corrections of record*. What landed:
+
+  - **`_flag_not_deer_like`** (`robust-5`): two specific tells recorded on every
+    engine result — `form_factor_implausible` (max|F| > 1.2, since a normalized
+    form factor is bounded by F(0)=1) and `lambda_collapsed` (λ at or below
+    `LAM_MIN`). Thresholds set from the healthy range, not guessed: over 84 real
+    results max|F| spans **0.914–1.046** and λ **0.224–0.505**. Pure noise reads
+    4.73 and is caught; the bare exponential fits λ = 0.0000 under `joint` and is
+    caught. **The gate then found the real payoff, which the design never aimed
+    at**: `bg_engine='general'` collapsing. On **4 of 29** traces its empirical
+    g(t) swallowed the modulation, reaching max|F| 1.33 / 4.25 / 13.1 / **18.4**
+    with λ at **0.040–0.258** of the joint engine's on the same trace (every other
+    trace 0.52–1.16, median 0.94) — one of them reported as a 7.85 nm distribution
+    with **half its mass on the grid edges**. Known gap, stated in the docstring: a
+    smooth decay the background cannot absorb (that exponential under
+    `bg_engine='none'`, a linear ramp) still passes.
+  - **`xengine-2` — the blind spot is documented, the obvious fix is REJECTED.**
+    Confirmed hard: on a 5.5 nm synthetic at `bg_start` 1.50 µs, Mellin returns
+    4.598 nm (**0.90 nm short**) at 0.80 periods and is **not** flagged while the
+    joint engine, only 0.42 nm short, **is** — the detector normalizes by the fit's
+    own r_mean and the failure biases exactly that number short, so it is least
+    sensitive where the fit is worst. Re-referencing to the trace-supported cap
+    `5·(Tmax/2)^(1/3)` was measured and **fires 84/84** — the `k_collapsed` failure
+    mode. A real repair needs the 1260-cell recalibration, not a swapped
+    denominator; until then the docstring and `deer.md` say a pass is weak evidence.
+  - **`batch-1`** — "Process all" no longer runs a validation sweep it then
+    discards; the tick is restored afterwards and the summary panel says validation
+    was not run. Note the filed **10.9×** cost is stale (it predates S2's
+    `scan_lcurve` fix): re-measured at **~1.5×**. The waste is real either way —
+    the sweep's own base result is bit-identical (`max|ΔP|` 0.000e+00) to the plain
+    inversion the batch keeps.
+  - **`me1-1`** — the printed `mean ± ME₁` is a noise-only a priori floor on a fit
+    whose dominant error is model selection. Re-measured: moving "N max" over 2/3/4
+    shifts the mean by **13.6–41.2×** the printed bar (filed as 88.7×). The shared
+    moments tooltip now says so and names the multi-Gaussian case.
+  - **`status-1`** — the status line keyed on `validate_flag` while the compute
+    branch keys on `validate_flag and gmethod != 'mc'`, so Validate + Monte-Carlo
+    announced a sweep that never ran. One-line fix, same condition.
+  - **`docs-7`** — **both** citations were wrong, not one: `Dzuba, JMR 275 (2016) 1`
+    → **J. Magn. Reson. 269 (2016) 113**, and `Matveeva et al., Z. Phys. Chem. 231
+    (2017) 463` → **231 (2017) 671**. Fixed at all four `deer.py` sites, the GUI
+    tooltip and the `deer.md` bibliography (which also gained the full titles).
+
+  Gate (`~/deer_benchmark/s6q/`): **max |ΔP| = |Δλ| = |Δk| = 0.000e+00** over 28
+  real + 1 synthetic × 6 engine configs; the three new keys on 174/174 results
+  (HEAD 0); **zero alarms on the fitted-background engines**; every `general` alarm
+  independently corroborated by the λ ratio, with the alarms at ≤ 0.258 and every
+  quiet trace at ≥ 0.521. `gui_smoke.py` **ALL PASS**.
+
 - **Port of the 2026-08-13 work — DONE.** Byte-identical straight file copies from
   ITC, each landed on the repo's default branch (branch → ff-merge), **not
   pushed**. `S4-quick`: ITC `4bf5b29`, plain `6a3a104`, NIOCH `c16c7e1`, NIOCH_Q
@@ -262,10 +314,22 @@ None needs another review round; they need a fix and a gate.
   purely to record the count (doubles validation time, so it wants to be opt-in);
   cheaper still: say in the GUI that the band is drawn at one fixed N. Numbers:
   `~/deer_benchmark/s4q/mix_general_N.log`.
-- Triage's cuts-for-cap, reasons in `~/deer_benchmark/s5_persist/triage_queue.json`:
-  **`xengine-3`** (triage's own "strongest"), `xengine-2`, `batch-1`, `me1-1`,
-  `ci-1`, `status-1`, `robust-5`, `docs-7`. (`callsites-1` is **done** — see
-  *Recently landed*.)
+- Triage's remaining cuts-for-cap, reasons in
+  `~/deer_benchmark/s5_persist/triage_queue.json`: **`xengine-3`** — but see
+  *Corrections of record*: its filed claim (joint and Mellin take λ/k *verbatim
+  from the same call*) is false on today's code, and the surviving point is that
+  the two share an estimator and a code path, so their agreement is not
+  independent corroboration. **Re-file with that wording and a number before
+  acting on it.** (`callsites-1`, `xengine-2`, `batch-1`, `me1-1`, `ci-1`,
+  `status-1`, `robust-5`, `docs-7` are **done** — see *Recently landed*.)
+- **Catch a smooth non-dipolar decay.** `_flag_not_deer_like` catches the loud
+  failures but not a bare exponential under `bg_engine='none'` (λ 0.560, |F| 1.003
+  → 6.32 nm) or a linear ramp (0.318, 1.029 → 6.75 nm). The obvious test — no
+  oscillation in F — would also trip a genuinely broad P(r), so it needs its own
+  false-alarm run over the real traces first.
+- **Recalibrate `bg_start_early` on a non-circular reference distance** (1260
+  cells, the original sweep). The swapped-denominator shortcut is already
+  measured and rejected (84/84). Until then the detector's pass is weak evidence.
 
 **Reporting defects from the 2026-08-05 audit — only (6) is left:**
 - (6) `'even_fold'` pairs by `searchsorted`, so an off-grid t₀ folds outward
@@ -371,6 +435,16 @@ against all four**, or it books a gain already paid for elsewhere.
   the branch could not fire from any call. **Key a guard on the result, not on the
   arguments** (`base.get('method')`), and make the gate prove the branch actually
   executes — writing one exposed both plumbing gaps before either shipped.
+- **Reproduce a filed finding before fixing it — half of them move.** Of the eight
+  triage items taken up on 2026-08-13, one was already fixed (`ci-1`), one was
+  false as written (`xengine-3`), and two had numbers off by 2–7× in *both*
+  directions (`batch-1` 10.9× → 1.5×, `me1-1` 88.7× → 13–41×). Findings age against
+  the code that fixed their neighbours. The reproduction cost 48 s.
+- **A detector's false-alarm run must cover every engine it will ship on.**
+  `_flag_not_deer_like` was calibrated on joint / Mellin / gauss, declared 0/84,
+  and then fired on `general` in the gate — where it turned out to be **right**
+  (4/29 collapsed background fits). A clean null on three of four routes is not a
+  null. Same shape as the width-floor and `spike_weight_max` misses above.
 - **A HEAD-vs-now comparison cannot read a key the fix introduced.** `S4-quick`'s
   first pass measured "how often did the band mix N" by reading
   `trials[i]['n_gauss']` on both arms — a key only the fixed arm has. It reported
@@ -406,6 +480,10 @@ Figures stated as fact and later retracted. Full argument in the archive.
 | width floor's "27" presented as physics | it is calibration; `deer.md` now says so |
 | `S5T-8` `bg_start_early` demotion (that moving the window "won't shift the result") | refuted at GUI defaults; reverted |
 | `S5G-4` "contradicts the report's own *Cleared* table" | there was no contradiction — the *Cleared* entry measured **outward** migration, `S5G-4` is about **inward**; both are right |
+| `xengine-3`'s "joint and Mellin take λ/k **verbatim from the same `joint_background` call**" | **false on today's code** — they differ on 3 of 4 real traces (λ 0.412647 vs 0.416425); Mellin re-runs the background under its own `pre_zero`. The weaker point (one estimator, one code path, so agreement is not independent corroboration) stands and needs re-filing |
+| `batch-1`'s "10.4 s → 113.2 s, **10.9×**" | stale — predates S2's `scan_lcurve` fix, which made the plain inversion pay for the scan validation skips. Re-measured **~1.5×**. The discarded band is still real |
+| `ci-1`'s "support-plane intervals print as +0.000" | **already fixed** by S5 round-2's bound flags: the truncated-grid case returns `center_at_bound=True` / `sigma_at_floor=True` and both the panel (`_PINNED`) and the CSV export (`_PIN`) print *(at range bound)* instead of a bar |
+| `me1-1`'s "88.7×" | re-measured at **13.6–41.2×** over four real traces — same defect, smaller number |
 
 ## Environment
 

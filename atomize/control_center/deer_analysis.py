@@ -1047,7 +1047,8 @@ class MainWindow(QMainWindow):
         self.gauss_method.setToolTip(
             'How the Gaussian parameters are found. <b>Least-squares</b> (default): '
             'fast gradient fit in the time domain. <b>Monte-Carlo (Pake)</b> '
-            '(Dzuba, JMR 275 (2016); Matveeva et al., Z. Phys. Chem. 231 (2017)): '
+            '(Dzuba, J. Magn. Reson. 269 (2016) 113; Matveeva et al., '
+            'Z. Phys. Chem. 231 (2017) 671): '
             'a random multi-start search selected on the dipolar frequency (Pake) '
             'spectrum — the random starts cannot be trapped in the spurious '
             'floor-width-spike solution the gradient fit can fall into. '
@@ -1679,8 +1680,7 @@ class MainWindow(QMainWindow):
     BG_START_FRAC_JOINT = 0.35            # joint / none: robust to an early window
     BG_START_FRAC_MAX = 0.85
 
-    # info-panel tooltip for the moment descriptors (shared by the Tikhonov and
-    # Mellin info labels)
+    # info-panel tooltip for the moment descriptors (shared by all three engines)
     MOMENTS_TOOLTIP = (
         'mean r ± ME₁: the a priori rms error of the mean distance from random '
         'noise alone (Nekrasov, Matveeva & Bowman, PCCP 2026). It is set by the '
@@ -1688,9 +1688,13 @@ class MainWindow(QMainWindow):
         'distribution — and needs no ground truth. It is a NOISE FLOOR, not a '
         'bound: it contains no resolution or regularization-bias term, so the '
         'real scatter can exceed it (measured up to 2.6× on a trace too short '
-        'to resolve the distance, where ME₁ is smallest). mean, width δr = rms '
-        'width √(M₂−M₁²) and skew are all moments of the non-negative part of '
-        'P(r).')
+        'to resolve the distance, where ME₁ is smallest). On the Multi-Gaussian '
+        'engine the gap is far wider, because the dominant error there is the '
+        'choice of N and ME₁ knows nothing about it: on real traces, moving '
+        '"N max" over 2/3/4 shifts the mean by 13–41× the printed bar. Read it '
+        'as the best the noise would allow, never as the uncertainty. mean, '
+        'width δr = rms width √(M₂−M₁²) and skew are all moments of the '
+        'non-negative part of P(r).')
 
     def _bg_start_floor(self):
         """Engine-aware background-start floor (see BG_START_FRAC notes)."""
@@ -2137,9 +2141,10 @@ class MainWindow(QMainWindow):
                 res['background']['bg_end'] = bge_disp * tf
             return {'t0_disp': t0_disp, 'res': res, 'band': band}
 
+        # the sweep is skipped for mc, so the status must key on the same condition
         status = ('Fitting zero-time t0…' if fit_t0
                   else ('Multi-Gaussian validation: sweeping background '
-                        'start…' if validate_flag
+                        'start…' if (validate_flag and gmethod != 'mc')
                         else ('Running Multi-Gaussian fit '
                               '(Monte-Carlo, Pake domain)…' if gmethod == 'mc'
                               else ('Running Multi-Gaussian fit '
@@ -2178,6 +2183,14 @@ class MainWindow(QMainWindow):
         self.process_all_btn.setEnabled(False)
         self.process_all_btn.setStyleSheet(BUTTON_BUSY_STYLE)
         results, failed = [], []
+        # the batch keeps payload['res'] only, so a per-trace validation sweep is
+        # paid for and then dropped -- and its base inversion is bit-identical to
+        # the plain one. Skip it here and say so, rather than bill the user for it.
+        validated = self.deer_validate_chk.isChecked()
+        if validated:
+            self.deer_validate_chk.blockSignals(True)
+            self.deer_validate_chk.setChecked(False)
+            self.deer_validate_chk.blockSignals(False)
         try:
             for i, name in enumerate(names):
                 self.trace_combo.setCurrentIndex(i)     # activate -> self.real_xy
@@ -2196,6 +2209,10 @@ class MainWindow(QMainWindow):
         finally:
             self.process_all_btn.setEnabled(True)
             self.process_all_btn.setStyleSheet(BUTTON_STYLE)
+            if validated:
+                self.deer_validate_chk.blockSignals(True)
+                self.deer_validate_chk.setChecked(True)
+                self.deer_validate_chk.blockSignals(False)
         if not results:
             self.set_status('Process all: no trace produced a result.')
             return
@@ -2212,7 +2229,7 @@ class MainWindow(QMainWindow):
             ra, req = res.get('r_alias'), res.get('r_min_requested')
             if ra and req is not None and float(req) < float(ra) - 1e-9:
                 clamped.append((nm, float(req), float(ra)))
-        self.batch_table = {'engine': engine, 'clamped': clamped,
+        self.batch_table = {'engine': engine, 'clamped': clamped, 'skipped_validate': validated,
                             'rows': [(nm, self._trace_stats(res)) for nm, res in results]}
         self._show_batch_summary()
         self.batch_save_btn.setEnabled(True)
@@ -2379,10 +2396,14 @@ class MainWindow(QMainWindow):
             alias_line = ('<span style="color: rgb(214, 39, 40);">r min raised on '
                           f'{len(clamped)}/{len(tbl["rows"])} trace(s), up to '
                           f'{hi:.2f} nm: sampling limit</span><br>')
+        val_line = ('<span style="color: rgb(150, 200, 255);">validation not run: '
+                    'the batch keeps one inversion per trace, and the sweep\'s own '
+                    'base result is identical to it — validate a single trace to '
+                    'see a band</span><br>' if tbl.get('skipped_validate') else '')
         html = (f'<div style="line-height:150%;"><b style="color: rgb(211,194,78);">'
                 f'Process all — {len(tbl["rows"])} trace(s), {tbl["engine"]}</b><br>'
                 + self._summary_table_html(tbl['rows'], tbl['engine'])
-                + f'<br>{alias_line}'
+                + f'<br>{alias_line}{val_line}'
                 + '<i>r in nm; DW ≈ 2 ⇒ white residual.</i></div>')
         panel = {'tikhonov': self.deer_info, 'mellin': self.mellin_info,
                  'gauss': self.gauss_info}.get(tbl['engine'], self.deer_info)
@@ -2670,6 +2691,15 @@ class MainWindow(QMainWindow):
             # and measurably for the better. See ROADMAP 2026-08-07.
             flags.append(f'background window opens at {per:.2f} dipolar periods '
                          '— reported distance is biased short; start it later')
+        # these two judge the FINAL fit, so they stay top-level even on the gauss
+        # path, beside bg_start_early rather than inside the prep note
+        if bgr.get('form_factor_implausible'):
+            flags.append(f'|F| reaches {float(bgr.get("form_factor_absmax") or 0.0):.2f} '
+                         '— a normalized form factor cannot exceed 1: this is not a '
+                         'dipolar trace, or the background division blew up')
+        if bgr.get('lambda_collapsed'):
+            flags.append('no modulation depth — there is no dipolar signal here for '
+                         'a distance to be fitted to')
         if src.get('conc_implausible'):
             bg_flags.append(f'background implies '
                             f'{float(src.get("conc_implied_uM") or float("nan")):.0f} µM '
