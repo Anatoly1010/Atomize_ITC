@@ -354,6 +354,26 @@ None needs another review round; they need a fix and a gate.
   The existing `d_lo` guard measures the term's decay *across the window*, not
   *from t=0 to the window*, so it never binds.
 
+  *Identifiability, measured.* `curve_fit`'s covariance (which the shipped call
+  throws away) says the four coefficients are not separately determined:
+  **|corr(a, c)| median 0.986**, above 0.99 on 6/15, and a covariance condition
+  number of **2.9e23** against **2.2e2** for the 2-parameter form — numerically
+  singular, so the reported per-parameter errors are meaningless in both directions
+  (`c` at 6e-17 on one trace, `b` and `c` at 155× their own value on another). `b`
+  is the one genuinely measured coefficient; `d` sits on its lower bound on 4/15.
+  Roughly **two determined degrees of freedom out of four**.
+
+  *And half the time it does not converge at all.* On **13 of 28** traces
+  `curve_fit` raises `maxfev` and the `except Exception: popt = p0` fallback
+  silently substitutes the SEED — `c = 0`, i.e. the log-linear 2-parameter fit.
+  The other 15 converge into the degenerate valley with `c` = −1.3e5 / −2.2e5 /
+  −9.5e4 / −7.1e4 / −5778 / −1517 / −642. So the engine runs one of two quite
+  different models per trace, chosen by whether the optimizer gave up, with nothing
+  in the result to say which — and the traces that behave well are the ones where
+  the fit FAILED. This also explains the AICc split below: the 14 traces where the
+  4-parameter form is not preferred are the fallbacks, with RSS identical to the
+  2-parameter fit by construction.
+
   *Scale.* Not 4 traces — across five trim settings λ moves by **>30 % on 13/28**
   traces (worst 3.6×), oscillating in and out of the clamp: `sample4_labA` gives
   0.453, 0.453, **0.020**, 0.020, 0.020 and `sample3_labG` gives 0.342, **0.020**,
@@ -371,13 +391,20 @@ None needs another review round; they need a fix and a gate.
   residual instability (5/28) is *exactly the joint engine's* on the same traces,
   i.e. real trace behaviour rather than engine degeneracy.
 
-  *The cost, stated plainly.* The two extra parameters are **not** worthless: AICc
-  prefers them on **14/28** traces (ΔAICc to −320) and they cut tail RSS by a median
-  7 %, best 66 %. Dropping them in auto mode buys stability at the price of tail
-  descriptive power, and leaves auto-`'general'` a plain exponential — arguably
-  redundant with `background_fit`. That is the real conclusion: **this engine's
-  extra flexibility is a manual-mode feature**, because a tail-only window cannot
+  *The cost, stated plainly.* The two extra parameters are **not** worthless where
+  the fit converges: AICc prefers them on **14/28** traces (ΔAICc to −320) and they
+  cut tail RSS by a median 7 %, best 66 %. But that better tail description is
+  bought along a direction the data does not constrain, which is exactly why λ
+  swings. And for the 13 fallback traces the proposed fix changes **nothing** — it
+  is already what runs, just deliberately instead of by optimizer failure, and
+  reported instead of silent. That is the conclusion: **this engine's extra
+  flexibility is a manual-mode feature**, because a tail-only window cannot
   identify a term that has decayed inside it.
+
+  Whatever is done about the model, two things are defects on their own: the fit
+  **discards `pcov`** so nothing can report that a coefficient is undetermined, and
+  the **`except Exception: popt = p0` fallback is silent** — a failed fit and a
+  successful one are indistinguishable in the returned dict.
 
 **Reporting defects from the 2026-08-05 audit — only (6) is left:**
 - (6) `'even_fold'` pairs by `searchsorted`, so an off-grid t₀ folds outward
