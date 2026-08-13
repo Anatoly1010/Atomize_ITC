@@ -156,6 +156,8 @@ the archive session that shipped it.
   pushed**. `S4-quick`: ITC `4bf5b29`, plain `6a3a104`, NIOCH `c16c7e1`, NIOCH_Q
   `7dcdd67`, Cryomech `6d36153`, docs `e2b7f66`. The `mc`-comment + `ic_railed`
   docs pair: ITC `f177bd1`, NIOCH `d6f4bb4`, NIOCH_Q `7e07b05`, docs `5857330`.
+  `S6-triage`: ITC `6a6f299`, plain `48952dd`, NIOCH `c9724ea`, NIOCH_Q `9b4bfd2`,
+  Cryomech `8ff1edd`, docs `e621bab`.
   `sync_check.py` clean afterwards apart from the unrelated `ITC_FC.py`.
 
 - **Gauss `mc` background-start validation stays OFF — decided 2026-08-13**
