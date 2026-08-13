@@ -21,7 +21,7 @@ below as a plain task with a known measurement behind it.
 The two ship as a pair — `band_degenerate`, the per-component bound flags,
 `ic_railed` and now `background['prep']` are produced in `deer.py` and consumed in
 `deer_analysis.py`. Run `~/atomize_sync/sync_check.py` before porting. **All five
-repos are in sync as of 2026-08-12** (`deer.py` byte-identical across all 5,
+repos are in sync as of 2026-08-13** (`deer.py` byte-identical across all 5,
 `deer_analysis.py` across ITC/NIOCH/NIOCH_Q; the only remaining `sync_check`
 report is the unrelated `ITC_FC.py`) — see the port entries below.
 
@@ -98,6 +98,13 @@ the archive session that shipped it.
   paths bit-identical. `gui_smoke.py` **ALL PASS** — the flag renders on both the
   top-level and the labelled `prep` route, Mellin still auto-selects its cutoff,
   and the gauss validate path completes with all 9 trials at one N.
+
+- **Port of the 2026-08-13 work — DONE.** Byte-identical straight file copies from
+  ITC, each landed on the repo's default branch (branch → ff-merge), **not
+  pushed**. `S4-quick`: ITC `4bf5b29`, plain `6a3a104`, NIOCH `c16c7e1`, NIOCH_Q
+  `7dcdd67`, Cryomech `6d36153`, docs `e2b7f66`. The `mc`-comment + `ic_railed`
+  docs pair: ITC `f177bd1`, NIOCH `d6f4bb4`, NIOCH_Q `7e07b05`, docs `5857330`.
+  `sync_check.py` clean afterwards apart from the unrelated `ITC_FC.py`.
 
 - **Gauss `mc` background-start validation stays OFF — decided 2026-08-13**
   (`deer_analysis.py`, comment only). `_gauss_compute`'s guard
