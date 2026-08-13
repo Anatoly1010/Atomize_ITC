@@ -295,10 +295,16 @@ the archive session that shipped it.
 Nothing is blocked. The stack is in sync, the estimator's external check is
 closed, `S5G-4` and the gauss `mc` validation question are settled, the
 2026-08-05 audit is down to its one behaviour-change item, and `S5T-1` /
-`callsites-1` / `S4-quick` are landed — pick from the backlog below. Biggest
-lever: the residual bootstrap (uncertainty item 2). Cheapest useful: telling the
-user the validation band is drawn at one fixed N, which `S4-quick` just made
-true.
+`callsites-1` / `S4-quick` / `S6-triage` are landed. The triage queue is spent
+apart from `xengine-3`, which needs re-filing before it is worth anything.
+
+Ranked, from the backlog below:
+1. **`background_general` collapses on 4/29 real traces** — as of `S6-triage` that
+   is *flagged*, not *fixed*, and it is the only known way to get a grossly wrong
+   distance out of the shipped GUI without ticking anything unusual.
+2. **The residual bootstrap** (uncertainty item 2) — biggest lever in the file.
+3. **Say the validation band is drawn at one fixed N** — cheap, and `S4-quick`
+   made it true.
 
 ## Pending — backlog
 
@@ -332,6 +338,20 @@ None needs another review round; they need a fix and a gate.
 - **Recalibrate `bg_start_early` on a non-circular reference distance** (1260
   cells, the original sweep). The swapped-denominator shortcut is already
   measured and rejected (84/84). Until then the detector's pass is weak evidence.
+
+**Background engines:**
+- **`background_general` collapses on real traces — now flagged, not fixed**
+  (opened by `S6-triage`, 2026-08-13). On **4 of 29** YopO traces the empirical
+  `a·exp(b·(t + c·dᵗ))` fit swallows the modulation instead of the background: λ
+  lands at **0.040–0.258** of what the joint engine gets on the same trace (every
+  other trace 0.52–1.16, median 0.94), max|F| reaches **1.33 / 4.25 / 13.1 / 18.4**,
+  and one result is a 7.85 nm distribution with **half its mass on the grid edges**.
+  `form_factor_implausible` / `lambda_collapsed` now catch all four, so the user is
+  warned — but the engine still returns the broken fit as its answer. Options, in
+  order of appetite: refuse to return a fit whose λ collapses (it is not a
+  background at that point); seed/bound the general fit from the joint estimate so
+  it cannot walk there; or keep it a warning and say in the docs that `'general'`
+  needs a visual check. Numbers: `~/deer_benchmark/s6q/gate.log`.
 
 **Reporting defects from the 2026-08-05 audit — only (6) is left:**
 - (6) `'even_fold'` pairs by `searchsorted`, so an off-grid t₀ folds outward
