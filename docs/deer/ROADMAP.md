@@ -46,6 +46,59 @@ the archive session that shipped it.
 
 ## Recently landed
 
+- **`S4-quick` — the gauss `deer_validate` N hole + three S4 note-queue items**
+  (`deer.py` + `deer_analysis.py`, 2026-08-13). One behaviour change and three
+  reporting fixes, in one gate.
+
+  1. **`deer_validate(engine='gauss')` pins `n_gauss`** to the central trial's
+     pick, exactly as it already pins `tau_max`/`n_tau`/`delta` for Mellin
+     (`S4-1`). Left free, the component count is re-selected per trial and the
+     band is part model-selection jump. Measured over the 9-trial sweep on 28 real
+     traces: **2/28** mixed N on the default `lsq` route — but **25/28** on
+     `bg_engine='general'`, which is the route whose band the GUI actually draws
+     (`band_degenerate` is structural for a co-fitting background, so the `lsq`
+     ribbon was never shown). The mixing is not marginal: `sample2_labG` swept
+     `[2,1,1,1,1,4,4,4,4]`, `sample1_labC` `[3,4,2,2,1,1,1,1,1]`. On `lsq`,
+     `sample2_labD` is the clean demonstration — eight trials at N=3, one at N=4,
+     and the **entire 0.140 band was that one model switch** (pinned: 7.5e-06).
+     Consensus P(r) and `r_mean` barely move on `lsq` (median |ΔP| ≤ 2.3e-05, the
+     median absorbs a minority of trials); on `general` they move materially
+     (median |ΔP| up to 0.72, `r_mean` up to 0.15 nm), and the band width moves
+     **both ways** (8.43 → 1.96, 5.06 → 2.88, but 0.19 → 0.31), which is what
+     removing a model switch does rather than a uniform narrowing. Each trial's
+     count is now reported in `trials[i]['n_gauss']`.
+  2. **`joint_background` reports `k_fit_failed`.** Both arms of `_fit_rate`
+     swallowed a failure and returned the SEQUENTIAL `kref`, which makes
+     `k_ratio` exactly 1.0 — indistinguishable from the two background routes
+     agreeing perfectly. Now flagged, warned about, and added to `_PREP_BG_KEYS`
+     so it travels with its siblings on the gauss `lsq` path; a non-finite `k`
+     counts as a failure too (the NaN used to travel on).
+  3. **The λ clamps are three named constants.** The four sites were never one
+     number: `LAM_MIN` 0.02 everywhere, `LAM_MAX` 1.0 where λ comes from a fitted
+     background amplitude (a physical bound — `_no_background` exists precisely
+     for λ→1 data), `LAM_MAX_PINNED` 0.95 where it comes from a tail pin, which
+     has failed rather than measured if it reads that high. Only
+     `background_general` moves (0.98 → 1.0, joining the other background-model
+     route); it needs g(0) < 0.05, which no real trace reaches.
+  4. **The `'discrepancy'` and `'lcurve'` τmax selectors are removed**, with
+     `noise_space` / `taumax_extend` / `extend_short_frac` and the resolution
+     extension. Both lost to `'penalty'` and both were broken as recorded: the
+     discrepancy threshold was floored at `min(sigma_fit)` so something always
+     passed, making it plain `argmin(sigma_fit)` on 17/28 real traces — the exact
+     over-fit it was written to avoid — and the L-curve scored curvature only on
+     interior candidates, so it could never return either end of the grid and had
+     no no-corner fallback. They **raise** rather than being deleted quietly:
+     `deer_invert_mellin` ends in `**_ignored`, so a silent removal would have
+     swallowed the argument and run `'penalty'` — the inert-guard trap below.
+
+  Gate (`~/deer_benchmark/s4q/`): **max |ΔP| = |Δλ| = |Δk| = 0.000e+00** over 28
+  real + 1 synthetic × 10 engine configs against `HEAD`; `k_fit_failed` present on
+  87/87 joint-background results (HEAD 0) and fired on none; no λ-clamp flag
+  changed state; all five removed arguments raise; the joint/Mellin validation
+  paths bit-identical. `gui_smoke.py` **ALL PASS** — the flag renders on both the
+  top-level and the labelled `prep` route, Mellin still auto-selects its cutoff,
+  and the gauss validate path completes with all 9 trials at one N.
+
 - **Gauss `mc` background-start validation stays OFF — decided 2026-08-13**
   (`deer_analysis.py`, comment only). `_gauss_compute`'s guard
   (`validate_flag and gmethod != 'mc'`) rested on two stated grounds; after
@@ -181,10 +234,10 @@ the archive session that shipped it.
 Nothing is blocked. The stack is in sync, the estimator's external check is
 closed, `S5G-4` and the gauss `mc` validation question are settled, the
 2026-08-05 audit is down to its one behaviour-change item, and `S5T-1` /
-`callsites-1` are landed — pick from the backlog below. The two strongest
-candidates: the gauss `deer_validate` `n_gauss` hole (specified, and the
-identical Mellin fix `S4-1` is the precedent) and, for a bigger lever, the
-residual bootstrap (uncertainty item 2).
+`callsites-1` / `S4-quick` are landed — pick from the backlog below. Biggest
+lever: the residual bootstrap (uncertainty item 2). Cheapest useful: telling the
+user the validation band is drawn at one fixed N, which `S4-quick` just made
+true.
 
 ## Pending — backlog
 
@@ -192,10 +245,16 @@ Open findings. Each carries its own measurement in the archive / `REVIEW_S5`.
 None needs another review round; they need a fix and a gate.
 
 **Multi-Gaussian (S5):**
-- `engine='gauss'` has the **identical** `deer_validate` hole S4-1 fixed for
-  Mellin: `n_gauss` is re-selected per trial, so the validation band mixes
-  component counts. (`S5T-1` pinned the analogous discrete selection nowhere — it
-  only namespaced keys — so this is still fully open.)
+- **Report that the component count is unstable across the background sweep.**
+  Opened by `S4-quick`: pinning `n_gauss` is right (the band must measure
+  background sensitivity, not model selection), but the old free-N behaviour
+  *accidentally* surfaced N instability as a wide band, and the pin hides it —
+  on `bg_engine='general'` **25/28** real traces re-select N across the sweep,
+  several spanning the whole 1–4 range. That is a real reliability signal and it
+  now has no reporting route. Cheap version: a second per-trial fit at free N
+  purely to record the count (doubles validation time, so it wants to be opt-in);
+  cheaper still: say in the GUI that the band is drawn at one fixed N. Numbers:
+  `~/deer_benchmark/s4q/mix_general_N.log`.
 - Triage's cuts-for-cap, reasons in `~/deer_benchmark/s5_persist/triage_queue.json`:
   **`xengine-3`** (triage's own "strongest"), `xengine-2`, `batch-1`, `me1-1`,
   `ci-1`, `status-1`, `robust-5`, `docs-7`. (`callsites-1` is **done** — see
@@ -211,13 +270,8 @@ None needs another review round; they need a fix and a gate.
 - widen the τmax candidate grid `[6…40]` → `[3…60]` (+0.017 mean overlap, needs a
   boundary flag);
 - guard `_masses` relatively (`area < η·positive_area`) not at the useless 1e-12;
-- make a failed `_fit_rate` visible (both arms swallow to the sequential fit with
-  `k_ratio` exactly 1.0, NaN travels on);
-- unify the λ clamp (0.95 / 1.0 / 0.98 in one module);
 - decide `du=0.005` as default (+0.016 overlap at 1.46× cost — data-driven rule
   rejected);
-- the two non-default τmax methods (`'discrepancy'`, `'lcurve'`) are broken and
-  unreachable from the GUI — fix or remove;
 - `joint_background` defaults `bg_start` to 0.6× span while every other engine
   uses 0.5× (invisible from the GUI, visible to scripts/mirrors).
 
@@ -310,6 +364,12 @@ against all four**, or it books a gain already paid for elsewhere.
   the branch could not fire from any call. **Key a guard on the result, not on the
   arguments** (`base.get('method')`), and make the gate prove the branch actually
   executes — writing one exposed both plumbing gaps before either shipped.
+- **A HEAD-vs-now comparison cannot read a key the fix introduced.** `S4-quick`'s
+  first pass measured "how often did the band mix N" by reading
+  `trials[i]['n_gauss']` on both arms — a key only the fixed arm has. It reported
+  a confident **0/28** where the answer was **25/28**, and it looked exactly like
+  a clean null. Measure the OLD behaviour by re-running the old code, never by
+  reading a field it does not populate.
 - **`deer.simulate` is even in t** — a finding about time-asymmetry cannot be
   confirmed or refuted on it; use the real Bruker traces in `~/deer_benchmark/`.
 - **A measurement inherits every switch its harness silently set** — `S5T-8`'s fix

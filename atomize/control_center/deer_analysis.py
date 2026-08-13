@@ -2680,6 +2680,9 @@ class MainWindow(QMainWindow):
             bg_flags.append(f'tail not decayed (mean|F| = {src["tail_abs_F"]:.2f})')
         if src.get('k_at_bound'):
             bg_flags.append('k pinned at its search bracket edge (no information)')
+        if src.get('k_fit_failed'):
+            bg_flags.append('joint rate fit failed — k is the sequential tail fit, '
+                            'so the two routes agree by construction')
         if (res.get('l_curve') or {}).get('at_bound'):
             flags.append('α sits on the grid edge, not at an interior optimum')
         # the flags above are the central trial's; this one is the whole sweep's
