@@ -399,8 +399,13 @@ class MainWindow(QMainWindow):
         self.deer_show.addItems(['V(t) + background + fit', 'Form factor + fit',
                                  'Background fit', 'Residual', 'Residual ACF',
                                  'L-curve'])
-        self.deer_show.setToolTip('Top-plot view (the L-curve view applies to the '
-                                  'Tikhonov engine only).')
+        self.deer_show.setToolTip(
+            'Top-plot view (the L-curve view applies to the Tikhonov engine '
+            'only). In the Residual view the samples before t₀ are drawn as a '
+            'separate curve: no engine fits below the zero time, and the model '
+            'is exactly even in t, so what is shown there is the fitted curve '
+            'read at |t|. A real echo is never exactly even about t₀, and that '
+            'asymmetry — not the inversion — is what that curve mostly measures.')
         self.deer_show.currentIndexChanged.connect(self._deer_rerender)
         g.addWidget(gui_forms.label('Show'), 2, 0)
         g.addWidget(self.deer_show, 2, 1, 1, 2)
@@ -2947,14 +2952,28 @@ class MainWindow(QMainWindow):
             # band: a flat residual inside the band ⇒ adequate fit; a coherent
             # oscillation ⇒ unmodelled dipolar modulation (over-smoothed P(r)).
             v_fit = bg['B'] * ((1 - res['lambda']) + res['lambda'] * ff)
-            t_r, resid = ext(bg['V_norm'] - v_fit, 'resid')
+            resid = np.asarray(bg['V_norm'], float) - v_fit
             # smoothed overlay exposes the coherent (systematic) part of the
             # residual — averaging out the white noise; a flat smoothed line ⇒
             # white, an oscillation ⇒ unmodelled dipolar modulation.
             wn = int(max(5, len(resid) // 50)) | 1
             resid_sm = np.convolve(resid, np.ones(wn) / wn, mode='same')
-            curves = [('residual (V − fit)', t_r, resid, C_DATA, 1),
-                      ('smoothed (coherent)', t_r, resid_sm, C_FIT, 2)]
+            curves = [('residual (V − fit)', t_disp, resid, C_DATA, 1),
+                      ('smoothed (coherent)', t_disp, resid_sm, C_FIT, 2)]
+            # The pre-t0 block is NOT a fit residual and is drawn apart from one.
+            # No engine fits below t0 (they crop those samples), and the model is
+            # exactly even in t, so the curve there is the positive fit read at |t|.
+            # A real echo is not exactly even about t0 — measured 1.4–2.4σ rms
+            # mirror mismatch on the YopO sample1 traces, at a t0 already sitting
+            # on the symmetry optimum — and that asymmetry lands here at several σ
+            # whatever the inversion does. Folded into one curve it reads as a bad
+            # fit, and it moves whenever the echo top moves, for reasons the fit
+            # cannot address.
+            if pre is not None:
+                curves.insert(0, ('pre-t₀ (mirrored fit, not fitted)',
+                                  np.asarray(pre['t'], float) / tf,
+                                  np.asarray(pre['resid'], float), C_IM, 1))
+            t_r = self._cat_pre(pre, tf, t_disp, resid, 'resid')[0]
             # different quantities: fall back only if the first is absent, and say so
             sig, sig_name = res.get('noise_level'), 'σ noise'
             if sig is None or not np.isfinite(sig) or sig <= 0:
