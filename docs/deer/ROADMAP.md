@@ -340,18 +340,44 @@ None needs another review round; they need a fix and a gate.
   measured and rejected (84/84). Until then the detector's pass is weak evidence.
 
 **Background engines:**
-- **`background_general` collapses on real traces — now flagged, not fixed**
-  (opened by `S6-triage`, 2026-08-13). On **4 of 29** YopO traces the empirical
-  `a·exp(b·(t + c·dᵗ))` fit swallows the modulation instead of the background: λ
-  lands at **0.040–0.258** of what the joint engine gets on the same trace (every
-  other trace 0.52–1.16, median 0.94), max|F| reaches **1.33 / 4.25 / 13.1 / 18.4**,
-  and one result is a 7.85 nm distribution with **half its mass on the grid edges**.
-  `form_factor_implausible` / `lambda_collapsed` now catch all four, so the user is
-  warned — but the engine still returns the broken fit as its answer. Options, in
-  order of appetite: refuse to return a fit whose λ collapses (it is not a
-  background at that point); seed/bound the general fit from the joint estimate so
-  it cannot walk there; or keep it a warning and say in the docs that `'general'`
-  needs a visual check. Numbers: `~/deer_benchmark/s6q/gate.log`.
+- **`background_general`'s auto-fit is degenerate: λ is an extrapolation from
+  parameters the tail window cannot identify.** Investigated 2026-08-13
+  (`~/deer_benchmark/s6q/general_*.log`); this is the same defect `S6-triage`
+  first saw as "collapses on 4/29 traces", but bigger and with a clear mechanism.
+
+  *Mechanism.* λ = 1 − g(0) = 1 − a·exp(b·c). Only the product `b·c` reaches g(0),
+  and it is fitted where `d^t` has already decayed to a few percent, then applied
+  at full weight at t=0. Fitted `c` comes back as −642 / +25 / −83 / −88 against
+  `b` ~ −0.001: individually meaningless. On `sample2_labG` that multiplies the
+  baseline by e^0.59 = 1.81, so g(0) = 1.22 > 1, λ goes negative and clamps.
+  `sample3_labA` is the same degeneracy with `a → 0.0000` against `b·c → +20.7`.
+  The existing `d_lo` guard measures the term's decay *across the window*, not
+  *from t=0 to the window*, so it never binds.
+
+  *Scale.* Not 4 traces — across five trim settings λ moves by **>30 % on 13/28**
+  traces (worst 3.6×), oscillating in and out of the clamp: `sample4_labA` gives
+  0.453, 0.453, **0.020**, 0.020, 0.020 and `sample3_labG` gives 0.342, **0.020**,
+  0.334, **0.020**, 0.020. **15 of 140** trace×trim combinations collapse. The
+  reported distance follows: `sample2_labG` flips between **3.75 and 7.85 nm** on
+  two points of trim. Trimming does not fix it and is not monotone (collapse count
+  by trim: 3, 5, 4, 5, **8**, 4, 6 …), so no operating procedure helps.
+
+  *The fix the evidence points to.* Auto-fit the identifiable 2-parameter form
+  `a·exp(b·t)` (where `a` **is** g(0)) unless the caller supplies `c`/`d`, and keep
+  the 4-parameter form for manual mode, where the user asserts the shape. Measured
+  over the same 28 traces × 5 trims: spread of λ **median 0.008 vs 0.276**, **0/140**
+  collapses vs 15/140, λ within 20 % of the joint engine on **133/140** vs 81/140,
+  and r_mean agreeing with joint to a **median 0.004 nm** (worst 0.148). Its
+  residual instability (5/28) is *exactly the joint engine's* on the same traces,
+  i.e. real trace behaviour rather than engine degeneracy.
+
+  *The cost, stated plainly.* The two extra parameters are **not** worthless: AICc
+  prefers them on **14/28** traces (ΔAICc to −320) and they cut tail RSS by a median
+  7 %, best 66 %. Dropping them in auto mode buys stability at the price of tail
+  descriptive power, and leaves auto-`'general'` a plain exponential — arguably
+  redundant with `background_fit`. That is the real conclusion: **this engine's
+  extra flexibility is a manual-mode feature**, because a tail-only window cannot
+  identify a term that has decayed inside it.
 
 **Reporting defects from the 2026-08-05 audit — only (6) is left:**
 - (6) `'even_fold'` pairs by `searchsorted`, so an off-grid t₀ folds outward
@@ -413,6 +439,13 @@ Each was implemented and **measured worse** than what it replaces:
   near-flat, so a relaxed bound lets least_squares collapse the component to a
   spike — the stale bound was accidental spike protection. Same shape as `S5-5`
   option A. Numbers + harnesses: `~/deer_benchmark/s5g4/VERDICT.md`.
+- **Pinning `background_general`'s λ to the tail baseline instead of extrapolating
+  it** (2026-08-13) — the obvious separation of "good shape, bad λ", and it is
+  **inert**: `B(t) = g(t)/g(0)`, so a wrong g(0) scales B by that same factor and
+  the pin `1 − mean(V/B)` inherits it exactly. Measured over 28 traces × 5 trims,
+  pinned vs extrapolated λ agree to the third decimal (median ratio to joint 0.944
+  vs 0.943), with identical collapse counts and identical trim instability
+  (>30 % on 13/28 both ways). The shape and the t=0 level are not separable.
 - `S5-5` option A — re-key `_has_spurious` on the per-centre floor: correct-N
   0.843 → 0.731; on the 13 rows it changes, N right 12/13 before, 0/13 after (it
   deletes the genuine weak far mode).
