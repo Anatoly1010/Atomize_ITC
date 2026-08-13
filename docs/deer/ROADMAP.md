@@ -175,7 +175,9 @@ the archive session that shipped it.
   `7dcdd67`, Cryomech `6d36153`, docs `e2b7f66`. The `mc`-comment + `ic_railed`
   docs pair: ITC `f177bd1`, NIOCH `d6f4bb4`, NIOCH_Q `7e07b05`, docs `5857330`.
   `S6-triage`: ITC `6a6f299`, plain `48952dd`, NIOCH `c9724ea`, NIOCH_Q `9b4bfd2`,
-  Cryomech `8ff1edd`, docs `e621bab`.
+  Cryomech `8ff1edd`, docs `e621bab`. `general-2p`: ITC `62ff610`, plain `541c840`,
+  NIOCH `fa2a3f4`, NIOCH_Q `2693a25`, Cryomech `3974046`, docs `f366a9f`
+  (`deer.py` only — `deer_analysis.py` is unchanged by this one).
   `sync_check.py` clean afterwards apart from the unrelated `ITC_FC.py`.
 
 - **Gauss `mc` background-start validation stays OFF — decided 2026-08-13**
