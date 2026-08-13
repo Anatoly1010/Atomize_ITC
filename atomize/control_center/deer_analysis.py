@@ -963,9 +963,10 @@ class MainWindow(QMainWindow):
         self.mellin_signed_fit_chk.setToolTip(
             'Score the τmax penalty against the honest SIGNED density (the masses '
             'the Mellin inverse actually produced) instead of the clipped, '
-            'low-r-tapered one. It does NOT change the displayed fit: with the '
-            'short-r taper on (always, in this tool) F_fit is built from the '
-            'tapered density either way. With τmax on Auto it moves the chosen '
+            'low-r-tapered one. It does NOT change the displayed fit, which is '
+            'built from the signed tapered density on its own (falling back to a '
+            'non-negative projection only if that would double-peak at t₀). With '
+            'τmax on Auto it moves the chosen '
             'cutoff on about half of real traces, and the reported distance with '
             'it; at a fixed τmax it changes nothing. Needs a re-run to take '
             'effect.')
