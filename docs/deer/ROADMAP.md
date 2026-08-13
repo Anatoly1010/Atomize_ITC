@@ -99,6 +99,24 @@ the archive session that shipped it.
   top-level and the labelled `prep` route, Mellin still auto-selects its cutoff,
   and the gauss validate path completes with all 9 trials at one N.
 
+- **`general-2p` — `background_general` auto-fits the identifiable form**
+  (`deer.py`, 2026-08-13). The backlog head, fixed. With neither `c` nor `d`
+  supplied — which is what the GUI's *Auto (fit)* sends — the auto-fit now fits
+  `g = a·exp(b·t)`, so `c = 0` and `a` **is** g(0): λ is measured, not extrapolated
+  along the degenerate direction. Supplying `c` or `d` still fits all four (the
+  caller is asserting a shape the tail cannot supply), and `fit=False` manual mode
+  is untouched. The silent seed fallback is gone too: `fit_failed` is reported and
+  warns, and `n_free` (2 / 4 / 0) says which model actually ran.
+  Gate (`~/deer_benchmark/s6q/gate_general.py`, 28 traces × 5 trim settings):
+  every other engine **0.000e+00**; on the general route **25 → 0** collapses,
+  λ within 20 % of the joint engine **81 → 134** of 140, trim spread of λ
+  **median 0.325 → 0.008** (>30 % on 14/28 → 5/28, which is the joint engine's own
+  figure), and |Δr_mean| against joint **worst 4.235 → 0.530 nm**. The six cells
+  still outside 20 % are all on traces where the *joint* reference itself falls
+  apart under trimming (its λ moves 88–129 % and drops to 0.066–0.116), i.e. the
+  trace rather than the fit. `gui_smoke.py` **ALL PASS**, including that the panel
+  writes `c = 0` back and manual mode still offers all four boxes.
+
 - **`S6-triage` — six of the eight triage cuts in groups 1–2** (`deer.py` +
   `deer_analysis.py`, 2026-08-13). **Every claim was re-measured first**
   (`~/deer_benchmark/s6q/repro.log`) and three did not survive contact — see
@@ -295,16 +313,16 @@ the archive session that shipped it.
 Nothing is blocked. The stack is in sync, the estimator's external check is
 closed, `S5G-4` and the gauss `mc` validation question are settled, the
 2026-08-05 audit is down to its one behaviour-change item, and `S5T-1` /
-`callsites-1` / `S4-quick` / `S6-triage` are landed. The triage queue is spent
-apart from `xengine-3`, which needs re-filing before it is worth anything.
+`callsites-1` / `S4-quick` / `S6-triage` / `general-2p` are landed. The triage
+queue is spent apart from `xengine-3`, which needs re-filing before it is worth
+anything.
 
 Ranked, from the backlog below:
-1. **`background_general` collapses on 4/29 real traces** — as of `S6-triage` that
-   is *flagged*, not *fixed*, and it is the only known way to get a grossly wrong
-   distance out of the shipped GUI without ticking anything unusual.
-2. **The residual bootstrap** (uncertainty item 2) — biggest lever in the file.
-3. **Say the validation band is drawn at one fixed N** — cheap, and `S4-quick`
+1. **The residual bootstrap** (uncertainty item 2) — biggest lever in the file,
+   and the right answer for the `ic_railed` / N-undetermined case too.
+2. **Say the validation band is drawn at one fixed N** — cheap, and `S4-quick`
    made it true.
+3. **Catch a smooth non-dipolar decay** — the gap `_flag_not_deer_like` leaves.
 
 ## Pending — backlog
 
@@ -340,6 +358,9 @@ None needs another review round; they need a fix and a gate.
   measured and rejected (84/84). Until then the detector's pass is weak evidence.
 
 **Background engines:**
+- ~~**`background_general`'s auto-fit is degenerate**~~ — **FIXED 2026-08-13**, see
+  *Recently landed*. The investigation below is kept because it is the measurement
+  behind the fix and behind two rejected alternatives.
 - **`background_general`'s auto-fit is degenerate: λ is an extrapolation from
   parameters the tail window cannot identify.** Investigated 2026-08-13
   (`~/deer_benchmark/s6q/general_*.log`); this is the same defect `S6-triage`
@@ -566,6 +587,7 @@ Figures stated as fact and later retracted. Full argument in the archive.
 | `batch-1`'s "10.4 s → 113.2 s, **10.9×**" | stale — predates S2's `scan_lcurve` fix, which made the plain inversion pay for the scan validation skips. Re-measured **~1.5×**. The discarded band is still real |
 | `ci-1`'s "support-plane intervals print as +0.000" | **already fixed** by S5 round-2's bound flags: the truncated-grid case returns `center_at_bound=True` / `sigma_at_floor=True` and both the panel (`_PINNED`) and the CSV export (`_PIN`) print *(at range bound)* instead of a bar |
 | `me1-1`'s "88.7×" | re-measured at **13.6–41.2×** over four real traces — same defect, smaller number |
+| `deer.md`'s "a large fitted `a`/`c` is mathematically valid, λ is unaffected" (`background_general`) | **refuted** — λ is exactly what it affects: the same trade-off drove 25/140 collapses and a 3.6× swing in λ. Corrected on the page |
 
 ## Environment
 
