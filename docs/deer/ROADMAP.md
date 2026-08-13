@@ -359,14 +359,14 @@ None needs another review round; they need a fix and a gate.
   cells, the original sweep). The swapped-denominator shortcut is already
   measured and rejected (84/84). Until then the detector's pass is weak evidence.
 
-**Background engines:**
-- ~~**`background_general`'s auto-fit is degenerate**~~ — **FIXED 2026-08-13**, see
-  *Recently landed*. The investigation below is kept because it is the measurement
-  behind the fix and behind two rejected alternatives.
-- **`background_general`'s auto-fit is degenerate: λ is an extrapolation from
-  parameters the tail window cannot identify.** Investigated 2026-08-13
-  (`~/deer_benchmark/s6q/general_*.log`); this is the same defect `S6-triage`
-  first saw as "collapses on 4/29 traces", but bigger and with a clear mechanism.
+**Background engines — nothing open here.** Kept as the measurement record behind
+`general-2p` and its two rejected alternatives; do not re-open without new data.
+
+- **Why `background_general`'s auto-fit was degenerate — λ was an extrapolation
+  from parameters the tail window cannot identify.** Investigated and **FIXED**
+  2026-08-13 (`~/deer_benchmark/s6q/general_*.log`, fix in *Recently landed* as
+  `general-2p`); this is the same defect `S6-triage` first saw as "collapses on
+  4/29 traces", but bigger and with a clear mechanism.
 
   *Mechanism.* λ = 1 − g(0) = 1 − a·exp(b·c). Only the product `b·c` reaches g(0),
   and it is fitted where `d^t` has already decayed to a few percent, then applied
@@ -405,14 +405,16 @@ None needs another review round; they need a fix and a gate.
   two points of trim. Trimming does not fix it and is not monotone (collapse count
   by trim: 3, 5, 4, 5, **8**, 4, 6 …), so no operating procedure helps.
 
-  *The fix the evidence points to.* Auto-fit the identifiable 2-parameter form
-  `a·exp(b·t)` (where `a` **is** g(0)) unless the caller supplies `c`/`d`, and keep
-  the 4-parameter form for manual mode, where the user asserts the shape. Measured
-  over the same 28 traces × 5 trims: spread of λ **median 0.008 vs 0.276**, **0/140**
-  collapses vs 15/140, λ within 20 % of the joint engine on **133/140** vs 81/140,
-  and r_mean agreeing with joint to a **median 0.004 nm** (worst 0.148). Its
-  residual instability (5/28) is *exactly the joint engine's* on the same traces,
-  i.e. real trace behaviour rather than engine degeneracy.
+  *The fix this pointed to, and what shipped.* Auto-fit the identifiable
+  2-parameter form `a·exp(b·t)` (where `a` **is** g(0)) unless the caller supplies
+  `c`/`d`, keeping the 4-parameter form for the manual case where the user asserts
+  the shape. Pre-fix bench over the same 28 traces × 5 trims: spread of λ
+  **median 0.008 vs 0.276**, **0/140** collapses vs 15/140, λ within 20 % of the
+  joint engine on **133/140** vs 81/140, r_mean agreeing with joint to a **median
+  0.004 nm**. Its residual instability (5/28) is *exactly the joint engine's* on the
+  same traces, i.e. real trace behaviour rather than engine degeneracy. The shipped
+  gate reproduced this end-to-end (25 → 0 collapses, 81 → 134/140) — see
+  `general-2p`.
 
   *The cost, stated plainly.* The two extra parameters are **not** worthless where
   the fit converges: AICc prefers them on **14/28** traces (ΔAICc to −320) and they
