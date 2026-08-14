@@ -2761,6 +2761,10 @@ class MainWindow(QMainWindow):
             else:
                 notes.append('echo-top head DECLINED: its curvature fit failed '
                              '(too few points before t₀, or no usable curvature)')
+        if res.get('grid_truncated'):
+            notes.append(f'{100.0*float(res.get("mass_outside") or 0.0):.1f}% of the '
+                         'recovered mass lies beyond r max — the fit includes it, '
+                         'the plot does not; raise r max')
         if flags:
             bg_line += ('<br><span style="color: rgb(224, 130, 96);">⚠ '
                         + '; '.join(flags) + '</span>')

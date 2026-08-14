@@ -8,20 +8,23 @@ per-session reasoning lives in git history and in
 from those, not from memory.
 
 Remaining work is engineering, not auditing: land the fixes already specified and
-measured, port, and close the two external-validation gaps. Treat every item
-below as a plain task with a known measurement behind it.
+measured, and port. The estimator's external check against DeerLab is **closed**
+(2026-08-08); what is left is the uncertainty band, which no engine here yet
+reports honestly. Treat every item below as a plain task with a known measurement
+behind it.
 
 ## Files
 
 | file | size | repos |
 |---|---|---|
-| `atomize/math_modules/deer.py` | ~3500 | all 5 (plain / ITC / NIOCH / NIOCH_Q / Cryomech) |
-| `atomize/control_center/deer_analysis.py` | ~3240 | ITC / NIOCH / NIOCH_Q only (lead: ITC) |
+| `atomize/math_modules/deer.py` | ~3930 | all 5 (plain / ITC / NIOCH / NIOCH_Q / Cryomech) |
+| `atomize/control_center/deer_analysis.py` | ~3500 | ITC / NIOCH / NIOCH_Q only (lead: ITC) |
 
 The two ship as a pair — `band_degenerate`, the per-component bound flags,
 `ic_railed` and now `background['prep']` are produced in `deer.py` and consumed in
-`deer_analysis.py`. Run `~/atomize_sync/sync_check.py` before porting. **All five
-repos are in sync as of 2026-08-13** (`deer.py` byte-identical across all 5,
+`deer_analysis.py`. Run `~/atomize_sync/sync_check.py` before porting. **ITC is ahead as of
+2026-08-13**: the `s7q` grid fix is uncommitted in its tree and not ported. Before
+it, all five repos were in sync (`deer.py` byte-identical across all 5,
 `deer_analysis.py` across ITC/NIOCH/NIOCH_Q; the only remaining `sync_check`
 report is the unrelated `ITC_FC.py`) — see the port entries below.
 
@@ -45,6 +48,74 @@ the archive session that shipped it.
 | `background['prep']` (gauss `lsq`) | **on** | the engine re-fits its background, so `joint_background`'s reliability keys judge the *starting* estimate; they are parked there and labelled, never recomputed (2026-08-12, `S5T-1`) |
 
 ## Recently landed
+
+- **`s7q` — the Mellin engine was inverting on a truncated distance grid**
+  (`deer.py` + `deer_analysis.py`, 2026-08-13). **UNCOMMITTED, and gated only at
+  the first extension constant — see *Pending — do first*.**
+
+  The caller's `r_max` was an estimator parameter here, not a display window:
+  `_masses` area-normalizes over the grid it is handed and `F_fit = K@masses`, so
+  truncating deletes the long-r mass the inverse recovered and rescales the rest.
+  The forward fit then decays too fast, running coherently UNDER the data across
+  the head and the first microsecond and over it in the tail. Tikhonov re-fits
+  P(r) on the same grid and absorbs the cut, so only Mellin shows it — which is
+  why it read as a Mellin-specific "residual near t0". **The GUI's own auto rule
+  `r_max = 5*(T/2)^(1/3)` lands in the biased zone on essentially every real
+  trace**, so the default configuration was the one that triggered it.
+
+  Median |coherent residual| in sigma-of-the-mean, 28-trace corpus at the auto
+  r_max, windows [(0.05,0.2), (0.2,0.5), (0.5,2.0)] us: HEAD **2.52 / 9.60 /
+  15.59** -> **1.15 / 0.74 / 0.61**, Tikhonov control 0.62 / 0.43 / 0.31. Traces
+  worse on the auto grid than on a widened one **27/28 -> 15/28**, so the grid
+  dependence is gone rather than reduced. Dose-response on `sample1_labB` (signed
+  area beyond the cut vs the 0.5-2 us residual): 4.5 % -> +60.3, **0.4 % -> +8.8**,
+  0.0 % -> -0.6 — a 0.4 % truncation buys ~1 sigma of per-sample offset, because
+  that mass sits where the kernel has barely decayed at 1 us. `r_mean` moved
+  2.512 -> 2.681 nm over r_max 6.0 -> 8.0. **Not the tau_max selector**, though it
+  is grid-coupled too: pinning tau_max at 22 or 32 reproduces every cell to two
+  decimals, and at r_max 6.0 pinning is *worse* (+52.9 vs +47.1) — the selector's
+  collapse to tau_max = 6 was partly compensating.
+
+  Fix: the inverse, the normalization behind `F_fit`, the `_nonneg_cumulative`
+  fallback, the `FIT_PEAK_TOL` test and the tau_max selector all run on an internal
+  grid extended upward at the same `dr` to `r_max + max(10, 1.4*(r_max - r_min))`
+  nm; the returned `P`/`P_norm`/`P_density`/`P_std`/MC band stay on the caller's
+  grid with the caller-grid normalization, so no downstream consumer moves. New
+  keys `mass_outside` / `grid_truncated` (`MASS_OUTSIDE_TOL` 2e-3) and a GUI note.
+  **The extension length is measured, not guessed**: `+5 nm / 0.7x` leaves a third
+  of the bias in the 0.5-2 us window (1.51 vs 0.55 at double, 0.55 again at
+  triple), so `max(10, 1.4x)` is the convergence point.
+
+  Gate at the *first* (`+5 nm`) constant, `~/deer_benchmark/s7q/`: invariance
+  **0.000e+00** on seq / joint / general / gauss_lsq / gauss_none (29 traces);
+  Mellin density bit-identical on the caller's grid at pinned tau=22/crop; the two
+  keys on 29/29 results with **0/28** false alarms on a widened grid (healthy range
+  -0.00316..+0.00140 against 2e-3); `gui_smoke.py` **ALL PASS**; self-test PASS.
+  Synthetic catalogue (756 rows) **d = -0.0004, t = -1.02** — 724/756 rows
+  bit-identical, only the 32 tau_max-moved rows change, 12 better / 20 worse, sign
+  test p = 0.215.
+
+- **`s7q`'s second half — nearest-twin `even_fold` pairing: measured and
+  REJECTED**, i.e. reporting defect (6)'s obvious fix is a dead end.
+
+  It failed the test it was written for. Mellin's echo head is ~30x more
+  zero-time-sensitive than Tikhonov — on `sample1_labB` one 8 ns sample of t0
+  error takes the 0-50 ns residual from +29 to -30 sigma-of-the-mean while joint
+  stays inside ±5, and half a sample already costs +15. Nearest-twin pairing moves
+  that scan's peak-to-peak by **0.2 %** (labB 59.71 -> 59.58, labC 48.39 -> 48.39,
+  labD 115.85 -> 115.83, labF 49.17 -> 48.84). **The fold defect and the t0
+  sensitivity are separate problems** — the ±1-sample swing is genuine
+  misregistration against the pinned F(0)=1 analytic term, which no pairing rule
+  can absorb. That is the finding worth keeping.
+
+  And it costs overlap: vs the old pairing, both on the grid fix, **d = -0.0016,
+  t = -2.60** over 756 rows, changing 380/756, 163 better / 217 worse, **sign test
+  p = 0.0065**. Against that it bought a 3x head improvement at the operating point
+  on exactly ONE real trace (labD z50 +39.69 -> +13.10 at frac 0; a three-arm run
+  confirms that is the fold change, not the grid extension). Reverted —
+  `_crop_pre_zero` is byte-identical to HEAD. **The roadmap's warning reproduces
+  independently**: `even_fold` still beats `pre_zero='crop'` by **+0.0067** with the
+  shipped pairing, against the archive's historical +0.0064 (t 5.2).
 
 - **`S4-quick` — the gauss `deer_validate` N hole + three S4 note-queue items**
   (`deer.py` + `deer_analysis.py`, 2026-08-13). One behaviour change and three
@@ -169,17 +240,6 @@ the archive session that shipped it.
   independently corroborated by the λ ratio, with the alarms at ≤ 0.258 and every
   quiet trace at ≥ 0.521. `gui_smoke.py` **ALL PASS**.
 
-- **Port of the 2026-08-13 work — DONE.** Byte-identical straight file copies from
-  ITC, each landed on the repo's default branch (branch → ff-merge), **not
-  pushed**. `S4-quick`: ITC `4bf5b29`, plain `6a3a104`, NIOCH `c16c7e1`, NIOCH_Q
-  `7dcdd67`, Cryomech `6d36153`, docs `e2b7f66`. The `mc`-comment + `ic_railed`
-  docs pair: ITC `f177bd1`, NIOCH `d6f4bb4`, NIOCH_Q `7e07b05`, docs `5857330`.
-  `S6-triage`: ITC `6a6f299`, plain `48952dd`, NIOCH `c9724ea`, NIOCH_Q `9b4bfd2`,
-  Cryomech `8ff1edd`, docs `e621bab`. `general-2p`: ITC `62ff610`, plain `541c840`,
-  NIOCH `fa2a3f4`, NIOCH_Q `2693a25`, Cryomech `3974046`, docs `f366a9f`
-  (`deer.py` only — `deer_analysis.py` is unchanged by this one).
-  `sync_check.py` clean afterwards apart from the unrelated `ITC_FC.py`.
-
 - **Gauss `mc` background-start validation stays OFF — decided 2026-08-13**
   (`deer_analysis.py`, comment only). `_gauss_compute`'s guard
   (`validate_flag and gmethod != 'mc'`) rested on two stated grounds; after
@@ -244,14 +304,6 @@ the archive session that shipped it.
   real + 1 synthetic trace × 6 engine configs against `HEAD`, prep values
   bit-equal to HEAD's stale top-level ones, and `gui_smoke.py` **ALL PASS**.
 
-- **Port of both — DONE 2026-08-12.** Byte-identical straight file copies from ITC,
-  each landed on the repo's default branch (branch → ff-merge), **not pushed**.
-  `S5T-1`: ITC `0c86b21`, plain `35be646`, NIOCH `14e4307`, NIOCH_Q `eb9d6db`,
-  Cryomech `ad4285d`, docs `640f053`. `callsites-1`: ITC `ad14dfc`,
-  plain `755939c`, NIOCH `c84425a`, NIOCH_Q `393abc2`, Cryomech `41f51c9`, docs
-  `c905aa4`. `sync_check.py` clean afterwards apart from the unrelated
-  `ITC_FC.py`.
-
 - **2026-08-05 audit, items 3/4/5/7/9 + the batch clamp line** (`deer.py` +
   `deer_analysis.py`, 2026-08-10). `deer_validate` forwards `clamp_alias` (the
   `False` escape hatch raised a shape mismatch); `pre_zero` is honoured on every
@@ -301,35 +353,89 @@ the archive session that shipped it.
   `~/deer_benchmark/s5_gauss/deerlab_x/VERDICT.md`; harness `synth_xcheck.py` /
   `real_xcheck.py` / `dlx.py`. Dataset: `~/deer_benchmark/synth/gauss/`.
 
-- **Port to the forks — DONE 2026-08-08.** The three ITC commits (`f4e7c82` round-2,
-  `0a61a3e` S5T-9, `3cd7c83` ic_railed reframe + UI) mirrored to all forks as a
-  byte-identical straight file copy — verified each fork sat at a clean linear ITC
-  ancestor (`a82fba1`) with no local changes, all files LF, and `sync_check.py`
-  clean afterward (only the unrelated `Sibir_1.py` still `~`). Fork commits: plain
-  `ba0d70e` (deer.py), NIOCH `87d9bec` (both), NIOCH_Q `359f03d` (both), Cryomech
-  `937d995`/branch `main` (deer.py). `deer_analysis.py` lives only in
-  ITC/NIOCH/NIOCH_Q.
+### Ports
+
+Byte-identical straight file copies from ITC, each landed on the repo's default
+branch (branch → ff-merge), **not pushed**. `deer_analysis.py` lives only in
+ITC / NIOCH / NIOCH_Q. `sync_check.py` clean after every one of these, apart from
+the unrelated `ITC_FC.py` (`Sibir_1.py` on the 08-08 round).
+
+| change | ITC | plain | NIOCH | NIOCH_Q | Cryomech | docs |
+|---|---|---|---|---|---|---|
+| `general-2p` (`deer.py` only) | `62ff610` | `541c840` | `fa2a3f4` | `2693a25` | `3974046` | `f366a9f` |
+| `S6-triage` | `6a6f299` | `48952dd` | `c9724ea` | `9b4bfd2` | `8ff1edd` | `e621bab` |
+| `mc`-comment + `ic_railed` docs | `f177bd1` | — | `d6f4bb4` | `7e07b05` | — | `5857330` |
+| `S4-quick` | `4bf5b29` | `6a3a104` | `c16c7e1` | `7dcdd67` | `6d36153` | `e2b7f66` |
+| `callsites-1` | `ad14dfc` | `755939c` | `c84425a` | `393abc2` | `41f51c9` | `c905aa4` |
+| `S5T-1` | `0c86b21` | `35be646` | `14e4307` | `eb9d6db` | `ad4285d` | `640f053` |
+| round-2 + `S5T-9` + `ic_railed` reframe (08-08) | `f4e7c82` `0a61a3e` `3cd7c83` | `ba0d70e` | `87d9bec` | `359f03d` | `937d995` | — |
+
+**`s7q` is NOT ported** — see *Pending — do first*.
 
 ## Pending — do first
 
-Nothing is blocked. The stack is in sync, the estimator's external check is
-closed, `S5G-4` and the gauss `mc` validation question are settled, the
+The stack is **no longer in sync** — `s7q` sits uncommitted in the ITC tree and is
+not ported (item 1 below closes that). Otherwise nothing is blocked: the
+estimator's external check is closed, `S5G-4` and the gauss `mc` validation
+question are settled, the
 2026-08-05 audit is down to its one behaviour-change item, and `S5T-1` /
 `callsites-1` / `S4-quick` / `S6-triage` / `general-2p` are landed. The triage
 queue is spent apart from `xengine-3`, which needs re-filing before it is worth
 anything.
 
 Ranked, from the backlog below:
-1. **The residual bootstrap** (uncertainty item 2) — biggest lever in the file,
+1. **Close out `s7q`.** The grid fix is uncommitted and its full gate ran at the
+   FIRST extension constant; the constant was then raised to `max(10, 1.4x)` on
+   the convergence measurement, with only the corpus and the self-test re-run at
+   it. In order: **re-run the 756-trace synthetic gate** — the one that matters,
+   since the tau_max selector now scores on the extended grid and a longer
+   extension can move more than the 32 rows that shifted at `+5 nm` (harness ready:
+   `~/deer_benchmark/s7q/fold_bench_x2.py`, 2-arm, ~28 min on 4 cores; acceptance
+   is that `d = -0.0004, t = -1.02` does not get materially worse); re-run
+   `gate.py` and `gui_smoke.py`, where invariance and identity should hold in
+   principle but the `mass_outside` values and the false-alarm count do move;
+   check the cost, since the working grid is now ~2.7x the caller's and the Mellin
+   inverse scales with `len(w)*n_tau`; **port** to the other four repos and run
+   `sync_check.py`; then **update `atomize_docs`**
+   (`docs/functions/math_modules/deer.md`) — document `mass_outside` /
+   `grid_truncated`, say that `r_max` is an estimator parameter for this engine
+   rather than a display window, and **fix the stale `tau_max=30.0` in the
+   `deer_invert_mellin` signature block**, which the prose below it already
+   contradicts.
+2. **The residual bootstrap** (uncertainty item 2) — biggest lever in the file,
    and the right answer for the `ic_railed` / N-undetermined case too.
-2. **Say the validation band is drawn at one fixed N** — cheap, and `S4-quick`
+3. **Say the validation band is drawn at one fixed N** — cheap, and `S4-quick`
    made it true.
-3. **Catch a smooth non-dipolar decay** — the gap `_flag_not_deer_like` leaves.
+4. **Catch a smooth non-dipolar decay** — the gap `_flag_not_deer_like` leaves.
 
 ## Pending — backlog
 
 Open findings. Each carries its own measurement in the archive / `REVIEW_S5`.
 None needs another review round; they need a fix and a gate.
+
+**Real-data residuals (opened 2026-08-13, `mel/r10_osc.py`):**
+- **Both engines leave the SAME coherent oscillation in the long-t residual on
+  sample 1.** Past t = 2 us the sample-1 ring-test traces carry a periodic residual
+  that Mellin and Tikhonov-joint reproduce to within one FFT bin of each other on
+  the same trace — so it is in the DATA, not in either estimator, and no amount of
+  engine work will remove it. Dominant frequency across labs B/D/E/F (and C raw):
+  **5.1-6.9 MHz raw, 5.9-7.1 MHz at the standing 2/80 trim**, i.e. a period of
+  0.14-0.20 us. Amplitude is trace-dependent: **labD 2.31 / 2.34 sigma** (Mellin /
+  joint) and **labE 2.30 / 2.14**, against labB 0.90 / 0.88 and labF 0.91 / 0.84.
+  It is sample-1-specific: on `sample2_labB`, `sample3_labB` and `sample4_labB` the
+  two engines pick *different* dominant peaks (Mellin 0.65-0.81 MHz against joint
+  12.6-39.2 MHz) at 0.2-0.5 sigma, which is what noise looks like, not a shared
+  oscillation. `sample1_labA` and `_labG` are too short to judge past 2 us, and the
+  trim leaves `labC` with only 36 points there — do not read those four rows.
+  Two candidate explanations, neither tested: **(a) nuclear modulation** (ESEEM)
+  surviving the background division, or **(b) an unfitted short-r dipolar
+  component** — 5-7 MHz maps to `r = (nu_dd/f)^(1/3)` = **1.96-2.16 nm**, which is
+  inside the reported grid, so if it is (b) both engines are missing real mass at
+  short r. Deciding between them is cheap (the frequency is field-dependent under
+  (a) and not under (b), and the ring test spans several spectrometers) and it
+  should be decided before anything else in this file is blamed for a long-t
+  residual. NOTE the 28-trace corpus residual numbers quoted throughout this file
+  are dominated by exactly this band on the sample-1 traces.
 
 **Multi-Gaussian (S5):**
 - **Report that the component count is unstable across the background sweep.**
@@ -560,6 +666,18 @@ against all four**, or it books a gain already paid for elsewhere.
   reading a field it does not populate.
 - **`deer.simulate` is even in t** — a finding about time-asymmetry cannot be
   confirmed or refuted on it; use the real Bruker traces in `~/deer_benchmark/`.
+- **Every corpus number in this file is measured on UNTRIMMED YopO traces, against
+  the project's own standing rule that they must be trimmed** (drop ~2 points off
+  the start and ~80 off the end; both ends carry acquisition artifacts and the tail
+  is the worse offender). The gap is not academic: at the 2/80 trim the Mellin
+  long-t bias on `sample1_labB` falls from **-2.38 to -0.43** sigma-of-the-mean,
+  labC from -2.42 to -0.29 and labF from -3.33 to -1.04 — but it moves the OTHER
+  way on others (`sample2_labB` +0.75 -> **-4.08**, `sample4_labB` +0.44 ->
+  **-5.21**, and joint on labD -0.35 -> -2.85), so trimming is not a uniform
+  improvement and cannot simply be switched on. A/B comparisons on a fixed corpus
+  stay valid — both arms see the same data — but any ABSOLUTE residual level quoted
+  here is a raw-trace number. Trimming also shortens the trace, which moves the
+  GUI's auto `r_max = 5*(T/2)^(1/3)` and the alias floor with it.
 - **A measurement inherits every switch its harness silently set** — `S5T-8`'s fix
   was measured with `Fit t0` forced OFF; at GUI defaults (`Fit t0` ON) it would
   have printed "moving it won't shift the result" beside a control that shifts the
