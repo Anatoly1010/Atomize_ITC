@@ -895,6 +895,7 @@ class MainWindow(QMainWindow):
             return
         try:
             xarr = yarr = None
+            xaunit = yaunit = None
             if str(path).endswith('.h5'):
                 # one file holds both quadratures; the axes come as datasets
                 arr = self.opener.open_2d(path)[1]
@@ -908,6 +909,8 @@ class MainWindow(QMainWindow):
                     qmsg = 'no Q dataset (Q = 0)'
                 axes = self.opener.open_h5_axes(path)
                 xarr, yarr = axes.get('t'), axes.get('sweep')
+                units = self.opener.open_h5_axis_units(path)
+                xaunit, yaunit = units.get('t'), units.get('sweep')
             else:
                 i = np.atleast_2d(np.genfromtxt(path, delimiter=','))
                 base = path[:-4] if path.lower().endswith('.csv') else path
@@ -943,7 +946,9 @@ class MainWindow(QMainWindow):
             # an .h5 axis dataset fills only what the header could not give: it
             # carries no unit, so it must never overwrite a header-set axis
             filled = self._apply_axis_arrays(None if dx is not None else xarr,
-                                             None if dy is not None else yarr)
+                                             None if dy is not None else yarr,
+                                             None if dx is not None else xaunit,
+                                             None if dy is not None else yaunit)
             parsed = ', '.join(p for p in (parsed, filled) if p)
             self.live_check.setChecked(False)   # new data: don't auto-reprocess
             self.reset_to_raw()
@@ -994,23 +999,29 @@ class MainWindow(QMainWindow):
                 dy, yu = val, unit
         return dx, xu, dy, yu
 
-    def _apply_axis_arrays(self, xarr, yarr):
+    def _apply_axis_arrays(self, xarr, yarr, xunit=None, yunit=None):
         """Push stored axis vectors (an .h5 file's t / sweep datasets) into the
         start + step widgets. A step the spin box cannot hold — a raw SI time
         axis against a 3-decimal box — is left alone rather than rounded to a
-        zero step, which would collapse the image."""
+        zero step, which would collapse the image.
+
+        A vector saved with a unit attribute labels its axis too; without one
+        the unit field keeps whatever it held, as it always has."""
         done = []
-        pairs = [('X', xarr, self.x0_spin, self.dx_spin),
-                 ('Y', yarr, self.y0_spin, self.dy_spin)]
-        for name, arr, zspin, dspin in pairs:
+        pairs = [('X', xarr, xunit, self.x0_spin, self.dx_spin, self.xscale_edit),
+                 ('Y', yarr, yunit, self.y0_spin, self.dy_spin, self.yscale_edit)]
+        for name, arr, unit, zspin, dspin, uedit in pairs:
             if arr is None or np.size(arr) < 2:
                 continue
             start, step = self._axis_start_step(arr)
+            if unit:
+                uedit.blockSignals(True); uedit.setText(unit); uedit.blockSignals(False)
+            # a step the box cannot hold is still worth labelling
             if abs(step) < 10 ** -dspin.decimals():
                 continue
             zspin.blockSignals(True); zspin.setValue(float(start)); zspin.blockSignals(False)
             dspin.blockSignals(True); dspin.setValue(float(step)); dspin.blockSignals(False)
-            done.append(f'{name} start={start:g} Δ={step:g}')
+            done.append(f'{name} start={start:g} Δ={step:g} {unit or ""}'.strip())
         return ', '.join(done)
 
     def _apply_header_axes(self, dx, xu, dy, yu):

@@ -1265,6 +1265,7 @@ class Worker():
             # labels the sweep rows that follow it, from START_FIELD up
             sweep_axis = START_FIELD + np.arange(points + 1) * FIELD_STEP
             axes_2d = ( np.arange(real_length) * t_step, sweep_axis )
+            axes_units_2d = ( 's', 'G' )
             if p9 > 1:
                 axes_2d_2 = ( np.arange(real_length_2) * t_step_2, sweep_axis )
             
@@ -1691,7 +1692,7 @@ class Worker():
                         # ('None') falls through to the guarded CSV calls
                         if ext.lower() == '.h5':
                             if j == 1:
-                                file_handler.save_data(file_save_1, np.transpose( data[0, :, :] ), header = header, axes = axes_2d)
+                                file_handler.save_data(file_save_1, np.transpose( data[0, :, :] ), header = header, axes = axes_2d, axes_units = axes_units_2d)
                             self._append_scan_h5(file_save_1, np.transpose( data[0, :, :] ), j)
                         elif j == 1:
                             file_handler.save_data(file_save_1, np.transpose( data[0, :, :] ), header = header)
@@ -1733,7 +1734,7 @@ class Worker():
                         f"2D Data"
                     )
 
-                    file_handler.save_data(file_save_1, np.transpose( data[0, :, :] ), header = header, axes = axes_2d)
+                    file_handler.save_data(file_save_1, np.transpose( data[0, :, :] ), header = header, axes = axes_2d, axes_units = axes_units_2d)
                 elif p9 == 2:
 
                     now = datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")
@@ -1779,8 +1780,8 @@ class Worker():
                         f"2D Data"
                     )
 
-                    file_handler.save_data(file_save_1, np.transpose( data[0, :, :] ), header = header, axes = axes_2d)
-                    file_handler.save_data(file_save_2, np.transpose( data_2[0, :, :] ), header = header_2, axes = axes_2d_2)
+                    file_handler.save_data(file_save_1, np.transpose( data[0, :, :] ), header = header, axes = axes_2d, axes_units = axes_units_2d)
+                    file_handler.save_data(file_save_2, np.transpose( data_2[0, :, :] ), header = header_2, axes = axes_2d_2, axes_units = axes_units_2d)
                 elif p9 == 3:
 
                     now = datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")
@@ -1826,9 +1827,9 @@ class Worker():
                         f"2D Data"
                     )
 
-                    file_handler.save_data(file_save_1, np.transpose( data[0, :, :] ), header = header, axes = axes_2d)
-                    file_handler.save_data(file_save_2, np.transpose( data_2[0, :, :] ), header = header_2, axes = axes_2d_2)
-                    file_handler.save_data(file_save_3, np.transpose( data[2, :, :] ), header = header, axes = axes_2d)
+                    file_handler.save_data(file_save_1, np.transpose( data[0, :, :] ), header = header, axes = axes_2d, axes_units = axes_units_2d)
+                    file_handler.save_data(file_save_2, np.transpose( data_2[0, :, :] ), header = header_2, axes = axes_2d_2, axes_units = axes_units_2d)
+                    file_handler.save_data(file_save_3, np.transpose( data[2, :, :] ), header = header, axes = axes_2d, axes_units = axes_units_2d)
 
                 while field > OFFRES_FIELD:
                     field = bh15.magnet_field( field - initialization_step)

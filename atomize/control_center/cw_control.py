@@ -15,6 +15,9 @@ import atomize.control_center.field_param as field_param
 import atomize.control_center.temp_param as temp_param
 from atomize.general_modules.gui_style import CHECKBOX_STYLE
 
+# a repetition map is only worth drawing once it has some rows
+REP_PLOT_MIN = 5
+
 
 class MainWindow(QMainWindow):
     """
@@ -28,6 +31,8 @@ class MainWindow(QMainWindow):
         self.menu()
 
         self.two_side = 0
+        self.rep_mode = 0
+        self.save_hdf5 = 0
         self.design()
         self.exit_clicked = 0
         """
@@ -39,7 +44,16 @@ class MainWindow(QMainWindow):
         self.timer.timeout.connect(self.check_messages)
         self.monitor_timer = QTimer()
         self.monitor_timer.timeout.connect(self.check_process_status)
+        self.rep_timer = QTimer()
+        self.rep_timer.timeout.connect(self.rep_countdown)
         self.file_handler = openfile.Saver_Opener()
+
+        self.rep_active = 0
+        self.rep_index = 0
+        self.rep_remaining = 0
+        self.rep_continue = 0
+        self.rep_path = ''
+        self.rep_t0 = 0.0
 
     def design(self):
 
@@ -64,7 +78,7 @@ class MainWindow(QMainWindow):
 
 
         # ---- Labels & Inputs ----
-        labels = [("Start Field", "label_1"), ("End Field", "label_2"), ("Field Step", "label_3"), ("Lock In Amplitude", "label_4"), ("Lock In Time Constant", "label_5"), ("Lock In Sensitivity", "label_6"), ("Number of Scans", "label_7"), ("Two-Side Measurement", "label_8"), ("Experiment Name", "label_9"), ("Curve Name", "label_10"), ("Progress", "label_11")]
+        labels = [("Start Field", "label_1"), ("End Field", "label_2"), ("Field Step", "label_3"), ("Lock In Amplitude", "label_4"), ("Lock In Time Constant", "label_5"), ("Lock In Sensitivity", "label_6"), ("Number of Scans", "label_7"), ("Two-Side Measurement", "label_8"), ("Experiment Name", "label_9"), ("Curve Name", "label_10"), ("Progress", "label_11"), ("Repetition Delay", "label_12"), ("Repetitive Mode", "label_13"), ("Next Run In", "label_14"), ("Save as HDF5", "label_15")]
 
         for name, attr_name in labels:
             lbl = QLabel(name)
@@ -78,7 +92,8 @@ class MainWindow(QMainWindow):
                       (QDoubleSpinBox, "box_end_field", "cur_end_field", self.end_field, 0, 15000, 4000, 1, 1, " G"),
                       (QDoubleSpinBox, "box_step_field", "cur_step", self.step_field, 0.01, 50, 0.5, 0.1, 2, " G"),
                       (QDoubleSpinBox, "box_lock_ampl", "cur_lock_ampl", self.lock_ampl, 0.001, 2.0, 2.0, 0.1, 3, " V"),
-                      (QSpinBox, "box_scan", "cur_scan", self.scan, 1, 100, 1, 1, 0, "")
+                      (QSpinBox, "box_scan", "cur_scan", self.scan, 1, 100, 1, 1, 0, ""),
+                      (QSpinBox, "box_rep_delay", "cur_rep_delay", self.rep_delay, 1, 86400, 60, 1, 0, " s")
                         ]
 
         for widget_class, attr_name, par_name, func, v_min, v_max, cur_val, v_step, dec, suf in double_boxes:
@@ -157,7 +172,9 @@ class MainWindow(QMainWindow):
             txt.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
 
         # ---- Check Boxes ----
-        check_boxes = [("checkbox_back_scan", self.two_side_measure)]
+        check_boxes = [("checkbox_back_scan", self.two_side_measure),
+                       ("checkbox_repeat", self.repeat_mode),
+                       ("checkbox_hdf5", self.hdf5_mode)]
 
         for attr_name, func in check_boxes:
             check = QCheckBox("")
@@ -195,7 +212,7 @@ class MainWindow(QMainWindow):
         #self.progress_bar.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.progress_bar.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
-        self.progress_bar.setStyleSheet("""
+        bar_style = """
             QProgressBar {
                 border: 1px solid rgb(83, 83, 117);
                 border-radius: 4px;
@@ -211,7 +228,18 @@ class MainWindow(QMainWindow):
                 background-color: rgb(193, 202, 227);
                 border-radius: 2px;
             }
-        """)
+        """
+
+        self.progress_bar.setStyleSheet(bar_style)
+
+        self.rep_progress_bar = QProgressBar()
+        self.rep_progress_bar.setRange(0, 100)
+        self.rep_progress_bar.setValue(0)
+        self.rep_progress_bar.setFixedSize(130, 15)
+        self.rep_progress_bar.setTextVisible(True)
+        self.rep_progress_bar.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.rep_progress_bar.setFormat("%v s")
+        self.rep_progress_bar.setStyleSheet(bar_style)
 
         # ---- Layout placement ----
         gridLayout.addWidget(self.label_1, 0, 0)
@@ -253,12 +281,23 @@ class MainWindow(QMainWindow):
 
         gridLayout.addWidget(hline(), 15, 0, 1, 2)
 
-        gridLayout.addWidget(self.button_start, 16, 0)
-        gridLayout.addWidget(self.button_stop, 17, 0)
-        gridLayout.addWidget(self.button_off, 18, 0)
+        gridLayout.addWidget(self.label_12, 16, 0)
+        gridLayout.addWidget(self.box_rep_delay, 16, 1)
+        gridLayout.addWidget(self.label_13, 17, 0)
+        gridLayout.addWidget(self.checkbox_repeat, 17, 1)
+        gridLayout.addWidget(self.label_14, 18, 0)
+        gridLayout.addWidget(self.rep_progress_bar, 18, 1)
+        gridLayout.addWidget(self.label_15, 19, 0)
+        gridLayout.addWidget(self.checkbox_hdf5, 19, 1)
+
+        gridLayout.addWidget(hline(), 20, 0, 1, 2)
+
+        gridLayout.addWidget(self.button_start, 21, 0)
+        gridLayout.addWidget(self.button_stop, 22, 0)
+        gridLayout.addWidget(self.button_off, 23, 0)
 
 
-        gridLayout.setRowStretch(19, 2)
+        gridLayout.setRowStretch(24, 2)
         gridLayout.setColumnStretch(19, 2)
 
     def menu(self):
@@ -302,6 +341,60 @@ class MainWindow(QMainWindow):
             self.two_side = 1
         elif self.checkbox_back_scan.checkState().value == 0: # unchecked
             self.two_side = 0
+
+    def repeat_mode(self):
+        """
+        Turn on/off repetitive measurement. The state is read once, when Start
+        is pressed; toggling it during a running series has no effect.
+        """
+        if self.checkbox_repeat.checkState().value == 2: # checked
+            self.rep_mode = 1
+        elif self.checkbox_repeat.checkState().value == 0: # unchecked
+            self.rep_mode = 0
+
+    def hdf5_mode(self):
+        """
+        Turn on/off saving in the HDF5 format
+        """
+        if self.checkbox_hdf5.checkState().value == 2: # checked
+            self.save_hdf5 = 1
+        elif self.checkbox_hdf5.checkState().value == 0: # unchecked
+            self.save_hdf5 = 0
+
+    def rep_delay(self):
+        """
+        A function to send a delay between two repetitions
+        """
+        self.cur_rep_delay = int( self.box_rep_delay.value() )
+
+    def start_rep_countdown(self):
+        """
+        A function to start counting down to the next repetition
+        """
+        self.rep_remaining = self.cur_rep_delay
+        self.rep_progress_bar.setRange(0, self.cur_rep_delay)
+        self.rep_progress_bar.setValue( self.rep_remaining )
+        self.rep_timer.start(1000)
+
+    def stop_rep_countdown(self):
+        """
+        A function to cancel a running countdown
+        """
+        self.rep_timer.stop()
+        self.rep_progress_bar.setValue(0)
+
+    def rep_countdown(self):
+        """
+        A function to update the countdown and to launch the next repetition
+        """
+        self.rep_remaining = self.rep_remaining - 1
+        self.rep_progress_bar.setValue( max(0, self.rep_remaining) )
+
+        if self.rep_remaining <= 0:
+            self.rep_timer.stop()
+            self.rep_index = self.rep_index + 1
+            self.rep_continue = 1
+            self.start()
 
     def closeEvent(self, event):
         event.ignore()
@@ -374,10 +467,13 @@ class MainWindow(QMainWindow):
          A function to turn off a program.
         """
         self.exit_clicked = 1
+        self.rep_active = 0
+        self.stop_rep_countdown()
+
         try:
             self.parent_conn.send( 'exit' )
             self.monitor_timer.start(200)
-        except AttributeError:
+        except (AttributeError, BrokenPipeError, OSError):
             sys.exit()
             #self.message('Experimental script is not running')
 
@@ -461,6 +557,11 @@ class MainWindow(QMainWindow):
                 temp_param.clear_lock()
                 self.button_start.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }  ")
 
+                if self.rep_active == 1 and not self.last_error and self.exit_clicked == 0:
+                    self.start_rep_countdown()
+
+                self.last_error = False
+
     def check_process_status(self):
         if self.exp_process.is_alive():
             return
@@ -480,11 +581,15 @@ class MainWindow(QMainWindow):
         """
         A function to stop script
         """
+        self.rep_active = 0
+        self.stop_rep_countdown()
+
         try:
             self.parent_conn.send( 'exit' )
             self.monitor_timer.start(200)
 
-        except AttributeError:
+        # the pipe is already closed when a countdown is stopped
+        except (AttributeError, BrokenPipeError, OSError):
             pass
             #self.message('Experimental script is not running')
    
@@ -504,6 +609,21 @@ class MainWindow(QMainWindow):
         except AttributeError:
             pass
 
+        self.stop_rep_countdown()
+
+        # a manual Start always opens a new series
+        if self.rep_continue == 0:
+            self.rep_index = 0
+            self.rep_path = ''
+            self.rep_t0 = time.time()
+
+        self.rep_continue = 0
+        self.rep_active = self.rep_mode
+
+        # a series is asked for its file up front, so it can run unattended
+        if self.rep_active == 1 and self.rep_path == '':
+            if self.ask_series_file() == 0:
+                return
 
         if self.cur_start_field >= self.cur_end_field:
             self.cur_start_field, self.cur_end_field = self.cur_end_field, self.cur_start_field
@@ -531,12 +651,16 @@ class MainWindow(QMainWindow):
         worker = Worker()
         self.parent_conn, self.child_conn = Pipe()
         
+        rep_info = ( self.rep_active, self.rep_index,
+                     round( time.time() - self.rep_t0, 3 ), self.cur_rep_delay,
+                     self.rep_path )
+
         self.exp_process = Process(
             target = worker.exp_on, 
             args = (self.child_conn, self.cur_curve_name, self.cur_exp_name, 
                   self.cur_end_field, self.cur_start_field, self.cur_step, 
                   self.cur_lock_ampl, self.cur_scan, self.cur_tc, 
-                  self.cur_sens, self.two_side)
+                  self.cur_sens, self.two_side, rep_info)
         )
         self.exp_process.start()
         self.parent_conn.send('start')
@@ -548,13 +672,31 @@ class MainWindow(QMainWindow):
         else:
             print(f'{text}', flush=True)
 
+    def ask_series_file(self):
+        """
+        A function to choose the file of a whole series before it starts.
+        Returns 0 when the dialog was cancelled and the series must not run.
+        """
+        file_data = self.file_handler.create_file_dialog(multiprocessing = True,
+            directory = ldir.load('cw', self.path),
+            fmt = 'h5' if self.save_hdf5 == 1 else 'csv')
+
+        if not file_data or file_data == 'None':
+            self.message('Repetitive measurement needs a file; nothing was started')
+            return 0
+
+        self.rep_path = str( file_data )
+        self.save_file( os.path.splitext( self.rep_path )[0] )
+        return 1
+
     def open_dialog(self):
         file_data = self.file_handler.create_file_dialog(multiprocessing = True,
-            directory = ldir.load('cw', self.path))
+            directory = ldir.load('cw', self.path),
+            fmt = 'h5' if self.save_hdf5 == 1 else 'csv')
         #print(file_data == 'None')
         if file_data:
             if file_data != 'None':
-                self.save_file(file_data.split(".csv")[0])
+                self.save_file( os.path.splitext( str( file_data ) )[0] )
             self.parent_conn.send( 'FL' + str( file_data ) )
         else:
             self.parent_conn.send( 'FL' + '' )
@@ -1040,6 +1182,20 @@ class MainWindow(QMainWindow):
         else:
             self.checkbox_back_scan.setCheckState(Qt.CheckState.Unchecked)
 
+        # presets written before repetitive measurement end here
+        if len( lines ) > 11:
+            self.box_rep_delay.setValue( int( lines[8].split(':  ')[1] ) )
+
+            if int( lines[9].split(':  ')[1] ) == 2:
+                self.checkbox_repeat.setCheckState(Qt.CheckState.Checked)
+            else:
+                self.checkbox_repeat.setCheckState(Qt.CheckState.Unchecked)
+
+            if int( lines[10].split(':  ')[1] ) == 2:
+                self.checkbox_hdf5.setCheckState(Qt.CheckState.Checked)
+            else:
+                self.checkbox_hdf5.setCheckState(Qt.CheckState.Unchecked)
+
     def save_file(self, filename):
         """
         A function to save a new pulse list
@@ -1058,6 +1214,9 @@ class MainWindow(QMainWindow):
             file.write( 'Lock In Sensitivity:  ' + str(self.combo_sens.currentText()) + '\n' )
             file.write( 'Scans:  ' + str(self.box_scan.value()) + '\n' )
             file.write( 'Two-Side:  ' + str(self.checkbox_back_scan.checkState().value) + '\n' )
+            file.write( 'Repetition Delay:  ' + str(self.box_rep_delay.value()) + '\n' )
+            file.write( 'Repetitive Mode:  ' + str(self.checkbox_repeat.checkState().value) + '\n' )
+            file.write( 'Save as HDF5:  ' + str(self.checkbox_hdf5.checkState().value) + '\n' )
 
 # The worker class that run the digitizer in a different thread
 class Worker():
@@ -1065,8 +1224,43 @@ class Worker():
         super(Worker, self).__init__()
         # initialization of the attribute we use to stop the experimental script
         self.command = 'start'
-    
-    def exp_on(self, conn, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10):
+
+    def save_series(self, file_handler, file_data, x_axis, data, header, rep_index, rep_time):
+        """
+        A function to store a repetitive measurement as one 2D dataset:
+        one row per repetition, one column per field point. Every repetition
+        reads back what the previous ones wrote and rewrites the whole matrix,
+        since each of them runs in its own process. For HDF5 the field axis and
+        the true elapsed time of every repetition are kept as axis vectors;
+        a CSV carries the same information as header resolution lines.
+        :param file_data: string
+        :param rep_index: int, zero-based position in the series
+        :param rep_time: float, seconds since the series started
+        """
+        matrix = np.atleast_2d( data )
+        sweep = np.array( [ rep_time ] )
+        is_h5 = str( file_data ).lower().endswith('.h5')
+
+        if rep_index > 0:
+            previous = np.atleast_2d( file_handler.open_2d( file_data )[1] )
+            matrix = np.vstack( (previous, matrix) )
+
+            if is_h5:
+                axes = file_handler.open_h5_axes( file_data )
+                sweep = np.append( axes.get( 'sweep', np.array([]) ), rep_time )
+
+        # a rewrite in place would lose the whole series if it were interrupted
+        base, ext = os.path.splitext( str( file_data ) )
+        tmp_name = base + '_tmp' + ext
+
+        file_handler.save_data(tmp_name, matrix, header = header, mode = 'w',
+            axes = ( x_axis, sweep ), axes_units = ( 'G', 's' ))
+        os.replace(tmp_name, file_data)
+
+        return matrix
+
+
+    def exp_on(self, conn, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11 = (0, 0, 0.0, 0, '')):
         """
         function that contains experimental script
         """
@@ -1076,6 +1270,8 @@ class Worker():
         #self.cur_step, self.cur_lock_ampl, self.cur_scan, self.cur_tc, self.cur_sens, 
         #           10,         ]
         #self.two_side,    
+        #                                                                      11,        ]
+        #(rep_active, rep_index, seconds since the series started, rep_delay, file of the series),
 
         # should be inside dig_on() function;
         # freezing after digitizer restart otherwise
@@ -1106,6 +1302,7 @@ class Worker():
             initialization_step = 10
             SCANS = p7
             process = 'None'
+            rep_active, rep_index, rep_time, rep_delay, rep_file = p11
 
             #itc_fc.magnet_setup( 100, FIELD_STEP)
 
@@ -1253,21 +1450,59 @@ class Worker():
                     f"{'Time Constant:':<{w}} {p8}\n"
                     f"{'Modulation Ampl:':<{w}} {p6} V\n"
                     f"{'Frequency:':<{w}} {ag53131a.freq_counter_frequency('CH3')}\n"
-                    f"{'-'*50}\n"
-                    f"Field (G), X (V)"
                 )
 
-                conn.send(('Open', ''))
-                
-                while True:
-                    if conn.poll():
-                        msg = conn.recv()
-                        if msg.startswith('FL'):
-                            file_data = msg[2:]
-                            break
-                    general.wait('200 ms')
+                if rep_active == 1:
+                    # the mean period is exact once the series has two points
+                    if rep_index > 0:
+                        v_res = round( rep_time / rep_index, 3 )
+                    else:
+                        v_res = rep_delay
 
-                file_handler.save_data(file_data, np.c_[x_axis, data], header = header, mode = 'w')
+                    header = (
+                        header +
+                        f"{'Repetitions:':<{w}} {rep_index + 1}\n"
+                        f"{'Repetition Delay:':<{w}} {rep_delay} s\n"
+                    )
+
+                    # data_treatment_2d zeroes the start of every axis it takes from
+                    # the header, so the field origin only survives in a stored vector
+                    if not str( rep_file ).lower().endswith('.h5'):
+                        header = header + f"{'Horizontal Resolution:':<{w}} {FIELD_STEP} G\n"
+
+                    header = (
+                        header +
+                        f"{'Vertical Resolution:':<{w}} {v_res} s\n"
+                        f"{'-'*50}\n"
+                        f"Rows: repetitions, Columns: field (G)"
+                    )
+                else:
+                    header = header + f"{'-'*50}\n" + f"Field (G), X (V)"
+
+                if rep_active == 1 and rep_file != '':
+                    file_data = rep_file
+                else:
+                    conn.send(('Open', ''))
+
+                    while True:
+                        if conn.poll():
+                            msg = conn.recv()
+                            if msg.startswith('FL'):
+                                file_data = msg[2:]
+                                break
+                        general.wait('200 ms')
+
+                if rep_active == 1 and file_data != '' and file_data != 'None':
+                    matrix = self.save_series(file_handler, file_data, x_axis, data, header, rep_index, rep_time)
+
+                    if matrix.shape[0] >= REP_PLOT_MIN:
+                        general.plot_2d( p2 + ' 2D', np.transpose( matrix ),
+                            start_step = ( (START_FIELD, FIELD_STEP), (0, v_res) ),
+                            xname = 'Field', xscale = 'G', yname = 'Time', yscale = 's',
+                            zname = 'Intensity', zscale = 'V',
+                            text = 'Repetition: ' + str(rep_index + 1) )
+                else:
+                    file_handler.save_data(file_data, np.c_[x_axis, data], header = header, mode = 'w')
 
                 while field > START_FIELD:
                     field = itc_fc.magnet_field( field - initialization_step )
