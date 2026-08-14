@@ -1117,7 +1117,9 @@ def deer_invert(t, V, r=None, bg_start=None, bg_end=None, dim=3.0, fit_dim=False
     always computed for display, even when an explicit `alpha` is given. Returns a dict:
     t, r, form_factor F(t), F_fit = K P, residuals, P (raw masses), P_norm
     (masses, sum = 1), P_density (P_norm / dr, integrates to 1), kernel, alpha,
-    l_curve (when scanned), background result, lambda / k / dim, and engine.
+    l_curve (when scanned), background result, lambda / k / dim, engine, and
+    `noise_level` -- the decayed-tail sigma of V, reported so the residual view can
+    draw a band and never fed back into the fit.
     """
     # coefficients for the 'general' background (a/b/c/d, fit flag); flows through
     # kwargs so deer_validate and the engine dispatch carry it transparently.
@@ -1193,6 +1195,7 @@ def deer_invert(t, V, r=None, bg_start=None, bg_end=None, dim=3.0, fit_dim=False
             'kernel': K, 'alpha': float(alpha), 'r_alias': float(r_alias), 'ci_kind': 'noise',
             'l_curve': lc, 'background': bg, 'lambda': bg['lambda'],
             'k': bg['k'], 'dim': bg['dim'],
+            'noise_level': float(_tail_noise(t, bg['V_norm'])),
             'engine': engine if engine in ('none', 'general') else 'sequential'}
 
 
@@ -1251,6 +1254,8 @@ def deer_invert_joint(t, V, r=None, bg_start=None, bg_end=None, dim=3.0,
     background's own reliability flags (`lambda_clamped`, `tail_abs_F`,
     `k_disagrees` -- see `joint_background`) are the ones to check before trusting
     lambda or a distance from this engine.
+
+    Returns `deer_invert`'s dict shape, `noise_level` included.
     """
     _require_scipy()
     t, V, _n_pre = _crop_pre_zero(t, V, policy=pre_zero)
@@ -1304,6 +1309,7 @@ def deer_invert_joint(t, V, r=None, bg_start=None, bg_end=None, dim=3.0,
             'ci_kind': 'noise_fixed_bg', 'echo_head': head,
             'r_alias': float(r_alias),
             'l_curve': lc, 'background': bg, 'lambda': lam,
+            'noise_level': float(_tail_noise(t, bg['V_norm'])),
             'k': float(k), 'dim': float(d), 'engine': 'joint'}
 
 
@@ -1856,14 +1862,28 @@ def residual_whiteness(resid, max_lag=None):
     """Residual-whiteness goodness-of-fit diagnostic (DeerLab-style).
 
     An adequate DEER fit leaves a WHITE (uncorrelated) residual; a structured,
-    *oscillating* residual is the hallmark of a distance distribution that has
-    not captured all the dipolar modulation -- typically an over-smoothed (too
-    broad) P(r) at an over-regularized cutoff, but also missing dipolar pathways
-    or orientation selection. Such model inadequacy shows up as autocorrelation
-    in the residual even when its amplitude already matches the noise level (so
-    the discrepancy principle alone cannot see it). See Edwards & Stoll, J. Magn.
-    Reson. 288 (2018) 58; Fabregas Ibanez et al., Magn. Reson. 1 (2020) 209
-    (DeerLab reports exactly this via the Durbin-Watson statistic).
+    *oscillating* residual is classically read as a distance distribution that has
+    not captured all the dipolar modulation -- an over-smoothed (too broad) P(r)
+    at an over-regularized cutoff, missing dipolar pathways, or orientation
+    selection. Such model inadequacy shows up as autocorrelation in the residual
+    even when its amplitude already matches the noise level (so the discrepancy
+    principle alone cannot see it). See Edwards & Stoll, J. Magn. Reson. 288
+    (2018) 58; Fabregas Ibanez et al., Magn. Reson. 1 (2020) 209 (DeerLab reports
+    exactly this via the Durbin-Watson statistic).
+
+    That reading is NOT the only one, and on a long trace it is usually the wrong
+    one: once the late part of the trace is noise-dominated, the fitted peak's own
+    dipolar frequency keeps ringing in the MODEL where the data no longer shows
+    it, and data-minus-model is coherent by construction with nothing inadequate
+    about the fit. Measured on the YopO ring-test `sample1_labB` at that lab's own
+    recipe, where the 4-12 MHz model amplitude is 1.6x the data's: raising alpha
+    32x moves it -14 % (and costs 18 % on the full-trace residual), broadening
+    P(r) by 0.35 nm moves it -25 % at 3x that cost, and the lab's whole background
+    validation grid (start 1/3-2/3 x dimension 2-3) moves it +-5 %. DeerLab 1.2
+    reproduces the same excess at 1.58x on the same trace, so it is not an
+    artifact of this implementation either. Before acting on a `structured`
+    verdict, check whether the data itself carries the line: past 2 us labB's does
+    not, at 0.32 sigma against a white-noise 95th percentile of 0.31.
 
     Returns a dict:
       durbin_watson : DW = sum (e_i - e_{i-1})^2 / sum e_i^2, in [0, 4]; ~2 = white,
@@ -2031,7 +2051,7 @@ def deer_invert_mellin(t, V, r=None, bg_start=None, bg_end=None, dim=3.0,
                        n_mc=0, ci_z=1.96, seed=0,
                        taumax_method='penalty', wiener=0.0,
                        parab_tol_min=0.01,
-                       fit_rmin_abs=2.0, fit_rmin_width=0.5,
+                       fit_rmin_abs=2.1, fit_rmin_width=1.0,
                        signed_fit=True, taper_short=True, pre_zero='even_fold',
                        clamp_alias=True,
                        **_ignored):
@@ -2173,9 +2193,18 @@ def deer_invert_mellin(t, V, r=None, bg_start=None, bg_end=None, dim=3.0,
     near t=0"), which also makes the F_fit echo top decay too fast; a raised cosine
     attenuates it without deleting a genuine short-r peak, and the area
     re-normalization returns the stolen area to the real peaks. Its window is
-    ABSOLUTE: it ramps from the grid bottom to at most `fit_rmin_abs` nm (the limit
-    below which a DEER distance is not meaningful anyway) over at most
-    `fit_rmin_width` nm, and vanishes on a grid starting above `fit_rmin_abs`. It
+    ABSOLUTE: it ramps from the grid bottom to at most `fit_rmin_abs` nm over at
+    most `fit_rmin_width` nm, and vanishes on a grid starting above
+    `fit_rmin_abs`. Neither is a minimum distance -- the grid bottom is, and P(r)
+    below `fit_rmin_abs` is attenuated rather than cut (a hard floor there is
+    measurably worse). `fit_rmin_abs` is CALIBRATION, not physics: 2.0 nm was
+    chosen as the limit below which a DEER distance is not meaningful anyway, and
+    2.1 is simply where the corpus puts it -- at 2.0 the modelled echo top runs
+    +0.32 sigma above the data, at 2.2 it overshoots to -0.51, and the crossing is
+    at 2.1, which also raises the synthetic overlap (0.8793 -> 0.8810, 142 of 156
+    rows better). 2.2 is the better overlap (0.8829) and the worse forward fit; the
+    echo-top bias decided it. `fit_rmin_width` only caps the ramp, so it has to
+    leave room for `fit_rmin_abs - r[0]` or the setting is inert. It
     used to be a fraction of the r range, which made the reported mean distance a
     function of the user's r_max (2.554 -> 3.170 nm on one trace over r_max 6 -> 20)
     and kept tapering into grids that already start above the unreliable region.
@@ -2451,10 +2480,7 @@ def deer_invert_mellin(t, V, r=None, bg_start=None, bg_end=None, dim=3.0,
     tail = pos & (t > (t[pos][0] + 0.7*(t[-1] - t[pos][0]))) if pos.any() else pos
     sigma_noise = (float(np.std((Vn - vfit)[tail]))
                    if np.count_nonzero(tail) > 2 else float('nan'))
-    # residual-whiteness goodness-of-fit: a structured/oscillating residual flags
-    # an over-smoothed P(r) that has not captured all the dipolar modulation, even
-    # when sigma_fit already matches the noise floor (the discrepancy is blind to
-    # this). See residual_whiteness().
+    # residual whiteness; sigma_fit at the noise floor does not imply it
     whiteness = (residual_whiteness((Vn - vfit)[pos])
                  if pos.any() and np.count_nonzero(pos) >= 4 else None)
 

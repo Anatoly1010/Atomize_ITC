@@ -49,6 +49,69 @@ the archive session that shipped it.
 
 ## Recently landed
 
+- **`resid-band` — the residual view had no noise band on the Tikhonov engines,
+  and the wrong one everywhere else** (`deer.py` + `deer_analysis.py`,
+  2026-08-14). **UNCOMMITTED and NOT ported.** Three parts, all display-side; no
+  estimator moves (λ and r_peak on `sample1_labB` are unchanged to 4 decimals on
+  all four engines).
+
+  1. **`deer_invert` and `deer_invert_joint` now return `noise_level`.** The band
+     at `deer_analysis.py:2987` needs `noise_level` or `sigma_noise`; only the
+     Mellin and gauss paths supplied either, so on `sequential` and `joint` — the
+     default engine — **no band was drawn at all** and the residual had no scale.
+     One `_tail_noise(t, bg['V_norm'])` per return dict, mirroring `deer.py:2764`.
+     Reported only, never fed back into the fit. On labB it reads 0.001294 against
+     a point-to-point 0.001192, i.e. **1.08x** — the estimator is honest here and
+     the harness README's tail-drift concern does not bite on this trace.
+  2. **A second band at ±σ/√w for the smoothed overlay.** The view draws the raw
+     residual *and* a boxcar-smoothed "coherent" curve, and the eye follows the
+     smooth one — but the only band was ±σ, which belongs to the raw trace. On
+     labB `w = 13`, so the band was **√13 = 3.6x too wide** for the curve being
+     judged. Measured there: raw residual 1.19 σ, smoothed 1.23 σ/√w on `joint`
+     (1.5 on Mellin) — mildly structured, but nothing on screen distinguished 1.2
+     from 12. Also trims the smoothed curve by `w` at each end, since `mode='same'`
+     zero-pads and dragged those points toward zero — spuriously good exactly where
+     a band invites the reader to look.
+  3. **The interpretation text no longer names a cause that is ruled out.** Four
+     sites read a coherent oscillation as an over-smoothed P(r); the sweeps above
+     say α, broadening and the background grid all fail to move it. The
+     `residual_whiteness` docstring keeps the classical reading and both citations,
+     then states the case it misses with the numbers; the GUI's `structured`
+     verdict now says structured ≠ over-smoothed and points at the σ/√w band before
+     α or the background; the view tooltip explains that each curve has its own
+     band.
+
+  Gate: `py_compile` both files; λ / r_peak unchanged on all four engines
+  (0.3786/2.163, 0.3724/2.163, 0.3759/2.112, 0.3833/2.316); `noise_level` present
+  on 4/4 engines (was 2/4); `gui_smoke_deer.py` **PASS** with 7 curves; an
+  offscreen Tikhonov render **PASS** (`engine joint`, `noise_level 0.001315`, both
+  bands drawn).
+
+- **`labBC-xcheck` — our engines against DeerLab 1.2 on each lab's own published
+  recipe** (harness only, `deer_benchmark/xcheck_labBC.py`, 2026-08-14). Sample 1
+  is the ring test's sample "A" (`sample1_labG.DSC` names it "YopO Probe A"). The
+  `*_bckg.dat` files are each lab's zero-time-corrected normalized trace with
+  THEIR OWN (1−λ)B in column 2 — labB's starts at exactly −120 ns, its stated zero
+  time — but neither carries the end cut, so the harness applies it.
+
+  **labB** (t₀ 120 ns, 800 ns cut, hom-3D, bg 1/3), lab's own λ = **0.382**:
+  ours `sequential` 0.379 / `joint` 0.372 / `mellin` 0.376 / `gauss` 0.383,
+  **DeerLab 0.378** — every method inside 0.011 of the lab. P(r) overlap against
+  DeerLab **0.907–0.946**, best for `joint` (0.946), which is the like-for-like
+  engine since both co-fit the background. **labC** (cut at 3200 ns), lab's own
+  λ = 0.349: ours 0.306–0.348, DeerLab 0.332, overlap **0.896–0.982** (again
+  `joint` best). **Do not read labC's residual numbers** — after its cut only
+  1.2 µs remains past 2 µs and the white-noise floor there (median 0.467 σ) is
+  above both the data (0.298) and every model (0.104–0.153).
+
+  **DeerLab gotcha worth keeping:** passing `experiment=ex_4pdeer(tau1, tau2)` on
+  these traces **breaks the fit**. It primes pathway 1's reference time from τ₁ on
+  the assumption that `t` is the raw pulse-position axis; these traces are already
+  zero-time corrected, so on labC it ran away to **λ = 0.112, r_mean 6.21 nm**
+  against 0.335 / 2.54 for our Mellin on the same trace. With the reference time
+  free from a zero prior it converges to 5e-05 µs. Freeze it at 0 — correct here,
+  and it takes labB from >20 min to **193 s**.
+
 - **`s7q` — the Mellin engine was inverting on a truncated distance grid**
   (`deer.py` + `deer_analysis.py`, 2026-08-13). **UNCOMMITTED, and gated only at
   the first extension constant — see *Pending — do first*.**
@@ -413,29 +476,133 @@ Ranked, from the backlog below:
 Open findings. Each carries its own measurement in the archive / `REVIEW_S5`.
 None needs another review round; they need a fix and a gate.
 
-**Real-data residuals (opened 2026-08-13, `mel/r10_osc.py`):**
-- **Both engines leave the SAME coherent oscillation in the long-t residual on
-  sample 1.** Past t = 2 us the sample-1 ring-test traces carry a periodic residual
-  that Mellin and Tikhonov-joint reproduce to within one FFT bin of each other on
-  the same trace — so it is in the DATA, not in either estimator, and no amount of
-  engine work will remove it. Dominant frequency across labs B/D/E/F (and C raw):
-  **5.1-6.9 MHz raw, 5.9-7.1 MHz at the standing 2/80 trim**, i.e. a period of
-  0.14-0.20 us. Amplitude is trace-dependent: **labD 2.31 / 2.34 sigma** (Mellin /
-  joint) and **labE 2.30 / 2.14**, against labB 0.90 / 0.88 and labF 0.91 / 0.84.
-  It is sample-1-specific: on `sample2_labB`, `sample3_labB` and `sample4_labB` the
-  two engines pick *different* dominant peaks (Mellin 0.65-0.81 MHz against joint
-  12.6-39.2 MHz) at 0.2-0.5 sigma, which is what noise looks like, not a shared
-  oscillation. `sample1_labA` and `_labG` are too short to judge past 2 us, and the
-  trim leaves `labC` with only 36 points there — do not read those four rows.
-  Two candidate explanations, neither tested: **(a) nuclear modulation** (ESEEM)
-  surviving the background division, or **(b) an unfitted short-r dipolar
-  component** — 5-7 MHz maps to `r = (nu_dd/f)^(1/3)` = **1.96-2.16 nm**, which is
-  inside the reported grid, so if it is (b) both engines are missing real mass at
-  short r. Deciding between them is cheap (the frequency is field-dependent under
-  (a) and not under (b), and the ring test spans several spectrometers) and it
-  should be decided before anything else in this file is blamed for a long-t
-  residual. NOTE the 28-trace corpus residual numbers quoted throughout this file
-  are dominated by exactly this band on the sample-1 traces.
+**Real-data residuals — the 2026-08-13 item is CLOSED and was wrong in both
+directions (2026-08-14, `diag_long_t_osc.py` / `diag_short_r_arms.py` /
+`xcheck_labBC.py`).** Its two candidate explanations were (a) ESEEM and (b) an
+unfitted short-r dipolar component, with "the frequency is field-dependent under
+(a)" as the discriminator. Neither survives, and neither does the discriminator.
+
+- **The filed discriminator cannot be run on this corpus.** Every ring-test lab
+  is Q-band: `A1CT` spans **1.1860–1.2291 T (3.5 %)** against a measured line
+  spread of 1.15–13.68 MHz. The field lever arm is ~1000x too short. The `.DSC`
+  files sitting unread beside the `.dat` traces carry this, and much more.
+- **(a) ESEEM is out, on two independent tests.** The amplitude at each trace's
+  own ²H Larmor line is a **sample** property, not a **lab** property —
+  sample1 0.34/0.15/0.63/0.99/0.54/0.62 σ across labs A–F, sample2 ~0.32, samples
+  3 and 4 ~0.12 — and `labF` is the clean control, same lab and same `dt` = 8 ns
+  for all four mutants at 0.62 / 0.16 / — / 0.26. And ²H was **designed out of the
+  acquisition**: 26 of 27 traces run `m = 8` observer-τ steps of `d31 = 16 ns` =
+  **128 ns**, against a ²H Larmor period of **124.5–129.0 ns** at these fields, so
+  the residual Dirichlet suppression is 0.2–2.8 % — and the observed amplitude does
+  not follow it (**corr = −0.07** over 26 traces; ESEEM needs it strongly positive).
+- **(b) is out as filed, and the sign is the interesting part.** Splitting the
+  spectrum of the DATA's form factor from the MODEL's, past 2 µs: over 27 traces
+  the model carries **less** 4–12 MHz than the data (0.200 vs 0.385 σ), so nothing
+  is generally "missing". On sample 1 alone the ratio is **0.95**, and on
+  `labB`/`labE`/`labF` the model carries **more** than the data — the fit ripples
+  where the trace does not.
+- **"Both engines reproduce it to within one FFT bin" is too strong**: **4 of 10**
+  strong lines agree within 0.5 MHz. The filed 5.1–6.9 MHz moves to ~6–8 MHz once
+  the trace decay is Hann-windowed out of the periodogram.
+- **What it actually is, from labB at labB's own published recipe** (t₀ 120 ns,
+  800 ns cut, hom-3D, bg at 1/3): the data's own 4–12 MHz amplitude is **0.321 σ
+  against a white-noise 95th percentile of 0.312** — i.e. *not significant*; the
+  earlier evidence for a real data oscillation was a periodogram peak/median ratio
+  of 7.3, which is not a significance test. The model's is 0.51–0.60 σ and a model
+  has no noise, so it is all structure: the fitted 2.16 nm peak's own
+  ν_dd = 5.1 MHz still ringing where the data is noise-dominated. Data-minus-model
+  is then coherent **by construction**, with nothing inadequate about the fit.
+- **It is not suppressible, and that is measured, not assumed.** α over **32x**:
+  −14 % on the ripple, +18 % on the full-trace residual. Direct P(r) broadening to
+  w = 0.35 nm: −25 % at **3x** the full-trace residual (and the peak is already
+  FWHM 0.867 nm — there is no narrow feature to blame). Deleting all P(r) below
+  2 nm: −19 % joint / −30 % Mellin, with 0.41–0.47 σ surviving. labB's entire
+  background validation grid (start 1/3–2/3 x dimension 2–3, 18 cells): **±5 %**.
+  Damping it means changing the FORWARD MODEL, not the inversion.
+- **DeerLab 1.2 does the same thing**, at 1.58x data against our joint 1.63x, so
+  it is not an artifact of this implementation. See the cross-check entry below.
+- **NOTE** the 28-trace corpus residual numbers quoted throughout this file are
+  dominated by this band on the sample-1 traces — that part of the old item
+  stands. `sample1_labD` may still be a genuine data oscillation (0.87 σ over 469
+  points) and is NOT the same case as labB; the old item lumped them.
+
+  *Follow-up, `diag_mellin_levers.py` 2026-08-14:* **"Mellin has an excess ripple"
+  does not generalize, and one of the two candidate levers is inert.** Over the six
+  usable sample-1 traces at the GUI's own auto window the model's 4-12 MHz
+  amplitude is **0.585 σ for Mellin against 0.623 for joint** — Mellin is the
+  *lower* of the two. The 0.590-vs-0.516 excess is specific to **labB at labB's
+  recipe**. What does generalize is that Mellin fits worse overall: rms 1.598
+  (t > 2 µs) / 1.605 (all) against joint's 1.337 / 1.282.
+
+  - **`wiener` is a dead lever here.** 0.01 / 0.03 / 0.10 / 0.30 move the ripple
+    **−0.1 / −0.2 / −0.6 / −1.7 %**. It damps the inverse filter's noise gain, and
+    the ripple is not propagated noise, so there is nothing for it to bite on. Do
+    not re-try it for this.
+  - **`fit_rmin_abs` works on the ripple and the cost is superlinear.** 2.2 →
+    −18.5 % ripple at rms_all 1.605 → **1.864** (+16 %); 2.5 → −38.4 % at **4.285**
+    (2.7x); 3.0 → −49.6 % at **9.873** (6x). Only 2.2 is arguably a trade rather
+    than a wreck. Note `fit_rmin_width` alone cannot lengthen the taper — the
+    window is `[r[0], r[0] + min(fit_rmin_abs - r[0], fit_rmin_width)]`, so on the
+    GUI's 1.5 nm grid bottom `fit_rmin_abs` is the binding bound.
+
+  **And then `fit_rmin_abs` turned out to be an accuracy fix, not a trade.** The
+  synthetic gate at 2.2 (156 rows): overlap **0.8793 → 0.8829**, **147 better / 3
+  worse / 6 same**, every condition up (easy 0.9230 → 0.9249, hard 0.8564 →
+  0.8603, nobg 0.8586 → 0.8635), residual slightly down, and no case changed its
+  δ. So the taper window has been too short all along and the "+16 % full-trace
+  residual" that looked like the price is not an accuracy cost.
+
+  **2.1 is the operating point, not 2.2** (`bench_resid_real`, 28 traces, regional):
+
+  | variant | head | head mean | post | pre | full | DW |
+  |---|---|---|---|---|---|---|
+  | shipped (2.0) | 2.576 | **+0.32** | 1.639 | 4.717 | 1.891 | 1.106 |
+  | **2.1** | **2.417** | **+0.01** | 1.638 | 4.893 | 1.913 | 1.100 |
+  | 2.2 | 2.504 | **−0.51** | 1.696 | 5.317 | 2.020 | 1.054 |
+
+  The head **mean** — the coherent echo-top offset, the systematic that matters —
+  crosses zero between 2.1 and 2.2, so 2.1 is near an optimum rather than a
+  compromise: it removes the shipped +0.32 σ bias where 2.2 overshoots to −0.51 σ.
+  At 2.1 the fitted region is untouched (post 1.638 vs 1.639, **6 better / 3
+  worse**) and head rms is the best of the three; the full-trace +1.2 % is entirely
+  the pre-t₀ block (4.717 → 4.893), which is the echo-symmetry display quantity and
+  not a fit residual (`README_resid.md` rule 3).
+
+  **Both values clear the synthetic gate, monotonically** (156 rows): 2.1 gives
+  **0.8793 → 0.8810**, 142 better / 3 worse / 11 same; 2.2 gives **0.8829**, 147 /
+  3 / 6. So 2.2 is the better *accuracy* setting and 2.1 the better *forward-fit*
+  one, and **2.1 is what shipped** — the overlap difference is 0.0019 on a
+  synthetic corpus, while 2.2's −0.51 σ head-mean bias is a coherent systematic on
+  every real trace, and this file has rejected changes for exactly that before
+  (`s7q`: "running coherently UNDER the data across the head").
+
+  **`fit_rmin_abs` is not a minimum distance**, and the entry above is easy to
+  misread as one. The grid bottom is the minimum (raised further by `clamp_alias`
+  to `(4·nu_dd·dt)^(1/3)` — 0.941 nm at dt = 4 ns, 1.185 at 8, 1.493 at 16, 1.882
+  at 32, so on sample 1 it is not binding against the GUI's 1.5 nm). What
+  `fit_rmin_abs` sets is the top of the raised-cosine ramp, which runs from **0 at
+  the grid bottom** to 1; mass below it is attenuated, not cut. A hard floor there
+  is the already-rejected `rmin-2.0` (corpus 1.671 → 2.082). Weights on the GUI
+  grid: at r = 1.9 nm, **0.905 (2.0) / 0.750 (2.1) / 0.611 (2.2)**; at 2.0 nm,
+  1.000 / 0.933 / 0.812. Sample 1's peak sits at 2.11-2.16 nm with FWHM 0.867, so
+  what the ramp bites is its **short-r flank**, not the peak (0.992 even at 2.2) —
+  which is the mechanism behind the head-mean sign flip: cut too much of the flank
+  and F_fit loses its fast-decaying kernels, decays too slowly, and sits above the
+  data at the echo top.
+
+  **`fit_rmin_width` had to move too, or the change is inert.** The window is
+  `[r[0], r[0] + min(fit_rmin_abs - r[0], fit_rmin_width)]`, so at the shipped
+  width 0.5 a `fit_rmin_abs` of 2.1 on a 1.5 nm grid still gives the OLD ramp
+  [1.5, 2.0] exactly. Both defaults moved: **2.0/0.5 → 2.1/1.0**, which is what
+  both benches ran. Both benches used a 1.5 nm grid bottom, so grids starting
+  lower are extrapolation — the width cap now binds only below r[0] = 1.1 nm.
+
+  **Landed 2026-08-14, UNCOMMITTED and NOT ported.** Gate: `py_compile`; defaults
+  read 2.1 / 1.0; no caller anywhere in the repo pins either, so the GUI and
+  `epr_auto` inherit it; on labB λ 0.3759 and r_peak 2.112 are unchanged with
+  P(r < 2 nm) 0.0988 → 0.0856 and r_mean 2.623 → 2.636; `gui_smoke_deer.py`
+  **PASS**. The `deer.md` prose says the constant is calibration and that neither
+  parameter is a minimum distance.
 
 **Multi-Gaussian (S5):**
 - **Report that the component count is unstable across the background sweep.**

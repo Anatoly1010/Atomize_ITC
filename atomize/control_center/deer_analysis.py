@@ -154,6 +154,7 @@ C_DATA = (120, 170, 255)     # V(t) / form factor — blue
 C_IM   = (220, 120, 220)     # imaginary (Q) channel after phasing — magenta
 C_BG   = (230, 140, 90)      # fitted background — orange
 C_FIT  = (211, 194, 78)      # model fit / P(r) / L-curve — gold
+C_BAND = (125, 220, 125)     # noise band of the smoothed residual — green
 
 
 class _DeerWorker(QThread):
@@ -405,7 +406,11 @@ class MainWindow(QMainWindow):
             'separate curve: no engine fits below the zero time, and the model '
             'is exactly even in t, so what is shown there is the fitted curve '
             'read at |t|. A real echo is never exactly even about t₀, and that '
-            'asymmetry — not the inversion — is what that curve mostly measures.')
+            'asymmetry — not the inversion — is what that curve mostly measures. '
+            'Two noise bands are drawn, one per curve: ±σ judges the raw '
+            'residual, ±σ/√w the smoothed one, w being the boxcar width. Judge '
+            'each curve against its own band — the smoothed curve averages w '
+            'points, so ±σ is √w too wide for it.')
         self.deer_show.currentIndexChanged.connect(self._deer_rerender)
         g.addWidget(gui_forms.label('Show'), 2, 0)
         g.addWidget(self.deer_show, 2, 1, 1, 2)
@@ -2516,10 +2521,7 @@ class MainWindow(QMainWindow):
         F, Ff = res['form_factor'], self._fit_curve(res)
         ss_tot = float(np.sum((F - F.mean()) ** 2)) or 1.0
         r2 = 1 - float(np.sum((F - Ff) ** 2)) / ss_tot
-        # residual-whiteness goodness of fit (Durbin-Watson + lag-1 autocorrelation):
-        # a structured/oscillating residual flags an over-smoothed P(r) that has not
-        # captured all the dipolar modulation. Computed engine-agnostically from the
-        # V-space residual so it works for Tikhonov / joint / Mellin.
+        # residual whiteness (Durbin-Watson + lag-1), engine-agnostic in V space
         wht = self._whiteness_of(res)
         if wht is not None and np.isfinite(wht['durbin_watson']):
             wv = ('white' if wht['white'] else 'structured')
@@ -2529,6 +2531,12 @@ class MainWindow(QMainWindow):
                        and abs(off) > 0.25 else '')
             wht_txt = (f'<br>resid: DW = {wht["durbin_watson"]:.2f}, '
                        f'r₁ = {wht["acf1"]:+.2f}{off_txt} <i>({wv})</i>')
+            if not wht['white']:
+                wht_txt += ('<br><i>structured ≠ over-smoothed: on a trace whose '
+                            'tail is noise-dominated the fitted peak keeps ringing '
+                            'in the model where the data no longer does. Check the '
+                            'Residual view against the σ/√w band before changing α '
+                            'or the background.</i>')
         else:
             wht_txt = ''
         # every scalar in the row comes from ONE density, the central trial
@@ -2952,18 +2960,16 @@ class MainWindow(QMainWindow):
             self._show_bg_cursor(True)
             self._show_lcurve_marker(False)
         elif view == 'Residual':
-            # plain time-domain residual (data − fit), V space, with the ±σ noise
-            # band: a flat residual inside the band ⇒ adequate fit; a coherent
-            # oscillation ⇒ unmodelled dipolar modulation (over-smoothed P(r)).
+            # residual (data − fit) in V space, one noise band per curve
             v_fit = bg['B'] * ((1 - res['lambda']) + res['lambda'] * ff)
             resid = np.asarray(bg['V_norm'], float) - v_fit
-            # smoothed overlay exposes the coherent (systematic) part of the
-            # residual — averaging out the white noise; a flat smoothed line ⇒
-            # white, an oscillation ⇒ unmodelled dipolar modulation.
             wn = int(max(5, len(resid) // 50)) | 1
             resid_sm = np.convolve(resid, np.ones(wn) / wn, mode='same')
+            # 'same' zero-pads, dragging the first/last wn points toward zero
+            edge = slice(wn, max(len(resid_sm) - wn, wn + 1))
             curves = [('residual (V − fit)', t_disp, resid, C_DATA, 1),
-                      ('smoothed (coherent)', t_disp, resid_sm, C_FIT, 2)]
+                      ('smoothed (coherent)', t_disp[edge], resid_sm[edge],
+                       C_FIT, 2)]
             # The pre-t0 block is NOT a fit residual and is drawn apart from one.
             # No engine fits below t0 (they crop those samples), and the model is
             # exactly even in t, so the curve there is the positive fit read at |t|.
@@ -2984,18 +2990,20 @@ class MainWindow(QMainWindow):
                 sig, sig_name = res.get('sigma_noise'), 'σ tail residual'
             if sig is not None and np.isfinite(sig) and sig > 0:
                 ones = np.ones_like(t_r)
+                sig_sm = sig / np.sqrt(wn)
                 curves += [(f'+{sig_name}', t_r, sig * ones, C_BG, 1),
-                           (f'−{sig_name}', t_r, -sig * ones, C_BG, 1)]
+                           (f'−{sig_name}', t_r, -sig * ones, C_BG, 1),
+                           (f'+{sig_name}/√w (smoothed)', t_r, sig_sm * ones,
+                            C_BAND, 1),
+                           (f'−{sig_name}/√w (smoothed)', t_r, -sig_sm * ones,
+                            C_BAND, 1)]
             self._repaint(self.p_time, self.time_legend, self._time_items, curves,
                           f'Time ({tunit})', '_time_key',
                           left_label='residual', force=True)
             self._show_bg_cursor(True)
             self._show_lcurve_marker(False)
         elif view == 'Residual ACF':
-            # residual-whiteness autocorrelogram: ACF of the fit residual vs lag,
-            # with the ±1.96/√N white-noise band. Bars inside the band ⇒ white
-            # (adequate fit); a decaying/oscillating ACF reaching past it ⇒ the
-            # residual is structured (over-smoothed P(r) / unmodelled modulation).
+            # ACF of the fit residual vs lag, with the ±1.96/√N white-noise band
             self._show_bg_cursor(False)
             self._show_lcurve_marker(False)
             wht = self._whiteness_of(res)
