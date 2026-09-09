@@ -2587,14 +2587,26 @@ class MainWindow(QMainWindow):
         overlap in time (DETECTION/LASER may legitimately overlap MW).
         """
         valid = {'+x', '-x', '+y', '-y', 'x', 'y', 'i', '-i', '+', '-', '0'}
+        coeff = re.compile(r'[+-]?\d+\.?\d*')
         simple_lens = []          # (i, nsteps) for plain cycled lists
         mw_windows = []           # (i, start, end) for MW pulses
+        receiver = None
         for i in range(1, 10):
             length = float(str(getattr(self, f'p{i}_length')).split(' ')[0])
             if length == 0:
                 continue
+            if receiver is None:
+                receiver = i
             raw = getattr(self, f'Phase_{i}').toPlainText().strip()
-            if '[' not in raw and '(' not in raw:
+            if '[' in raw or '(' in raw:
+                pass
+            elif i == receiver and not any(c in raw.lower() for c in 'xy'):
+                # coherence-order coefficients, one per pulse, not a phase list
+                for t in raw.split(','):
+                    t = t.strip()
+                    if t and coeff.fullmatch(t) is None:
+                        return f'unrecognized receiver coefficient "{t}" in pulse P{i}.'
+            else:
                 toks = [t.strip().lower().replace(' ', '')
                         for t in raw.split(',') if t.strip()]
                 for t in toks:
