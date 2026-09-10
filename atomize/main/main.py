@@ -216,8 +216,9 @@ class MyExtendedNameList(NameList):
 
         data_modified = temp.copy()
 
-        data_modified[:, 0] = data_modified[:, 0] - data_modified[:, 0]
+        # same two-step subtraction as tr_control: reference row, then time-zero column
         data_modified[:, :] = data_modified[:, :] - data_modified[0, :]
+        data_modified[:, :] = data_modified[:, :] - data_modified[:, [0]]
 
         # row 0 is the off-resonance reference the subtraction above used, not a
         # field point; the live plot drops it too, and dropping it here puts
