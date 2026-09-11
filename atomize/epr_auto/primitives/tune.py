@@ -326,17 +326,66 @@ def apply_calibration(session, preset, mapping=None):
 
 # ------------------------------------------------------------ echo window
 
-def echo_window(session, preset, factor=2.0, sweeps=3):
+# rejected candidates carried into the log / judge details (strongest first)
+_MAX_REJECTED = 5
+
+
+def _find_echo(t, mag, search_from_ns=0.0, min_width_ns=0.0):
+    """Echo in a smoothed |V| trace: candidates are the runs of samples above
+    the median floor at or after search_from_ns, taken strongest first; the
+    winner is the first whose FWHM reaches min_width_ns. A narrower one is a
+    transient (the receiver defence pulse ends a few samples into the trace),
+    not an echo. Returns (center, fwhm, resolved, rejected) — the rejected
+    entries are the stronger-but-too-narrow candidates; center is None when
+    none of them is wide enough."""
+    t, mag = np.asarray(t, dtype=float), np.asarray(mag, dtype=float)
+    floor = float(np.median(mag))      # echo occupies a minority of the window
+    idx = np.nonzero((mag > floor) & (t >= float(search_from_ns)))[0]
+    cands = []
+    for grp in np.split(idx, np.nonzero(np.diff(idx) > 1)[0] + 1):
+        if not grp.size:
+            continue
+        c_idx = int(grp[int(np.argmax(mag[grp]))])
+        peak = float(mag[c_idx])
+        half = floor + (peak - floor) / 2.0
+        below_l = np.nonzero(mag[:c_idx] < half)[0]
+        below_r = np.nonzero(mag[c_idx:] < half)[0]
+        l_idx = int(below_l[-1]) + 1 if below_l.size else 0
+        r_idx = c_idx + int(below_r[0]) - 1 if below_r.size else len(t) - 1
+        # resolved: an FWHM edge on the trace boundary = echo cut off
+        cands.append((peak, float(t[c_idx]), float(t[r_idx] - t[l_idx]),
+                      below_l.size > 0 and below_r.size > 0))
+    rejected = []
+    for _, center, fwhm, resolved in sorted(cands, reverse=True):
+        if fwhm >= float(min_width_ns):
+            return center, fwhm, resolved, rejected
+        if len(rejected) < _MAX_REJECTED:
+            rejected.append({'center_ns': round(center, 1),
+                             'fwhm_ns': round(fwhm, 1)})
+    return None, None, False, rejected
+
+
+def echo_window(session, preset, factor=2.0, sweeps=3, search_from='200 ns',
+                min_width='20 ns'):
     """Tune the integration window from an averaged echo trace (engine
     acquire_trace on the Worker's dig_on preview path, accumulating mode):
     center = max of the smoothed |V(t)|, width = FWHM * factor, edges
     rounded outward onto the ADC grid (0.4 ns * decimation) and clamped to
     the detection window. Stored relative to the DETECTION pulse start and
     applied to every later build via the session overrides — MUST run
-    before tune.auto_phase, which integrates over this window."""
+    before tune.auto_phase, which integrates over this window.
+
+    The peak search ignores the trace before `search_from` and rejects any
+    candidate narrower than `min_width`: on this spectrometer the receiver
+    defence transient sits ~150 ns into the trace and can out-peak the echo,
+    which lands ~250-350 ns after the DETECTION start (a constant
+    ADC/detection-chain delay)."""
+    from atomize.epr_auto.params import parse_time_ns
     factor = float(factor)
     if factor < 1.0:
         raise ValueError(f'factor must be >= 1 (got {factor})')
+    search_from_ns = parse_time_ns(search_from)
+    min_width_ns = parse_time_ns(min_width)
     pre, wa = _build(session, preset, exp_name='EchoWindow')  # forces iq_cor 1
     executor.acquire_trace(wa, script_test=True)
     if session.test:
@@ -358,38 +407,42 @@ def echo_window(session, preset, factor=2.0, sweeps=3):
     tpp = 0.4 * pre.decimation         # ADC grid after decimation
     mag = _smooth(np.abs(sig), max(3, round(3.0 / tpp)) | 1)  # ~3 ns box, not trace-scaled
 
-    c_idx = int(np.argmax(mag))
-    peak = float(mag[c_idx])
-    floor = float(np.median(mag))      # echo occupies a minority of the window
-    half = floor + (peak - floor) / 2.0
-    below_l = np.nonzero(mag[:c_idx] < half)[0]
-    below_r = np.nonzero(mag[c_idx:] < half)[0]
-    l_idx = int(below_l[-1]) + 1 if below_l.size else 0
-    r_idx = c_idx + int(below_r[0]) - 1 if below_r.size else len(t) - 1
-    center = float(t[c_idx])
-    fwhm = float(t[r_idx] - t[l_idx])
-    # the echo must be fully resolved inside the trace: an FWHM edge on the
-    # trace boundary means the echo is cut by the acquisition window
-    resolved = below_l.size > 0 and below_r.size > 0
+    center, fwhm, resolved, rejected = _find_echo(t, mag, search_from_ns,
+                                                  min_width_ns)
+    for r in rejected:
+        session.log(f"      rejected a {r['fwhm_ns']} ns candidate at "
+                    f"{r['center_ns']} ns (narrower than {min_width} — "
+                    'transient, not an echo)')
 
     t_end = float(t[-1])
-    win_l = max(0.0, math.floor((center - fwhm * factor / 2) / tpp) * tpp)
-    win_r = min(t_end, math.ceil((center + fwhm * factor / 2) / tpp) * tpp)
-    win_l, win_r = round(win_l, 1), round(win_r, 1)
-
     path = session.save_path('echo_window')
     np.savetxt(path, np.column_stack((t, i, q)), delimiter=',',
                header='time_ns,i_mv,q_mv')
+
+    if center is None:
+        reason = (f'no candidate wider than {min_width} after {search_from} '
+                  f'in a {round(t_end, 1)} ns trace')
+        return ({'win_left_ns': None, 'win_right_ns': None, 'center_ns': None,
+                 'fwhm_ns': None, 'data_file': path},
+                [JudgeReport('echo_in_trace', False, 0.0,
+                             {'reason': reason, 'rejected': rejected,
+                              'trace_ns': round(t_end, 1)}),
+                 echo_snr(sig)])
+
+    win_l = max(0.0, math.floor((center - fwhm * factor / 2) / tpp) * tpp)
+    win_r = min(t_end, math.ceil((center + fwhm * factor / 2) / tpp) * tpp)
+    win_l, win_r = round(win_l, 1), round(win_r, 1)
 
     session.stage_state('echo_window', {'win_left_ns': win_l,
                                         'win_right_ns': win_r})
     result = {'win_left_ns': win_l, 'win_right_ns': win_r,
               'center_ns': round(center, 1), 'fwhm_ns': round(fwhm, 1),
               'data_file': path}
-    judges = [JudgeReport('echo_in_trace', resolved, round(fwhm, 1),
-                          {'center_ns': round(center, 1),
-                           'trace_ns': round(t_end, 1),
-                           'clamped': win_l == 0.0 or win_r == round(t_end, 1)}),
+    details = {'center_ns': round(center, 1), 'trace_ns': round(t_end, 1),
+               'clamped': win_l == 0.0 or win_r == round(t_end, 1)}
+    if rejected:
+        details['rejected'] = rejected
+    judges = [JudgeReport('echo_in_trace', resolved, round(fwhm, 1), details),
               echo_snr(sig)]
     return result, judges
 

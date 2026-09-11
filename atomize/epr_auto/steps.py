@@ -138,17 +138,30 @@ def tune_auto_phase(session, preset, points, scans, apply_cal):
                               help='window width as a multiple of the echo FWHM'),
               'sweeps': Int(min=1, default=3,
                             help='full phase cycles to average for the trace'),
+              'search_from': TimeStr(default='200 ns',
+                                     help='ignore the trace before this time — '
+                                          'the receiver defence transient sits '
+                                          '~150 ns in; on the ITC ADC the echo '
+                                          'never lands earlier than ~250 ns '
+                                          'after the DETECTION start'),
+              'min_width': TimeStr(default='20 ns',
+                                   help='reject a peak whose FWHM is below this '
+                                        'as a transient (masked out, the search '
+                                        'goes on); nothing wider left = the '
+                                        'echo_in_trace judge fails'),
               'apply_cal': CalMap(help='slot -> pi/pi2 map; none = do not patch; '
                                        'omitted = patch from the session '
                                        'pi_calibration when one exists '
                                        '(inferred from the preset amplitude '
                                        'levels), else the stored values'),
           })
-def tune_echo_window(session, preset, factor, sweeps, apply_cal):
+def tune_echo_window(session, preset, factor, sweeps, search_from, min_width,
+                     apply_cal):
     from atomize.epr_auto.primitives import tune
     preset = _apply_cal_if_any(session, preset, apply_cal)
     return _run_primitive(session, tune.echo_window,
-                          preset=preset, factor=factor, sweeps=sweeps)
+                          preset=preset, factor=factor, sweeps=sweeps,
+                          search_from=search_from, min_width=min_width)
 
 
 @register('tune.power_for_length',
@@ -306,9 +319,11 @@ def _check_edfs(params, ctx):
                          help='g-factor for the range: auto center'),
               'span': FieldStr(default='250 G',
                                help='half-width of the range: auto sweep'),
-              'offset': FieldStr(signed=True, default='0 G',
+              'offset': FieldStr(signed=True, default='-7.5 G',
                                  help='known magnet-calibration shift added to '
-                                      'the range: auto center'),
+                                      'the range: auto center (ITC BH-15: '
+                                      '-7.5 G, measured on coal 2026-09-11 at '
+                                      '9680 MHz)'),
               'target_snr': Float(min=SNR_FLOOR,
                                   help='SNR-driven scan count: scans becomes '
                                        'the ceiling; stop early once the '

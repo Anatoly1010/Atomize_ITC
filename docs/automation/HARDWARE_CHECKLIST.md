@@ -165,6 +165,18 @@ tool's preview; `echo_in_trace` + `echo_snr` PASS; trace CSV in the run
 dir. Cross-check: open the preset in the phasing GUI and eyeball the
 window against the echo. Record: center_ns, fwhm_ns, window, trace file.
 
+The peak search is gated (2026-09-11: the receiver defence transient, a
+few-sample spike ~150 ns into the trace, out-peaked the echo and the window
+came out 3.6 ns wide). `search_from` (default '200 ns') ignores the trace
+before that time and `min_width` (default '20 ns') rejects any candidate
+narrower than a real echo — the narrow one is masked out and the search
+continues on what is left; when nothing wider remains the step fails on
+`echo_in_trace` with the rejected candidates in the details. On this
+spectrometer the echo sits ~300 ns after the DETECTION start (a constant
+ADC/detection-chain delay, same as the shipped ampl_4s window 250–430 ns),
+so both defaults are comfortably clear of it. Raise `search_from` if a
+later transient appears; lower `min_width` only for a genuinely sharp echo.
+
 ## 3. tune.pi_calibration (amplitude mode) — fine cal + detection pair
 
 ```yaml
@@ -209,17 +221,19 @@ steps:
   - field.edfs:
       range: auto
       g: 2.0023           # your sample's g
-      # offset: 0 G       # fill in after the first run (see shift_g)
+      # offset: -7.5 G    # the default; re-measure with shift_g (below)
       checkpoint: true
 ```
 
 Expect: the line found inside the sweep; the result's **`shift_g` is the
-measured line-minus-predicted-center distance — write it down and put it
-into `offset:` for this setup from now on** (the magnet is not absolutely
-calibrated; this is the standing correction). Also worth one deliberate
-failure: set `g` absurdly (e.g. 4.5) and check the one span-×2 escalation
-fires, the magnet is NOT moved afterwards, and the failure diagnosis
-("flat everywhere" vs "weak line found") makes sense.
+measured line-minus-predicted-center distance** (the magnet is not
+absolutely calibrated). The standing correction for this setup, −7.5 G
+(coal, 2026-09-11, 9680 MHz), is already the `offset:` default — re-measure
+it from `shift_g` and set `offset:` explicitly if the magnet or the sample
+changes. Also worth one deliberate failure: set `g` absurdly (e.g. 4.5) and
+check the one span-×2 escalation fires, the magnet is NOT moved afterwards,
+and the failure diagnosis ("flat everywhere" vs "weak line found") makes
+sense.
 
 ## 5. temp.set / temp.wait — Lakeshore on
 
