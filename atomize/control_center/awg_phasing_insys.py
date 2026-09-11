@@ -1699,7 +1699,8 @@ class MainWindow(QMainWindow):
             "Couple this parameter across pulses. Set a per-pulse weight "
             "(No / 0.5x / 1x / 2x) in the Link row of the Pulses tab; editing "
             "the parameter on any linked pulse shifts every other linked pulse "
-            "proportionally to its weight.")
+            "proportionally to its weight. Amplitude and frequency edits stop "
+            "the whole linked group at the first limit.")
         self.Combo_link.currentTextChanged.connect(self.link_param_changed)
 
         gridLayout.addWidget(live_label, 0, 0)
@@ -1805,10 +1806,41 @@ class MainWindow(QMainWindow):
 
     def link_param_changed(self, _text = None):
         self.link_param = self.Combo_link.currentText()
+        self._link_message()
 
     def update_link_factor(self, index):
         txt = getattr(self, f"P{index}_lk").currentText()
         self.link_factor[index] = {'No': 0.0, '0.5x': 0.5, '1x': 1.0, '2x': 2.0}.get(txt, 0.0)
+        self._link_message()
+
+    def _link_message(self, text = ''):
+        """Show one temporary link notice above the live pulse list."""
+        if not hasattr(self, 'errors'):
+            return
+        previous = getattr(self, '_link_notice', '')
+        cursor = self.errors.document().find(previous) if previous else QTextCursor()
+        if not cursor.isNull() and cursor.block().text() == previous:
+            if text == previous:
+                return
+            cursor.movePosition(QTextCursor.MoveOperation.StartOfBlock)
+            if cursor.block().next().isValid():
+                cursor.movePosition(QTextCursor.MoveOperation.NextBlock, QTextCursor.MoveMode.KeepAnchor)
+            else:
+                if cursor.position() > 0:
+                    cursor.movePosition(QTextCursor.MoveOperation.PreviousCharacter)
+                cursor.movePosition(QTextCursor.MoveOperation.End, QTextCursor.MoveMode.KeepAnchor)
+            cursor.removeSelectedText()
+        self._link_notice = text
+        if not text:
+            return
+        cursor = self.errors.document().find('--- Live AWG pulse list ---')
+        if cursor.isNull():
+            self.errors.appendPlainText(text)
+        else:
+            cursor.setPosition(cursor.selectionStart())
+            cursor.insertText(text + '\n')
+            self.errors.setTextCursor(cursor)
+            self.errors.ensureCursorVisible()
 
     def link_source_changed(self, index, suffix):
         """A linkable spin-box changed: shift the other linked pulses in step."""
@@ -1831,7 +1863,28 @@ class MainWindow(QMainWindow):
         unit = delta / f_edit
         self._linking = True
         clamped = False
+        limited = False
         try:
+            if suffix in ('_cf', '_fr'):
+                for j in range(1, 10):
+                    f_j = self.link_factor.get(j, 0.0)
+                    box_j = getattr(self, f"P{j}{suffix}", None)
+                    if j == index or f_j == 0.0 or box_j is None:
+                        continue
+                    if box_j.maximum() - box_j.minimum() < 1e-9:
+                        continue
+                    lower = (box_j.minimum() - box_j.value()) / f_j
+                    upper = (box_j.maximum() - box_j.value()) / f_j
+                    unit = max(lower, min(upper, unit))
+                limited = abs(unit * f_edit - delta) > 1e-9
+                if limited:
+                    scale = 10 ** box.decimals() if isinstance(box, QDoubleSpinBox) else 1
+                    target = (prev + unit * f_edit) * scale
+                    target = math.floor(target + 1e-9) if delta > 0 else math.ceil(target - 1e-9)
+                    target /= scale
+                    box.setValue(target if isinstance(box, QDoubleSpinBox) else int(target))
+                    self._link_prev[(suffix, index)] = box.value()
+                    unit = (box.value() - prev) / f_edit
             for j in range(1, 10):
                 if j == index:
                     continue
@@ -1880,13 +1933,17 @@ class MainWindow(QMainWindow):
         finally:
             self._linking = False
 
-        if clamped:
+        if limited:
+            self._link_message('Link: the linked group reached its ' + self.link_param.lower() + ' limit.')
+        elif clamped:
             if suffix == '_cf':
-                self.message('Link: a coupled amplitude hit the 0.1-100 % limit '
+                self._link_message('Link: a coupled amplitude hit the 0.1-100 % limit '
                              'and was clamped; the link is no longer proportional.')
             else:
-                self.message('Link: a coupled value hit its limit and was clamped; '
+                self._link_message('Link: a coupled value hit its limit and was clamped; '
                              'the link is no longer proportional.')
+        else:
+            self._link_message()
 
     def x0(self):
         self.cur_x0 = self.round_and_change_no_ns(self.X0)
