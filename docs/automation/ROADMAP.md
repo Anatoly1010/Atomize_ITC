@@ -2137,3 +2137,32 @@ subagent shells have no tty and abort at the first checkpoint, as designed).
 3. The shipped calibration presets (ampl_4s 9/18 % soft pair, rabi_echo_4s)
    assume far more B1 than this resonator/vane setting delivers; per-sample
    copies in the protocol directory were the practical route.
+
+### 2026-09-11 (2) — full chain on hardware; two commits pushed
+
+- `b50b385` apply_cal on tune.auto_phase / tune.echo_window / field.edfs;
+  `f37f099` echo_window `search_from`/`min_width` gate (finding 1 above,
+  fixed) + edfs `offset` default −7.5 G. `epr-auto` entry point installed on
+  the ITC box; shell alias `epr` = `epr-auto run`.
+- **Full chain `coal_full.yaml` (9 steps, supervised) finished 9/9, all
+  judges pass:** echo_window 291.6 ns / FWHM 58 ns → auto_phase 26.9° →
+  pi_calibration (2 scans) pi 78.5 % / pi2 41.5 % (ratio 1.89) → edfs with
+  the calibrated pair: line 3444.72 G → echo_window 300.8 ns / 63.2 ns →
+  auto_phase 36.4° → pi_calibration pi 75.2 % / pi2 36.4 % (ratio 2.06) →
+  exp.t2 (80 pts × 4 scans) Tm 123 ns, β 0.81. The two calibrations agree
+  within 3 % (pi) / 5 % (pi2) at SNR 12. Tm differs from the 200-point
+  stage-5 run (205 ns, β 0.95): with the axis starting at 601.6 ns, several
+  Tm into the decay, k and β trade off and the shorter tail (2.6 vs 5.7 µs)
+  constrains the baseline less — an analysis choice (fix β, or a longer
+  tail), not a tool fault.
+- Finding 2 (dead-reckoned vane position) and finding 3 (shipped calibration
+  presets' B1 assumption) remain open.
+
+### >>> NEXT: run a protocol from the main window <<<
+
+"Run protocol" button on the EPR Endstation tab: file dialog → `epr-auto run
+<yaml>` in a QProcess (same pattern as the control-centre launchers), stdout
+routed into the in-app log, and checkpoints answered by a Continue/Abort
+dialog instead of a terminal Enter (the runner currently aborts with
+"checkpoint reached with no terminal attached" when launched without a tty,
+e.g. from the `!` prompt of Claude Code).
