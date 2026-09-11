@@ -44,8 +44,10 @@ def _synth_mhz(session):
         raise RuntimeError(f'cannot parse synthesizer answer {ans!r}') from None
 
 
-def _detection_if_mhz(preset_path):
+def _detection_if_mhz(preset):
     """AWG intermediate frequency (MHz) of the preset's DETECTION pulse.
+    Takes a preset path or an already-loaded snapshot.Preset (the step may
+    hand down a calibration-patched one).
 
     snapshot.load_preset is pure file parsing (no hardware), so this is safe
     on the --test dry-run path. The DETECTION slot's freq is the observation
@@ -55,9 +57,10 @@ def _detection_if_mhz(preset_path):
     observed at the DETECTION frequency, so that is what centres the sweep.)
     """
     from atomize.epr_auto.engine import snapshot
-    preset = snapshot.load_preset(preset_path)
-    det = next((s for s in preset.slots if s.typ == 'DETECTION'),
-               preset.slots[0])
+    pre = preset if isinstance(preset, snapshot.Preset) \
+        else snapshot.load_preset(preset)
+    det = next((s for s in pre.slots if s.typ == 'DETECTION'),
+               pre.slots[0])
     return float(det.freq)
 
 

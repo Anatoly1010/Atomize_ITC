@@ -115,9 +115,15 @@ def _run_primitive(session, func, advisory_extra=(), **kwargs):
                                  '3/sqrt(n))'),
               'scans': Int(min=1, default=1,
                            help='scans for the quick acquisition'),
+              'apply_cal': CalMap(help='slot -> pi/pi2 map; none = do not patch; '
+                                       'omitted = patch from the session '
+                                       'pi_calibration when one exists '
+                                       '(inferred from the preset amplitude '
+                                       'levels), else the stored values'),
           })
-def tune_auto_phase(session, preset, points, scans):
+def tune_auto_phase(session, preset, points, scans, apply_cal):
     from atomize.epr_auto.primitives import tune
+    preset = _apply_cal_if_any(session, preset, apply_cal)
     return _run_primitive(session, tune.auto_phase,
                           preset=preset, points=points, scans=scans)
 
@@ -132,9 +138,15 @@ def tune_auto_phase(session, preset, points, scans):
                               help='window width as a multiple of the echo FWHM'),
               'sweeps': Int(min=1, default=3,
                             help='full phase cycles to average for the trace'),
+              'apply_cal': CalMap(help='slot -> pi/pi2 map; none = do not patch; '
+                                       'omitted = patch from the session '
+                                       'pi_calibration when one exists '
+                                       '(inferred from the preset amplitude '
+                                       'levels), else the stored values'),
           })
-def tune_echo_window(session, preset, factor, sweeps):
+def tune_echo_window(session, preset, factor, sweeps, apply_cal):
     from atomize.epr_auto.primitives import tune
+    preset = _apply_cal_if_any(session, preset, apply_cal)
     return _run_primitive(session, tune.echo_window,
                           preset=preset, factor=factor, sweeps=sweeps)
 
@@ -304,11 +316,17 @@ def _check_edfs(params, ctx):
                                        'echo_snr score (min = the judge pass '
                                        'floor: a lower target would stop on a '
                                        'sweep the hard judge then rejects)'),
+              'apply_cal': CalMap(help='slot -> pi/pi2 map; none = do not patch; '
+                                       'omitted = patch from the session '
+                                       'pi_calibration when one exists '
+                                       '(inferred from the preset amplitude '
+                                       'levels), else the stored values'),
           },
           check=_check_edfs)
 def field_edfs(session, preset, range, points, scans, pick, value, g, span,
-               offset, target_snr):
+               offset, target_snr, apply_cal):
     from atomize.epr_auto.primitives import field as field_primitives
+    preset = _apply_cal_if_any(session, preset, apply_cal)
     return _run_primitive(session, field_primitives.edfs,
                           preset=preset, range=range, points=points,
                           scans=scans, pick=pick, value=value, g=g, span=span,
@@ -417,6 +435,13 @@ def _apply_cal(session, preset, mapping):
                          for k, v in patched.items())
         session.log(f'      apply_cal -> {desc}')
     return pre
+
+
+def _apply_cal_if_any(session, preset, mapping):
+    """Tuning/EDFS variant: an omitted map patches only when a calibration exists."""
+    if mapping is None and not session.state.get('pi_calibration'):
+        return preset
+    return _apply_cal(session, preset, mapping)
 
 
 @register('exp.t2',

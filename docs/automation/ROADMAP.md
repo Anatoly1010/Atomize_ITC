@@ -2088,3 +2088,52 @@ ctx `_preset_hashes` cache, and the OVER_TICKS/`k>=2` items (retired /
 bench-conditional). Also left the several "retire"/cosmetic dispositions
 (scan_data_flag pairing note beyond what 2026-07-24 already did, ARCHITECTURE
 ESEEM-Avg line already handled, ParamError substitution context) untouched.
+
+## Session 2026-09-11 — FIRST HARDWARE RUN (ITC, coal, room temperature)
+
+Checklist items 1, 2, 3, 4 and 8 ran on the real spectrometer for the first
+time (Insys FPGA, Micran bridge at 9730 MHz, BH-15, sample: coal, 296 K).
+Protocols, presets and run dirs live outside the repo in
+`~/experimental_data/Melnikov/epr_auto_coal/` (one supervised protocol per
+stage; the operator drove them from a real terminal — `!`-prefixed and
+subagent shells have no tty and abort at the first checkpoint, as designed).
+
+### Results
+- **auto_phase** (hahn_echo_4s, 12 dB): zero order 34.2°, judge 0.98;
+  round trip (two auto_phase in one protocol): 37.0° then residual 5.75°,
+  echo real-positive — the zero-order sign convention is confirmed on
+  hardware. Run-to-run scatter ≈ 3–5° (short-Tm sample, 16-point sweep).
+- **echo_window** (accumulating dig_on readout, 3 sweeps): no stall, no blank
+  frame; echo FWHM 56 ns, window 244–358 ns, SNR 11. The echo sits ~300 ns
+  after the DETECTION start — a constant ADC/detection-chain delay of this
+  spectrometer (matches the window stored in the shipped ampl_4s). The
+  hahn_echo_4s stored window 0–320 ns catches only the echo's front edge.
+- **pi_calibration** (amplitude mode, coal copy of ampl_4s: swept SINE 64 ns
+  20–93 %, hard 22.4/44.8 ns detection pair): at 12 dB the sweep railed high
+  (correct hint printed); at 6 dB with the pair at 50 %: pi 76 %, pi/2 40 %,
+  ratio 1.90, all judges pass, SNR 8.7. The operator's by-eye 22.4/44.8 ns at
+  100 % was ~half the flip angle at 12 dB (bandwidth-biased optimum on a broad
+  line, not a T2 effect — Tm only scales the fixed-tau readout uniformly).
+- **field.edfs** (explicit 3400–3500 G, coal copy of ed_4s with the measured
+  64 ns 40 %/76 % pair): line max 3445.73 G, FWHM 14 G, peak/noise ≈ 110;
+  −7.5 G vs the g = 2.0028 prediction at 9680 MHz → `offset: -7.5 G` is the
+  candidate standing correction for `range: auto` on this setup (one sweep).
+- **exp.t2** (hahn copy with the same pair, 200 pts, 2 scans, 500 Hz):
+  Tm 205 ns, beta 0.95, dAICc/pt 2.94, adj R² 0.95; Q ≈ 0 throughout, so the
+  in-protocol echo_window → auto_phase → exp chain works end to end.
+
+### Findings for the code (NOT fixed during the bench session)
+1. **echo_window needs a minimum echo-width gate.** At 6 dB the defence-pulse
+   transient (a few-sample spike at ~150 ns, |V| > echo) won the smoothed
+   |V|-max search: window 147.6–155.2 ns (FWHM 3.6 ns), and the following
+   auto_phase failed coherence (0.25). Reject candidates narrower than a
+   floor (~20 ns) or search after the transient.
+2. **Vane position is dead-reckoned per process.** A fresh runner's
+   `Micran_X_band_MW_bridge_v2` starts with `prev_dB = 60` while the bridge
+   tool (which must stay open — closing it re-homes the vane to 60 dB) holds
+   the vane elsewhere; `_vane_set` reads `bridge.param` for `prev` but the
+   device's own step arithmetic uses its internal 60. `tune.power_for_length`
+   would mis-step on the first move. Seed `prev_dB` from `bridge.param`.
+3. The shipped calibration presets (ampl_4s 9/18 % soft pair, rabi_echo_4s)
+   assume far more B1 than this resonator/vane setting delivers; per-sample
+   copies in the protocol directory were the practical route.

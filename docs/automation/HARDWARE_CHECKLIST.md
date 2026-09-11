@@ -97,6 +97,13 @@ Rules (`params.py:PresetFile`, `primitives/tune.py:_build`):
   the tau sweep (`tau_start`/`tau_step`) and exp.t1 the log axis
   (`t_start`/`t_end`); both can override `rep_rate`. So the preset supplies
   the pulse *geometry*; the run supplies the state.
+- `tune.auto_phase`, `tune.echo_window` and `field.edfs` now take `apply_cal`
+  too, with an omitted-means-if-available rule: omitted patches the preset
+  from the session's `tune.pi_calibration` result when one exists (and runs
+  the stored values when none does), `none` never patches, and an explicit
+  map like `{P2: pi2, P3: pi}` patches and errors when no calibration is
+  there — so a re-tune after a calibration measures with the calibrated
+  pulses, while the same steps run before it are untouched.
 - Choosing a preset per step is rarely about the experiment: `tune.auto_phase`
   just needs an echo, so `hahn_echo_4s` serves. Override it only when that
   sequence does not suit the sample — e.g. its fixed 288 ns τ is too long for
