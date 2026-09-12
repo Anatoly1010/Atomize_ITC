@@ -35,6 +35,7 @@ class MainWindow(QMainWindow):
 
         self.design()
         self.exit_clicked = 0
+        self.stop_requested = False
         
         """
         Create a process to interact with an experimental script that will run on a different thread.
@@ -306,10 +307,11 @@ class MainWindow(QMainWindow):
          A function to turn off a program.
         """
         self.exit_clicked = 1
+        self.stop_requested = True
         try:
             self.parent_conn.send( 'exit' )
             self.monitor_timer.start(200)
-        except AttributeError:
+        except (AttributeError, BrokenPipeError, OSError):
             sys.exit()
             #self.message('Experimental script is not running')
 
@@ -330,11 +332,12 @@ class MainWindow(QMainWindow):
         """
         A function to stop script
         """
+        self.stop_requested = True
         try:
             self.parent_conn.send( 'exit' )
             self.monitor_timer.start(200)
 
-        except AttributeError:
+        except (AttributeError, BrokenPipeError, OSError):
             pass
             #self.message('Experimental script is not running')
 
@@ -360,6 +363,8 @@ class MainWindow(QMainWindow):
             self.box_end_freq.setValue( self.cur_end_freq )
             self.box_st_freq.setValue( self.cur_st_freq )
 
+        self.stop_requested = False
+        self.last_error = False
         self.parent_conn, self.child_conn = Pipe()
         # a process for running function script 
         # sending parameters for initial initialization
@@ -432,11 +437,13 @@ class MainWindow(QMainWindow):
 
             if getattr(self, 'is_testing', False):
                 self.is_testing = False
-                if not self.last_error:
+                if not self.last_error and not self.stop_requested and not self.exit_clicked:
                     self.last_error = False 
                     time.sleep(0.1)
                     self.run_main_experiment()
                 else:
+                    self.progress_bar.setValue(0)
+                    self.button_start.setStyleSheet(REFINED_STYLES['BUTTON_STYLE'])
                     self.last_error = False
 
     def open_dialog(self):

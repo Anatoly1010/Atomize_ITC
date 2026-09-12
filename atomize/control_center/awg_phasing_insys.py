@@ -139,6 +139,7 @@ class MainWindow(QMainWindow):
 
         self.is_experiment = False
         self.exit_clicked = 0
+        self.stop_requested = False
         self.timer = QTimer()
         self.timer.timeout.connect(self.check_messages)
         self.monitor_timer = QTimer()
@@ -3134,6 +3135,7 @@ class MainWindow(QMainWindow):
         """
         A function to stop digitizer
         """
+        self.stop_requested = True
         path_to_main = os.path.abspath( os.getcwd() )
         path_file = os.path.join(path_to_main, '../atomize/control_center/digitizer_insys.param')
         #path_file = os.path.join(path_to_main, '../../atomize/control_center/digitizer_insys.param')
@@ -3181,7 +3183,7 @@ class MainWindow(QMainWindow):
                     self.check_process_status()
                 else:
                     self.monitor_timer.start(200)
-            except AttributeError:
+            except (AttributeError, BrokenPipeError, OSError):
                 if self.exit_clicked == 1:
                     sys.exit()
 
@@ -3238,6 +3240,7 @@ class MainWindow(QMainWindow):
         except AttributeError:
             pass
 
+        self.stop_requested = False
         self.parent_conn_dig, self.child_conn_dig = Pipe()
         # a process for running function script 
         # sending parameters for initial initialization
@@ -3399,6 +3402,7 @@ class MainWindow(QMainWindow):
         except AttributeError:
             pass
         
+        self.stop_requested = False
         self.parent_conn_dig, self.child_conn_dig = Pipe()
         # a process for running function script 
         # sending parameters for initial initialization
@@ -3432,6 +3436,7 @@ class MainWindow(QMainWindow):
         A function to turn off a programm.
         """
         self.exit_clicked = 1
+        self.stop_requested = True
         self.dig_stop()
 
     def message(self, *text):
@@ -3557,7 +3562,14 @@ class MainWindow(QMainWindow):
                 # an 'Error' (hard crash in a ctypes device call, a kill, a non-zero
                 # sys.exit, a hang we just joined) last_error is still False but
                 # exitcode != 0 -- surface that instead of silently starting the run.
-                if (not self.last_error) and (exit_code in (0, None)):
+                if self.stop_requested or self.exit_clicked:
+                    self.progress_bar.setValue(0)
+                    self.button_blue()
+                    self.is_experiment = False
+                    self.last_error = False
+                    field_param.clear_lock()
+                    temp_param.clear_lock()
+                elif (not self.last_error) and (exit_code in (0, None)):
                     self.last_error = False 
                     time.sleep(0.2)
                     if self.is_experiment == False:

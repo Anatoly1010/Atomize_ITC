@@ -36,6 +36,7 @@ class MainWindow(QMainWindow):
         self.save_hdf5 = 0
         self.design()
         self.exit_clicked = 0
+        self.stop_requested = False
         """
         Create a process to interact with an experimental script that will run on a different thread.
         We need a different thread here, since PyQt GUI applications have a main thread of execution that runs the event loop and GUI. If you launch a long-running task in this thread, then your GUI will freeze until the task terminates. During that time, the user won’t be able to interact with the application
@@ -427,6 +428,7 @@ class MainWindow(QMainWindow):
          A function to turn off a program.
         """
         self.exit_clicked = 1
+        self.stop_requested = True
         self.rep_active = 0
         self.stop_rep_countdown()
 
@@ -488,11 +490,13 @@ class MainWindow(QMainWindow):
 
             if getattr(self, 'is_testing', False):
                 self.is_testing = False
-                if not self.last_error:
+                if not self.last_error and not self.stop_requested and not self.exit_clicked:
                     self.last_error = False 
                     time.sleep(0.1)
                     self.run_main_experiment()
                 else:
+                    self.progress_bar.setValue(0)
+                    self.button_start.setStyleSheet(REFINED_STYLES['BUTTON_STYLE'])
                     self.last_error = False
                     field_param.clear_lock()
                     temp_param.clear_lock()
@@ -525,6 +529,7 @@ class MainWindow(QMainWindow):
         """
         A function to stop script
         """
+        self.stop_requested = True
         self.rep_active = 0
         self.stop_rep_countdown()
 
@@ -575,6 +580,8 @@ class MainWindow(QMainWindow):
             self.box_end_field.setValue( self.cur_end_field )
             self.box_st_field.setValue( self.cur_start_field )
 
+        self.stop_requested = False
+        self.last_error = False
         self.parent_conn, self.child_conn = Pipe()
         
         self.exp_process = Process( target = worker.exp_test, args = ( self.child_conn, self.cur_curve_name, self.cur_exp_name, self.cur_end_field, self.cur_start_field, self.cur_step, self.cur_lock_ampl, self.cur_scan, self.cur_tc, self.cur_sens, self.two_side, ) )

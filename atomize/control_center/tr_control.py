@@ -32,6 +32,7 @@ class MainWindow(QMainWindow):
         self.save_hdf5 = 0
         self.design()
         self.exit_clicked = 0
+        self.stop_requested = False
 
         """
         Create a process to interact with an experimental script that will run on a different thread.
@@ -247,6 +248,58 @@ class MainWindow(QMainWindow):
 
         gridLayout.setRowStretch(22, 2)
         gridLayout.setColumnStretch(21, 2)
+        self.design_half_field()
+
+    def design_half_field(self):
+        grid = self.centralWidget().layout()
+        items = []
+        while grid.count():
+            position = grid.getItemPosition(0)
+            items.append((grid.takeAt(0), position))
+        for item, (row, column, rows, columns) in items:
+            grid.addItem(item, row if row < 3 else row + 4, column, rows, columns)
+        grid.setRowStretch(22, 0)
+        grid.setRowStretch(26, 2)
+        grid.setColumnStretch(21, 0)
+        label = QLabel('Half-Field Measurement')
+        label.setStyleSheet(REFINED_STYLES['LABEL_STYLE'])
+        self.enable_half = QCheckBox()
+        self.enable_half.setStyleSheet(CHECKBOX_STYLE)
+        self.enable_half.setFixedSize(130, 26)
+        self.enable_half.setToolTip('One background, half-field sweep, then main-field sweep = one scan.')
+        grid.addWidget(label, 3, 0)
+        grid.addWidget(self.enable_half, 3, 1)
+        self.half_boxes = []
+        self.half_labels = []
+        for row, (text, value) in enumerate((('Half-Field Start', 1600), ('Half-Field End', 1800), ('Half-Field Step', 2)), 4):
+            box = QDoubleSpinBox()
+            box.setDecimals(2 if row == 6 else 1)
+            box.setRange(0.01 if row == 6 else 0, 50 if row == 6 else 15000)
+            box.setValue(value)
+            box.setSuffix(' G')
+            box.setFixedSize(130, 26)
+            box.setKeyboardTracking(False)
+            box.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.PlusMinus)
+            box.setStyleSheet(REFINED_STYLES['COMPACT_FIELD_STYLE'])
+            label = QLabel(text)
+            label.setStyleSheet(REFINED_STYLES['LABEL_STYLE'])
+            grid.addWidget(label, row, 0)
+            grid.addWidget(box, row, 1)
+            self.half_boxes.append(box)
+            self.half_labels.append(label)
+        self.enable_half.toggled.connect(self.toggle_half)
+        self.toggle_half()
+
+    def toggle_half(self):
+        for widget in self.half_boxes + self.half_labels:
+            widget.setVisible(self.enable_half.isChecked())
+        self.centralWidget().layout().activate()
+        self.adjustSize()
+
+    def set_half_editable(self, editable):
+        self.enable_half.setEnabled(editable)
+        for box in self.half_boxes:
+            box.setEnabled(editable)
 
     def menu(self):
         menubar = self.menuBar()
@@ -382,6 +435,7 @@ class MainWindow(QMainWindow):
          A function to turn off a program.
         """
         self.exit_clicked = 1
+        self.stop_requested = True
         try:
             self.parent_conn.send( 'exit' )
             self.monitor_timer.start(200)
@@ -394,6 +448,7 @@ class MainWindow(QMainWindow):
             return
         
         self.monitor_timer.stop()
+        self.set_half_editable(True)
         self.exp_process.join() 
         #self.timer.stop()
         self.progress_bar.setValue(0)
@@ -408,6 +463,7 @@ class MainWindow(QMainWindow):
         """
         A function to stop script
         """
+        self.stop_requested = True
         try:
             self.parent_conn.send( 'exit' )
             self.monitor_timer.start(200)
@@ -431,16 +487,35 @@ class MainWindow(QMainWindow):
         except AttributeError:
             pass
 
+        self.stop_requested = False
+        self.last_error = False
         if self.cur_start_field >= self.cur_end_field:
             self.cur_start_field, self.cur_end_field = self.cur_end_field, self.cur_start_field
 
             self.box_end_field.setValue( self.cur_end_field )
             self.box_st_field.setValue( self.cur_start_field )
 
+        self.pending_half_field = None
+        if self.enable_half.isChecked():
+            from atomize.control_center.tr_two_fields import field_axis
+            half = tuple(box.value() for box in self.half_boxes)
+            try:
+                field_axis(*half)
+                field_axis(self.cur_start_field, self.cur_end_field, self.cur_step)
+                if half[1] >= self.cur_start_field:
+                    raise ValueError('Half-field range must be below the main-field range.')
+            except ValueError as error:
+                self.message(str(error))
+                self.progress_bar.setToolTip(str(error))
+                return
+            self.pending_half_field = half
+
+        worker.half_field = self.pending_half_field
+        test_target = worker.exp_test_two_fields if worker.half_field is not None else worker.exp_test
         self.parent_conn, self.child_conn = Pipe()
         # a process for running function script 
         # sending parameters for initial initialization
-        self.exp_process = Process( target = worker.exp_test, args = ( self.child_conn, self.cur_offres_field, self.cur_exp_name, self.cur_end_field, self.cur_start_field, self.cur_step, self.cur_ave_offres, self.cur_scan, self.cur_ave, self.cur_num_osc, self.cur_trig_ch, self.save_scan, self.two_side, ) )
+        self.exp_process = Process( target = test_target, args = ( self.child_conn, self.cur_offres_field, self.cur_exp_name, self.cur_end_field, self.cur_start_field, self.cur_step, self.cur_ave_offres, self.cur_scan, self.cur_ave, self.cur_num_osc, self.cur_trig_ch, self.save_scan, self.two_side, ) )
             
 
         self.button_start.setStyleSheet(REFINED_STYLES['PRIMARY_BUTTON_STYLE'])
@@ -454,6 +529,7 @@ class MainWindow(QMainWindow):
         temp_param.set_lock('tr_control')
 
         self.is_testing = True 
+        self.set_half_editable(False)
         self.timer.start(300)
 
     def message(self, *text):
@@ -467,6 +543,8 @@ class MainWindow(QMainWindow):
             
         if msg_type == 'Status':
             self.progress_bar.setValue(int(data))
+        elif msg_type == 'ScanComplete':
+            self.progress_bar.setToolTip(f'Completed scans: {data}')
         elif msg_type == 'Open':
             self.open_dialog()
         elif msg_type == 'Error':
@@ -514,7 +592,7 @@ class MainWindow(QMainWindow):
 
             if getattr(self, 'is_testing', False):
                 self.is_testing = False
-                if not self.last_error:
+                if not self.last_error and not self.stop_requested and not self.exit_clicked:
                     self.last_error = False 
                     time.sleep(0.3)
                     self.run_main_experiment()
@@ -526,6 +604,9 @@ class MainWindow(QMainWindow):
                 field_param.clear_lock()
                 temp_param.clear_lock()
                 self.button_start.setStyleSheet(REFINED_STYLES['BUTTON_STYLE'])
+
+        if not self.exp_process.is_alive() and not getattr(self, 'is_testing', False):
+            self.set_half_editable(True)
 
     def open_dialog(self):
         file_data = self.file_handler.create_file_dialog(multiprocessing = True,
@@ -542,6 +623,7 @@ class MainWindow(QMainWindow):
     def run_main_experiment(self):
 
         worker = Worker()
+        worker.half_field = getattr(self, 'pending_half_field', None)
 
         self.parent_conn, self.child_conn = Pipe()
 
@@ -656,6 +738,11 @@ class MainWindow(QMainWindow):
 
         self.combo_num_osc.setCurrentText( str( lines[9].split(':  ')[1] ) )
         self.combo_trig_ch.setCurrentText( str( lines[10].split(':  ')[1] ) )
+        extra = dict(line.split(':  ', 1) for line in lines[11:] if ':  ' in line)
+        self.enable_half.setChecked(extra.get('Half Field Enabled', '0') == '1')
+        for box, key in zip(self.half_boxes, ('Half Start Field', 'Half End Field', 'Half Field Step')):
+            if key in extra:
+                box.setValue(float(extra[key]))
 
     def save_file(self, filename):
         """
@@ -678,6 +765,10 @@ class MainWindow(QMainWindow):
             file.write( 'Two-Side:  ' + str(self.checkbox_back_scan.checkState().value) + '\n' )
             file.write( 'Number of Oscilloscopes:  ' + str(self.combo_num_osc.currentText()) + '\n' )
             file.write( 'Trigger Channel:  ' + str(self.combo_trig_ch.currentText()) + '\n' )
+            if self.enable_half.isChecked():
+                file.write('Half Field Enabled:  1\n')
+                for box, key in zip(self.half_boxes, ('Half Start Field', 'Half End Field', 'Half Field Step')):
+                    file.write(f'{key}:  {box.value()}\n')
 
 # The worker class that run the digitizer in a different thread
 class Worker():
@@ -686,6 +777,8 @@ class Worker():
         # initialization of the attribute we use to stop the experimental script
 
         self.command = 'start'
+        self.half_field = None
+        self.testing_two_fields = False
 
     def _append_scan_h5(self, filename, matrix, scan):
         """
@@ -713,6 +806,14 @@ class Worker():
             scans.resize(scan, axis = 0)
             scans[scan - 1] = matrix
 
+    def exp_test_two_fields(self, conn, *parameters):
+        """Check the two-range acquisition through native device test modes."""
+        sys.argv = ['', 'test']
+        import atomize.general_modules.general_functions as general
+        general.test_flag = 'test'
+        self.testing_two_fields = True
+        self.exp_on(conn, *parameters)
+
     def exp_on(self, conn, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11, p12):
         """
         function that contains experimental script
@@ -727,6 +828,8 @@ class Worker():
         import traceback
 
         try:
+            if self.testing_two_fields and self.half_field is None:
+                raise ValueError('Half-field parameters are required for the two-range test.')
             import datetime
             import atomize.general_modules.general_functions as general
             import atomize.device_modules.Keysight_2000_Xseries as key
@@ -789,6 +892,17 @@ class Worker():
                 #t_res_2_rough = round( t_res_2, 3 )
                 t_res_2 = a2012_2.oscilloscope_time_resolution()
                 t_step_2 = float(f"{pg.siEval(t_res_2):.4g}")
+
+            if self.half_field is not None:
+                from atomize.control_center.tr_two_fields import acquire
+                scopes = [a2012] if p9 == 1 else [a2012, a2012_2]
+                lengths = [real_length] if p9 == 1 else [real_length, real_length_2]
+                steps = [t_step] if p9 == 1 else [t_step, t_step_2]
+                resolutions = [t_res] if p9 == 1 else [t_res, t_res_2]
+                acquire(self, conn, general, file_handler, bh15, scopes, ls335, ag53131a,
+                        resolutions, lengths, steps, (p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11, p12),
+                        test_mode=self.testing_two_fields)
+                return
 
             # parameters for initial initialization
             field = 100
