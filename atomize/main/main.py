@@ -433,7 +433,7 @@ class MainExtended(MainWindow):
         main_layout.addWidget(self.checkTests)
         main_layout.addStretch()
 
-        bottom_label = QLabel("https://anatoly1010.github.io/atomize_docs/; Version 0.3.2; 01/03/2026")
+        bottom_label = QLabel("Version 0.4.0; 12/09/2026")
         bottom_label.setStyleSheet(REFINED_STYLES['HINT_STYLE'])
         main_layout.addWidget(bottom_label)
 
@@ -534,7 +534,7 @@ class MainExtended(MainWindow):
             return
         elif self.test_flag == 0 and exec_code == True:
             self.process_python.setArguments([name])
-            self.button_start.setStyleSheet(REFINED_STYLES['PRIMARY_BUTTON_STYLE'])
+            self.button_start.setStyleSheet(self.main_button_styles['PRIMARY_BUTTON_STYLE'])
             self.process_python.start()
             self.pid = self.process_python.processId()
             print(f'SCRIPT PROCESS ID: {self.pid}')
@@ -562,7 +562,7 @@ class MainExtended(MainWindow):
             file_to_read.close()
             # mod
 
-        self.button_test.setStyleSheet(REFINED_STYLES['WORKSPACE_ACTION_STYLE'])
+        self.button_test.setStyleSheet(self.main_button_styles['WORKSPACE_ACTION_STYLE'])
 
         self.success = (exit_status == QtCore.QProcess.ExitStatus.NormalExit and exit_code == 0)
         loop.quit()
