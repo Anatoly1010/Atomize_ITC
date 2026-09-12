@@ -253,6 +253,6 @@ The Insys device is available via ctypes. The original library can be found [her
 ### [Other](https://github.com/Anatoly1010/Atomize/blob/master/atomize/documentation/other_device_functions.md)
 
 ## Screenshots
-![](https://github.com/Anatoly1010/Atomize/blob/master/screenshots/screenshot.png)
-![](https://github.com/Anatoly1010/Atomize/blob/master/screenshots/screenshot2.png)
-![](https://github.com/Anatoly1010/Atomize/blob/master/screenshots/screenshot3.png)
+![Script editor and experiment queue](screenshots/screenshot.png)
+![Liveplot with synthetic demonstration data](screenshots/screenshot2.png)
+![EPR Endstation Control](screenshots/screenshot3.png)

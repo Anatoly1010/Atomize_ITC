@@ -43,7 +43,7 @@ from atomize.main.widgets import CrosshairPlotWidget, CloseableDock
 # control-center tools); apply_app_style() pins this process to the Fusion style.
 from atomize.general_modules.gui_style import (apply_app_style,
     BG, ACCENT, BUTTON_STYLE, LABEL_STYLE, HINT_STYLE, DSPIN_STYLE, SPIN_STYLE,
-    COMBO_STYLE, CHECKBOX_STYLE, TAB_STYLE)
+    COMBO_STYLE, CHECKBOX_STYLE, ANALYSIS_TAB_STYLE)
 
 import atomize.general_modules.gui_forms as gui_forms
 from atomize.general_modules.gui_forms import FormPanel
@@ -316,7 +316,7 @@ class MainWindow(QMainWindow):
         outer.setSpacing(8)
         tabs = QTabWidget()
         self.deer_tabs = tabs                  # queried by "Process all" for the engine
-        tabs.setStyleSheet(TAB_STYLE)
+        tabs.setStyleSheet(ANALYSIS_TAB_STYLE)
         tabs.addTab(self._scroll(self._build_source_tab()), 'Source')
         tabs.addTab(self._scroll(self._build_phase_tab()), 'Phase')
         tabs.addTab(self._scroll(self._build_background_tab()), 'Background')

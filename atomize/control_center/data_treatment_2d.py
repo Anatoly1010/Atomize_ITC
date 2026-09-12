@@ -61,7 +61,7 @@ from atomize.general_modules.gui_style import (BG, FG, ACCENT, BUTTON_STYLE,
                                                LABEL_STYLE, CHECKBOX_STYLE,
                                                DSPIN_STYLE, SPIN_STYLE,
                                                COMBO_STYLE, LINEEDIT_STYLE,
-                                               TAB_STYLE)
+                                               ANALYSIS_TAB_STYLE)
 import atomize.general_modules.gui_forms as gf
 
 # Parameter-header viewer shared with the 1D tool (separate non-modal window).
@@ -376,7 +376,7 @@ class MainWindow(QMainWindow):
 
         # ---- Operation tabs ----
         self.tabs = QTabWidget()
-        self.tabs.setStyleSheet(TAB_STYLE)
+        self.tabs.setStyleSheet(ANALYSIS_TAB_STYLE)
         self.tabs.addTab(self._build_phase_tab(), 'Phase')
         self.tabs.addTab(self._build_fft_tab(), 'FFT')
         self.tabs.addTab(self._build_filter_tab(), 'Filter')

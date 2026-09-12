@@ -5,11 +5,12 @@ import os
 import sys
 from PyQt6.QtGui import QIcon
 from PyQt6.QtCore import Qt, QEventLoop, QTimer, QEvent
-from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QLabel, QDoubleSpinBox, QSpinBox, QPushButton, QGridLayout, QFrame
+from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QLabel, QDoubleSpinBox, QSpinBox, QPushButton, QGridLayout, QHBoxLayout, QFrame
 #import atomize.device_modules.ITC_FC as itc
 import atomize.device_modules.BH_15 as itc
 import atomize.general_modules.general_functions as general
 import atomize.control_center.field_param as field_param
+from atomize.general_modules.gui_style import REFINED_THEME, REFINED_STYLES
 
 class MainWindow(QMainWindow):
     """
@@ -49,7 +50,7 @@ class MainWindow(QMainWindow):
 
         self.setObjectName("MainWindow")
         self.setWindowTitle("Field Control")
-        self.setStyleSheet("background-color: rgb(42,42,64);")
+        self.setStyleSheet(REFINED_STYLES['WINDOW_STYLE'])
 
         path_to_main = os.path.dirname(os.path.abspath(__file__))
         icon_path = os.path.join(path_to_main, 'gui/icon_field.ico')
@@ -70,13 +71,14 @@ class MainWindow(QMainWindow):
 
         for name, attr_name in labels:
             lbl = QLabel(name)
-            lbl.setFixedSize(190, 26)
+            lbl.setMinimumSize(190, 26)
             setattr(self, attr_name, lbl)
-            lbl.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
+            lbl.setStyleSheet(REFINED_STYLES['LABEL_STYLE'])
 
         self.label_lock = QLabel("")
-        self.label_lock.setFixedSize(320, 26)
-        self.label_lock.setStyleSheet("QLabel { color : rgb(211, 194, 78); font-weight: bold; }")
+        self.label_lock.setMinimumWidth(320)
+        self.label_lock.setWordWrap(True)
+        self.label_lock.setStyleSheet(REFINED_STYLES['HINT_STYLE'])
 
         # ---- Boxes ----
         double_boxes = [(QDoubleSpinBox, "Set_point", "field", self.set_field, 0, 15100, 0, 0.5, 2, " G"), 
@@ -87,10 +89,10 @@ class MainWindow(QMainWindow):
             spin_box = widget_class()
             if isinstance(spin_box, QDoubleSpinBox):
                 spin_box.setRange(v_min, v_max)
-                spin_box.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")                
+                spin_box.setStyleSheet(REFINED_STYLES['COMPACT_FIELD_STYLE'])
             else:
                 spin_box.setRange(int(v_min), int(v_max))
-                spin_box.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")                
+                spin_box.setStyleSheet(REFINED_STYLES['COMPACT_FIELD_STYLE'])
             spin_box.setSingleStep(v_step)
             spin_box.setValue(cur_val)
             if isinstance(spin_box, QDoubleSpinBox):
@@ -119,7 +121,7 @@ class MainWindow(QMainWindow):
             btn = QPushButton(name)
             btn.setFixedSize(140, 40)
             btn.clicked.connect(func)
-            btn.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; } QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
+            btn.setStyleSheet(REFINED_STYLES['BUTTON_STYLE'])
             setattr(self, attr_name, btn)
 
         # ---- Separators ----
@@ -127,25 +129,33 @@ class MainWindow(QMainWindow):
             line = QFrame()
             line.setFrameShape(QFrame.Shape.HLine)
             line.setFrameShadow(QFrame.Shadow.Sunken)
-            line.setLineWidth(2)
+            line.setLineWidth(1)
             return line
 
 
         # ---- Layout placement ----
-        gridLayout.addWidget(self.label_1, 0, 0)
-        gridLayout.addWidget(self.Set_point, 0, 1)
-        gridLayout.addWidget(self.label_2, 1, 0)
-        gridLayout.addWidget(self.box_ini, 1, 1)
-        gridLayout.addWidget(self.label_lock, 2, 0, 1, 2)
+        title = QLabel("Magnetic field")
+        title.setStyleSheet("color: #e2e5f0; font-size: 20px; font-weight: 600;")
+        gridLayout.addWidget(title, 0, 0, 1, 2)
+        gridLayout.setRowMinimumHeight(1, 12)
+        gridLayout.addWidget(self.label_1, 2, 0)
+        gridLayout.addWidget(self.Set_point, 2, 1)
+        gridLayout.addWidget(self.label_2, 3, 0)
+        gridLayout.addWidget(self.box_ini, 3, 1)
+        gridLayout.addWidget(self.label_lock, 4, 0, 1, 2)
 
-        gridLayout.addWidget(hline(), 3, 0, 1, 2)
+        gridLayout.addWidget(hline(), 5, 0, 1, 2)
 
-        gridLayout.addWidget(self.button_stop, 4, 0)
-        gridLayout.addWidget(self.button_reconnect, 5, 0)
-        gridLayout.addWidget(self.button_off, 6, 0)
+        buttons_layout = QHBoxLayout()
+        buttons_layout.setSpacing(8)
+        buttons_layout.addWidget(self.button_stop)
+        buttons_layout.addWidget(self.button_reconnect)
+        buttons_layout.addStretch()
+        gridLayout.addLayout(buttons_layout, 6, 0, 1, 2)
+        gridLayout.addWidget(self.button_off, 7, 0)
 
-        gridLayout.setRowStretch(7, 2)
-        gridLayout.setColumnStretch(6, 2)
+        gridLayout.setRowStretch(8, 2)
+        gridLayout.setColumnStretch(2, 1)
 
     def refresh_field_status(self):
         locked = field_param.is_locked()
@@ -232,7 +242,7 @@ class MainWindow(QMainWindow):
         if not self.device_ok:
             sys.exit()
 
-        self.button_stop.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(211, 194, 78); border-style: outset; color: rgb(63, 63, 97); font-weight: bold; } ")
+        self.button_stop.setStyleSheet(REFINED_STYLES['ACTIVE_BUTTON_STYLE'])
 
         QApplication.processEvents()
 
@@ -252,7 +262,7 @@ class MainWindow(QMainWindow):
         self.field = 0
         self.itc_fc.magnet_field( self.cur_field )
         self.Set_point.setValue(self.cur_field)
-        self.button_stop.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; } ")
+        self.button_stop.setStyleSheet(REFINED_STYLES['BUTTON_STYLE'])
 
         sys.exit()
 
@@ -276,7 +286,7 @@ class MainWindow(QMainWindow):
         if not self.device_ok:
             sys.exit()
 
-        self.button_stop.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(211, 194, 78); border-style: outset; color: rgb(63, 63, 97); font-weight: bold; } ")
+        self.button_stop.setStyleSheet(REFINED_STYLES['ACTIVE_BUTTON_STYLE'])
 
         QApplication.processEvents()
 
@@ -296,7 +306,7 @@ class MainWindow(QMainWindow):
         self.field = 0
         self.itc_fc.magnet_field( self.cur_field )
         self.Set_point.setValue(self.cur_field)
-        self.button_stop.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; } ")
+        self.button_stop.setStyleSheet(REFINED_STYLES['BUTTON_STYLE'])
 
         sys.exit()
 
@@ -336,7 +346,7 @@ class MainWindow(QMainWindow):
 
         self.cur_field = self.cur_field_2
 
-        self.button_stop.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(211, 194, 78); border-style: outset; color: rgb(63, 63, 97); font-weight: bold; } ")
+        self.button_stop.setStyleSheet(REFINED_STYLES['ACTIVE_BUTTON_STYLE'])
 
         QApplication.processEvents()
         
@@ -376,7 +386,7 @@ class MainWindow(QMainWindow):
             self.Set_point.setValue(self.cur_field)
             self.Set_point.blockSignals(False)
 
-        self.button_stop.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; } ")
+        self.button_stop.setStyleSheet(REFINED_STYLES['BUTTON_STYLE'])
 
     def update_stop(self):
         """
@@ -417,7 +427,7 @@ def main():
     """
     app = QApplication(sys.argv)
     from atomize.general_modules.gui_style import apply_app_style
-    apply_app_style(app, app_id='Atomize.ITC.FieldControl', desktop='field')
+    apply_app_style(app, app_id='Atomize.ITC.FieldControl', desktop='field', theme=REFINED_THEME)
     main = MainWindow()
     main.show()
     sys.exit(app.exec())

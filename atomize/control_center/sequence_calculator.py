@@ -74,7 +74,7 @@ from PyQt6.QtCore import Qt
 import atomize.general_modules.general_functions as general
 # Shared dark-theme styling so this tool matches the rest of the EPR suite.
 import atomize.general_modules.gui_forms as gui_forms
-from atomize.general_modules.gui_style import (apply_app_style, BUTTON_STYLE,
+from atomize.general_modules.gui_style import (apply_app_style, BUTTON_STYLE, REFINED_STYLES,
     LABEL_STYLE, DSPIN_STYLE, SPIN_STYLE, COMBO_STYLE, SCROLL_STYLE, BORDER, BG, FG, ACCENT)
 
 
@@ -546,9 +546,7 @@ class MainWindow(QMainWindow):
 
     def make_phase(self, text="+x", w=PH_W, h=PH_H):
         te = QTextEdit(text)
-        te.setStyleSheet(f"QTextEdit {{ color: {ACCENT}; border: 1px solid {BORDER}; "
-                         f"selection-background-color: {ACCENT}; selection-color: {BG}; }}"
-                         + SCROLLS)
+        te.setStyleSheet(REFINED_STYLES['COMPACT_TEXT_STYLE'] + SCROLLS)
         te.setFixedSize(w, h)
         te.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
         te.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -709,11 +707,8 @@ class MainWindow(QMainWindow):
         self.results = QPlainTextEdit()
         self.results.setReadOnly(True)
         self.results.setFont(QFont("Monospace", 10))
-        # Match awg_phasing's main text window: no explicit border/background,
-        # so the theme default frame/palette is used; just colour + scrollbars.
         self.results.setStyleSheet(
-            f"QPlainTextEdit {{ color: {FG}; "
-            f"selection-background-color: {ACCENT}; selection-color: {BG}; }}" + SCROLLS)
+            REFINED_STYLES['COMPACT_TEXT_STYLE'] + SCROLLS)
         self.results.setMinimumHeight(160)
         outer.addWidget(self.results)
 

@@ -3,6 +3,7 @@
 import os
 import re
 import sys
+from atomize.general_modules.gui_style import REFINED_STYLES, style_file_dialog
 import math
 import time
 import json
@@ -186,25 +187,7 @@ class MainWindow(QMainWindow):
 
     def menu(self):
         menubar = self.menuBar()
-        menubar.setStyleSheet("""
-            QMenuBar { 
-                color: rgb(193, 202, 227); 
-                font-weight: bold; 
-                font-size: 14px;  
-                
-                border-bottom: 2px solid rgb(60, 65, 85); 
-                margin-bottom: 1px;
-                background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, 
-                                  stop:0.95 transparent, 
-                                  stop:1.0 rgb(100, 105, 130));
-                
-                padding-top: 2px; 
-                padding-bottom: 1px; 
-            } 
-            QMenu::item { color: rgb(193, 202, 227); } 
-            QMenu::item:selected { color: rgb(211, 194, 78); background-color: rgb(63, 63, 97); } 
-            QMenuBar::item:selected { background-color: rgb(63, 63, 97); }
-        """)
+        menubar.setStyleSheet(REFINED_STYLES['MENU_STYLE'])
         file_menu = menubar.addMenu("File")
         pulse_menu = menubar.addMenu("Pulse")
         self.exp_menu = menubar.addMenu("Experiment")
@@ -460,7 +443,7 @@ class MainWindow(QMainWindow):
     def design_tab_1(self):
         self.setObjectName("MainWindow")
         self.setWindowTitle("AWG Channel Pulse Control")
-        self.setStyleSheet("background-color: rgb(42,42,64);")
+        self.setStyleSheet(REFINED_STYLES['WINDOW_STYLE'])
 
         path_to_main = os.path.dirname(os.path.abspath(__file__))
         icon_path = os.path.join(path_to_main, 'gui/icon_awg.ico')
@@ -481,33 +464,7 @@ class MainWindow(QMainWindow):
         main_window_layout.addWidget(self.tab_pulse)
 
         self.tab_pulse.setTabShape(QTabWidget.TabShape.Rounded)
-        self.tab_pulse.setStyleSheet("""
-            QTabWidget::pane {
-                border: 1px solid rgb(43, 43, 77); 
-                top: -1px; 
-                background: rgb(63, 63, 97);
-            }
-            QTabBar::tab { 
-                width: 190px; 
-                height: 25px;
-                font-weight: bold; 
-                color: rgb(193, 202, 227);
-                background: rgb(63, 63, 97);
-                border: 1px solid rgb(43, 43, 77);
-                border-bottom: none;
-                border-top-left-radius: 4px;
-                border-top-right-radius: 4px;
-                margin-right: 2px;
-            }
-            QTabBar::tab:selected {
-                color: rgb(211, 194, 78);
-                background: rgb(83, 83, 117); 
-                border-bottom: 2px solid rgb(211, 194, 78);
-            }
-            QTabBar::tab:hover {
-                background: rgb(73, 73, 107);
-            }
-        """)
+        self.tab_pulse.setStyleSheet(REFINED_STYLES['TAB_STYLE'])
 
         pulse_page = QWidget()
         pulse_page_layout = QVBoxLayout(pulse_page)
@@ -520,32 +477,7 @@ class MainWindow(QMainWindow):
         scroll.horizontalScrollBar().setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
         #scroll.setFixedHeight(383)
 
-        scroll.setStyleSheet(f"""
-            QScrollArea {{
-                border: none;
-                background-color: transparent;
-            }}
-            QScrollBar:horizontal {{
-                border: none;
-                background: rgb(43, 43, 77); 
-                height: 10px;
-                margin: 0px;
-            }}
-            QScrollBar::handle:horizontal {{
-                background: rgb(193, 202, 227); 
-                min-width: 20px;
-                border-radius: 5px;
-            }}
-            QScrollBar::handle:horizontal:hover {{
-                background: rgb(211, 194, 78); 
-            }}
-            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
-                width: 0px;
-            }}
-            QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{
-                background: none;
-            }}
-        """)
+        scroll.setStyleSheet(REFINED_STYLES['SCROLL_STYLE'])
 
         container = QWidget()
         scroll.setWidget(container)
@@ -578,7 +510,7 @@ class MainWindow(QMainWindow):
             lbl = QLabel(name)
             lbl.setFixedSize(170, 26)
             setattr(self, attr_name, lbl)
-            lbl.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
+            lbl.setStyleSheet(REFINED_STYLES['LABEL_STYLE'])
 
 
         # ---- Boxes ----
@@ -606,7 +538,7 @@ class MainWindow(QMainWindow):
             for i in range(1, 10):
                 spin_box = (pulse_set[0])()
                 spin_box.setRange(pulse_set[1], pulse_set[2])
-                spin_box.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
+                spin_box.setStyleSheet(REFINED_STYLES['COMPACT_FIELD_STYLE'])
                 spin_box.setSingleStep(pulse_set[4])
                 if (i == 1) and (j == 1):
                     spin_box.setValue(576)
@@ -656,7 +588,7 @@ class MainWindow(QMainWindow):
                 if j == 1:
                     lbl = QLabel(f"{i}")
                     lbl.setAlignment(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
-                    lbl.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
+                    lbl.setStyleSheet(REFINED_STYLES['LABEL_STYLE'])
                     self.gridLayout.addWidget(lbl, 0, i)
 
 
@@ -675,10 +607,10 @@ class MainWindow(QMainWindow):
                 spin_box = pulse_set[0]()
                 if isinstance(spin_box, QDoubleSpinBox):
                     spin_box.setRange(pulse_set[1], pulse_set[2])
-                    spin_box.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97); }")
+                    spin_box.setStyleSheet(REFINED_STYLES['COMPACT_FIELD_STYLE'])
                 else:
                     spin_box.setRange(int(pulse_set[1]), int(pulse_set[2]))
-                    spin_box.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
+                    spin_box.setStyleSheet(REFINED_STYLES['COMPACT_FIELD_STYLE'])
 
                 spin_box.setSingleStep(pulse_set[4])
                 
@@ -749,14 +681,7 @@ class MainWindow(QMainWindow):
 
         for i in range(1, 10):
             combo = QComboBox()
-            combo.setStyleSheet("""
-                QComboBox 
-                { color : rgb(193, 202, 227); 
-                selection-color: rgb(211, 194, 78); 
-                selection-background-color: rgb(63, 63, 97);
-                outline: none;
-                }
-                """)
+            combo.setStyleSheet(REFINED_STYLES['COMBO_STYLE'])
             combo.setFixedSize(170, 26)
             if i == 1:
                 combo.addItems(combo_boxes[i-1][4])
@@ -794,38 +719,7 @@ class MainWindow(QMainWindow):
             txt.setFixedSize(170, 60)
             txt.setAcceptRichText(False)
             #txt.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-            txt.setStyleSheet("""
-                QTextEdit { 
-                    color: rgb(211, 194, 78); 
-                    selection-background-color: rgb(211, 194, 78); 
-                    selection-color: rgb(63, 63, 97);
-                }
-
-                QScrollBar:vertical {
-                    border: none;
-                    background: rgb(43, 43, 77); 
-                    width: 10px;
-                    margin: 0px;
-                }
-
-                QScrollBar::handle:vertical {
-                    background: rgb(193, 202, 227); 
-                    min-height: 20px;
-                    border-radius: 5px;
-                }
-
-                QScrollBar::handle:vertical:hover {
-                    background: rgb(211, 194, 78); 
-                }
-
-                QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
-                    height: 0px;
-                }
-
-                QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
-                    background: none;
-                }
-            """)
+            txt.setStyleSheet(REFINED_STYLES['COMPACT_TEXT_STYLE'])
 
             setattr(self, f"Phase_{i}", txt)
             txt.textChanged.connect(lambda idx = i: self.update_pulse_phase(idx))
@@ -840,7 +734,7 @@ class MainWindow(QMainWindow):
         # pulse moves relative to the pulse being edited.
         self.link_row_label = QLabel("Link")
         self.link_row_label.setFixedSize(170, 26)
-        self.link_row_label.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
+        self.link_row_label.setStyleSheet(REFINED_STYLES['LABEL_STYLE'])
         self.gridLayout.addWidget(self.link_row_label, 18, 0)
 
         for i in range(1, 10):
@@ -848,14 +742,7 @@ class MainWindow(QMainWindow):
             combo.addItems(["No", "0.5x", "1x", "2x"])
             combo.setCurrentText("No")
             combo.setFixedSize(170, 26)
-            combo.setStyleSheet("""
-                QComboBox
-                { color : rgb(193, 202, 227);
-                selection-color: rgb(211, 194, 78);
-                selection-background-color: rgb(63, 63, 97);
-                outline: none;
-                }
-                """)
+            combo.setStyleSheet(REFINED_STYLES['COMBO_STYLE'])
             setattr(self, f"P{i}_lk", combo)
             combo.currentTextChanged.connect(lambda _, idx = i: self.update_link_factor(idx))
             self.gridLayout.addWidget(combo, 18, i)
@@ -868,7 +755,7 @@ class MainWindow(QMainWindow):
         for widget_class, attr_name, par_name, func, v_min, v_max, cur_val, v_step, dec, suf in boxes:
             rr_box = widget_class()
             rr_box.setRange(v_min, v_max)
-            rr_box.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
+            rr_box.setStyleSheet(REFINED_STYLES['COMPACT_FIELD_STYLE'])
             rr_box.setSingleStep(v_step)
             rr_box.setValue(cur_val)
             rr_box.setDecimals(dec)
@@ -903,23 +790,7 @@ class MainWindow(QMainWindow):
         self.progress_bar.setTextVisible(True)
         self.progress_bar.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
-        self.progress_bar.setStyleSheet("""
-            QProgressBar {
-                border: 1px solid rgb(83, 83, 117);
-                border-radius: 4px;
-                background-color: rgb(42, 42, 64);
-                color: rgb(211, 194, 78);
-                font-weight: bold;
-                text-align: right; 
-                margin-right: 40px;
-                height: 20px;
-            }
-
-            QProgressBar::chunk {
-                background-color: rgb(193, 202, 227);
-                border-radius: 2px;
-            }
-        """)
+        self.progress_bar.setStyleSheet(REFINED_STYLES['PROGRESS_STYLE'])
 
         # Live Edit controls (Live Mode + Apply Delay) live in the Settings tab.
         label_widget = getattr(self, f"label_p1")
@@ -942,7 +813,7 @@ class MainWindow(QMainWindow):
             btn = QPushButton(name)
             btn.setFixedSize(170, 40)
             btn.clicked.connect(func)
-            btn.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; } QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
+            btn.setStyleSheet(REFINED_STYLES['BUTTON_STYLE'])
             setattr(self, attr_name, btn)
             if name == "Start Experiment":
                 btn_c = 3
@@ -956,60 +827,7 @@ class MainWindow(QMainWindow):
         txt.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
         setattr(self, "errors", txt)
 
-        txt.setStyleSheet("""
-            QPlainTextEdit { 
-                color: rgb(211, 194, 78); 
-                selection-background-color: rgb(211, 194, 78); 
-                selection-color: rgb(63, 63, 97);
-            }
-
-            QScrollBar:vertical {
-                border: none;
-                background: rgb(43, 43, 77); 
-                width: 10px;
-                margin: 0px;
-            }
-
-            QScrollBar::handle:vertical {
-                background: rgb(193, 202, 227); 
-                min-height: 20px;
-                border-radius: 5px;
-            }
-
-            QScrollBar::handle:vertical:hover {
-                background: rgb(211, 194, 78); 
-            }
-
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
-                height: 0px;
-            }
-
-            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
-                background: none;
-            }
-
-            QScrollBar:horizontal {
-                    border: none;
-                    background: rgb(43, 43, 77); 
-                    height: 10px;
-                    margin: 0px;
-                }
-                QScrollBar::handle:horizontal {
-                    background: rgb(193, 202, 227); 
-                    min-width: 20px;
-                    border-radius: 5px;
-                }
-                QScrollBar::handle:horizontal:hover {
-                    background: rgb(211, 194, 78); 
-                }
-                QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
-                    width: 0px;
-                }
-                QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
-                    background: none;
-                }
-
-        """)
+        txt.setStyleSheet(REFINED_STYLES['COMPACT_TEXT_STYLE'])
 
         self.buttons_layout.addWidget(txt, 3, 2, 3, 10)
 
@@ -1037,7 +855,7 @@ class MainWindow(QMainWindow):
             lbl = QLabel(name)
             setattr(self, attr_name, lbl)
             lbl.setFixedSize(170, 26)
-            lbl.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
+            lbl.setStyleSheet(REFINED_STYLES['LABEL_STYLE'])
 
         # ---- Boxes ----
         double_boxes = [(QSpinBox, "Acq_number", "number_averages", self.acq_number, 1, 1e4, 1, 1, 0, ""),
@@ -1059,10 +877,10 @@ class MainWindow(QMainWindow):
             spin_box = widget_class()
             if isinstance(spin_box, QDoubleSpinBox):
                 spin_box.setRange(v_min, v_max)
-                spin_box.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")                
+                spin_box.setStyleSheet(REFINED_STYLES['COMPACT_FIELD_STYLE'])
             else:
                 spin_box.setRange(int(v_min), int(v_max))
-                spin_box.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")                
+                spin_box.setStyleSheet(REFINED_STYLES['COMPACT_FIELD_STYLE'])
             spin_box.setSingleStep(v_step)
             spin_box.setValue(cur_val)
             if isinstance(spin_box, QDoubleSpinBox):
@@ -1123,7 +941,7 @@ class MainWindow(QMainWindow):
             txt.setFixedSize(170, 26)
             txt.setAcceptRichText(False)
             txt.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-            txt.setStyleSheet("QTextEdit { color : rgb(211, 194, 78) ; selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
+            txt.setStyleSheet(REFINED_STYLES['COMPACT_TEXT_STYLE'])
             txt.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
 
         # ---- Combo boxes----
@@ -1141,14 +959,7 @@ class MainWindow(QMainWindow):
             combo.addItems(item)
             combo.setCurrentText(cur_text)
             combo.setFixedSize(170, 26)
-            combo.setStyleSheet("""
-                QComboBox 
-                { color : rgb(193, 202, 227); 
-                selection-color: rgb(211, 194, 78); 
-                selection-background-color: rgb(63, 63, 97);
-                outline: none;
-                }
-                """)
+            combo.setStyleSheet(REFINED_STYLES['COMBO_STYLE'])
 
         self.combo_sweep.setToolTip('Linear Time: standard linear delay/length increment experiment.\nField: field-sweep experiment.\nLog Time: log10 delay/length increment experiment.\nAmplitude: pulse-amplitude increment experiment.\nESEEM Avg: ESEEM tau-averaging — repeats the linear-time scan over several cycles, shifting the pulses set by Start Increment 2 (Pulses tab) cumulatively each cycle, then averages.')
 
@@ -1288,7 +1099,7 @@ class MainWindow(QMainWindow):
             lbl = QLabel(name)
             setattr(self, attr_name, lbl)
             lbl.setFixedSize(170, 26)
-            lbl.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
+            lbl.setStyleSheet(REFINED_STYLES['LABEL_STYLE'])
 
         # ---- Boxes ----
         double_boxes = [(QSpinBox, "P_to_drop", "p_to_drop", self.p_to_drop_func, 0, 1e4, 0, 1, 0, ""),
@@ -1301,10 +1112,10 @@ class MainWindow(QMainWindow):
             spin_box = widget_class()
             if isinstance(spin_box, QDoubleSpinBox):
                 spin_box.setRange(v_min, v_max)
-                spin_box.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")                
+                spin_box.setStyleSheet(REFINED_STYLES['COMPACT_FIELD_STYLE'])
             else:
                 spin_box.setRange(int(v_min), int(v_max))
-                spin_box.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")                
+                spin_box.setStyleSheet(REFINED_STYLES['COMPACT_FIELD_STYLE'])
             spin_box.setSingleStep(v_step)
             spin_box.setValue(cur_val)
             if isinstance(spin_box, QDoubleSpinBox):
@@ -1416,7 +1227,7 @@ class MainWindow(QMainWindow):
             lbl = QLabel(name)
             setattr(self, attr_name, lbl)
             lbl.setFixedSize(170, 26)
-            lbl.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
+            lbl.setStyleSheet(REFINED_STYLES['LABEL_STYLE'])
 
         # ---- Combo box----
         combo_laser = [("Nd:YaG", "Combo_laser", "", self.combo_laser_fun, ["Nd:YaG", "NovoFEL"]),
@@ -1430,14 +1241,7 @@ class MainWindow(QMainWindow):
             combo.addItems(item)
             combo.setCurrentText(cur_text)
             combo.setFixedSize(170, 26)
-            combo.setStyleSheet("""
-                QComboBox 
-                { color : rgb(193, 202, 227); 
-                selection-color: rgb(211, 194, 78); 
-                selection-background-color: rgb(63, 63, 97);
-                outline: none;
-                }
-                """)
+            combo.setStyleSheet(REFINED_STYLES['COMBO_STYLE'])
         
         self.combo_synt_fun()
         self.combo_laser_fun()
@@ -1487,7 +1291,7 @@ class MainWindow(QMainWindow):
             lbl = QLabel(name)
             setattr(self, attr_name, lbl)
             lbl.setFixedSize(170, 26)
-            lbl.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
+            lbl.setStyleSheet(REFINED_STYLES['LABEL_STYLE'])
 
         # ---- Boxes ----
         double_boxes = [(QSpinBox, "Ampl_1", "ch0_ampl", self.ch0_amp, 1, 260, 260, 1, 0, ""),
@@ -1503,10 +1307,10 @@ class MainWindow(QMainWindow):
             spin_box = widget_class()
             if isinstance(spin_box, QDoubleSpinBox):
                 spin_box.setRange(v_min, v_max)
-                spin_box.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")                
+                spin_box.setStyleSheet(REFINED_STYLES['COMPACT_FIELD_STYLE'])
             else:
                 spin_box.setRange(int(v_min), int(v_max))
-                spin_box.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")                
+                spin_box.setStyleSheet(REFINED_STYLES['COMPACT_FIELD_STYLE'])
             spin_box.setSingleStep(v_step)
             spin_box.setValue(cur_val)
             if isinstance(spin_box, QDoubleSpinBox):
@@ -1541,14 +1345,7 @@ class MainWindow(QMainWindow):
             combo.addItems(item)
             combo.setCurrentText(cur_text)
             combo.setFixedSize(170, 26)
-            combo.setStyleSheet("""
-                QComboBox 
-                { color : rgb(193, 202, 227); 
-                selection-color: rgb(211, 194, 78); 
-                selection-background-color: rgb(63, 63, 97);
-                outline: none;
-                }
-                """)
+            combo.setStyleSheet(REFINED_STYLES['COMBO_STYLE'])
 
         self.combo_cor_fun()
         self.combo_model_fun()
@@ -1557,17 +1354,11 @@ class MainWindow(QMainWindow):
         # ---- Load measured H(f) button + status ----
         self.Btn_resH = QPushButton("Load…")
         self.Btn_resH.setFixedSize(170, 26)
-        self.Btn_resH.setStyleSheet("""
-            QPushButton
-            { color : rgb(193, 202, 227);
-            selection-color: rgb(211, 194, 78);
-            selection-background-color: rgb(63, 63, 97);
-            }
-            """)
+        self.Btn_resH.setStyleSheet(REFINED_STYLES['BUTTON_STYLE'])
         self.Btn_resH.clicked.connect(self.open_resonator)
 
         self.reson_file_lbl = QLabel("(no file)")
-        self.reson_file_lbl.setStyleSheet("QLabel { color : rgb(193, 202, 227); }")
+        self.reson_file_lbl.setStyleSheet(REFINED_STYLES['LABEL_STYLE'])
         self.reson_file_lbl.setWordWrap(True)
 
         # ---- Separators ----
@@ -1652,7 +1443,7 @@ class MainWindow(QMainWindow):
         # ---- Live Edit controls ----
         live_label = QLabel("Live Mode")
         live_label.setFixedSize(170, 26)
-        live_label.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
+        live_label.setStyleSheet(REFINED_STYLES['LABEL_STYLE'])
         self.live_edit_box = QCheckBox("")
         self.live_edit_box.setStyleSheet(CHECKBOX_STYLE)
         self.live_edit_box.setFixedSize(170, 26)
@@ -1667,7 +1458,7 @@ class MainWindow(QMainWindow):
 
         debounce_label = QLabel("Apply Delay")
         debounce_label.setFixedSize(170, 26)
-        debounce_label.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
+        debounce_label.setStyleSheet(REFINED_STYLES['LABEL_STYLE'])
         self.Debounce = QSpinBox()
         self.Debounce.setRange(200, 5000)
         self.Debounce.setSingleStep(50)
@@ -1676,25 +1467,18 @@ class MainWindow(QMainWindow):
         self.Debounce.setFixedSize(170, 26)
         self.Debounce.setButtonSymbols(QSpinBox.ButtonSymbols.PlusMinus)
         self.Debounce.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
-        self.Debounce.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); selection-background-color: rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}")
+        self.Debounce.setStyleSheet(REFINED_STYLES['COMPACT_FIELD_STYLE'])
         self.Debounce.setToolTip("Delay after the last pulse edit before it is pushed to the running sequence.")
 
         # ---- Link mode: coupled parameter ----
         link_param_label = QLabel("Link Parameter")
         link_param_label.setFixedSize(170, 26)
-        link_param_label.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
+        link_param_label.setStyleSheet(REFINED_STYLES['LABEL_STYLE'])
         self.Combo_link = QComboBox()
         self.Combo_link.addItems(["Off", "Amplitude", "Length", "Position", "Frequency"])
         self.Combo_link.setCurrentText("Off")
         self.Combo_link.setFixedSize(170, 26)
-        self.Combo_link.setStyleSheet("""
-            QComboBox
-            { color : rgb(193, 202, 227);
-            selection-color: rgb(211, 194, 78);
-            selection-background-color: rgb(63, 63, 97);
-            outline: none;
-            }
-            """)
+        self.Combo_link.setStyleSheet(REFINED_STYLES['COMBO_STYLE'])
         self.Combo_link.setToolTip(
             "Couple this parameter across pulses. Set a per-pulse weight "
             "(No / 0.5x / 1x / 2x) in the Link row of the Pulses tab; editing "
@@ -1715,7 +1499,7 @@ class MainWindow(QMainWindow):
         # ---- AWG timing grid (0.8 ns / 3.2 ns) ----
         fine_label = QLabel("0.8 ns AWG Grid")
         fine_label.setFixedSize(170, 26)
-        fine_label.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
+        fine_label.setStyleSheet(REFINED_STYLES['LABEL_STYLE'])
         self.fine_grid_box = QCheckBox("")
         self.fine_grid_box.setStyleSheet(CHECKBOX_STYLE)
         self.fine_grid_box.setFixedSize(170, 26)
@@ -1735,7 +1519,7 @@ class MainWindow(QMainWindow):
         # ---- Accumulation mode (preview readout) ----
         accum_label = QLabel("Accumulation Mode")
         accum_label.setFixedSize(170, 26)
-        accum_label.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
+        accum_label.setStyleSheet(REFINED_STYLES['LABEL_STYLE'])
         self.accum_box = QCheckBox("")
         self.accum_box.setStyleSheet(CHECKBOX_STYLE)
         self.accum_box.setFixedSize(170, 26)
@@ -1755,7 +1539,7 @@ class MainWindow(QMainWindow):
         # ---- Saving of the full 2D data ----
         save2d_label = QLabel("Save 2D")
         save2d_label.setFixedSize(170, 26)
-        save2d_label.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
+        save2d_label.setStyleSheet(REFINED_STYLES['LABEL_STYLE'])
         self.Save2D = QCheckBox("")
         self.Save2D.setStyleSheet(CHECKBOX_STYLE)
         self.Save2D.setFixedSize(170, 26)
@@ -1764,7 +1548,7 @@ class MainWindow(QMainWindow):
 
         hdf5_label = QLabel("Save 2D as HDF5")
         hdf5_label.setFixedSize(170, 26)
-        hdf5_label.setStyleSheet("QLabel { color : rgb(193, 202, 227); font-weight: bold; }")
+        hdf5_label.setStyleSheet(REFINED_STYLES['LABEL_STYLE'])
         self.Save_hdf5 = QCheckBox("")
         self.Save_hdf5.setStyleSheet(CHECKBOX_STYLE)
         self.Save_hdf5.setFixedSize(170, 26)
@@ -2825,199 +2609,7 @@ class MainWindow(QMainWindow):
         if size_grip:
             size_grip.setVisible(False)
 
-        filedialog.setStyleSheet("""
-            QFileDialog, QDialog { 
-                background-color: rgb(42, 42, 64); 
-                color: rgb(193, 202, 227);
-                font-size: 11px;
-            }
-
-            QFileDialog QListView {
-                min-width: 150px; 
-                background-color: rgb(35, 35, 55);
-                border: 1px solid rgb(63, 63, 97);
-                color: rgb(193, 202, 227);
-            }
-
-            QTreeView {
-                min-width: 500px;
-                background-color: rgb(35, 35, 55);
-                border: 1px solid rgb(63, 63, 97);
-                color: rgb(193, 202, 227);
-                outline: none;
-            }
-
-            QFileDialog QFrame#qt_contents, QFileDialog QWidget {
-                background-color: rgb(42, 42, 64);
-            }
-            
-            QFileDialog QToolBar {
-                background-color: rgb(42, 42, 64);
-                border-bottom: 1px solid rgb(63, 63, 97);
-                min-height: 34px; 
-                padding: 2px;
-            }
-
-            QToolButton {
-                background-color: rgb(63, 63, 97);
-                border: 1px solid rgb(83, 83, 117);
-                border-radius: 4px;
-                min-height: 23px; 
-                max-height: 23px;
-                min-width: 23px;
-                qproperty-iconSize: 14px 14px; 
-                margin: 0px 2px;
-                vertical-align: middle;
-            }
-
-            QToolButton:hover {
-                border: 1px solid rgb(211, 194, 78);
-                background-color: rgb(83, 83, 117);
-            }
-
-            QLineEdit, QComboBox {
-                background-color: rgb(63, 63, 97);
-                color: rgb(193, 202, 227);
-                border: 1px solid rgb(83, 83, 117);
-                border-radius: 3px;
-                padding: 2px 5px;
-                min-height: 16px; 
-            }
-
-            QLineEdit:focus, QFileDialog QComboBox:focus {
-                border: 1px solid rgb(211, 194, 78);
-                color: rgb(211, 194, 78);
-                outline: none;
-            }
-
-            QFileDialog QComboBox#lookInCombo {
-                background-color: rgb(42, 42, 64);
-                color: rgb(193, 202, 227);
-                border: 1px solid rgb(83, 83, 117);
-                border-radius: 3px;
-                padding-left: 5px;
-                min-height: 19px;
-                max-height: 19px;
-                selection-background-color: rgb(48, 48, 75);
-                selection-color: rgb(211, 194, 78);
-            }
-
-            QFileDialog QComboBox#lookInCombo QAbstractItemView {
-                outline: none;
-                border: 1px solid rgb(48, 48, 75);
-                background-color: rgb(42, 42, 64);
-            }
-
-            QFileDialog QDialogButtonBox QPushButton {
-                background-color: rgb(63, 63, 97);
-                color: rgb(193, 202, 227);
-                border: 1px solid rgb(83, 83, 117);
-                border-radius: 4px;
-                font-weight: bold;
-                min-height: 23px;
-                max-height: 23px;
-                min-width: 75px;
-                padding: 0px 12px;
-            }
-
-            QFileDialog QDialogButtonBox QPushButton:hover {
-                background-color: rgb(83, 83, 117);
-                border: 1px solid rgb(211, 194, 78);
-                color: rgb(211, 194, 78);
-            }
-            
-            QHeaderView::section {
-                background-color: rgb(63, 63, 97);
-                color: rgb(193, 202, 227);
-                padding: 4px;
-                border: none;
-                border-right: 1px solid rgb(83, 83, 117);
-                min-height: 20px;
-            }
-
-            QScrollBar:vertical {
-                border: none; background: rgb(43, 43, 77); 
-                width: 10px; margin: 0px;
-            }
-            QScrollBar::handle:vertical {
-                background: rgb(193, 202, 227); min-height: 20px; border-radius: 5px;
-            }
-            QScrollBar::handle:vertical:hover { background: rgb(211, 194, 78); }
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }
-            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: none; }
-
-            QScrollBar:horizontal {
-                border: none; 
-                background: rgb(43, 43, 77); 
-                height: 10px; 
-                margin: 0px;
-            }
-            QScrollBar::handle:horizontal {
-                background: rgb(193, 202, 227); 
-                min-width: 20px; 
-                border-radius: 5px;
-            }
-            QScrollBar::handle:horizontal:hover { 
-                background: rgb(211, 194, 78); 
-            }
-            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { 
-                width: 0px; 
-            }
-            QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal { 
-                background: none; 
-            }
-
-            QFileDialog QDialogButtonBox {
-                background-color: rgb(42, 42, 64);
-                border-top: 1px solid rgb(63, 63, 97);
-                padding: 6px;
-            }
-
-            QFileDialog QLabel {
-                color: rgb(193, 202, 227);
-            }
-
-            QFileDialog QListView::item:hover {
-                background-color: rgb(48, 48, 75);
-                color: rgb(211, 194, 78);
-            }
-
-            QHeaderView {
-                background-color: rgb(63, 63, 97);
-            }
-
-            QFileDialog QListView#sidebar:inactive, 
-            QTreeView:inactive {
-                selection-background-color: rgb(35, 35, 55);
-                selection-color: rgb(211, 194, 78);
-            }
-
-            QTreeView::item:hover { 
-                background-color: rgb(48, 48, 75);
-                color: rgb(211, 194, 78); 
-                } 
-            QTreeView::item:selected:inactive, 
-            QFileDialog QListView#sidebar::item:selected:inactive {
-                selection-background-color: rgb(63, 63, 97);
-                selection-color: rgb(211, 194, 78);
-            }
-            QFileDialog QListView#sidebar::item {
-                padding-left: 5px; 
-                padding-top: 5px;
-            }
-
-            QMenu {
-                background-color: rgb(42, 42, 64);
-                border: 1px solid rgb(63, 63, 97);
-                padding: 3px;
-            }
-            QMenu::item { color: rgb(211, 194, 78); } 
-            QMenu::item:selected { 
-                background-color: rgb(48, 48, 75); 
-                color: rgb(211, 194, 78);
-                }
-
-        """)
+        style_file_dialog(filedialog)
         filedialog.setFileMode(QFileDialog.FileMode.AnyFile)
         filedialog.fileSelected.connect(self.open_file)
         filedialog.show()
@@ -3054,199 +2646,7 @@ class MainWindow(QMainWindow):
         if size_grip:
             size_grip.setVisible(False)
 
-        filedialog.setStyleSheet("""
-            QFileDialog, QDialog { 
-                background-color: rgb(42, 42, 64); 
-                color: rgb(193, 202, 227);
-                font-size: 11px;
-            }
-
-            QFileDialog QListView {
-                min-width: 150px; 
-                background-color: rgb(35, 35, 55);
-                border: 1px solid rgb(63, 63, 97);
-                color: rgb(193, 202, 227);
-            }
-
-            QTreeView {
-                min-width: 500px;
-                background-color: rgb(35, 35, 55);
-                border: 1px solid rgb(63, 63, 97);
-                color: rgb(193, 202, 227);
-                outline: none;
-            }
-
-            QFileDialog QFrame#qt_contents, QFileDialog QWidget {
-                background-color: rgb(42, 42, 64);
-            }
-            
-            QFileDialog QToolBar {
-                background-color: rgb(42, 42, 64);
-                border-bottom: 1px solid rgb(63, 63, 97);
-                min-height: 34px; 
-                padding: 2px;
-            }
-
-            QToolButton {
-                background-color: rgb(63, 63, 97);
-                border: 1px solid rgb(83, 83, 117);
-                border-radius: 4px;
-                min-height: 23px; 
-                max-height: 23px;
-                min-width: 23px;
-                qproperty-iconSize: 14px 14px; 
-                margin: 0px 2px;
-                vertical-align: middle;
-            }
-
-            QToolButton:hover {
-                border: 1px solid rgb(211, 194, 78);
-                background-color: rgb(83, 83, 117);
-            }
-
-            QLineEdit, QComboBox {
-                background-color: rgb(63, 63, 97);
-                color: rgb(193, 202, 227);
-                border: 1px solid rgb(83, 83, 117);
-                border-radius: 3px;
-                padding: 2px 5px;
-                min-height: 16px; 
-            }
-
-            QLineEdit:focus, QFileDialog QComboBox:focus {
-                border: 1px solid rgb(211, 194, 78);
-                color: rgb(211, 194, 78);
-                outline: none;
-            }
-
-            QFileDialog QComboBox#lookInCombo {
-                background-color: rgb(42, 42, 64);
-                color: rgb(193, 202, 227);
-                border: 1px solid rgb(83, 83, 117);
-                border-radius: 3px;
-                padding-left: 5px;
-                min-height: 19px;
-                max-height: 19px;
-                selection-background-color: rgb(48, 48, 75);
-                selection-color: rgb(211, 194, 78);
-            }
-
-            QFileDialog QComboBox#lookInCombo QAbstractItemView {
-                outline: none;
-                border: 1px solid rgb(48, 48, 75);
-                background-color: rgb(42, 42, 64);
-            }
-
-            QFileDialog QDialogButtonBox QPushButton {
-                background-color: rgb(63, 63, 97);
-                color: rgb(193, 202, 227);
-                border: 1px solid rgb(83, 83, 117);
-                border-radius: 4px;
-                font-weight: bold;
-                min-height: 23px;
-                max-height: 23px;
-                min-width: 75px;
-                padding: 0px 12px;
-            }
-
-            QFileDialog QDialogButtonBox QPushButton:hover {
-                background-color: rgb(83, 83, 117);
-                border: 1px solid rgb(211, 194, 78);
-                color: rgb(211, 194, 78);
-            }
-            
-            QHeaderView::section {
-                background-color: rgb(63, 63, 97);
-                color: rgb(193, 202, 227);
-                padding: 4px;
-                border: none;
-                border-right: 1px solid rgb(83, 83, 117);
-                min-height: 20px;
-            }
-
-            QScrollBar:vertical {
-                border: none; background: rgb(43, 43, 77); 
-                width: 10px; margin: 0px;
-            }
-            QScrollBar::handle:vertical {
-                background: rgb(193, 202, 227); min-height: 20px; border-radius: 5px;
-            }
-            QScrollBar::handle:vertical:hover { background: rgb(211, 194, 78); }
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }
-            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: none; }
-
-            QScrollBar:horizontal {
-                border: none; 
-                background: rgb(43, 43, 77); 
-                height: 10px; 
-                margin: 0px;
-            }
-            QScrollBar::handle:horizontal {
-                background: rgb(193, 202, 227); 
-                min-width: 20px; 
-                border-radius: 5px;
-            }
-            QScrollBar::handle:horizontal:hover { 
-                background: rgb(211, 194, 78); 
-            }
-            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { 
-                width: 0px; 
-            }
-            QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal { 
-                background: none; 
-            }
-
-            QFileDialog QDialogButtonBox {
-                background-color: rgb(42, 42, 64);
-                border-top: 1px solid rgb(63, 63, 97);
-                padding: 6px;
-            }
-
-            QFileDialog QLabel {
-                color: rgb(193, 202, 227);
-            }
-
-            QFileDialog QListView::item:hover {
-                background-color: rgb(48, 48, 75);
-                color: rgb(211, 194, 78);
-            }
-
-            QHeaderView {
-                background-color: rgb(63, 63, 97);
-            }
-
-            QFileDialog QListView#sidebar:inactive, 
-            QTreeView:inactive {
-                selection-background-color: rgb(35, 35, 55);
-                selection-color: rgb(211, 194, 78);
-            }
-
-            QTreeView::item:hover { 
-                background-color: rgb(48, 48, 75);
-                color: rgb(211, 194, 78); 
-                } 
-            QTreeView::item:selected:inactive, 
-            QFileDialog QListView#sidebar::item:selected:inactive {
-                selection-background-color: rgb(63, 63, 97);
-                selection-color: rgb(211, 194, 78);
-            }
-            QFileDialog QListView#sidebar::item {
-                padding-left: 5px; 
-                padding-top: 5px;
-            }
-
-            QMenu {
-                background-color: rgb(42, 42, 64);
-                border: 1px solid rgb(63, 63, 97);
-                padding: 3px;
-            }
-            QMenu::item { color: rgb(211, 194, 78); } 
-            QMenu::item:selected { 
-                background-color: rgb(48, 48, 75); 
-                color: rgb(211, 194, 78);
-                }
-
-        """)
+        style_file_dialog(filedialog)
 
         filedialog.setFileMode(QFileDialog.FileMode.AnyFile)
         filedialog.fileSelected.connect(self.save_file)
@@ -3933,7 +3333,7 @@ class MainWindow(QMainWindow):
                 self.cur_x0, self.cur_xdelta, self.first_order, self.second_order,
                 self.save2d, self.eseem_inc2, self.cur_cycles, self.save_each_cycle, True ) )
 
-        self.button_start_exp.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(193, 202, 227); border-style: outset; color: rgb(63, 63, 97); font-weight: bold; } QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
+        self.button_start_exp.setStyleSheet(REFINED_STYLES['ACTIVE_BUTTON_STYLE'])
 
         self.digitizer_process.start()
         # send a command in a different thread about the current state
@@ -4016,7 +3416,7 @@ class MainWindow(QMainWindow):
             self.laser_flag, self.combo_laser_num, self.laser_q_switch_delay,
             self.iq_cor, True ) )
 
-        self.button_update.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(193, 202, 227); border-style: outset; color: rgb(63, 63, 97); font-weight: bold; } QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
+        self.button_update.setStyleSheet(REFINED_STYLES['ACTIVE_BUTTON_STYLE'])
                
         self.digitizer_process.start()
         # send a command in a different thread about the current state
@@ -4041,34 +3441,8 @@ class MainWindow(QMainWindow):
             print(f'{text}', flush=True)
 
     def button_blue(self):
-        self.button_update.setStyleSheet("""
-                QPushButton {
-                    border-radius: 4px; 
-                    background-color: rgb(63, 63, 97); 
-                    border-style: outset; 
-                    color: rgb(193, 202, 227); 
-                    font-weight: bold; 
-                }
-                QPushButton:pressed {
-                background-color: rgb(211, 194, 78); 
-                border-style: inset; 
-                font-weight: bold; 
-                }
-            """)
-        self.button_start_exp.setStyleSheet("""
-                QPushButton {
-                    border-radius: 4px; 
-                    background-color: rgb(63, 63, 97); 
-                    border-style: outset; 
-                    color: rgb(193, 202, 227); 
-                    font-weight: bold; 
-                }
-                QPushButton:pressed {
-                    background-color: rgb(211, 194, 78); 
-                    border-style: inset; 
-                    font-weight: bold; 
-                }
-            """)
+        self.button_update.setStyleSheet(REFINED_STYLES['BUTTON_STYLE'])
+        self.button_start_exp.setStyleSheet(REFINED_STYLES['BUTTON_STYLE'])
 
     def parse_message(self):
         msg_type, data = self.parent_conn_dig.recv()
@@ -4216,10 +3590,10 @@ class MainWindow(QMainWindow):
         if self.is_experiment == True:
             self.digitizer_process.join()
             self.progress_bar.setValue(0)
-            self.button_start_exp.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }  QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
+            self.button_start_exp.setStyleSheet(REFINED_STYLES['BUTTON_STYLE'])
         else:
             self.errors.clear()
-            self.button_update.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); border-style: outset; color: rgb(193, 202, 227); font-weight: bold; }  QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
+            self.button_update.setStyleSheet(REFINED_STYLES['BUTTON_STYLE'])
         
         #self.timer.stop()
         self.is_experiment = False
@@ -4263,7 +3637,7 @@ class MainWindow(QMainWindow):
             self.laser_flag, self.combo_laser_num, self.laser_q_switch_delay,
             self.iq_cor ) )
 
-        self.button_update.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(211, 194, 78); border-style: outset; color: rgb(63, 63, 97); font-weight: bold; } QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }") 
+        self.button_update.setStyleSheet(REFINED_STYLES['PRIMARY_BUTTON_STYLE'])
 
         self.digitizer_process.start()
         self.parent_conn_dig.send('start')
@@ -4371,7 +3745,7 @@ class MainWindow(QMainWindow):
                 self.cur_x0, self.cur_xdelta, self.first_order, self.second_order,
                 self.save2d, self.eseem_inc2, self.cur_cycles, self.save_each_cycle ) )
 
-        self.button_start_exp.setStyleSheet("QPushButton {border-radius: 4px; background-color: rgb(211, 194, 78); border-style: outset; color: rgb(63, 63, 97); font-weight: bold; } QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; font-weight: bold; }")
+        self.button_start_exp.setStyleSheet(REFINED_STYLES['PRIMARY_BUTTON_STYLE'])
 
         self.digitizer_process.start()
         self.parent_conn_dig.send('start')

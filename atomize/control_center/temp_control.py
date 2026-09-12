@@ -3,6 +3,7 @@
 
 import os
 import sys
+from atomize.general_modules.gui_style import REFINED_STYLES, style_file_dialog
 import time
 from PyQt6.QtGui import QIcon
 from PyQt6.QtCore import Qt, QEventLoop, QTimer
@@ -15,14 +16,10 @@ from atomize.general_modules.gui_style import CHECKBOX_STYLE
 
 # Styling constants reused from the other control-center windows
 _FG = "rgb(193, 202, 227)"
-_LBL_NORMAL = "QLabel { color : rgb(193, 202, 227); font-weight: bold; }"
+_LBL_NORMAL = REFINED_STYLES['LABEL_STYLE']
 _LBL_GREEN = "QLabel { color : rgb(126, 211, 78); font-weight: bold; }"
-_BUSY_BTN = ("QPushButton {border-radius: 4px; background-color: rgb(211, 194, 78); "
-             "border-style: outset; color: rgb(63, 63, 97); font-weight: bold; }")
-_IDLE_BTN = ("QPushButton {border-radius: 4px; background-color: rgb(63, 63, 97); "
-             "border-style: outset; color: rgb(193, 202, 227); font-weight: bold; } "
-             "QPushButton:pressed {background-color: rgb(211, 194, 78); border-style: inset; "
-             "font-weight: bold; }")
+_BUSY_BTN = (REFINED_STYLES['PRIMARY_BUTTON_STYLE'])
+_IDLE_BTN = (REFINED_STYLES['BUTTON_STYLE'])
 
 _LOCK_SOURCE = 'temp_control'
 _HOLD_COUNT = 3          # consecutive in-band polls required before "reached"
@@ -68,7 +65,7 @@ class MainWindow(QMainWindow):
     def design(self):
         self.setObjectName("MainWindow")
         self.setWindowTitle("Temperature Control")
-        self.setStyleSheet("background-color: rgb(42,42,64);")
+        self.setStyleSheet(REFINED_STYLES['WINDOW_STYLE'])
 
         path_to_main = os.path.dirname(os.path.abspath(__file__))
         icon_path = os.path.join(path_to_main, 'gui/icon_temp.ico')
@@ -86,14 +83,13 @@ class MainWindow(QMainWindow):
         def label(text, w=190):
             lbl = QLabel(text)
             lbl.setFixedSize(w, 26)
-            lbl.setStyleSheet("QLabel { color : %s; font-weight: bold; }" % _FG)
+            lbl.setStyleSheet(REFINED_STYLES['LABEL_STYLE'])
             return lbl
 
         def dspin(v_min, v_max, val, step, dec, suf):
             sb = QDoubleSpinBox()
             sb.setRange(v_min, v_max)
-            sb.setStyleSheet("QDoubleSpinBox { color : %s; selection-background-color: "
-                             "rgb(211, 194, 78); selection-color: rgb(63, 63, 97);}" % _FG)
+            sb.setStyleSheet(REFINED_STYLES['COMPACT_FIELD_STYLE'])
             sb.setSingleStep(step)
             sb.blockSignals(True)
             sb.setValue(val)
@@ -127,8 +123,7 @@ class MainWindow(QMainWindow):
         self.combo_range.currentIndexChanged.connect(self.heater_range)
         self.combo_range.setFixedSize(130, 26)
         self.combo_range.setStyleSheet(
-            "QComboBox { color : %s; selection-color: rgb(211, 194, 78); "
-            "selection-background-color: rgb(63, 63, 97); outline: none; }" % _FG)
+            REFINED_STYLES['COMBO_STYLE'])
 
         # ---- Live readback + per-channel gate ----
         self.label_A = label("A:  --- K", 150)

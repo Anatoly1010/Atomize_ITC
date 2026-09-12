@@ -27,6 +27,7 @@ import math
 
 from PyQt6.QtWidgets import QWidget, QDoubleSpinBox, QComboBox, QHBoxLayout
 from PyQt6.QtCore import pyqtSignal, Qt
+from atomize.general_modules.gui_style import COMBO_STYLE, DSPIN_STYLE
 
 
 _UNIT_FACTOR = {'ns': 1.0, 'μs': 1e3, 'ms': 1e6, 's': 1e9}
@@ -109,22 +110,14 @@ class TimeLogSpinBox(QWidget):
         self._spin.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
         self._spin.setKeyboardTracking(False)
         self._spin.setFixedHeight(26)
-        self._spin.setStyleSheet(
-            "QDoubleSpinBox { color: rgb(193, 202, 227); "
-            "selection-background-color: rgb(211, 194, 78); "
-            "selection-color: rgb(63, 63, 97); }"
-        )
+        self._spin.setStyleSheet(DSPIN_STYLE)
 
         self._unit = QComboBox()
         self._unit.addItems(_UNITS)
         self._unit.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
         self._unit.setFixedHeight(26)
         self._unit.setFixedWidth(48)
-        self._unit.setStyleSheet(
-            "QComboBox { color: rgb(193, 202, 227); "
-            "selection-background-color: rgb(63, 63, 97); "
-            "selection-color: rgb(211, 194, 78); }"
-        )
+        self._unit.setStyleSheet(COMBO_STYLE)
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)

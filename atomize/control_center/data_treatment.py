@@ -57,7 +57,7 @@ from atomize.main.widgets import CrosshairPlotWidget, CloseableDock, CrosshairDo
 # so QComboBox / QSpinBox / QLineEdit render identically on Linux and Windows.
 from atomize.general_modules.gui_style import (apply_app_style,
     BG, FG, ACCENT, BUTTON_STYLE, LABEL_STYLE, DSPIN_STYLE, SPIN_STYLE,
-    COMBO_STYLE, LINEEDIT_STYLE, SCROLL_STYLE, TAB_STYLE)
+    COMBO_STYLE, LINEEDIT_STYLE, SCROLL_STYLE, ANALYSIS_TAB_STYLE)
 
 # Shared form primitives: one label column per panel, long explanations behind
 # '?' chips, collapsible blocks for the secondary knobs.
@@ -395,7 +395,7 @@ class MainWindow(QMainWindow):
 
         # ---- Operation tabs (the largest block) ----
         self.tabs = QTabWidget()
-        self.tabs.setStyleSheet(TAB_STYLE)
+        self.tabs.setStyleSheet(ANALYSIS_TAB_STYLE)
         self.tabs.addTab(self._build_fit_tab(), 'Fit')
         self.tabs.addTab(self._build_fft_tab(), 'FFT')
         self.tabs.addTab(self._build_phase_tab(), 'Phase')

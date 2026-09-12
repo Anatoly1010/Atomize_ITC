@@ -3,6 +3,7 @@
 
 import os
 import sys
+from atomize.general_modules.gui_style import REFINED_STYLES, style_file_dialog
 import datetime
 import numpy as np
 from PyQt6.QtWidgets import QWidget, QFileDialog
@@ -35,13 +36,14 @@ class MainWindow(QtWidgets.QMainWindow):
         #self.path = os.path.join(self.path_to_main, '..', '..', '..', '..', '00_Experimental_Data/2022')
         
         uic.loadUi(gui_path, self)                        # Design file
+        self.setStyleSheet(REFINED_STYLES['WINDOW_STYLE'])
 
         # text labels
-        self.label.setStyleSheet("QLabel { color : rgb(193, 202, 227); }")
-        self.label_2.setStyleSheet("QLabel { color : rgb(193, 202, 227); }")
-        self.label_3.setStyleSheet("QLabel { color : rgb(193, 202, 227); }")
-        self.label_4.setStyleSheet("QLabel { color : rgb(193, 202, 227); }")
-        self.label_5.setStyleSheet("QLabel { color : rgb(193, 202, 227); }")
+        self.label.setStyleSheet(REFINED_STYLES['LABEL_STYLE'])
+        self.label_2.setStyleSheet(REFINED_STYLES['LABEL_STYLE'])
+        self.label_3.setStyleSheet(REFINED_STYLES['LABEL_STYLE'])
+        self.label_4.setStyleSheet(REFINED_STYLES['LABEL_STYLE'])
+        self.label_5.setStyleSheet(REFINED_STYLES['LABEL_STYLE'])
 
         self.deg_rad = 57.2957795131
         self.sec_order_coef = -2*np.pi/2
@@ -49,22 +51,21 @@ class MainWindow(QtWidgets.QMainWindow):
         # Spinboxes
         self.First.valueChanged.connect(self.phase_correction)
         self.first_cor = float( self.First.value() )
-        self.First.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); }")
+        self.First.setStyleSheet(REFINED_STYLES['COMPACT_FIELD_STYLE'])
         self.Second.valueChanged.connect(self.phase_correction)
         self.second_cor = float( self.Second.value() )
         if self.second_cor != 0.0:
             self.second_cor = self.sec_order_coef / ( float( self.Second.value() ) * 1000 )
 
-        self.Second.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); }")
+        self.Second.setStyleSheet(REFINED_STYLES['COMPACT_FIELD_STYLE'])
         self.Zero.valueChanged.connect(self.phase_correction)
         self.zero_cor = float( self.Zero.value() ) / self.deg_rad
-        self.Zero.setStyleSheet("QDoubleSpinBox { color : rgb(193, 202, 227); }")
+        self.Zero.setStyleSheet(REFINED_STYLES['COMPACT_FIELD_STYLE'])
         self.Point_drop.valueChanged.connect(self.point_drop)
         self.drop = int( self.Point_drop.value() )
-        self.Point_drop.setStyleSheet("QSpinBox { color : rgb(193, 202, 227); }")
+        self.Point_drop.setStyleSheet(REFINED_STYLES['COMPACT_FIELD_STYLE'])
 
-        self.menuBar.setStyleSheet("QMenuBar { color: rgb(193, 202, 227); } \
-                            QMenu::item { color: rgb(211, 194, 78); } QMenu::item:selected {color: rgb(193, 202, 227); }")
+        self.menuBar.setStyleSheet(REFINED_STYLES['MENU_STYLE'])
         self.action_read.triggered.connect( self.open_file_dialog )
         self.action_read_1d.triggered.connect( self.open_file_dialog_1d )
         self.action_save.triggered.connect( self.save_file_dialog )
@@ -95,7 +96,7 @@ class MainWindow(QtWidgets.QMainWindow):
         filedialog = QFileDialog(self, 'Open File', directory = ldir.load('phase_cor', self.path), filter = "Data (*.csv)",\
             options = QtWidgets.QFileDialog.Option.DontUseNativeDialog)
         # use QFileDialog.DontUseNativeDialog to change directory
-        filedialog.setStyleSheet("QWidget { background-color : rgb(42, 42, 64); color: rgb(211, 194, 78);}")
+        style_file_dialog(filedialog)
         filedialog.setFileMode(QtWidgets.QFileDialog.FileMode.AnyFile)
         filedialog.fileSelected.connect(self.open_file)
         filedialog.show()
@@ -107,7 +108,7 @@ class MainWindow(QtWidgets.QMainWindow):
         filedialog = QFileDialog(self, 'Open File', directory = ldir.load('phase_cor', self.path), filter = "Data (*.csv)",\
             options = QtWidgets.QFileDialog.Option.DontUseNativeDialog)
         # use QFileDialog.DontUseNativeDialog to change directory
-        filedialog.setStyleSheet("QWidget { background-color : rgb(42, 42, 64); color: rgb(211, 194, 78);}")
+        style_file_dialog(filedialog)
         filedialog.setFileMode(QtWidgets.QFileDialog.FileMode.AnyFile)
         filedialog.fileSelected.connect(self.open_file_1d)
         filedialog.show()
@@ -144,7 +145,7 @@ class MainWindow(QtWidgets.QMainWindow):
             options = QtWidgets.QFileDialog.Option.DontUseNativeDialog)
         filedialog.setAcceptMode(QFileDialog.AcceptSave)
         # use QFileDialog.DontUseNativeDialog to change directory
-        filedialog.setStyleSheet("QWidget { background-color : rgb(42, 42, 64); color: rgb(211, 194, 78);}")
+        style_file_dialog(filedialog)
         filedialog.setFileMode(QtWidgets.QFileDialog.FileMode.AnyFile)
         filedialog.fileSelected.connect(self.save_file)
         filedialog.show()
@@ -157,7 +158,7 @@ class MainWindow(QtWidgets.QMainWindow):
             options = QtWidgets.QFileDialog.Option.DontUseNativeDialog)
         filedialog.setAcceptMode(QFileDialog.AcceptSave)
         # use QFileDialog.DontUseNativeDialog to change directory
-        filedialog.setStyleSheet("QWidget { background-color : rgb(42, 42, 64); color: rgb(211, 194, 78);}")
+        style_file_dialog(filedialog)
         filedialog.setFileMode(QtWidgets.QFileDialog.FileMode.AnyFile)
         filedialog.fileSelected.connect(self.save_file_1d)
         filedialog.show()
