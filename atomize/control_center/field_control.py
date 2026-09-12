@@ -134,27 +134,23 @@ class MainWindow(QMainWindow):
 
 
         # ---- Layout placement ----
-        title = QLabel("Magnetic field")
-        title.setStyleSheet("color: #e2e5f0; font-size: 20px; font-weight: 600;")
-        gridLayout.addWidget(title, 0, 0, 1, 2)
-        gridLayout.setRowMinimumHeight(1, 12)
-        gridLayout.addWidget(self.label_1, 2, 0)
-        gridLayout.addWidget(self.Set_point, 2, 1)
-        gridLayout.addWidget(self.label_2, 3, 0)
-        gridLayout.addWidget(self.box_ini, 3, 1)
-        gridLayout.addWidget(self.label_lock, 4, 0, 1, 2)
+        gridLayout.addWidget(self.label_1, 0, 0)
+        gridLayout.addWidget(self.Set_point, 0, 1)
+        gridLayout.addWidget(self.label_2, 1, 0)
+        gridLayout.addWidget(self.box_ini, 1, 1)
+        gridLayout.addWidget(self.label_lock, 2, 0, 1, 2)
 
-        gridLayout.addWidget(hline(), 5, 0, 1, 2)
+        gridLayout.addWidget(hline(), 3, 0, 1, 2)
 
         buttons_layout = QHBoxLayout()
         buttons_layout.setSpacing(8)
         buttons_layout.addWidget(self.button_stop)
         buttons_layout.addWidget(self.button_reconnect)
         buttons_layout.addStretch()
-        gridLayout.addLayout(buttons_layout, 6, 0, 1, 2)
-        gridLayout.addWidget(self.button_off, 7, 0)
+        gridLayout.addLayout(buttons_layout, 4, 0, 1, 2)
+        gridLayout.addWidget(self.button_off, 5, 0)
 
-        gridLayout.setRowStretch(8, 2)
+        gridLayout.setRowStretch(6, 2)
         gridLayout.setColumnStretch(2, 1)
 
     def refresh_field_status(self):
