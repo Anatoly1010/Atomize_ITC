@@ -704,6 +704,10 @@ class MainWindow(QMainWindow):
         except ( AttributeError, NameError, TypeError ):
             pass
 
+        if bridge_param.is_locked():
+            self._show_from_file()
+            return
+
         MESSAGE = b'\x0e' + b'\x04' + b'\x01' + b'\x02' + ( step ).to_bytes( 2, byteorder = 'big', signed = True )
         self.sock.sendto( MESSAGE, (self.UDP_IP, self.UDP_PORT) )
         # 6 bytes to recieve

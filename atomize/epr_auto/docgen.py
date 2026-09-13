@@ -16,6 +16,7 @@ import sys
 from atomize.epr_auto.steps import STEPS
 
 FAMILIES = (
+    ('bridge', 'MW bridge steps'),
     ('tune', 'Tuning steps'),
     ('field', 'Field steps'),
     ('temp', 'Temperature steps'),

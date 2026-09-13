@@ -426,7 +426,7 @@ def _apply_cal(session, preset, mapping):
     from atomize.epr_auto.engine import snapshot
     from atomize.epr_auto.primitives import tune
     try:
-        pre = snapshot.load_preset(preset)
+        pre = tune.load_tuned_preset(session, preset)
     except (ValueError, RuntimeError, IndexError) as e:
         # a corrupt/truncated preset (PresetError is a ValueError; a malformed
         # line can IndexError) is loaded here, OUTSIDE _run_primitive's try —
@@ -559,3 +559,8 @@ def exp_t1(session, preset, t_start, t_end, points, scans, window, apply_cal,
                           points=points, scans=scans, window=window,
                           max_duration=max_duration, rep_rate=rep_rate,
                           target_snr=target_snr)
+
+
+from atomize.epr_auto.preliminary_steps import register_steps
+
+register_steps(register, _run_primitive)

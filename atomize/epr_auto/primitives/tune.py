@@ -19,6 +19,8 @@ Physics conventions (see ARCHITECTURE.md 'Flip-angle knobs'):
 """
 import math
 import time
+import copy
+from pathlib import Path
 
 import numpy as np
 from scipy.optimize import curve_fit
@@ -63,6 +65,14 @@ def _session_overrides(session):
     return ov
 
 
+def load_tuned_preset(session, path):
+    """Load the selected preliminary pulse settings when this source was tuned."""
+    selected = session.state.get('_preliminary_preset')
+    if selected is not None and Path(selected.path).resolve() == Path(path).resolve():
+        return copy.deepcopy(selected)
+    return snapshot.load_preset(path)
+
+
 def _build(session, preset_path, exp_name, slot_coef=None, **overrides):
     """Preset -> (preset, WorkerArgs) with session calibrations + explicit
     overrides applied. slot_coef=(slot_index, value) — or a list of such
@@ -81,7 +91,7 @@ def _build(session, preset_path, exp_name, slot_coef=None, **overrides):
     its arg tuples lazily (exp_args/dig_args read self.iq_cor at call time), so
     this post-build set reaches both the exp and dig paths."""
     preset = preset_path if isinstance(preset_path, snapshot.Preset) \
-        else snapshot.load_preset(preset_path)
+        else load_tuned_preset(session, preset_path)
     if slot_coef is not None:
         pairs = [slot_coef] if isinstance(slot_coef[0], int) else slot_coef
         for idx, value in pairs:

@@ -24,7 +24,7 @@ _PI_CAL_DEFAULTS = ('ampl_4s.phase_awg', 'rabi_echo_4s.phase_awg')
 
 def default_preset_names():
     """Every shipped preset a step can fall back to, derived from the registry."""
-    names = set(_PI_CAL_DEFAULTS)
+    names = set(_PI_CAL_DEFAULTS) | {'ringing_check.phase_awg'}
     for spec in STEPS.values():
         for param in spec.params.values():
             if isinstance(param, PresetFile) and param.default:

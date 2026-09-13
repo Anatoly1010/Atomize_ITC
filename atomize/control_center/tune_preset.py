@@ -1091,7 +1091,12 @@ class Worker():
             while self.command != 'exit':
 
                 k = 1
-                while k <= SCANS:
+                while k <= SCANS and self.command != 'exit':
+
+                    if conn.poll():
+                        self.command = conn.recv()
+                    if self.command == 'exit':
+                        break
 
                     i = 0
                     freq = START_FREQ
@@ -1103,11 +1108,16 @@ class Worker():
 
                     while freq <= END_FREQ:
 
+                        if conn.poll():
+                            self.command = conn.recv()
+                        if self.command == 'exit':
+                            break
+
                         mw.mw_bridge_synthesizer( freq )
+                        general.wait('300 ms')
 
                         a2012.oscilloscope_start_acquisition()
                         y = -a2012.oscilloscope_get_curve('CH1')
-                        general.wait('300 ms')
 
                         data[i] = ( data[i] * (k - 1) + y ) / k
 
@@ -1189,6 +1199,12 @@ class Worker():
         except BaseException as e:
             exc_info = f"{type(e)} \n{str(e)} \n{traceback.format_exc()}"
             conn.send( ('Error', exc_info) )
+        finally:
+            if 'pb' in locals():
+                pb.pulser_close()
+            if 'freq_before' in locals():
+                mw.mw_bridge_synthesizer(freq_before)
+                general.wait('300 ms')
 
 def main():
     """

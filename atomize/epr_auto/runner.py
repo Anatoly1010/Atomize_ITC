@@ -28,6 +28,7 @@ from datetime import datetime
 
 from atomize.epr_auto.protocol import Foreach
 from atomize.epr_auto.steps import STEPS, StepFailure
+from atomize.epr_auto.errors import PreliminaryAbort
 
 
 class RunnerAbort(Exception):
@@ -130,13 +131,17 @@ def run_protocol(protocol, session):
                 pos += 1
                 _do_step(protocol, session, manifest, item, struct_idx, results,
                          f'[{pos}/{n}]')
-    except RunnerAbort as e:
-        manifest.finish(f'aborted: {e}')
-        session.notify(f'{protocol.path.name}: ABORTED — {e}')
-        raise
-    except KeyboardInterrupt:
-        manifest.finish('aborted: operator interrupt')
-        session.notify(f'{protocol.path.name}: ABORTED — operator interrupt')
+    except BaseException as error:
+        reason = 'operator interrupt' if isinstance(error, KeyboardInterrupt) else str(error)
+        if session.state.get('ringing_check'):
+            from atomize.epr_auto.primitives.preliminary import _abort
+            try:
+                _abort(session, reason)
+            except PreliminaryAbort as stopped:
+                reason = str(stopped)
+                session.log(f'      {reason}')
+        manifest.finish(f'aborted: {reason}')
+        session.notify(f'{protocol.path.name}: ABORTED — {reason}')
         raise
 
     ran = sum(1 for _, r in results if r is not None)
@@ -223,6 +228,10 @@ def _run_step(protocol, session, manifest, step, index):
             session.log(f'      step failed (attempt {attempts}): {e}')
         except RunnerAbort:
             raise
+        except PreliminaryAbort as e:
+            session.discard_staged_state()
+            manifest.record(step, 'failed', attempts, error=str(e))
+            raise RunnerAbort(str(e), hard=True) from None
         except Exception:
             session.log(traceback.format_exc())
             manifest.record(step, 'failed', attempts,

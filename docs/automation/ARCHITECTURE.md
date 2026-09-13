@@ -3,11 +3,11 @@
 Project: automated pulsed-EPR experiments on the ITC endstation (Insys FM214x3GDA),
 built on Atomize. Companion file: [ROADMAP.md](ROADMAP.md) (phases + session log).
 
-Planned extension (2026-09-13): [preliminary tuning](PRELIMINARY_TUNING_PLAN.md)
+Implemented extension (2026-09-13): [preliminary tuning](PRELIMINARY_TUNING_PLAN.md)
 adds a receiver ringing gate, optional resonator-frequency selection with an
 AWG SINE pulse (typical precision 5 MHz), echo search/maximization and preset
 handoff to fine tuning. This extends the original v1 resonator-tuning scope exclusion below;
-implementation and supervised hardware validation remain pending.
+the YAML dry-run and offline checks pass; supervised hardware validation remains pending.
 
 ## Decisions (agreed 2026-07-16)
 
@@ -38,7 +38,8 @@ Three knobs set the flip angle; they have fixed roles, not interchangeable ones:
   opt-in — see the AWG-timing-grid decision above) — not a free tuning knob on AWG.
 - **Rotary vane attenuator** (`mw_bridge_rotary_vane`, 0.1 dB steps) = coarse,
   **global** (scales B₁ of every pulse at once — cannot set π and π/2
-  independently at equal length), mechanical, slow (36 ms/step, ~7 s homing),
+  independently at equal length), mechanical, slow (36 ms/step; preliminary initial homing allows the calibrated
+  full travel of 70.596 s plus 0.2 s),
   position **dead-reckoned** (stepper steps relative to `prev_dB`; true re-home
   only at the 0/60 dB limits).
 - **AWG amplitude** = fine, per-pulse, instant, repeatable; amplitude → B₁ is

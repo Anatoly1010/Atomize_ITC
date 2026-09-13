@@ -6,15 +6,17 @@ needs the lab machine / real hardware under **Pending hardware validation**.
 Design decisions live in [ARCHITECTURE.md](ARCHITECTURE.md) — update it when a
 decision changes, don't fork it here.
 
-## Preliminary tuning — planned 2026-09-13
+## Preliminary tuning — implemented 2026-09-13, hardware validation pending
 
 The [complete preliminary-tuning plan](PRELIMINARY_TUNING_PLAN.md) specifies
 the receiver ringing gate, optional resonator scan, bounded echo search
 and maximization, and exported presets for the existing fine-tuning chain.
 The real June 24 scan has been inspected; its early ringing sections suggest
 approximately 9440 MHz observation frequency, consistent with the operator's
-typical 5 MHz precision. Implementation and supervised hardware validation
-remain pending; the linked plan contains the task checklist.
+typical 5 MHz precision. The selector returns 9439 MHz from this scan.
+The five-stage YAML dry-run and offline failure/optimization/export checks
+pass; GUI/engine equivalence reports ALL PASS. Supervised hardware validation
+remains pending; the linked plan contains the task checklist and commands.
 The extension uses registered auto-EPR YAML steps in the existing runner.
 Every transmit pulse is an AWG SINE pulse at the tuning preset's DETECTION
 IF (the engine has no RECT path): the ringing check uses
@@ -27,6 +29,31 @@ bridge window that suppresses its init/exit moves, and RV resync on unlock;
 hardware test pending. A new `bridge.set` step restores RV and frequency
 for handoff. RV maximization precision is
 0.5 dB with no per-point ringing gate.
+
+Implemented steps: `tune.ringing_check`, `tune.resonator`, `tune.find_echo`,
+`tune.maximize_echo`, `tune.save_presets`, `bridge.set`. Start with
+[protocols/preliminary_tuning.yaml](../../protocols/preliminary_tuning.yaml).
+The first two steps use built-in sequences and accept `if_mhz` (default
+50 MHz), with no `preset` parameter. Their IF must match the later echo
+preset. This supervised protocol includes the optional resonator scan and the
+conditional mapped pulse-length search, bounded by the 102.4 ns ringing
+check. It exports the fine-tuning handoff at the final step. The ringing `.phase`
+twin is retired in favor of `.phase_awg`; receiver and AWG pulse both retain
+`+x,+x`. Initial signal search integrates magnitude from the existing raw
+field worker output. The handoff writes new preset copies and a fine-tuning
+YAML that restores RV/frequency first. Existing echo presets keep their
+sweep increments when preliminary settings are carried into fine tuning.
+`tune.find_echo` accepts `frequency_shift_mhz` (signed integer MHz, default 0)
+relative to the resonator center, or the initial bridge frequency without a
+scan. The shifted frequency carries through optimization and handoff.
+Two independent agents reviewed this implementation on 2026-09-13. Fixes
+cover abort homing, queued manual RV commands after locking, resonator stop
+handling and strong-ringing onset detection. Offline regressions cover each;
+initial homing now uses the calibrated red/green motor travel time (70.596 s
+for full travel, plus 0.2 s margin). Protection timing uses the September 11
+standard Hahn defense-transient window (147.6–155.2 ns); the built-in ringing
+check starts at its transferred early edge, 496.4 ns. These replace the
+previous timing uncertainties; end-to-end hardware validation remains pending.
 
 Model workflow: most items are Opus-suitable (the constraints are written down);
 items tagged **[F]** involve subtle extraction/hardware semantics — prefer Fable
