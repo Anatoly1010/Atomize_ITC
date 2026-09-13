@@ -6,6 +6,28 @@ needs the lab machine / real hardware under **Pending hardware validation**.
 Design decisions live in [ARCHITECTURE.md](ARCHITECTURE.md) — update it when a
 decision changes, don't fork it here.
 
+## Preliminary tuning — planned 2026-09-13
+
+The [complete preliminary-tuning plan](PRELIMINARY_TUNING_PLAN.md) specifies
+the receiver ringing gate, optional resonator scan, bounded echo search
+and maximization, and exported presets for the existing fine-tuning chain.
+The real June 24 scan has been inspected; its early ringing sections suggest
+approximately 9440 MHz observation frequency, consistent with the operator's
+typical 5 MHz precision. Implementation and supervised hardware validation
+remain pending; the linked plan contains the task checklist.
+The extension uses registered auto-EPR YAML steps in the existing runner.
+Every transmit pulse is an AWG SINE pulse at the tuning preset's DETECTION
+IF (the engine has no RECT path): the ringing check uses
+`ringing_check.phase_awg` with `+x,+x`, run once per run down to 0 dB, and
+`tune_preset.py` gained an AWG mode (RECT/AWG combo, IF box,
+runner-callable `Worker.scan_awg`; done 2026-09-13). Bridge coexistence
+follows the field/temperature lock pattern only and is done the same day:
+`bridge_param.py` lock, session lock extension, a 1 s poll timer in the
+bridge window that suppresses its init/exit moves, and RV resync on unlock;
+hardware test pending. A new `bridge.set` step restores RV and frequency
+for handoff. RV maximization precision is
+0.5 dB with no per-point ringing gate.
+
 Model workflow: most items are Opus-suitable (the constraints are written down);
 items tagged **[F]** involve subtle extraction/hardware semantics — prefer Fable
 there, and run `/code-review` (Fable) after Opus implementation sessions.

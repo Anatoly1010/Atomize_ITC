@@ -3,6 +3,12 @@
 Project: automated pulsed-EPR experiments on the ITC endstation (Insys FM214x3GDA),
 built on Atomize. Companion file: [ROADMAP.md](ROADMAP.md) (phases + session log).
 
+Planned extension (2026-09-13): [preliminary tuning](PRELIMINARY_TUNING_PLAN.md)
+adds a receiver ringing gate, optional resonator-frequency selection with an
+AWG SINE pulse (typical precision 5 MHz), echo search/maximization and preset
+handoff to fine tuning. This extends the original v1 resonator-tuning scope exclusion below;
+implementation and supervised hardware validation remain pending.
+
 ## Decisions (agreed 2026-07-16)
 
 | Question | Decision |

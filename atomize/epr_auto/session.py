@@ -132,20 +132,23 @@ class EPRSession:
     # ------------------------------------------------- cross-process locks
 
     def ensure_hardware_locks(self):
-        """Seize the field.param / temp.param locks (same discipline as the
-        four experiment-runner GUIs: seize at run start so the interactive
-        field/temperature tools stay off the GPIB devices). Idempotent;
-        no-op in test mode — a dry-run must not touch the real lock files."""
+        """Seize the field.param / temp.param / bridge.param locks (same
+        discipline as the four experiment-runner GUIs: seize at run start so
+        the interactive field/temperature/bridge tools stay off the devices).
+        Idempotent; no-op in test mode — a dry-run must not touch the real
+        lock files."""
         if self.test or self._locked:
             return
-        from atomize.control_center import field_param, temp_param
-        for mod, name in ((field_param, 'field'), (temp_param, 'temperature')):
+        from atomize.control_center import field_param, temp_param, bridge_param
+        for mod, name in ((field_param, 'field'), (temp_param, 'temperature'),
+                          (bridge_param, 'bridge')):
             if mod.is_locked() and mod.lock_source() not in ('', 'epr_auto'):
                 raise RuntimeError(
                     f'{name} lock is held by {mod.lock_source()!r} — another '
                     'tool is driving the hardware; close it or wait')
         field_param.set_lock('epr_auto')
         temp_param.set_lock('epr_auto')
+        bridge_param.set_lock('epr_auto')
         self._locked = True
         # never leave the interactive tools locked out after a crash/exit —
         # the runner GUIs clear their locks on every exit path, mirror that
@@ -155,9 +158,10 @@ class EPRSession:
     def release_hardware_locks(self):
         if not self._locked:
             return
-        from atomize.control_center import field_param, temp_param
+        from atomize.control_center import field_param, temp_param, bridge_param
         field_param.clear_lock()
         temp_param.clear_lock()
+        bridge_param.clear_lock()
         self._locked = False
 
     # ---------------------------------------------------------- notifications

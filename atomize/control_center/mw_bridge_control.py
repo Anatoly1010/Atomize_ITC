@@ -12,9 +12,12 @@ from math import exp, sqrt
 from threading import Thread
 from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QLabel, QDoubleSpinBox, QSpinBox, QComboBox, QPushButton, QTextEdit, QGridLayout, QFrame
 from PyQt6.QtGui import QIcon
-from PyQt6.QtCore import QEvent, Qt
+from PyQt6.QtCore import QEvent, Qt, QTimer
 import atomize.general_modules.general_functions as general
 import atomize.device_modules.ECC_15K as ecc
+import atomize.control_center.bridge_param as bridge_param
+
+_LOCK_POLL_MS = 1000
 
 class MainWindow(QMainWindow):
     """
@@ -63,10 +66,19 @@ class MainWindow(QMainWindow):
         # window would never appear. _recv() already returns None instead of
         # blocking when the bridge is off; this catches anything else so the
         # control center still opens and the user can power the bridge and retry.
-        try:
-            self.initialize()
-        except Exception as e:
-            general.message('MW bridge initialization skipped: %s' % e)
+        self.lock_banner = False
+        if bridge_param.is_locked():
+            self._sync_from_file()
+            self.apply_lock_state(True)
+        else:
+            try:
+                self.initialize()
+            except Exception as e:
+                general.message('MW bridge initialization skipped: %s' % e)
+
+        self.lock_timer = QTimer(self)
+        self.lock_timer.timeout.connect(self.refresh_lock_state)
+        self.lock_timer.start(_LOCK_POLL_MS)
         #self.telemetry()
 
         ###power2 = int( self.Synt2_power.value() )
@@ -243,8 +255,56 @@ class MainWindow(QMainWindow):
         gridLayout.addWidget(self.button_telemetry, 20, 0)
         gridLayout.addWidget(self.button_off, 21, 0)
 
-        gridLayout.setRowStretch(22, 2)
-        gridLayout.setColumnStretch(22, 2)
+        self.label_lock = QLabel("")
+        self.label_lock.setMinimumWidth(320)
+        self.label_lock.setWordWrap(True)
+        self.label_lock.setStyleSheet(REFINED_STYLES['HINT_STYLE'])
+        self.label_lock.setVisible(False)
+        gridLayout.addWidget(self.label_lock, 22, 0, 1, 2)
+
+        gridLayout.setRowStretch(23, 2)
+        gridLayout.setColumnStretch(23, 2)
+
+    # ------------------------------------------------------------ bridge lock
+    def _setters(self):
+        return (self.Rot_vane, self.Att1_prd, self.Att2_prd, self.Fv_ctrl, self.Fv_prm,
+                self.Att1_prm, self.Att2_prm, self.Synt, self.Synt2, self.Synt2_state,
+                self.Synt2_power, self.Cuttoff_box, self.button_initialize)
+
+    def _show_from_file(self):
+        """Display the published frequency and RV without sending commands."""
+        for box, value in ((self.Synt, bridge_param.current_frequency(self.Synt.value())),
+                           (self.Rot_vane, bridge_param.current_vane_db(self.curr_dB))):
+            box.blockSignals(True)
+            box.setValue(value)
+            box.blockSignals(False)
+
+    def _sync_from_file(self):
+        """Adopt the published RV as this window's own position tracking."""
+        self._show_from_file()
+        self.curr_dB = round(float(self.Rot_vane.value()), 1)
+        self.prev_dB = self.curr_dB
+
+    def refresh_lock_state(self):
+        locked = bridge_param.is_locked()
+        if locked:
+            self._show_from_file()
+        elif self.lock_banner:
+            self._sync_from_file()
+        self.apply_lock_state(locked)
+
+    def apply_lock_state(self, locked):
+        if locked == self.lock_banner:
+            return
+        self.lock_banner = locked
+        for widget in self._setters():
+            widget.setEnabled(not locked)
+        self.label_lock.setVisible(locked)
+        if locked:
+            source = bridge_param.lock_source() or 'experiment'
+            self.label_lock.setText("Bridge control locked (%s running)" % source.replace('_', ' '))
+        else:
+            self.label_lock.setText("")
 
     def changeEvent(self, event):
         if event.type() == QEvent.Type.ActivationChange:
@@ -495,6 +555,8 @@ class MainWindow(QMainWindow):
         """
         A function to change the bandwidth of the video amplifier
         """
+        if bridge_param.is_locked():
+            return
         txt = str( self.Cuttoff_box.currentText() )
 
         if txt == '300 MHz':
@@ -567,6 +629,9 @@ class MainWindow(QMainWindow):
         """
         A function to change the frequency
         """
+        if bridge_param.is_locked():
+            self._show_from_file()
+            return
 
         param = self.Synt.value()
         temp = str(param)
@@ -627,6 +692,9 @@ class MainWindow(QMainWindow):
         """
         A function to send a value to the rotary vane attenuator
         """
+        if bridge_param.is_locked():
+            self._show_from_file()
+            return
         param = self.Rot_vane.value()
         self.curr_dB = round( float( param ), 1 )
         step = int( self.calibration( self.curr_dB ) ) - int( self.calibration( self.prev_dB ) )
@@ -668,6 +736,8 @@ class MainWindow(QMainWindow):
         """
         A function to initialize a bridge.
         """
+        if bridge_param.is_locked():
+            return
 
         #MESSAGE = b'\x27' + b'\x01' + b'\x00'
 
@@ -729,6 +799,8 @@ class MainWindow(QMainWindow):
         """
         A function to initialize a bridge.
         """
+        if bridge_param.is_locked():
+            return
 
         #self.ecc15k.synthetizer_state('Off')
         
