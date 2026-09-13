@@ -81,6 +81,7 @@ def _wind_down(conn, process, save_path, poll_s):
     card. A still-alive worker is sent 'exit' and its stop protocol (incl.
     the Open->FL save handshake) is served for up to _WIND_DOWN_S; terminate
     only when it will not die (or on a further Ctrl-C)."""
+    interrupted = False
     try:
         if process.is_alive():
             try:
@@ -97,8 +98,12 @@ def _wind_down(conn, process, save_path, poll_s):
                 except (EOFError, BrokenPipeError, OSError):
                     break
     except KeyboardInterrupt:
-        pass
-    process.join(timeout=10)
+        interrupted = True
+    if not interrupted:
+        try:
+            process.join(timeout=10)
+        except KeyboardInterrupt:
+            interrupted = True
     if process.is_alive():
         process.terminate()
         process.join()
@@ -124,10 +129,9 @@ def run_worker(worker_args, sweep_type, save_path=None, script_test=False,
     later, larger projection can never re-raise a sent limit.
     Raises EngineError on a worker-side error. The child ignores SIGINT
     (_shielded), so a terminal Ctrl-C reaches only this parent: 'exit' is
-    sent, the worker reads out and saves however long that takes, and the
+    sent, the worker reads out and saves within the cleanup grace, and the
     KeyboardInterrupt is then re-raised so the interrupt aborts the protocol
-    (a second Ctrl-C stops the wait; the wind-down still allows _WIND_DOWN_S
-    of grace before terminating, a third Ctrl-C terminates immediately).
+    (a second Ctrl-C terminates the worker immediately).
     """
     if sweep_type not in SWEEP_METHOD:
         raise EngineError(f'sweep type {sweep_type!r} is not runnable '
@@ -194,23 +198,6 @@ def run_worker(worker_args, sweep_type, save_path=None, script_test=False,
                 return {'status': 'finished', 'file': save_path}
             # anything else ('Count', ...) is preview-only chatter — ignore
 
-    except KeyboardInterrupt:
-        # drain until the worker saved, then ALWAYS re-raise (see docstring)
-        try:
-            parent_conn.send('exit')
-            while True:
-                if parent_conn.poll(poll_s):
-                    kind, payload = parent_conn.recv()
-                    if kind == 'Open':
-                        parent_conn.send(f'FL{save_path}')
-                    elif kind == 'Error' or kind == 'test' or \
-                            (kind == '' and str(payload).endswith('finished')):
-                        break
-                elif not process.is_alive():
-                    break
-        except (KeyboardInterrupt, BrokenPipeError, OSError, EOFError):
-            pass
-        raise
     finally:
         _wind_down(parent_conn, process, save_path, poll_s)
 

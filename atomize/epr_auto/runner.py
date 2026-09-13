@@ -133,13 +133,6 @@ def run_protocol(protocol, session):
                          f'[{pos}/{n}]')
     except BaseException as error:
         reason = 'operator interrupt' if isinstance(error, KeyboardInterrupt) else str(error)
-        if session.state.get('ringing_check'):
-            from atomize.epr_auto.primitives.preliminary import _abort
-            try:
-                _abort(session, reason)
-            except PreliminaryAbort as stopped:
-                reason = str(stopped)
-                session.log(f'      {reason}')
         manifest.finish(f'aborted: {reason}')
         session.notify(f'{protocol.path.name}: ABORTED — {reason}')
         raise
@@ -279,11 +272,11 @@ def _on_fail_decision(session, step, error):
         return 'skip'
     if step.on_fail != 'ask':
         return 'abort'
-    if session.test:
+    if session.test and not session.gui:
         session.log('      [on_fail: ask] would prompt the operator — '
                     'aborting in dry-run')
         return 'abort'
-    if session.autonomy == 'autonomous' or not sys.stdin.isatty():
+    if session.autonomy == 'autonomous' or (not session.gui and not sys.stdin.isatty()):
         session.notify(f'step {step.name} failed ({error}); on_fail: ask '
                        'with no operator — aborting')
         return 'abort'
@@ -291,13 +284,15 @@ def _on_fail_decision(session, step, error):
                 '      retry / skip / abort? [r/s/a] ',
                 {'r': 'retry', 'retry': 'retry', 's': 'skip', 'skip': 'skip',
                  'a': 'abort-op', 'abort': 'abort-op', '': 'abort-op'},
-                on_eof='abort-op')
+                on_eof='abort-op', session=session, kind='failure')
 
 
-def _ask(prompt, answers, on_eof):
+def _ask(prompt, answers, on_eof, session=None, kind=None):
     """One operator prompt: re-ask until the reply matches a key in `answers`
     (reply -> return value); EOF returns `on_eof`. The tty/autonomy guards
     stay at the call sites — the policies differ per prompt."""
+    if session is not None and session.gui:
+        return session.gui.ask(prompt, answers, kind)
     while True:
         try:
             reply = input(prompt).strip().lower()
@@ -323,20 +318,20 @@ def _rail_fallback(protocol, session, manifest, index, rail):
                     'no earlier tune.power_for_length step — no fallback')
         return False, None
 
-    if session.test:
+    if session.test and not session.gui:
         session.log('      [rail fallback] would re-run the coarse stage — '
                     'auto-continuing in dry-run')
     elif session.autonomy == 'autonomous':
         session.notify(f'amplitude rail ({rail}): re-running the coarse power '
                        'stage automatically')
     else:
-        if not sys.stdin.isatty():
+        if not session.gui and not sys.stdin.isatty():
             return False, None
         if not _ask(f'      amplitude rail ({rail}): re-run '
                     'tune.power_for_length (+ auto-phase) and retry? [y/n] ',
                     {'y': True, 'yes': True, 'n': False, 'no': False,
                      '': False},
-                    on_eof=False):
+                    on_eof=False, session=session, kind='rail'):
             return False, None
 
     chain = [protocol.steps[coarse_idx]] + [
@@ -379,18 +374,18 @@ def _gate(session, step):
              or (session.autonomy == 'checkpointed' and step.checkpoint))
     if not pause:
         return 'run'
-    if session.test:
+    if session.test and not session.gui:
         session.log(f'      [checkpoint] would pause here ({session.autonomy} mode) '
                     '— auto-continuing in dry-run')
         return 'run'
-    if not sys.stdin.isatty():
+    if not session.gui and not sys.stdin.isatty():
         raise RunnerAbort('checkpoint reached with no terminal attached '
-                          '(GUI checkpoint support is a later item)', hard=True)
-    answer = _ask('      [checkpoint] continue / skip / abort? [c/s/a] ',
+                          '(use --gui for GUI checkpoint replies)', hard=True)
+    answer = _ask(f'      [checkpoint] {step.name}: continue / skip / abort? [c/s/a] ',
                   {'c': 'run', 'continue': 'run', '': 'run',
                    's': 'skip', 'skip': 'skip',
                    'a': 'abort', 'abort': 'abort'},
-                  on_eof='eof')
+                  on_eof='eof', session=session, kind='checkpoint')
     if answer == 'eof':
         raise RunnerAbort('checkpoint prompt closed (EOF)', hard=True)
     if answer == 'abort':

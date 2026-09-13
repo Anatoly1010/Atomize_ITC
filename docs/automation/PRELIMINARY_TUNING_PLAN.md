@@ -411,7 +411,7 @@ No live hardware was operated during implementation.
 Independent agent review (2026-09-13) found and corrected five issues:
 
 - Resonator precondition failures and repeated ringing checks now home RV before aborting.
-- Checkpoint cancellation, EOF and interruption after a successful ringing check now home RV before releasing control.
+- The initial review added runner-level homing on cancellation; the revised GUI plan supersedes this: only interruption inside the ringing ladder homes RV. Stop at a checkpoint or in another step leaves RV unchanged while workers drain and locks are released.
 - A manual RV command waiting for a previous move rechecks the automation lock before sending.
 - Resonator stop exits the remaining scans and checks pending commands before starting another acquisition.
 - Pulse onset uses a sustained rise above baseline noise so strong, broad trailing ringing cannot replace the leading edge.

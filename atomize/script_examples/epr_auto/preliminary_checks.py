@@ -86,7 +86,7 @@ def ringing_checks():
     b = p.protection_end_ns(snapshot.build_worker_args(pre, exp_name='Check'))
     assert abs(b-a-32) < 0.01, (a,b)
 
-    def simulate(fail_at=None, if_mhz=50):
+    def simulate(fail_at=None, if_mhz=50, interrupt=False):
         events = []
         session = EPRSession('check', 'autonomous', True)
         session.log = lambda msg: None
@@ -101,6 +101,8 @@ def ringing_checks():
             assert pre.slots[0].freq == pre.slots[1].freq == if_mhz
             db = events[-1][1]
             events.append(('trace',db))
+            if interrupt and db == fail_at:
+                raise KeyboardInterrupt
             amplitude = 101 if db == fail_at else 10
             return np.arange(640.), np.full(640,amplitude), np.zeros(640), None
         with patch.object(p, '_home', home), patch.object(p, 'bridge_set', move), \
@@ -118,6 +120,7 @@ def ringing_checks():
     assert simulate(if_mhz=80) == events
     events = simulate(20)
     assert events[-1] == ('home',60) and ('move',10) not in events
+    assert simulate(20, interrupt=True)[-1] == ('home',60)
     assert p.ringing_peak(np.arange(10), np.full(10,80), np.full(10,80), 3) > 100
     for bad in (np.full(10,np.nan), np.full(10,np.inf)):
         try:
@@ -246,9 +249,27 @@ def checkpoint_abort_checks():
                 assert stopped is error
             else:
                 raise AssertionError('protocol did not stop')
-            home.assert_called_once_with(session)
-            assert 'ringing_check' not in session.state
-    print('PASS: checkpoint abort, EOF, interruption and unexpected failure return RV to 60 dB')
+            home.assert_not_called()
+            assert 'ringing_check' in session.state
+    for name in ('resonator', 'find_echo', 'maximize_echo'):
+        session = EPRSession('check', 'supervised', True)
+        session.state['ringing_check'] = {'if_mhz':50, 'max_length_ns':102.4}
+        if name == 'resonator':
+            from atomize.epr_auto.engine import resonator as engine
+            target, method, args = engine, 'acquire', {}
+        else:
+            target, method = p, '_echo_preset'
+            args = {'preset':'unused'}
+            args.update({'center':'3445 G', 'span':'100 G'} if name == 'find_echo' else {'rv_range':[0,10]})
+        with patch.object(target, method, side_effect=KeyboardInterrupt), patch.object(p, '_home') as home:
+            try:
+                getattr(p, name)(session, **args)
+            except KeyboardInterrupt:
+                pass
+            else:
+                raise AssertionError('interrupt swallowed')
+            home.assert_not_called()
+    print('PASS: runner abort leaves RV unchanged outside the ringing ladder')
 
 
 def bridge_lock_checks():

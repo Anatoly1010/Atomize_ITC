@@ -2207,11 +2207,36 @@ subagent shells have no tty and abort at the first checkpoint, as designed).
 - Finding 2 (dead-reckoned vane position) and finding 3 (shipped calibration
   presets' B1 assumption) remain open.
 
-### >>> NEXT: run a protocol from the main window <<<
+### GUI protocol launcher — operator dry runs confirmed; live validation next
 
-"Run protocol" button on the EPR Endstation tab: file dialog → `epr-auto run
-<yaml>` in a QProcess (same pattern as the control-centre launchers), stdout
-routed into the in-app log, and checkpoints answered by a Continue/Abort
-dialog instead of a terminal Enter (the runner currently aborts with
-"checkpoint reached with no terminal attached" when launched without a tty,
-e.g. from the `!` prompt of Claude Code).
+The [revised launcher plan](GUI_PROTOCOL_LAUNCHER_PLAN.md) is implemented in
+`main.py` and dedicated modules; `main_window.py` is untouched for fork
+compatibility. The EPR Endstation tab has Run protocol, a separate default-on
+Dry run checkbox, and Stop protocol. Merged output reaches the application
+log; all three operator prompt types use dialogs. GUI dry runs retain those
+dialogs, while ordinary CLI `--test` stays noninteractive.
+
+Stop uses the runner interrupt/worker-drain path. Only interruption during
+the ringing ladder homes RV; checkpoints and other steps leave RV in place.
+Force stop sends a second interrupt so the executor can end a stuck worker.
+Application exit and duplicate protocol launch are blocked while it runs.
+The stdin reader avoids buffered stream locks across acquisition-worker fork.
+
+Offline coverage includes normal completion, Skip/Abort/dialog close, Stop,
+invalid YAML/stderr, failed process launch, relaunch, main-window exit guards,
+injected failure and rail prompts, and the full five-stage preliminary run.
+The operator confirmed that GUI dry runs and Stop both work. The launcher
+now matches the tab styling, with matching Run/Stop icons, a bordered panel
+and compact checkbox rows centered beside Run. Next: verify Stop, worker
+cleanup and lock release during supervised live operation. The
+[dummy-data test instructions](GUI_PROTOCOL_LAUNCHER_TEST.md) remain available
+for regression checks. Windows execution has not been tested here. Public
+documentation was committed in atomize_docs as `6e994ab`. The operator
+authorized committing and pushing the launcher implementation and documentation.
+
+Independent pre-test review passed after fixing the executor's unbounded stop
+drain and second-interrupt grace restart. A new worker-stop regression covers
+deadlines, forced stop and the save handshake. POSIX GUI Stop now sends SIGINT
+to the runner so blocking waits wake promptly. The full dummy-data checks
+pass; Windows and live hardware cleanup remain unverified. Public docs were
+left untouched during this review while the operator reads the prose.

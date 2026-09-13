@@ -272,6 +272,8 @@ def resonator(session, if_mhz=50, start_mhz=9200, end_mhz=9600, step_mhz=1,
                        'observation_mhz': selected - freq, 'data_file': path})
         session.stage_state('resonator', result)
         return result, []
+    except KeyboardInterrupt:
+        raise
     except BaseException as error:
         if previous is not None:
             try:
@@ -401,6 +403,8 @@ def find_echo(session, preset, center, span, points=41, attenuation_db=10,
                   'sweep': sweep, 'data_file': path, 'canned': session.test}
         session.stage_state('preliminary_echo', result)
         return result, []
+    except KeyboardInterrupt:
+        raise
     except BaseException as error:
         _abort(session, f'echo search stopped: {error}')
 
@@ -509,6 +513,8 @@ def maximize_echo(session, preset, rv_range, field_span='10 G', points=21,
                   'power_limited': power_limited, 'data_file': path, 'canned': session.test}
         session.stage_state('preliminary_optimum', result)
         return result, []
+    except KeyboardInterrupt:
+        raise
     except BaseException as error:
         _abort(session, f'echo maximization stopped: {error}')
 

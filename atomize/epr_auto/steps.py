@@ -139,11 +139,8 @@ def tune_auto_phase(session, preset, points, scans, apply_cal):
               'sweeps': Int(min=1, default=3,
                             help='full phase cycles to average for the trace'),
               'search_from': TimeStr(default='200 ns',
-                                     help='ignore the trace before this time — '
-                                          'the receiver defence transient sits '
-                                          '~150 ns in; on the ITC ADC the echo '
-                                          'never lands earlier than ~250 ns '
-                                          'after the DETECTION start'),
+                                     help='start the echo search at this time relative to DETECTION; '
+                                          'exclude early receiver transients while retaining the echo'),
               'min_width': TimeStr(default='20 ns',
                                    help='reject a peak whose FWHM is below this '
                                         'as a transient (masked out, the search '
@@ -321,9 +318,7 @@ def _check_edfs(params, ctx):
                                help='half-width of the range: auto sweep'),
               'offset': FieldStr(signed=True, default='-7.5 G',
                                  help='known magnet-calibration shift added to '
-                                      'the range: auto center (ITC BH-15: '
-                                      '-7.5 G, measured on coal 2026-09-11 at '
-                                      '9680 MHz)'),
+                                      'the range: auto center; set for your magnet calibration'),
               'target_snr': Float(min=SNR_FLOOR,
                                   help='SNR-driven scan count: scans becomes '
                                        'the ceiling; stop early once the '

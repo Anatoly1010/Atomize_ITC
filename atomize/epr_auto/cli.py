@@ -36,6 +36,8 @@ def main(argv=None):
     p_run.add_argument('--test', action='store_true',
                        help='dry-run against test-mode devices (no hardware, no GUI needed)')
 
+    p_run.add_argument('--gui', action='store_true', help='GUI prompts and stop commands over standard streams')
+
     p_val = sub.add_parser('validate', help='validate a protocol without running it')
     p_val.add_argument('protocol')
 
@@ -47,7 +49,7 @@ def main(argv=None):
         return _list_steps()
     if args.command == 'validate':
         return _validate(args.protocol)
-    return _run(args.protocol, args.test)
+    return _run(args.protocol, args.test, args.gui)
 
 
 def _list_steps():
@@ -79,7 +81,7 @@ def _validate(protocol_path):
     return EXIT_OK
 
 
-def _run(protocol_path, test):
+def _run(protocol_path, test, gui=False):
     # argv[1] is the framework-wide mode flag: general_functions and every
     # device module read it at import/instantiation time. 'test' selects the
     # canned-device branch; 'None' mirrors their own no-argument fallback and
@@ -114,6 +116,9 @@ def _run(protocol_path, test):
                          test=test, output=protocol.output, notify=protocol.notify,
                          base_dir=invoke_dir)
     try:
+        if gui:
+            from atomize.epr_auto.gui_io import GuiIO
+            session.gui = GuiIO()
         run_protocol(protocol, session)
     except RunnerAbort as e:
         print(f'ABORTED: {e}', file=sys.stderr)
@@ -124,6 +129,8 @@ def _run(protocol_path, test):
     finally:
         # belt to the session's atexit braces: free the field/temp locks the
         # moment the run ends, not at interpreter shutdown
+        if session.gui is not None:
+            session.gui.close()
         session.release_hardware_locks()
     return EXIT_OK
 

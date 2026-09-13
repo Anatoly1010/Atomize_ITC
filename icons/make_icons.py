@@ -50,10 +50,10 @@ CC = 'atomize/control_center'
 ICON_REF = re.compile(r"\b(icon_[a-z0-9_]+)\.ico\b")
 
 
-def tool_icons():
-    """Icon names referenced by this repo's control-centre sources."""
+def tool_icons(source_dir=CC):
+    """Icon names referenced by Python files in the given source directory."""
     names = set()
-    src_dir = os.path.join(ROOT, CC)
+    src_dir = os.path.join(ROOT, source_dir)
     if not os.path.isdir(src_dir):
         return names
     for f in sorted(os.listdir(src_dir)):
@@ -66,7 +66,7 @@ def tool_icons():
 
 def ico_targets():
     targets = {'icon_atomize': 'atomize/main/icon.ico'}
-    for name in sorted(tool_icons()):
+    for name in sorted(tool_icons() | tool_icons('atomize/main')):
         if not os.path.isfile(os.path.join(SVG, name + '.svg')):
             raise SystemExit('%s is loaded by a tool but icons/svg/%s.svg is '
                              'missing' % (name, name))

@@ -34,15 +34,13 @@ class EPRSession:
         self._run_dir = None
         self._save_counter = 0
         self._locked = False
+        self.gui = None
         # foreach series context (runner sets/clears per iteration): loop_tag
         # is stamped into save_path filenames, loop_context into the manifest.
         self.loop_tag = None
         self.loop_context = None
 
     def log(self, text):
-        # Terminal-first output. When the runner gains a GUI launch path
-        # (Phase 3) this must route via general.message instead of print —
-        # bare stdout is re-parsed by the main window's line router.
         print(text, flush=True)
 
     @property

@@ -299,6 +299,8 @@ class MainExtended(MainWindow):
             process.setProgram(sys.executable)
 
         self.set_control_center()
+        self.process_protocol = self.protocol_launcher.process
+        self.all_processes.append(self.process_protocol)
 
         self.skip_lines = 0
 
@@ -427,10 +429,15 @@ class MainExtended(MainWindow):
             grid.setColumnStretch(column, 1)
         main_layout.addLayout(grid)
 
+        from atomize.main.protocol_launcher import ProtocolLauncher
+        self.protocol_launcher = ProtocolLauncher(self)
+        self.protocol_launcher.log.connect(self.text_errors.appendPlainText)
+        main_layout.addWidget(self.protocol_launcher)
+
         self.checkTests = QCheckBox("Test Scripts")
         self.checkTests.setStyleSheet(REFINED_STYLES['CHECKBOX_STYLE'])
         self.checkTests.setChecked(True)
-        main_layout.addWidget(self.checkTests)
+        self.protocol_launcher.options_layout.addWidget(self.checkTests)
         main_layout.addStretch()
 
         bottom_label = QLabel("Version 0.4.0; 12/09/2026")
@@ -443,7 +450,7 @@ class MainExtended(MainWindow):
         A function to do some actions when the main window is closing.
         """
         processes = [
-            self.process_python, self.process_tr, self.process_osc, 
+            self.process_protocol, self.process_python, self.process_tr, self.process_osc,
             self.process_osc2, self.process_cw, self.process_temp, 
             self.process_field, self.process_mw, self.process_tune_preset,
             self.process_phasing, self.process_awg_phasing, self.process_sequence_calc,
@@ -472,7 +479,7 @@ class MainExtended(MainWindow):
         A function to quit the programm
         """
         processes = [
-            self.process_python, self.process_tr, self.process_osc, 
+            self.process_protocol, self.process_python, self.process_tr, self.process_osc,
             self.process_osc2, self.process_cw, self.process_temp, 
             self.process_field, self.process_mw, self.process_tune_preset,
             self.process_phasing, self.process_awg_phasing, self.process_sequence_calc,
