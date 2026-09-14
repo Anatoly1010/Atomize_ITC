@@ -29,7 +29,7 @@ parameter). It mirrors the phase_cor.py workflow:
 The window embeds the same CrossSectionDock the main GUI uses (heatmap + X/Y
 cross-section sub-docks), fed in-process — no LivePlot IPC. Real and imaginary
 parts ride along as the two toggleable frames of a (2, nX, nY) array (the frame
-slider switches between them).
+slider switches between them); a real-only dataset (Q ≡ 0) is a single frame.
 "Result → input" chains one operation into the next (e.g. phase → FFT).
 """
 
@@ -97,6 +97,25 @@ SI_BASE_UNITS = {'s', 'hz', 'v', 'a', 'g', 't', 'k', 'm', 'ev'}
 def _si_autoprefix(unit):
     """True if `unit` is a bare SI base worth pyqtgraph auto-prefixing."""
     return str(unit).strip().lower() in SI_BASE_UNITS
+
+SI_PREFIXES = {'n': 1e-9, 'u': 1e-6, 'µ': 1e-6, 'μ': 1e-6, 'm': 1e-3,
+               'k': 1e3, 'M': 1e6, 'G': 1e9}
+
+def _set_autoprefix(axis, on):
+    """Switch pyqtgraph auto-SI-prefixing on an axis; off also clears the prefix
+    and tick scale pyqtgraph keeps from the last range ('k%' after a kG axis)."""
+    axis.enableAutoSIPrefix(on)
+    if not on:
+        axis.autoSIPrefixScale = 1.0
+        axis.setLabel(axis.labelText, units=axis.labelUnits, unitPrefix='')
+
+def _si_base(unit):
+    """(factor, base unit) for a prefixed SI unit — 'ns' → (1e-9, 's'), 'MHz' →
+    (1e6, 'Hz') — and (1, unit) for a bare base or a non-SI label."""
+    u = str(unit).strip()
+    if len(u) >= 2 and u[0] in SI_PREFIXES and u[1:].lower() in SI_BASE_UNITS:
+        return SI_PREFIXES[u[0]], u[1:]
+    return 1.0, u
 
 # relaxation models exposed in the per-trace Fit tab (a curated subset of the
 # shared fitter; for T1/T2 decays k / k1 / k2 are the time constants).
@@ -222,6 +241,7 @@ class MainWindow(QMainWindow):
         # raw_*  = as loaded; src_* = current input to operations (= raw after a
         # load / reset, or a promoted result); res_* = current operation output.
         self.raw_i = self.raw_q = None
+        self._src_file = None      # as-read matrices + axis specs, before the Source options
         self.src_i = self.src_q = None
         self.src_col = self.src_row = None     # axis dicts (see _axis)
         self.res_i = self.res_q = None
@@ -340,10 +360,12 @@ class MainWindow(QMainWindow):
             'TR EPR: remove off-resonance',
             tooltip='Row 0 of a TR EPR file is the off-resonance reference '
                     'trace, not a field point. Subtract it from every trace, '
-                    "subtract each trace's first time sample and drop it as "
-                    "the file is read — bit-identical to the main window's Open TR Data. "
+                    "subtract each trace's first time sample and drop it — "
+                    "bit-identical to the main window's Open TR Data. "
                     'Every remaining trace then lands on the field it was '
-                    'measured at.')
+                    'measured at. Toggle any time: the source is re-read.')
+        for c in (self.transpose_check, self.tr_epr_check):
+            c.toggled.connect(self._on_source_option)
 
         # ---- Axis metadata (reconstructed by hand; no .param) ----
         head.add_heading('Axes')
@@ -922,36 +944,25 @@ class MainWindow(QMainWindow):
                     q = np.zeros_like(i)
                     qmsg = 'no _1 file (Q = 0)'
             header_lines = read_header(path)    # one read: axis steps + viewer
-            dx, xu, dy, yu = self._parse_axis_header(header_lines)
-            offres = self.tr_epr_check.isChecked() and i.shape[0] > 1
-            if offres:
-                # same two-step subtraction as tr_control / Open TR Data: reference row, then time-zero column
-                i, q = (i - i[0])[1:], (q - q[0])[1:]
-                i, q = i - i[:, [0]], q - q[:, [0]]
-            if self.transpose_check.isChecked():
-                i, q = i.T, q.T
-                dx, xu, dy, yu = dy, yu, dx, xu   # axes swap with the matrix
-                xarr, yarr = yarr, xarr
+            hx, hy = self._parse_axis_header(header_lines)
+            # an .h5 axis dataset fills only what the header could not give
+            if hx['step'] is None:
+                self._axis_from_array(hx, xarr, xaunit)
+            if hy['step'] is None:
+                self._axis_from_array(hy, yarr, yaunit)
+            for spec, default in ((hx, 'Time'), (hy, 'Delay')):
+                if spec['step'] is not None and spec['name'] is None:
+                    spec['name'] = default
             if i.shape != q.shape or min(i.shape) < 2:
                 self.set_status('I and Q must be matching 2D matrices (≥ 2×2).')
                 return
-            self.raw_i, self.raw_q = i, q
-            # auto-fill X/Y step + unit from the acquisition header when present;
-            # files without it keep the current axis fields (see _parse_axis_header).
-            parsed = self._apply_header_axes(dx, xu, dy, yu)
-            # an .h5 axis dataset fills only what the header could not give: it
-            # carries no unit, so it must never overwrite a header-set axis
-            filled = self._apply_axis_arrays(None if dx is not None else xarr,
-                                             None if dy is not None else yarr,
-                                             None if dx is not None else xaunit,
-                                             None if dy is not None else yaunit)
-            parsed = ', '.join(p for p in (parsed, filled) if p)
+            self._src_file = {'i': i, 'q': q, 'x': hx, 'y': hy}
             self.live_check.setChecked(False)   # new data: don't auto-reprocess
-            self.reset_to_raw()
+            offres, parsed = self._rebuild_from_source()
             self._set_loaded_file(os.path.basename(path))
             self._set_header(os.path.basename(path), header_lines)
             msg = (f'Loaded I={os.path.basename(path)}, Q={qmsg} '
-                   f'(matrix {i.shape[0]}×{i.shape[1]} [traces × points]'
+                   f'(matrix {self.raw_i.shape[0]}×{self.raw_i.shape[1]} [traces × points]'
                    f'{", off-resonance reference removed" if offres else ""}).')
             if parsed:
                 msg += f' Axes from header: {parsed}.'
@@ -968,75 +979,117 @@ class MainWindow(QMainWindow):
         return float(a[0]), float((a[-1] - a[0])/(a.size - 1))
 
     @staticmethod
-    def _parse_axis_header(header_lines):
-        """Best-effort scan of an already-read comment header (header_view.
-        read_header) for the acquisition steps.
+    def _axis_spec(name=None, start=None, step=None, unit=None):
+        return {'name': name, 'start': start, 'step': step, 'unit': unit}
 
-        Atomize-saved CSVs carry lines like::
+    # header label → (axis, field, axis name it implies)
+    _HEADER_AXIS_KEYS = (('horizontal resolution', 'x', 'step', None),
+                         ('vertical resolution', 'y', 'step', None),
+                         ('time resolution', 'x', 'step', 'Time'),
+                         ('start field', 'y', 'start', 'Field'),
+                         ('field step', 'y', 'step', 'Field'))
 
-            # Horizontal Resolution:    2 ns
-            # Vertical Resolution:      1004.8 ns
+    @classmethod
+    def _parse_axis_header(cls, header_lines):
+        """Axis specs (name / start / step / unit, None when absent) scanned
+        from an already-read comment header (header_view.read_header).
 
-        Horizontal → X (within-trace / columns), Vertical → Y (traces / rows).
-        Returns ``(dx, x_unit, dy, y_unit)`` with any field ``None`` when it is
-        absent, so a file without such a header simply leaves every axis widget
-        untouched.
+        Pulsed files carry ``Horizontal Resolution: 2 ns`` and ``Vertical
+        Resolution: 1004.8 ns`` (Horizontal → X, within-trace / columns;
+        Vertical → Y, traces / rows). TR EPR files carry ``Time Resolution``,
+        ``Start Field`` and ``Field Step``, which also name the axes Time and
+        Field. A field the header does not give stays None, so the matching
+        widget is left untouched; the caller names a nameless axis by default.
         """
-        dx = dy = xu = yu = None
+        spec = {'x': cls._axis_spec(), 'y': cls._axis_spec()}
         for ln in header_lines:
-            m = re.search(r'(horizontal|vertical)\s+resolution\s*:\s*'
-                          r'([-+0-9.eE]+)\s*([a-zA-Zµ]*)', ln, re.IGNORECASE)
+            m = re.match(r'\s*#?\s*([a-z\- ]+?)\s*:\s*([-+0-9.eE]+)\s*([a-zA-Zµ%]*)',
+                         ln, re.IGNORECASE)
             if not m:
                 continue
-            val, unit = float(m.group(2)), (m.group(3) or None)
-            if m.group(1).lower() == 'horizontal':
-                dx, xu = val, unit
-            else:
-                dy, yu = val, unit
-        return dx, xu, dy, yu
+            key = m.group(1).strip().lower()
+            for label, ax, field, name in cls._HEADER_AXIS_KEYS:
+                if key != label:
+                    continue
+                try:
+                    val = float(m.group(2))
+                except ValueError:
+                    break
+                unit = m.group(3) or None
+                if unit == 's':                 # a bare-SI step would not fit a 3-decimal box
+                    val, unit = val * 1e9, 'ns'
+                spec[ax][field] = val
+                if unit:
+                    spec[ax]['unit'] = unit
+                if name:
+                    spec[ax]['name'] = name
+                break
+        return spec['x'], spec['y']
 
-    def _apply_axis_arrays(self, xarr, yarr, xunit=None, yunit=None):
-        """Push stored axis vectors (an .h5 file's t / sweep datasets) into the
-        start + step widgets. A step the spin box cannot hold — a raw SI time
-        axis against a 3-decimal box — is left alone rather than rounded to a
-        zero step, which would collapse the image.
+    def _axis_from_array(self, spec, arr, unit=None):
+        """Fill a spec from a stored axis vector (an .h5 file's t / sweep
+        dataset). A step the spin box cannot hold — a raw SI time axis against
+        a 3-decimal box — is left out rather than rounded to a zero step, which
+        would collapse the image; a unit attribute still labels the axis."""
+        if arr is None or np.size(arr) < 2:
+            return
+        if unit == 's':                     # seconds would not fit a 3-decimal box
+            arr, unit = np.asarray(arr, float) * 1e9, 'ns'
+        if unit:
+            spec['unit'] = unit
+        start, step = self._axis_start_step(arr)
+        if abs(step) >= 10 ** -self.dx_spin.decimals():
+            spec['start'], spec['step'] = start, step
 
-        A vector saved with a unit attribute labels its axis too; without one
-        the unit field keeps whatever it held, as it always has."""
+    def _apply_axis_specs(self, hx, hy):
+        """Push two axis specs into the Axes widgets without firing the
+        live-update loops. A step without a start runs from 0 (a resolution-
+        based axis); a None field leaves its widget untouched. Returns a short
+        summary of what was filled, or '' when nothing was."""
         done = []
-        pairs = [('X', xarr, xunit, self.x0_spin, self.dx_spin, self.xscale_edit),
-                 ('Y', yarr, yunit, self.y0_spin, self.dy_spin, self.yscale_edit)]
-        for name, arr, unit, zspin, dspin, uedit in pairs:
-            if arr is None or np.size(arr) < 2:
-                continue
-            start, step = self._axis_start_step(arr)
-            if unit:
-                uedit.blockSignals(True); uedit.setText(unit); uedit.blockSignals(False)
-            # a step the box cannot hold is still worth labelling
-            if abs(step) < 10 ** -dspin.decimals():
-                continue
-            zspin.blockSignals(True); zspin.setValue(float(start)); zspin.blockSignals(False)
-            dspin.blockSignals(True); dspin.setValue(float(step)); dspin.blockSignals(False)
-            done.append(f'{name} start={start:g} Δ={step:g} {unit or ""}'.strip())
+        pairs = [('X', hx, self.xname_edit, self.xscale_edit, self.x0_spin, self.dx_spin),
+                 ('Y', hy, self.yname_edit, self.yscale_edit, self.y0_spin, self.dy_spin)]
+        for label, spec, nedit, uedit, zspin, dspin in pairs:
+            start, step = spec['start'], spec['step']
+            if step is not None and start is None:
+                start = 0.0
+            for w, v in ((nedit, spec['name']), (uedit, spec['unit'])):
+                if v is not None:
+                    w.blockSignals(True); w.setText(str(v)); w.blockSignals(False)
+            for w, v in ((zspin, start), (dspin, step)):
+                if v is not None:
+                    w.blockSignals(True); w.setValue(float(v)); w.blockSignals(False)
+            if step is not None:
+                done.append(f'{label} start={start:g} Δ={step:g} {spec["unit"] or ""}'.strip())
         return ', '.join(done)
 
-    def _apply_header_axes(self, dx, xu, dy, yu):
-        """Push any parsed (step, unit) into the axis widgets without firing the
-        live-update loops. The start spin is zeroed for any axis whose step we
-        set (a resolution-based axis runs from 0). Returns a short summary of
-        what was filled, or '' when the header carried nothing usable."""
-        done = []
-        pairs = [('X', dx, xu, self.dx_spin, self.x0_spin, self.xscale_edit),
-                 ('Y', dy, yu, self.dy_spin, self.y0_spin, self.yscale_edit)]
-        for name, step, unit, dspin, zspin, uedit in pairs:
-            if step is None:
-                continue
-            dspin.blockSignals(True); dspin.setValue(float(step)); dspin.blockSignals(False)
-            zspin.blockSignals(True); zspin.setValue(0.0); zspin.blockSignals(False)
-            if unit:
-                uedit.blockSignals(True); uedit.setText(unit); uedit.blockSignals(False)
-            done.append(f'{name} Δ={step} {unit or ""}'.strip())
-        return ', '.join(done)
+    def _rebuild_from_source(self):
+        """Derive the raw matrices from the as-read source under the current
+        Source options (off-resonance removal, transpose), refill the Axes
+        widgets and restart the chain from raw. Returns (offres, axes summary)."""
+        src = self._src_file
+        i, q, hx, hy = src['i'], src['q'], dict(src['x']), dict(src['y'])
+        offres = self.tr_epr_check.isChecked() and i.shape[0] > 2
+        if offres:
+            # same two-step subtraction as tr_control / Open TR Data: reference row, then time-zero column
+            i, q = (i - i[0])[1:], (q - q[0])[1:]
+            i, q = i - i[:, [0]], q - q[:, [0]]
+        if self.transpose_check.isChecked():
+            i, q = i.T, q.T
+            hx, hy = hy, hx                     # axes swap with the matrix
+        self.raw_i, self.raw_q = i, q
+        parsed = self._apply_axis_specs(hx, hy)
+        self.reset_to_raw()
+        return offres, parsed
+
+    def _on_source_option(self, *args):
+        if self._src_file is None:
+            return
+        offres, _ = self._rebuild_from_source()
+        self.set_status(f'Source re-read ({self.raw_i.shape[0]}×{self.raw_i.shape[1]} '
+                        f'[traces × points]'
+                        f'{", off-resonance reference removed" if offres else ""}'
+                        f'{", transposed" if self.transpose_check.isChecked() else ""}).')
 
     def open_bruker(self):
         """Load a 2D Bruker native dataset (BES3T .DSC/.DTA or ESP/WinEPR
@@ -1065,26 +1118,15 @@ class MainWindow(QMainWindow):
         xarr, yarr = res['x'], res['y']
         xn, xs = res['x_name'] or 'X', res['x_unit'] or ''
         yn, ys = res['y_name'] or 'Y', res['y_unit'] or ''
-        if self.transpose_check.isChecked():
-            i, q = i.T, q.T
-            xarr, yarr = yarr, xarr
-            xn, xs, yn, ys = yn, ys, xn, xs
         if min(i.shape) < 2:
             self.set_status('Bruker matrix too small (need ≥ 2×2).')
             return
         x0, dx = self._axis_start_step(xarr)
         y0, dy = self._axis_start_step(yarr)
-        edits = [(self.xname_edit, xn), (self.xscale_edit, xs),
-                 (self.yname_edit, yn), (self.yscale_edit, ys)]
-        spins = [(self.x0_spin, x0), (self.dx_spin, dx),
-                 (self.y0_spin, y0), (self.dy_spin, dy)]
-        for w, v in edits:                           # set without firing reset loops
-            w.blockSignals(True); w.setText(str(v)); w.blockSignals(False)
-        for s, v in spins:
-            s.blockSignals(True); s.setValue(float(v)); s.blockSignals(False)
-        self.raw_i, self.raw_q = i, q
+        self._src_file = {'i': i, 'q': q, 'x': self._axis_spec(xn, x0, dx, xs),
+                          'y': self._axis_spec(yn, y0, dy, ys)}
         self.live_check.setChecked(False)   # new data: don't auto-reprocess
-        self.reset_to_raw()
+        self._rebuild_from_source()
         self._set_loaded_file(os.path.basename(path))
         self._set_header(os.path.basename(path),
                          params_to_lines(res.get('params', {})))
@@ -1123,21 +1165,10 @@ class MainWindow(QMainWindow):
                 dx = 1.0; zeroed.append('X')
             if not np.isfinite(dy) or dy == 0:
                 dy = 1.0; zeroed.append('Y')
-            if self.transpose_check.isChecked():     # swap trace / point axes
-                i, q = i.T, q.T
-                x0, dx, y0, dy = y0, dy, x0, dx
-                xn, xs, yn, ys = yn, ys, xn, xs
-            edits = [(self.xname_edit, xn), (self.xscale_edit, xs),
-                     (self.yname_edit, yn), (self.yscale_edit, ys)]
-            spins = [(self.x0_spin, x0), (self.dx_spin, dx),
-                     (self.y0_spin, y0), (self.dy_spin, dy)]
-            for w, v in edits:                       # set without firing reset loops
-                w.blockSignals(True); w.setText(str(v)); w.blockSignals(False)
-            for s, v in spins:
-                s.blockSignals(True); s.setValue(float(v)); s.blockSignals(False)
-            self.raw_i, self.raw_q = i, q
+            self._src_file = {'i': i, 'q': q, 'x': self._axis_spec(xn, x0, dx, xs),
+                              'y': self._axis_spec(yn, y0, dy, ys)}
             self.live_check.setChecked(False)   # new data: don't auto-reprocess
-            self.reset_to_raw()
+            self._rebuild_from_source()
             self._set_loaded_file('Loaded from plot')
             self._set_header('Loaded from plot', [])
             msg = (f'Loaded 2D plot from buffer '
@@ -1262,6 +1293,7 @@ class MainWindow(QMainWindow):
 
     def clear_all(self):
         self.raw_i = self.raw_q = self.src_i = self.src_q = None
+        self._src_file = None
         self.res_i = self.res_q = None
         self._clear_preview()
         self._set_loaded_file(None)
@@ -1328,8 +1360,8 @@ class MainWindow(QMainWindow):
 
     def _apply_si_prefix(self, xunit, yunit, zunit):
         """Auto-SI-prefix only the axes whose unit is a bare SI base, so a 's'
-        axis with a 2e-9 step reads '2 ns'; leave already-prefixed units ('ns',
-        'MHz') verbatim to avoid double-prefixing ('kns'). X is the heatmap bottom
+        axis with a 2e-9 step reads '2 ns' (_push rescales a prefixed unit to
+        its base first); a non-SI label stays verbatim. X is the heatmap bottom
         + the X-trace bottom; Y is the heatmap left + the Y-trace bottom; Z
         (intensity) is both cross-section left axes."""
         cd = self.cross_dock
@@ -1343,7 +1375,7 @@ class MainWindow(QMainWindow):
                 (cd.v_cross_section_widget.plotItem, 'left', z_on)]
         for p, side, on in axes:
             try:
-                p.getAxis(side).enableAutoSIPrefix(on)
+                _set_autoprefix(p.getAxis(side), on)
             except Exception:
                 pass
 
@@ -1359,24 +1391,29 @@ class MainWindow(QMainWindow):
     def _push(self, i, q, col, row, frames):
         """Render a complex 2D dataset in the embedded CrossSectionDock as a
         (2, nX, nY) frame stack (frame 0 = real/I, frame 1 = imag/Q); the frame
-        slider toggles between them."""
+        slider toggles between them. A real-only dataset is a single frame."""
         name = self.name_edit.text().strip() or 'FT Data 2D'
         # internal layout is [trace(row), point(col)]; transpose so columns
         # become the X axis (CrossSectionDock pos/scale are ((x..),(y..))).
-        arr = np.array([np.transpose(np.asarray(i, float)),
-                        np.transpose(np.asarray(q, float))])
+        re_, im_ = np.transpose(np.asarray(i, float)), np.transpose(np.asarray(q, float))
+        # a real-only dataset (Q ≡ 0) is one frame: no empty Q frame, no frame strip
+        arr = np.array([re_, im_]) if np.any(im_) else re_
         # a 0 step collapses the image scale and renders nothing; never let that
         # reach setImage (axis geometry may carry a 0 from a source without steps).
         sx = col['step'] if col['step'] else 1.0
         sy = row['step'] if row['step'] else 1.0
+        # a prefixed unit (ns, MHz) is drawn in its SI base so ticks, cursor and
+        # ruler auto-prefix correctly (50 µs, not 50 kns); the Axes fields keep ns
+        fx, xunit = _si_base(col['scale'])
+        fy, yunit = _si_base(row['scale'])
         try:
             self.cross_dock.setTitle(name)
-            self.cross_dock.setAxisLabels(xname=col['name'], xscale=col['scale'],
-                                          yname=row['name'], yscale=row['scale'],
+            self.cross_dock.setAxisLabels(xname=col['name'], xscale=xunit,
+                                          yname=row['name'], yscale=yunit,
                                           zname='Intensity', zscale='V')
-            self._apply_si_prefix(col['scale'], row['scale'], 'V')
-            self.cross_dock.setImage(arr, pos=(col['start'], row['start']),
-                                     scale=(sx, sy), autoLevels=False)
+            self._apply_si_prefix(xunit, yunit, 'V')
+            self.cross_dock.setImage(arr, pos=(col['start']*fx, row['start']*fy),
+                                     scale=(sx*fx, sy*fy), autoLevels=False)
         except Exception as e:
             self.set_status(f'Could not render preview: {e}')
 

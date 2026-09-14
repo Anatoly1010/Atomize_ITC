@@ -103,6 +103,14 @@ def _si_autoprefix(unit):
     """True if `unit` is a bare SI base worth pyqtgraph auto-prefixing."""
     return str(unit).strip().lower() in SI_BASE_UNITS
 
+def _set_autoprefix(axis, on):
+    """Switch pyqtgraph auto-SI-prefixing on an axis; off also clears the prefix
+    and tick scale pyqtgraph keeps from the last range ('k%' after a kG axis)."""
+    axis.enableAutoSIPrefix(on)
+    if not on:
+        axis.autoSIPrefixScale = 1.0
+        axis.setLabel(axis.labelText, units=axis.labelUnits, unitPrefix='')
+
 
 def _split_unit(label):
     """Split a 'Name (unit)' axis label into ('Name', 'unit'); ('label', '') if
@@ -1451,8 +1459,8 @@ class MainWindow(QMainWindow):
         xlabel, xunit = _split_unit(xname)
         self.plot_widget.setLabel('bottom', xlabel, units=xunit)
         try:
-            self.plot_widget.getPlotItem().getAxis('bottom').enableAutoSIPrefix(
-                _si_autoprefix(xunit))
+            _set_autoprefix(self.plot_widget.getPlotItem().getAxis('bottom'),
+                            _si_autoprefix(xunit))
         except Exception:
             pass
         self.plot_widget.setLabel('left', '')
@@ -1543,8 +1551,8 @@ class MainWindow(QMainWindow):
         self.resid_widget.setLabel('bottom', xlabel, units=xunit)
         self.resid_widget.setLabel('left', 'residual')
         try:
-            self.resid_widget.getPlotItem().getAxis('bottom').enableAutoSIPrefix(
-                _si_autoprefix(xunit))
+            _set_autoprefix(self.resid_widget.getPlotItem().getAxis('bottom'),
+                            _si_autoprefix(xunit))
         except Exception:
             pass
         self._sync_resid_transforms()
@@ -1815,8 +1823,8 @@ class MainWindow(QMainWindow):
         xlabel, xunit = _split_unit(self._xname())
         self.plot_widget.setLabel('bottom', xlabel, units=xunit)
         try:
-            self.plot_widget.getPlotItem().getAxis('bottom').enableAutoSIPrefix(
-                _si_autoprefix(xunit))
+            _set_autoprefix(self.plot_widget.getPlotItem().getAxis('bottom'),
+                            _si_autoprefix(xunit))
         except Exception:
             pass
         self._plot_key = None                 # force the next single redraw to refit
@@ -1860,8 +1868,8 @@ class MainWindow(QMainWindow):
         self.resid_widget.setLabel('bottom', xlabel, units=xunit)
         self.resid_widget.setLabel('left', 'residual')
         try:
-            self.resid_widget.getPlotItem().getAxis('bottom').enableAutoSIPrefix(
-                _si_autoprefix(xunit))
+            _set_autoprefix(self.resid_widget.getPlotItem().getAxis('bottom'),
+                            _si_autoprefix(xunit))
         except Exception:
             pass
         self._wire_resid_legend_hide()
