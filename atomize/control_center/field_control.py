@@ -44,6 +44,10 @@ class MainWindow(QMainWindow):
 
         self.read_no_set_field()
         self.cur_field = self.cur_field_2
+        self.field = self.cur_field
+        self.Set_point.blockSignals(True)
+        self.Set_point.setValue(self.cur_field)
+        self.Set_point.blockSignals(False)
         self._set_online_ui(self.device_ok)
 
     def design(self):
