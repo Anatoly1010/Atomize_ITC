@@ -14,6 +14,7 @@ from PyQt6.QtGui import QColor
 from atomize.main.main_window import MainWindow, NameList
 from atomize.general_modules.gui_style import apply_app_style, REFINED_THEME, REFINED_STYLES, TAB_MARGINS
 import atomize.general_modules.last_dir as ldir
+from atomize.general_modules import insys_status
 os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "1"
 
 ###
@@ -501,12 +502,20 @@ class MainExtended(MainWindow):
         else:
             sys.exit()
 
+    def _fpga_blocked(self):
+        reason = insys_status.blocking_reason()
+        if reason:
+            self.text_errors.appendPlainText(f'Experiment cannot be started: {reason}')
+        return bool(reason)
+
     # redefined method
     def start_experiment(self):
         """
         A function to run an experimental script using python.exe.
         """
         if self.process_python.state() != QtCore.QProcess.ProcessState.NotRunning:
+            return
+        if self._fpga_blocked():
             return
         if len(self.script_queue.keys()) != 0:
             self.queue = 1
@@ -542,6 +551,8 @@ class MainExtended(MainWindow):
                                 str( self.test_timeout / 60000 ) + " minutes")
             return
         elif self.test_flag == 0 and exec_code == True:
+            if self._fpga_blocked():
+                return
             self.process_python.setArguments([name])
             self.button_start.setStyleSheet(self.main_button_styles['PRIMARY_BUTTON_STYLE'])
             self.process_python.start()
@@ -564,12 +575,6 @@ class MainExtended(MainWindow):
             self.test_flag = 1
             self.checked = 0
             self.text_errors.appendPlainText(text_errors_script)
-            # mod
-            path_status_file = os.path.join(self.path_to_main, 'status')
-            file_to_read = open(path_status_file, 'w')
-            file_to_read.write('Status:  Off' + '\n')
-            file_to_read.close()
-            # mod
 
         self.button_test.setStyleSheet(self.main_button_styles['WORKSPACE_ACTION_STYLE'])
 
