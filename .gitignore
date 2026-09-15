@@ -35,3 +35,4 @@ atomize/epr_auto/presets/*.phase_awg
 atomize/epr_auto/presets/*.phase
 # Claude Code: per-machine settings stay local; .claude/agents/ IS tracked
 .claude/settings.local.json
+docs/INSYS_PROTECTION_REVIEW.md
