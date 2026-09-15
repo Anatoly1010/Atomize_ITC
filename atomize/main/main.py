@@ -506,6 +506,8 @@ class MainExtended(MainWindow):
         """
         A function to run an experimental script using python.exe.
         """
+        if self.process_python.state() != QtCore.QProcess.ProcessState.NotRunning:
+            return
         if len(self.script_queue.keys()) != 0:
             self.queue = 1
             first_index = self.script_queue.namelist_model.index(0, 0 )
@@ -585,7 +587,7 @@ class MainExtended(MainWindow):
         self.text_errors.appendPlainText(str(data))
 
         if data == 'Script stopped':
-            self.script_queue.clear()
+            self.script_queue.clear(force=True)
             self.queue = 0
             #mod
             #self.process_python.close()
