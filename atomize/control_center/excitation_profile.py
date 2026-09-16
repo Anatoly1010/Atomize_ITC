@@ -28,6 +28,7 @@ this process; nothing is pushed to LivePlot or the main GUI.
 
 import os
 import sys
+from atomize.main.window_size import WindowSize
 
 import numpy as np
 import pyqtgraph as pg
@@ -1244,6 +1245,9 @@ def main():
     app = QApplication(sys.argv)
     apply_app_style(app, app_id='Atomize.ITC.ExcitationProfile', desktop='excprof')
     win = MainWindow()
+    win.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
+    win.destroyed.connect(app.quit)
+    win.window_size = WindowSize(win, 'analysis/excitation_profile/size')
     win.show()
     sys.exit(app.exec())
 

@@ -61,6 +61,7 @@ sweep type, amplitudes, ...) untouched; (b) if it is closed, prints an
 import os
 import re
 import sys
+from atomize.main.window_size import WindowSize
 import math
 import time
 import tempfile
@@ -1229,6 +1230,9 @@ def main():
     app = QApplication(sys.argv)
     apply_app_style(app, app_id='Atomize.ITC.SeqCalc', desktop='seqcalc')
     window = MainWindow()
+    window.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
+    window.destroyed.connect(app.quit)
+    window.window_size = WindowSize(window, 'analysis/sequence_calculator/size')
     window.show()
     sys.exit(app.exec())
 

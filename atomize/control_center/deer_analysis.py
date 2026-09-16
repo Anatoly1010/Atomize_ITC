@@ -20,6 +20,7 @@ or run directly:  python3 atomize/control_center/deer_analysis.py
 
 import os
 import sys
+from atomize.main.window_size import WindowSize
 import numpy as np
 from pathlib import Path
 
@@ -3501,6 +3502,9 @@ def main():
     app = QApplication(sys.argv)
     apply_app_style(app, app_id='Atomize.ITC.DeerAnalysis', desktop='deer')
     window = MainWindow()
+    window.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
+    window.destroyed.connect(app.quit)
+    window.window_size = WindowSize(window, 'analysis/deer_analysis/size')
     window.show()
     sys.exit(app.exec())
 

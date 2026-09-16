@@ -37,6 +37,7 @@ live on every edit.
 
 import os
 import sys
+from atomize.main.window_size import WindowSize
 
 import numpy as np
 import pyqtgraph as pg
@@ -1044,6 +1045,9 @@ def main():
     app = QApplication(sys.argv)
     apply_app_style(app, desktop='spin')
     win = MainWindow()
+    win.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
+    win.destroyed.connect(app.quit)
+    win.window_size = WindowSize(win, 'analysis/spin_dynamics_sim/size')
     win.show()
     sys.exit(app.exec())
 

@@ -37,6 +37,7 @@ import ast
 import os
 import re
 import sys
+from atomize.main.window_size import WindowSize
 import numpy as np
 from pathlib import Path
 
@@ -2494,6 +2495,9 @@ def main():
     from atomize.general_modules.gui_style import apply_app_style
     apply_app_style(app, app_id='Atomize.ITC.DataTreatment2D', desktop='treat2d')
     window = MainWindow()
+    window.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
+    window.destroyed.connect(app.quit)
+    window.window_size = WindowSize(window, 'analysis/data_treatment_2d/size')
     window.show()
     sys.exit(app.exec())
 
