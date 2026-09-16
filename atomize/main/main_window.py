@@ -153,6 +153,9 @@ class MainWindow(QMainWindow):
         self.checked = 0
         self.cached_stamp2 = 0
 
+        from atomize.main.output_panel import OutputPanel
+        self.output_panel = OutputPanel(self)
+
     def handle_output(self, process):
         raw_data = process.readAllStandardOutput().data().decode(self.system_encoding, errors='replace')
 
@@ -1120,6 +1123,7 @@ class NameList(QDockWidget):
         self.namelist_view = QListView()
         self.namelist_view.setStyleSheet(REFINED_STYLES['PLOT_LIST_STYLE'])
         self.namelist_view.setTextElideMode(QtCore.Qt.TextElideMode.ElideMiddle)
+        self.namelist_view.setItemDelegate(widgets.ElidedItemDelegate(self.namelist_view))
 
         self.namelist_view.setModel(self.namelist_model)
         self.namelist_model.rowsInserted.connect(self.update_plot_count)
