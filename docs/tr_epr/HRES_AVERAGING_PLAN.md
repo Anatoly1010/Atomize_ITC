@@ -5,9 +5,11 @@ Project: transient (time-resolved) EPR on the ITC endstation, controlled by
 (`atomize/device_modules/Keysight_2000_Xseries.py`, `_2.py`; Ethernet, see
 `device_modules/config/Keysight_2000_Xseries*_config.ini`).
 
-Status (2026-09-15): **PLANNED, not started.** Gate 0 (duty-cycle measurement on the
-real machine) must be passed before any code is written. Nothing in `tr_control.py`
-has been changed for this plan.
+Status (2026-09-17): **REJECTED after Gates 0 and 1 on the real machine.** Hres gives
+no measurable noise reduction on scope 1 (noise is preamp-dominated, see Gate 1) and
+the per-shot host loop only just keeps up with the 10 Hz laser (Gate 0). Keep
+`Average` mode. Nothing in `tr_control.py` has been changed. Raw data, scripts and
+the figure of the 2026-09-17 session: `~/tr_epr_hres_test_2026-09-17/` on the ITC box.
 
 ## Detection chain (as of 2026-09-15)
 
@@ -109,12 +111,36 @@ Procedure (Atomize GUI open, laser running at its normal repetition rate
 
 Fill in:
 
-| Config | len(y) | t_mean / s | t_max / s | 1/f_rep / s | shots missed |
-|---|---|---|---|---|---|
-| scope 1, CH1 | | | | | |
-| scope 2, CH1 | | | | | |
-| scope 1 + scope 2 | | | | | |
-| scope 1 CH1+CH2 + scope 2 | | | | | |
+Measured 2026-09-17, scope 1 (`192.168.2.21`, DSO-X 2012A fw 02.67, options MEMUP,
+SGM, BW10), laser trigger on CH2 at **f_rep = 10 Hz** (1/f_rep = 0.100 s), window
+100 µs / position 40 µs (10 µs pre-trigger), CH1 15 mV/div 1 MΩ BWL on, both channels
+displayed as in a real run. 40 shots per row; "missed" = iterations longer than
+0.15 s. Scope 2 was not measured (not requested).
+
+| Config (Hres unless noted) | requested → real points | t_mean / s | t_max / s | shots missed |
+|---|---|---|---|---|
+| scope 1, CH1 | 2000 → 1920 | 0.102 | 0.162 | 0–1 |
+| scope 1, CH1 | 4000 → **3840** | 0.190 | 0.392 | 12 / 40 |
+| scope 1, CH1 | 5000 → 3840 | 0.189 | 0.396 | 12 / 40 |
+| scope 1, CH1 | 10000 → 7680 | 0.100 | 0.112 | 0 |
+| scope 1, CH1 + CH2 | 4000 → 3840 | 0.212 | 0.638 | 6 / 30 |
+| scope 1, driver pair `start_acquisition` + `get_curve` | 4000 → 3840 | 0.120 | 0.326 | 2 / 30 |
+| Average, COUNt 10 (status quo) | 4000 → 3839 | 1.17 | 1.30 | – |
+| Average, COUNt 20 (status quo) | 4000 → 3839 | 2.12 | 2.33 | – |
+
+Breakdown of one Hres shot (second run, 8 shots per length): `:DIGitize` + `*OPC?`
+0.06–0.075 s, `:WAVeform:DATA?` 0.015–0.025 s for every length up to 7680, and
+`:WAVeform:PREamble?` 0.01 s *or* 0.12–0.17 s — the preamble query, not the
+transfer, is what randomly pushes an iteration over the laser period. The driver's
+`oscilloscope_get_curve` queries the preamble on every call, so a host loop is
+at best marginal at 10 Hz (0.10 s per shot with no headroom) and in practice loses
+25–50 % of the shots at 3840 points. In Normal mode `:DIGitize` alone takes 0.13 s
+and every second shot is lost (5 shots/s).
+
+Other facts from the run: Hres and Normal sample at 1 GSa/s, Average at 250 MSa/s;
+Hres rounds 4000 to 3840 points (not 5000, the driver's `points_list` is wrong for
+Hres); the driver's `*ESR?;:DIGitize;*OPC?` write leaves two unread responses, so
+every acquisition logs `-410 Query INTERRUPTED` on the scope (harmless).
 
 ### Gate 0b — segmented memory available? (only if Gate 0 is marginal)
 
@@ -124,6 +150,14 @@ Fill in:
   `:ACQuire:SEGMented:INDex k` + `:WAVeform:DATA?`. Segmented works with Hres and
   Normal, **not** with Average. Measure the total capture + readout time for p8 = 10.
 - If absent: decision is Average (status quo) vs. Hres with the missed-shot penalty.
+
+Measured 2026-09-17: `*OPT?` reports **SGM present**. Segmented Hres, 3840 points:
+10 segments captured in 1.04 s (no shot lost), readout 1.30 s (0.13 s per segment,
+preamble-dominated as above) → 2.34 s total vs 1.17 s for Average COUNt 10. With 20
+segments: 4.6–5.6 s vs 2.1–2.3 s for Average COUNt 20. Segmented removes the
+missed-shot problem but the readout still makes it ~2× slower than Average unless
+the preamble is read once per setup instead of once per segment (then ≈ 2.6 s,
+still not faster than Average).
 
 ### Gate 1 — noise budget (10 minutes, no code)
 
@@ -146,6 +180,44 @@ buy nothing measurable and the plan stops at "enable BWLimit, keep Average".
 | 2 | Normal | | |
 | 2 | Normal + BWL | | |
 | 2 | Hres | | |
+
+Done in situ on 2026-09-17 instead (bridge tuned, detector connected to CH1, laser
+firing, no sample transient at the field used — all traces are flat baseline), so
+the rows above were replaced by a direct single-shot comparison, 10 shots per
+cell, 3840 points, 15 mV/div. "baseline" = rms of the 10 µs pre-trigger part,
+"hf" = rms of the point-to-point difference / √2 (noise above ~20 MHz).
+
+| Scope 1, single shot | baseline / mV rms | hf / mV rms |
+|---|---|---|
+| Normal, BWL on | 4.06 | 1.45 |
+| Hres, BWL on | 4.10 | 1.42 |
+| Normal, BWL off | 3.96 | 1.62 |
+| Hres, BWL off | 4.10 | 1.51 |
+
+Neither Hres nor the 20 MHz bandwidth limit changes the single-shot noise: the
+4 mV rms is preamp/detector noise inside the 5 MHz band, and scope front-end noise
+above the Hres/BWL cut-off is negligible against it. The plan stops here.
+
+20-shot traces (same settings, 3 repeats each, mean ± std; SNR not quoted because
+there was no transient — the "peak" of every trace is the 4σ noise maximum):
+
+| Mode | time per trace / s | baseline / mV rms | hf / mV rms |
+|---|---|---|---|
+| Average COUNt 20 (status quo) | 2.20 ± 0.10 | 0.85 ± 0.03 | 0.315 |
+| Hres, 20 shots host-averaged | 3.96 ± 0.84 | 0.87 ± 0.03 | 0.325 |
+| Normal, 20 shots host-averaged | 5.5 ± 0.6 | 0.86 ± 0.03 | 0.341 |
+| Segmented Hres, 20 segments | 5.0 ± 0.4 | 0.97 ± 0.06 | 0.321 |
+
+All four are at the 4.06 / √20 = 0.91 mV shot-noise limit; Average is the fastest.
+One of the three segmented traces sat ~9 mV above the others (DC level shift of
+the whole trace) — not investigated, possibly detector drift during that capture.
+
+### Decision (2026-09-17)
+
+Gate 1 fails (no noise gain) and Gate 0 is marginal (10 Hz laser, ~0.10 s per shot
+with a randomly slow preamble query). **Keep `Average` mode in `tr_control.py`.**
+BWL is already on for CH1 on scope 1 and makes no difference either. Gate 2 below
+is kept for reference only and must not be implemented.
 
 ### Gate 2 — implementation (only after Gates 0 and 1 say yes)
 
@@ -190,9 +262,9 @@ one scope and (a) is within the budget agreed after Gate 0.
 
 ## Open questions
 
-- Laser repetition rate `f_rep` used in practice (needed for Gate 0).
-- Do the scopes have the SGM option (`*OPT?`)?
-- Typical windows of scope 1 and scope 2 (decides samples/point and the real Hres gain).
+- ~~Laser repetition rate `f_rep` used in practice~~ — 10 Hz (measured 2026-09-17).
+- ~~Do the scopes have the SGM option (`*OPT?`)?~~ — scope 1 yes; scope 2 not checked.
+- Typical window of scope 2 (scope 1 was 100 µs / 3840 points on 2026-09-17).
 - Is `Atomize_NIOCH_Q/.../tr_control.py` (single scope, CH4) meant to get the same change later?
 
 ## Session log
@@ -200,3 +272,8 @@ one scope and (a) is within the budget agreed after Gate 0.
 - 2026-09-15 — Analysis of `tr_control.py` and the Keysight driver; plan written.
   Decision: do not implement until the duty cycle (Gate 0) is measured on the
   real machine.
+- 2026-09-17 — Gates 0, 0b and 1 measured on scope 1 with the laser at 10 Hz and
+  the tuned bridge on CH1 (standalone scripts, scope setup saved and restored via
+  `:SYSTem:SETup`). Hres ≈ Normal ≈ Average in noise; host loop marginal at 10 Hz;
+  segmented capture works but reads out 2× slower than Average. Plan rejected,
+  `tr_control.py` unchanged.
