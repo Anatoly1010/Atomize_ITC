@@ -1354,7 +1354,7 @@ class MainWindow(QMainWindow):
 
         # ---- Load measured H(f) button + status ----
         self.Btn_resH = QPushButton("Load…")
-        self.Btn_resH.setFixedSize(170, 26)
+        self.Btn_resH.setFixedWidth(170)
         self.Btn_resH.setStyleSheet(REFINED_STYLES['BUTTON_STYLE'])
         self.Btn_resH.clicked.connect(self.open_resonator)
 

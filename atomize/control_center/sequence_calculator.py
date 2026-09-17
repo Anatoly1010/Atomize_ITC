@@ -596,7 +596,7 @@ class MainWindow(QMainWindow):
         top.addWidget(self.combo_template)
         btn_load = QPushButton("Load template")
         btn_load.setStyleSheet(BUTTON_STYLE)
-        btn_load.setFixedSize(gui_forms.ACTION_W, ROW_H)
+        btn_load.setFixedWidth(gui_forms.ACTION_W)
         btn_load.setToolTip(
             "Fill the pulse count, τ gaps, phases and receiver from the selected "
             "template, together with the per-pulse length / amplitude / frequency "
@@ -729,7 +729,7 @@ class MainWindow(QMainWindow):
                                       ("Open in RECT", self.open_in_rect, '.phase', 'RECT')]:
             b = QPushButton(text)
             b.setStyleSheet(BUTTON_STYLE)
-            b.setFixedSize(gui_forms.ACTION_W, ROW_H)
+            b.setFixedWidth(gui_forms.ACTION_W)
             b.setToolTip(tip % (ext, tool))
             b.clicked.connect(slot)
             btns.addWidget(b)
