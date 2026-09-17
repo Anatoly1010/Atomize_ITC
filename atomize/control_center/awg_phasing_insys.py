@@ -154,6 +154,7 @@ class MainWindow(QMainWindow):
         self.seqcalc_timer = QTimer()
         self.seqcalc_timer.timeout.connect(self.check_seqcalc_reload)
         self.seqcalc_timer.start(400)
+        QTimer.singleShot(0, lambda: self.resize(self.width(), self.sizeHint().height()))
 
     def _read_seqcalc_nonce(self):
         try:
@@ -451,7 +452,6 @@ class MainWindow(QMainWindow):
         self.setWindowIcon( QIcon(icon_path) )
         self.path = os.path.join(path_to_main, '..', '..', '..', '..', 'experimental_data')
 
-        self.setMinimumHeight(774)
         self.setMinimumWidth(1720)
         self.setMaximumWidth(2660)
 
@@ -503,7 +503,7 @@ class MainWindow(QMainWindow):
         self.buttons_layout.setVerticalSpacing(6)
         self.buttons_layout.setHorizontalSpacing(20)
         
-        main_window_layout.addWidget(buttons_widget, 1)
+        main_window_layout.addWidget(buttons_widget)
 
         # ---- Labels & Inputs ----
         labels = [("Start", "label_1"), ("Length", "label_2"), ("Sigma", "label_3"), ("Start Increment", "label_4"), ("Length Increment", "label_5"), ("Frequency", "label_6"), ("Frequency Sweep", "label_7"), ("Amplitude", "label_8"), ("Type", "label_9"), ("Phase", "label_10"), ("Repetition Rate", "label_11"), ("Magnetic Field", "label_12"), ("Progress", "label_p1"), ("Start Increment 2", "label_si2")]
@@ -770,6 +770,8 @@ class MainWindow(QMainWindow):
             combo.currentTextChanged.connect(lambda _, idx = i: self.update_link_factor(idx))
             self.gridLayout.addWidget(combo, 18, i)
 
+        self.gridLayout.addWidget(hline(), 19, 0, 1, 10)
+
         # ---- Boxes----
         boxes = [(QDoubleSpinBox, "Rep_rate", "repetition_rate", self.rep_rate, 0.1, 20e3, 500, 1, 1, " Hz"),
                  (QDoubleSpinBox, "Field", "mag_field", self.field, 10, 15.1e3, 3493, 0.5, 2, " G")]
@@ -852,14 +854,18 @@ class MainWindow(QMainWindow):
 
         txt.setStyleSheet(REFINED_STYLES['COMPACT_TEXT_STYLE'])
 
+        txt.setFixedHeight(
+            self.button_update.height() + self.button_stop.height() + self.button_off.height()
+            + 2 * self.buttons_layout.verticalSpacing())
         self.buttons_layout.addWidget(txt, 3, 2, 3, 10)
+        buttons_widget.ensurePolished()
+        buttons_widget.setFixedHeight(self.buttons_layout.sizeHint().height())
 
         container.ensurePolished()
         scroll.setFixedHeight(
             tab_layout.sizeHint().height() + scroll.horizontalScrollBar().sizeHint().height()
             + 2 * scroll.frameWidth())
 
-        #self.buttons_layout.setRowStretch(6, 11)
         #self.buttons_layout.setColumnStretch(6, 11)
 
     def design_tab_2(self):
@@ -1545,13 +1551,13 @@ class MainWindow(QMainWindow):
         gridLayout.addWidget(hline(), 6, 0, 1, 2)
 
         # ---- Saving of the full 2D data ----
-        save2d_label = QLabel("Save 2D")
+        save2d_label = QLabel("Save 2D as CSV")
         save2d_label.setFixedSize(170, 26)
         save2d_label.setStyleSheet(REFINED_STYLES['LABEL_STYLE'])
         self.Save2D = QCheckBox("")
         self.Save2D.setStyleSheet(CHECKBOX_STYLE)
         self.Save2D.setFixedSize(170, 26)
-        self.Save2D.setToolTip('When checked, save both 1D and 2D arrays in the Shift Offset mode.')
+        self.Save2D.setToolTip('Save full 2D data as CSV instead of HDF5; 1D result files stay CSV.')
         self.Save2D.stateChanged.connect(self.save_2d)
 
         hdf5_label = QLabel("Save 2D as HDF5")
@@ -1561,8 +1567,7 @@ class MainWindow(QMainWindow):
         self.Save_hdf5.setStyleSheet(CHECKBOX_STYLE)
         self.Save_hdf5.setFixedSize(170, 26)
         self.Save_hdf5.setToolTip(
-            "When Save 2D is on, every 2D dump is written as a single .h5 file "
-            "instead of CSV; 1D result files stay CSV.")
+            "Save full 2D data as HDF5 instead of CSV; 1D result files stay CSV.")
         self.Save_hdf5.stateChanged.connect(self.save_2d_hdf5)
 
         gridLayout.addWidget(save2d_label, 7, 0)
@@ -2428,25 +2433,17 @@ class MainWindow(QMainWindow):
         #    pass
 
     def save_2d(self):
-        """
-        """
-        if self.Save2D.checkState().value == 2: # checked
-            self.save2d = 1
-        elif self.Save2D.checkState().value == 0: # unchecked
-            self.save2d = 0
-
-        #try:
-        #    self.parent_conn_dig.send( 'SV' + str( self.quad ) )
-        #except AttributeError:
-        #    pass
+        """Select CSV for full 2D data, or turn optional 2D saving off."""
+        if self.Save2D.isChecked():
+            self.Save_hdf5.setChecked(False)
+        self.save2d = int(self.Save2D.isChecked() or self.Save_hdf5.isChecked())
+        self.save_hdf5 = int(self.Save_hdf5.isChecked())
 
     def save_2d_hdf5(self):
-        """
-        """
-        if self.Save_hdf5.checkState().value == 2: # checked
-            self.save_hdf5 = 1
-        elif self.Save_hdf5.checkState().value == 0: # unchecked
-            self.save_hdf5 = 0
+        """Enable full 2D saving as HDF5 without requiring the CSV checkbox."""
+        if self.Save_hdf5.isChecked():
+            self.Save2D.setChecked(False)
+        self.save_2d()
 
     def zero_order_func(self):
         """

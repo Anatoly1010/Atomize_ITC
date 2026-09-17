@@ -113,6 +113,7 @@ class MainWindow(QMainWindow):
         self.seqcalc_timer = QTimer()
         self.seqcalc_timer.timeout.connect(self.check_seqcalc_reload)
         self.seqcalc_timer.start(400)
+        QTimer.singleShot(0, lambda: self.resize(self.width(), self.sizeHint().height()))
 
     def _read_seqcalc_nonce(self):
         try:
@@ -387,7 +388,6 @@ class MainWindow(QMainWindow):
         self.setWindowIcon( QIcon(icon_path) )
         self.path = os.path.join(path_to_main, '..', '..', '..', '..', 'experimental_data')
 
-        self.setMinimumHeight(644)
         self.setMinimumWidth(1720)
         self.setMaximumWidth(2660)
 
@@ -440,7 +440,7 @@ class MainWindow(QMainWindow):
         self.buttons_layout.setVerticalSpacing(6)
         self.buttons_layout.setHorizontalSpacing(20)
         
-        main_window_layout.addWidget(buttons_widget, 1)
+        main_window_layout.addWidget(buttons_widget)
 
         # ---- Labels & Inputs ----
         labels = [("Start", "label_1"), ("Length", "label_2"), ("Start Increment", "label_3"), ("Length Increment", "label_4"), ("Type", "label_5"), ("Phase", "label_6"), ("Repetition Rate", "label_7"), ("Magnetic Field", "label_8"), ("Progress", "label_p1")]
@@ -711,14 +711,18 @@ class MainWindow(QMainWindow):
 
         txt.setStyleSheet(REFINED_STYLES['COMPACT_TEXT_STYLE'])
         
+        txt.setFixedHeight(
+            self.button_update.height() + self.button_stop.height() + self.button_off.height()
+            + 2 * self.buttons_layout.verticalSpacing())
         self.buttons_layout.addWidget(txt, 3, 2, 3, 10)
+        buttons_widget.ensurePolished()
+        buttons_widget.setFixedHeight(self.buttons_layout.sizeHint().height())
 
         container.ensurePolished()
         scroll.setFixedHeight(
             tab_layout.sizeHint().height() + scroll.horizontalScrollBar().sizeHint().height()
             + 2 * scroll.frameWidth())
 
-        #self.buttons_layout.setRowStretch(6, 11)
         #self.buttons_layout.setColumnStretch(6, 11)
 
     def design_tab_2(self):
