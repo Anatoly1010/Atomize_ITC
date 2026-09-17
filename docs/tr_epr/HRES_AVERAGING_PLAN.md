@@ -138,9 +138,14 @@ at best marginal at 10 Hz (0.10 s per shot with no headroom) and in practice los
 and every second shot is lost (5 shots/s).
 
 Other facts from the run: Hres and Normal sample at 1 GSa/s, Average at 250 MSa/s;
-Hres rounds 4000 to 3840 points (not 5000, the driver's `points_list` is wrong for
-Hres); the driver's `*ESR?;:DIGitize;*OPC?` write leaves two unread responses, so
-every acquisition logs `-410 Query INTERRUPTED` on the scope (harmless).
+Hres rounds 4000 to 3840 points (not 5000 as the driver's `points_list` assumed);
+the driver's `*ESR?;:DIGitize;*OPC?` write left two unread responses, so every
+acquisition logged `-410 Query INTERRUPTED` on the scope (harmless). Both fixed in
+the Keysight 2000/3000 modules on 2026-09-17: `oscilloscope_record_length` now
+sends the request and reports the value the scope actually set, and
+`oscilloscope_start_acquisition` sends `*CLS;:DIGitize` (still non-blocking, so
+two scopes are armed in parallel as before). The 3034T at `192.168.2.20` rounds
+4000 to 3999 (Average/Hres) and 3829 (Normal).
 
 ### Gate 0b — segmented memory available? (only if Gate 0 is marginal)
 
@@ -277,3 +282,10 @@ one scope and (a) is within the budget agreed after Gate 0.
   `:SYSTem:SETup`). Hres ≈ Normal ≈ Average in noise; host loop marginal at 10 Hz;
   segmented capture works but reads out 2× slower than Average. Plan rejected,
   `tr_control.py` unchanged.
+- 2026-09-17 — Average-mode readout budget on scope 1 (COUNt 10/20/50): `:DIGitize`
+  completes in N × 0.1 s + ≤ 0.03 s, `:WAVeform:DATA?` 0.02 s (WORD and BYTE alike),
+  `:WAVeform:PREamble?` 0.01–0.27 s but back-to-back traces still take N × 0.1 s
+  + 0.00–0.07 s, i.e. the scope is at the laser-shot limit; the slow preamble is the
+  scope being busy after the acquisition, not transfer time, so caching it gains
+  nothing. Only fewer shots, fewer field points, or hiding the readout under the
+  magnet step can shorten a scan.
