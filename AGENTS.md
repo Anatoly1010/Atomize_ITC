@@ -137,6 +137,8 @@ The per-instrument function reference is Markdown in `atomize/documentation/`. W
 
 The published documentation is built with MkDocs Material from `docs/` in the separate sibling repository `../atomize_docs/`, at https://anatoly1010.github.io/atomize_docs/. Its legacy Jekyll tree is not deployed. Update the corresponding published reference when changing documented behavior, and read that repository's `AGENTS.md` before editing it.
 
+The EPR Endstation webpage (`../atomize_docs/docs/projects/endstation.md`) contains only general information about the endstation. Do not add control-center UI details, widget behavior, or routine implementation changes to that page. A UI-only change does not require an addition to `atomize_docs` unless it changes behavior already documented there.
+
 For `epr_auto` step or parameter registration changes, regenerate the published `steps.md` from the runner registry rather than editing it by hand:
 
 ```bash

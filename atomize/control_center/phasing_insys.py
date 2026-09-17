@@ -5,6 +5,7 @@ import os
 import re
 import sys
 from atomize.general_modules.gui_style import REFINED_STYLES, style_file_dialog
+from atomize.control_center.phasing_messages import PhasingMessagePanel
 import math
 import time
 import json
@@ -703,18 +704,12 @@ class MainWindow(QMainWindow):
             self.buttons_layout.addWidget(btn, btn_c, btn_cl)
             btn_c += 1
         
-        txt = QPlainTextEdit()
-        txt.setReadOnly(True)
-        txt.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
-        txt.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
-        setattr(self, "errors", txt)
-
-        txt.setStyleSheet(REFINED_STYLES['COMPACT_TEXT_STYLE'])
-        
-        txt.setFixedHeight(
+        self.message_panel = PhasingMessagePanel()
+        self.errors = self.message_panel.messages
+        self.message_panel.setFixedHeight(
             self.button_update.height() + self.button_stop.height() + self.button_off.height()
             + 2 * self.buttons_layout.verticalSpacing())
-        self.buttons_layout.addWidget(txt, 3, 2, 3, 10)
+        self.buttons_layout.addWidget(self.message_panel, 3, 2, 3, 10)
         buttons_widget.ensurePolished()
         buttons_widget.setFixedHeight(self.buttons_layout.sizeHint().height())
 
@@ -1254,7 +1249,7 @@ class MainWindow(QMainWindow):
         self._link_message()
 
     def _link_message(self, text = ''):
-        """Show one temporary link notice above the live pulse list."""
+        """Show one temporary link notice in the message history."""
         if not hasattr(self, 'errors'):
             return
         previous = getattr(self, '_link_notice', '')
@@ -1273,14 +1268,7 @@ class MainWindow(QMainWindow):
         self._link_notice = text
         if not text:
             return
-        cursor = self.errors.document().find('--- Live pulse list ---')
-        if cursor.isNull():
-            self.errors.appendPlainText(text)
-        else:
-            cursor.setPosition(cursor.selectionStart())
-            cursor.insertText(text + '\n')
-            self.errors.setTextCursor(cursor)
-            self.errors.ensureCursorVisible()
+        self.errors.appendPlainText(text)
 
     def link_source_changed(self, index, suffix):
         """A linkable spin-box changed: shift the other linked pulses in step."""
@@ -2440,6 +2428,7 @@ class MainWindow(QMainWindow):
         elif msg_type == 'Message':
             self.errors.appendPlainText(data)
         elif msg_type == 'Error':
+            self.message_panel.set_experiment_running(False)
             self.last_error = True
             self.timer.stop()
             self.is_experiment = False
@@ -2466,6 +2455,7 @@ class MainWindow(QMainWindow):
             else:
                 self.errors.appendPlainText(data)
             if msg_type != 'test':
+                self.message_panel.set_experiment_running(False)
                 self.message(data)
                 self.button_blue()
                 self.progress_bar.setValue(0)
@@ -2475,40 +2465,12 @@ class MainWindow(QMainWindow):
                     self.is_experiment = False
 
     def update_count_nip(self, text):
-        """
-        Show the live count_nip array in the errors log, refreshing only that
-        line. If the last line is already a count_nip readout it is replaced in
-        place; otherwise a new one is appended. Any other messages already in the
-        log are left untouched.
-        """
-        marker = 'count_nip: '
-        line = marker + text
-        cursor = self.errors.textCursor()
-        cursor.movePosition(QTextCursor.MoveOperation.End)
-        cursor.select(QTextCursor.SelectionType.LineUnderCursor)
-        if cursor.selectedText().startswith(marker):
-            cursor.insertText(line)
-        else:
-            self.errors.appendPlainText(line)
+        """Refresh the trailing acquisition count without disturbing messages."""
+        self.message_panel.update_count(text)
 
     def update_pulse_list_display(self, text):
-        """
-        Show the current pulse list in the log after a live edit, refreshing the
-        block in place (from the marker line to the end) so repeated live edits
-        do not stack copies. Any messages above the marker are left untouched.
-        """
-        marker = '--- Live pulse list ---'
-        block = marker + '\n' + text
-        doc = self.errors.toPlainText()
-        idx = doc.rfind(marker)
-        cursor = self.errors.textCursor()
-        if idx != -1:
-            cursor.setPosition(idx)
-            cursor.movePosition(QTextCursor.MoveOperation.End,
-                                QTextCursor.MoveMode.KeepAnchor)
-            cursor.insertText(block)
-        else:
-            self.errors.appendPlainText(block)
+        """Refresh pulse details without replacing the message history."""
+        self.message_panel.update_pulse_list(text)
 
     def check_messages(self):
         if not hasattr(self, 'last_error'):
@@ -2530,6 +2492,7 @@ class MainWindow(QMainWindow):
             self.digitizer_process.join()
 
         if hasattr(self, 'digitizer_process') and not self.digitizer_process.is_alive():
+            self.message_panel.set_experiment_running(False)
             if self.parent_conn_dig.poll():
                 #return #better to repeat the whole logic
                 self.parse_message()
@@ -2579,6 +2542,7 @@ class MainWindow(QMainWindow):
             return
 
         self.monitor_timer.stop()
+        self.message_panel.set_experiment_running(False)
 
         if self.is_experiment == True:
             self.digitizer_process.join()
@@ -2676,6 +2640,7 @@ class MainWindow(QMainWindow):
         self.button_start_exp.setStyleSheet(REFINED_STYLES['PRIMARY_BUTTON_STYLE'])
 
         self.digitizer_process.start()
+        self.message_panel.set_experiment_running(True)
         self.parent_conn_dig.send('start')
         self.timer.start(200)
 
