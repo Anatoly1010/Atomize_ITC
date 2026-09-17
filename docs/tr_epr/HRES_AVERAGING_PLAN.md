@@ -318,6 +318,15 @@ field settling instead of before it. The 80 ms settling wait is unchanged; the
 data-to-field assignment, the end state of the magnet and the ramp back are the
 same as before (verified in test mode with a traced two-sided sweep, p9 = 1/2/3).
 
+Hardware check (2026-09-17, scope 1 only, 3428–3438 G step 2 G two-sided, COUNt 16,
+off-resonance 3380 G): 12 points in 1.86 s per point with the overlap against
+1.83 s per point with the previous code (run-to-run scatter ±0.1 s). **No measurable
+gain**: after `*OPC?` the readout plus plot is only ~50 ms, and the remaining
+~0.2 s per point is the 80 ms settling wait, the random wait for the first laser
+shot (0–100 ms) and the BH-15 call, none of which can be hidden. The loop runs at
+~87 % of the laser-shot limit for COUNt 16 and higher for larger counts. The
+reordering is kept because it is verified and harmless, but it buys nothing.
+
 ## Open questions
 
 - ~~Laser repetition rate `f_rep` used in practice~~ — 10 Hz (measured 2026-09-17).

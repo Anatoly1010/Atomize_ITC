@@ -213,6 +213,7 @@ class MainWindow(QMainWindow):
         gridLayout.addWidget(self.label_5, 5, 0)
         gridLayout.addWidget(self.box_ave_offres, 5, 1)
         gridLayout.addWidget(self.label_6, 6, 0)
+        self.box_ave.setToolTip('Shots per field point. 16-128 recommended: fewer wastes time re-arming the scope, more gains nothing over extra scans.')
         gridLayout.addWidget(self.box_ave, 6, 1)
         gridLayout.addWidget(self.label_7, 7, 0)
         gridLayout.addWidget(self.box_scan, 7, 1)
