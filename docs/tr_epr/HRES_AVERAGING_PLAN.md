@@ -187,7 +187,7 @@ buy nothing measurable and the plan stops at "enable BWLimit, keep Average".
 | 2 | Hres | | |
 
 Done in situ on 2026-09-17 instead (bridge tuned, detector connected to CH1, laser
-firing, no sample transient at the field used — all traces are flat baseline), so
+firing, the −0.7 mV transient buried in single-shot noise — all traces look flat), so
 the rows above were replaced by a direct single-shot comparison, 10 shots per
 cell, 3840 points, 15 mV/div. "baseline" = rms of the 10 µs pre-trigger part,
 "hf" = rms of the point-to-point difference / √2 (noise above ~20 MHz).
@@ -204,7 +204,7 @@ Neither Hres nor the 20 MHz bandwidth limit changes the single-shot noise: the
 above the Hres/BWL cut-off is negligible against it. The plan stops here.
 
 20-shot traces (same settings, 3 repeats each, mean ± std; SNR not quoted because
-there was no transient — the "peak" of every trace is the 4σ noise maximum):
+the transient (−0.7 mV, see "Shots per point") is below the noise at 20 shots and the "peak" of every trace is the 4σ noise maximum):
 
 | Mode | time per trace / s | baseline / mV rms | hf / mV rms |
 |---|---|---|---|
@@ -265,6 +265,59 @@ Acceptance: same field sweep, same p6/p8/scans, in Average and in Hres; compare
 the transient on both scopes. Keep Hres as default only if (c) improves on at least
 one scope and (a) is within the budget agreed after Gate 0.
 
+## Shots per point in Average mode (measured 2026-09-17, scope 1)
+
+Question: is there an optimal `ACQ:COUNt` per field point, given the scope's digital
+averaging, before the rest of the averaging is done host-side over scans?
+Same settings as above (15 mV/div, 3839 points, 10 Hz laser). Noise = rms of the
+10 µs pre-trigger baseline; "hf" = point-to-point rms / √2. Single shot: 4.08 mV rms
+= 6.8 LSB (LSB 0.603 mV). Averaged WORD data carry 4 extra bits (step 0.038 mV).
+
+| COUNt | baseline rms / mV | single / √N | ratio | time / trace | duty cycle |
+|---|---|---|---|---|---|
+| 2 | 2.92 | 2.89 | 1.01 | 0.5 s | 39 % |
+| 4 | 2.16 | 2.04 | 1.06 | 0.7 s | 55 % |
+| 8 | 1.50 | 1.44 | 1.04 | 1.0 s | 78 % |
+| 16 | 0.99 | 1.02 | 0.97 | 1.6 s | 100 % |
+| 32 | 0.76 | 0.72 | 1.05 | 3.2 s | 99 % |
+| 64 | 0.57 | 0.51 | 1.11 | 6.4 s | 99 % |
+| 128 | 0.34 | 0.36 | 0.95 | 12.8 s | 100 % |
+| 256 | 0.26 | 0.26 | 1.00 | 25.7 s | 100 % |
+| 512 | 0.11 (*) | 0.18 | 0.61 | 51 s | 100 % |
+| 1024 | 0.12 | 0.13 | 0.92 | 103 s | 100 % |
+
+Host-side averaging of scope-averaged traces at 256 shots total: 16 × COUNt 16 gives
+0.23 mV, 8 × 32 0.23 mV, 4 × 64 0.26 mV, 2 × 128 0.22 mV — identical to a single
+COUNt 256 trace (0.26 mV). The scope's averaging is therefore as good as numpy
+averaging, and the output quantisation (0.038 mV / √12 = 0.011 mV) would only
+matter above ~10⁵ shots. No "digital noise" floor was reached.
+
+(*) The single 512-shot trace is anomalous: the DC level sat at 51 mV instead of
+~15 mV and the transient amplitude dropped to a third; the detector level moved
+during that 51 s acquisition (the DC level was also seen to drift by several mV
+between other long traces). This, not the arithmetic, is the risk of a large COUNt.
+
+There *is* a transient at the field used: a −0.7 mV dip lasting ~25 µs after the
+laser spike, invisible at 20 shots (SNR 0.8), SNR 3 at 256 shots, SNR 6 at 1024.
+The earlier statement that no transient was present was wrong; the 20-shot
+comparison above stands, since it was a noise comparison.
+
+Recommendation: `COUNt` (p6/p8) between 16 and 128 per point. Below 16 the scope
+spends most of the time re-arming (duty cycle 39–78 %); above ~128 nothing is
+gained in noise over doing the rest in scans, while a level drift during one long
+acquisition corrupts the point and a stop loses all of it. Scans (host averaging)
+cost only the per-point overhead, now mostly hidden under the field step.
+
+## Readout overlap in `tr_control.py` (2026-09-17)
+
+`oscilloscope_wait_acquisition()` (`*OPC?`) was added to the Keysight 2000/3000/4000
+X-series modules. The forward and backward field loops in `exp_on` / `exp_test`
+now arm the scope(s), wait for the shots, step the magnet to the next point, and
+only then read the traces and plot, so the readout and plotting run during the
+field settling instead of before it. The 80 ms settling wait is unchanged; the
+data-to-field assignment, the end state of the magnet and the ramp back are the
+same as before (verified in test mode with a traced two-sided sweep, p9 = 1/2/3).
+
 ## Open questions
 
 - ~~Laser repetition rate `f_rep` used in practice~~ — 10 Hz (measured 2026-09-17).
@@ -289,3 +342,6 @@ one scope and (a) is within the budget agreed after Gate 0.
   scope being busy after the acquisition, not transfer time, so caching it gains
   nothing. Only fewer shots, fewer field points, or hiding the readout under the
   magnet step can shorten a scan.
+- 2026-09-17 — COUNt sweep 2…1024 and host-vs-scope averaging (section "Shots per
+  point"); readout overlap implemented in `tr_control.py` with the new
+  `oscilloscope_wait_acquisition()`; raw data in `~/tr_epr_hres_test_2026-09-17/`.

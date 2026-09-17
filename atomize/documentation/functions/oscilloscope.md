@@ -139,6 +139,16 @@ For Rigol MSO8000 Series this function clears all the waveforms on the screen an
 
 ---
 
+### oscilloscope_wait_acquisition() { #oscilloscope_wait_acquisition data-toc-label="oscilloscope_wait_acquisition" }
+
+```python
+oscilloscope_wait_acquisition()    # block until the started acquisition is complete
+```
+
+Keysight 2000, 3000 and 4000 X-series. For the 2000 X-series [`oscilloscope_start_acquisition()`](#oscilloscope_start_acquisition) returns immediately, so several oscilloscopes can be armed for the same triggers; this function then blocks until the acquisition of this oscilloscope has finished (`*OPC?`). Use it when something else, for example a magnetic field step, should happen after the shots are taken but before the curves are read out with [`oscilloscope_get_curve()`](#oscilloscope_get_curve). Reading the curve without this call is still correct, since the read waits for the acquisition anyway. For the 3000 and 4000 X-series the start call itself already waits, so this function returns at once.
+
+---
+
 ### oscilloscope_preamble(channel) { #oscilloscope_preamble data-toc-label="oscilloscope_preamble" }
 
 ```python

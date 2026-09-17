@@ -1194,7 +1194,13 @@ class Worker():
                         a2012.oscilloscope_start_acquisition()
                         if p9 > 1:
                             a2012_2.oscilloscope_start_acquisition()
-                        
+                        a2012.oscilloscope_wait_acquisition()
+                        if p9 > 1:
+                            a2012_2.oscilloscope_wait_acquisition()
+
+                        field_next = round( (FIELD_STEP + field), 3 )
+                        bh15.magnet_field(field_next)
+
 
                         ##ch_time = np.random.randint(250, 500, 1)
                         if p9 == 1:
@@ -1250,8 +1256,7 @@ class Worker():
 
                         #general.message( str( time.time() - start_time ) )
 
-                        field = round( (FIELD_STEP + field), 3 )
-                        bh15.magnet_field(field)
+                        field = field_next
 
                         # check our polling data
                         if self.command[0:2] == 'SC':
@@ -1267,7 +1272,10 @@ class Worker():
 
                     if p12 == 1:
 
-                        while field > START_FIELD:
+                        field = round( (-FIELD_STEP + field), 3 )
+                        bh15.magnet_field(field)
+
+                        while i > 0:
                             
                             if self.command == 'exit':
                                 break
@@ -1275,13 +1283,19 @@ class Worker():
                             i -= 1
                             general.wait('80 ms')
 
-                            field = round( (-FIELD_STEP + field), 3 )
-                            bh15.magnet_field(field)
-
                             a2012.oscilloscope_start_acquisition()
                             if p9 > 1:
                                 a2012_2.oscilloscope_start_acquisition()
-                            
+                            a2012.oscilloscope_wait_acquisition()
+                            if p9 > 1:
+                                a2012_2.oscilloscope_wait_acquisition()
+
+                            if i > 0:
+                                field_next = round( (-FIELD_STEP + field), 3 )
+                                bh15.magnet_field(field_next)
+                            else:
+                                field_next = field
+
                             ##ch_time = np.random.randint(250, 500, 1)
                             if p9 == 1:
                                 y = a2012.oscilloscope_get_curve('CH1')
@@ -1329,7 +1343,7 @@ class Worker():
 
                                 process = general.plot_2d( f"{p2}_2", data_2[:,:,1:points+1],  xname='Time', start_step=( (0, t_step_2), (START_FIELD, FIELD_STEP) ), xscale='s', yname='Field', yscale='G', zname='Intensity', zscale='V', pr = process, text = 'S / F: ' + str(j) + ' / ' + str(field))
 
-                            #general.message( str( time.time() - start_time ) )
+                            field = field_next
 
                             # check our polling data
                             if self.command[0:2] == 'SC':
@@ -1868,7 +1882,13 @@ class Worker():
                         a2012.oscilloscope_start_acquisition()
                         if p9 > 1:
                             a2012_2.oscilloscope_start_acquisition()
-                        
+                        a2012.oscilloscope_wait_acquisition()
+                        if p9 > 1:
+                            a2012_2.oscilloscope_wait_acquisition()
+
+                        field_next = round( (FIELD_STEP + field), 3 )
+                        bh15.magnet_field(field_next)
+
 
                         ##ch_time = np.random.randint(250, 500, 1)
                         if p9 == 1:
@@ -1924,8 +1944,7 @@ class Worker():
 
                         #general.message( str( time.time() - start_time ) )
 
-                        field = round( (FIELD_STEP + field), 3 )
-                        bh15.magnet_field(field)
+                        field = field_next
 
                         # check our polling data
                         if self.command[0:2] == 'SC':
@@ -1941,7 +1960,10 @@ class Worker():
 
                     if p12 == 1:
 
-                        while field > START_FIELD:
+                        field = round( (-FIELD_STEP + field), 3 )
+                        bh15.magnet_field(field)
+
+                        while i > 0:
                             
                             if self.command == 'exit':
                                 break
@@ -1949,13 +1971,19 @@ class Worker():
                             i -= 1
                             general.wait('80 ms')
 
-                            field = round( (-FIELD_STEP + field), 3 )
-                            bh15.magnet_field(field)
-
                             a2012.oscilloscope_start_acquisition()
                             if p9 > 1:
                                 a2012_2.oscilloscope_start_acquisition()
-                            
+                            a2012.oscilloscope_wait_acquisition()
+                            if p9 > 1:
+                                a2012_2.oscilloscope_wait_acquisition()
+
+                            if i > 0:
+                                field_next = round( (-FIELD_STEP + field), 3 )
+                                bh15.magnet_field(field_next)
+                            else:
+                                field_next = field
+
                             ##ch_time = np.random.randint(250, 500, 1)
                             if p9 == 1:
                                 y = a2012.oscilloscope_get_curve('CH1')
@@ -2003,7 +2031,7 @@ class Worker():
 
                                 process = general.plot_2d( f"{p2}_2", data_2[:,:,1:points+1],  xname='Time', start_step=( (0, t_step_2), (START_FIELD, FIELD_STEP) ), xscale='s', yname='Field', yscale='G', zname='Intensity', zscale='V', pr = process, text = 'S / F: ' + str(j) + ' / ' + str(field))
 
-                            #general.message( str( time.time() - start_time ) )
+                            field = field_next
 
                             # check our polling data
                             if self.command[0:2] == 'SC':
