@@ -9,7 +9,7 @@ Status (2026-09-17): **REJECTED after Gates 0 and 1 on the real machine.** Hres 
 no measurable noise reduction on scope 1 (noise is preamp-dominated, see Gate 1) and
 the per-shot host loop only just keeps up with the 10 Hz laser (Gate 0). Keep
 `Average` mode. Nothing in `tr_control.py` has been changed. Raw data, scripts and
-the figure of the 2026-09-17 session: `~/tr_epr_hres_test_2026-09-17/` on the ITC box.
+the figure of the 2026-09-17 session: `~/experimental_data/Melnikov/2026_09_17_scope_hres_test/` on the ITC box.
 
 ## Detection chain (as of 2026-09-15)
 
@@ -353,4 +353,4 @@ reordering is kept because it is verified and harmless, but it buys nothing.
   magnet step can shorten a scan.
 - 2026-09-17 — COUNt sweep 2…1024 and host-vs-scope averaging (section "Shots per
   point"); readout overlap implemented in `tr_control.py` with the new
-  `oscilloscope_wait_acquisition()`; raw data in `~/tr_epr_hres_test_2026-09-17/`.
+  `oscilloscope_wait_acquisition()`; raw data in `~/experimental_data/Melnikov/2026_09_17_scope_hres_test/`.
