@@ -476,13 +476,15 @@ class MainWindow(QMainWindow):
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
         scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         scroll.horizontalScrollBar().setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
-        #scroll.setFixedHeight(383)
 
         scroll.setStyleSheet(REFINED_STYLES['SCROLL_STYLE'])
 
         container = QWidget()
         scroll.setWidget(container)
         tab_layout = QVBoxLayout(container)
+        pulse_margins = tab_layout.contentsMargins()
+        pulse_margins.setBottom(12)
+        tab_layout.setContentsMargins(pulse_margins)
         
         self.gridLayout = QGridLayout()
         self.gridLayout.setContentsMargins(5, 5, 0, 0)
@@ -490,7 +492,6 @@ class MainWindow(QMainWindow):
         self.gridLayout.setHorizontalSpacing(20)
         
         tab_layout.addLayout(self.gridLayout)
-        tab_layout.addStretch()
 
         pulse_page_layout.addWidget(scroll)
         self.tab_pulse.addTab(pulse_page, "Pulses")
@@ -502,7 +503,7 @@ class MainWindow(QMainWindow):
         self.buttons_layout.setVerticalSpacing(6)
         self.buttons_layout.setHorizontalSpacing(20)
         
-        main_window_layout.addWidget(buttons_widget)
+        main_window_layout.addWidget(buttons_widget, 1)
 
         # ---- Labels & Inputs ----
         labels = [("Start", "label_1"), ("Length", "label_2"), ("Sigma", "label_3"), ("Start Increment", "label_4"), ("Length Increment", "label_5"), ("Frequency", "label_6"), ("Frequency Sweep", "label_7"), ("Amplitude", "label_8"), ("Type", "label_9"), ("Phase", "label_10"), ("Repetition Rate", "label_11"), ("Magnetic Field", "label_12"), ("Progress", "label_p1"), ("Start Increment 2", "label_si2")]
@@ -729,14 +730,35 @@ class MainWindow(QMainWindow):
             self.gridLayout.addWidget(txt, 16, i)
             txt.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
 
-        # ---- Link factor row ----
-        # Per-pulse weight for Link mode. The coupled parameter is chosen in the
-        # Settings tab; the weight here (No / 0.5x / 1x / 2x) scales how far this
-        # pulse moves relative to the pulse being edited.
-        self.link_row_label = QLabel("Link")
-        self.link_row_label.setFixedSize(170, 26)
-        self.link_row_label.setStyleSheet(REFINED_STYLES['LABEL_STYLE'])
-        self.gridLayout.addWidget(self.link_row_label, 18, 0)
+        link_controls = QWidget()
+        link_controls.setFixedSize(170, 26)
+        link_layout = QHBoxLayout(link_controls)
+        link_layout.setContentsMargins(0, 0, 0, 0)
+        link_layout.setSpacing(4)
+        self.Combo_link_pulses = QComboBox()
+        for parameter in ['Off', 'Amplitude', 'Length', 'Position', 'Frequency']:
+            self.Combo_link_pulses.addItem(f"Link: {parameter}", parameter)
+        self.Combo_link_pulses.setFixedSize(140, 26)
+        self.Combo_link_pulses.setStyleSheet(REFINED_STYLES['COMBO_STYLE'])
+        self.Combo_link_pulses.setAccessibleName("Link parameter")
+        self.Combo_link_pulses.setToolTip(
+            "Couple this parameter across pulses. Set a per-pulse weight "
+            "(No / 0.5x / 1x / 2x) in the Link row of the Pulses tab; editing "
+            "the parameter on any linked pulse shifts every other linked pulse "
+            "proportionally to its weight. Off keeps the pulse link factors. Amplitude and frequency edits stop "
+            "the whole linked group at the first limit.")
+        self.Combo_link_pulses.currentIndexChanged.connect(self.link_param_changed)
+        link_layout.addWidget(self.Combo_link_pulses)
+        self.button_reset_links = QPushButton("×")
+        self.button_reset_links.setFixedSize(26, 26)
+        self.button_reset_links.setStyleSheet(
+            REFINED_STYLES['DOCK_CLOSE_STYLE'] + "QPushButton { font-size: 17px; }")
+        self.button_reset_links.setAccessibleName("Reset all links")
+        self.button_reset_links.setToolTip(
+            "Reset all links: set every factor to No and the parameter to Off. Pulse values stay unchanged.")
+        self.button_reset_links.clicked.connect(self.reset_links)
+        link_layout.addWidget(self.button_reset_links)
+        self.gridLayout.addWidget(link_controls, 18, 0)
 
         for i in range(1, 10):
             combo = QComboBox()
@@ -831,6 +853,11 @@ class MainWindow(QMainWindow):
         txt.setStyleSheet(REFINED_STYLES['COMPACT_TEXT_STYLE'])
 
         self.buttons_layout.addWidget(txt, 3, 2, 3, 10)
+
+        container.ensurePolished()
+        scroll.setFixedHeight(
+            tab_layout.sizeHint().height() + scroll.horizontalScrollBar().sizeHint().height()
+            + 2 * scroll.frameWidth())
 
         #self.buttons_layout.setRowStretch(6, 11)
         #self.buttons_layout.setColumnStretch(6, 11)
@@ -1471,31 +1498,11 @@ class MainWindow(QMainWindow):
         self.Debounce.setStyleSheet(REFINED_STYLES['COMPACT_FIELD_STYLE'])
         self.Debounce.setToolTip("Delay after the last pulse edit before it is pushed to the running sequence.")
 
-        # ---- Link mode: coupled parameter ----
-        link_param_label = QLabel("Link Parameter")
-        link_param_label.setFixedSize(170, 26)
-        link_param_label.setStyleSheet(REFINED_STYLES['LABEL_STYLE'])
-        self.Combo_link = QComboBox()
-        self.Combo_link.addItems(["Off", "Amplitude", "Length", "Position", "Frequency"])
-        self.Combo_link.setCurrentText("Off")
-        self.Combo_link.setFixedSize(170, 26)
-        self.Combo_link.setStyleSheet(REFINED_STYLES['COMBO_STYLE'])
-        self.Combo_link.setToolTip(
-            "Couple this parameter across pulses. Set a per-pulse weight "
-            "(No / 0.5x / 1x / 2x) in the Link row of the Pulses tab; editing "
-            "the parameter on any linked pulse shifts every other linked pulse "
-            "proportionally to its weight. Amplitude and frequency edits stop "
-            "the whole linked group at the first limit.")
-        self.Combo_link.currentTextChanged.connect(self.link_param_changed)
-
         gridLayout.addWidget(live_label, 0, 0)
         gridLayout.addWidget(self.live_edit_box, 0, 1)
         gridLayout.addWidget(debounce_label, 1, 0)
         gridLayout.addWidget(self.Debounce, 1, 1)
         gridLayout.addWidget(hline(), 2, 0, 1, 2)
-        gridLayout.addWidget(link_param_label, 3, 0)
-        gridLayout.addWidget(self.Combo_link, 3, 1)
-        gridLayout.addWidget(hline(), 4, 0, 1, 2)
 
         # ---- AWG timing grid (0.8 ns / 3.2 ns) ----
         fine_label = QLabel("0.8 ns AWG Grid")
@@ -1513,9 +1520,9 @@ class MainWindow(QMainWindow):
             "window residual is corrected digitally at readout; use "
             "Decimation 1 or 2 for 0.8 ns detection sweeps.")
         self.fine_grid_box.stateChanged.connect(self.fine_grid_toggle)
-        gridLayout.addWidget(fine_label, 5, 0)
-        gridLayout.addWidget(self.fine_grid_box, 5, 1)
-        gridLayout.addWidget(hline(), 6, 0, 1, 2)
+        gridLayout.addWidget(fine_label, 3, 0)
+        gridLayout.addWidget(self.fine_grid_box, 3, 1)
+        gridLayout.addWidget(hline(), 4, 0, 1, 2)
 
         # ---- Accumulation mode (preview readout) ----
         accum_label = QLabel("Accumulation Mode")
@@ -1533,9 +1540,9 @@ class MainWindow(QMainWindow):
             "cleared, so any pulse edit needs a preview restart. Requires a "
             "phase cycle (2+ steps). Applied on the next preview start.")
         self.accum_box.stateChanged.connect(self.accumulation_toggle)
-        gridLayout.addWidget(accum_label, 7, 0)
-        gridLayout.addWidget(self.accum_box, 7, 1)
-        gridLayout.addWidget(hline(), 8, 0, 1, 2)
+        gridLayout.addWidget(accum_label, 5, 0)
+        gridLayout.addWidget(self.accum_box, 5, 1)
+        gridLayout.addWidget(hline(), 6, 0, 1, 2)
 
         # ---- Saving of the full 2D data ----
         save2d_label = QLabel("Save 2D")
@@ -1558,11 +1565,11 @@ class MainWindow(QMainWindow):
             "instead of CSV; 1D result files stay CSV.")
         self.Save_hdf5.stateChanged.connect(self.save_2d_hdf5)
 
-        gridLayout.addWidget(save2d_label, 9, 0)
-        gridLayout.addWidget(self.Save2D, 9, 1)
-        gridLayout.addWidget(hdf5_label, 10, 0)
-        gridLayout.addWidget(self.Save_hdf5, 10, 1)
-        gridLayout.addWidget(hline(), 11, 0, 1, 2)
+        gridLayout.addWidget(save2d_label, 7, 0)
+        gridLayout.addWidget(self.Save2D, 7, 1)
+        gridLayout.addWidget(hdf5_label, 8, 0)
+        gridLayout.addWidget(self.Save_hdf5, 8, 1)
+        gridLayout.addWidget(hline(), 9, 0, 1, 2)
 
         self.save2d = 0
         self.save_hdf5 = 0
@@ -1570,7 +1577,7 @@ class MainWindow(QMainWindow):
         self.cur_save_fmt = 'csv'
 
         gridLayout.setColumnStretch(2, 1)
-        gridLayout.setRowStretch(12, 1)
+        gridLayout.setRowStretch(10, 1)
 
         # All pulse spin-boxes now exist; snapshot their values so the first
         # linked edit computes the correct delta.
@@ -1589,9 +1596,15 @@ class MainWindow(QMainWindow):
                 if box is not None:
                     self._link_prev[(suf, i)] = box.value()
 
-    def link_param_changed(self, _text = None):
-        self.link_param = self.Combo_link.currentText()
+    def link_param_changed(self):
+        self.link_param = self.Combo_link_pulses.currentData()
         self._link_message()
+
+    def reset_links(self):
+        """Clear pulse coupling without changing pulse values."""
+        self.Combo_link_pulses.setCurrentIndex(0)
+        for i in range(1, 10):
+            getattr(self, f"P{i}_lk").setCurrentText("No")
 
     def update_link_factor(self, index):
         txt = getattr(self, f"P{index}_lk").currentText()
@@ -2670,13 +2683,7 @@ class MainWindow(QMainWindow):
         ldir.save('phase_awg', self.path)
         self.opened = 1
 
-        # A preset does not define pulse linking; reset the Link row to No and
-        # the Settings Link parameter to Off so a freshly loaded sequence starts
-        # uncoupled (this also keeps the pulse values loaded below from
-        # triggering link propagation).
-        self.Combo_link.setCurrentText("Off")
-        for i in range(1, 10):
-            getattr(self, f"P{i}_lk").setCurrentText("No")
+        self.reset_links()
 
         text = open(filename).read()
         lines = text.split('\n')
@@ -2827,13 +2834,7 @@ class MainWindow(QMainWindow):
 
         self.opened = 1
 
-        # A preset does not define pulse linking; reset the Link row to No and
-        # the Settings Link parameter to Off so the pushed layout starts
-        # uncoupled (this also keeps the pulse Starts set below from triggering
-        # link propagation).
-        self.Combo_link.setCurrentText("Off")
-        for i in range(1, 10):
-            getattr(self, f"P{i}_lk").setCurrentText("No")
+        self.reset_links()
 
         lines = open(filename).read().split('\n')
         for i in range(1, 10):

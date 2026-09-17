@@ -103,7 +103,7 @@ When adding hardware-touching code, always preserve the `argv[1] == 'test'` bran
 
 **Live edit.** The Insys phasing tools (`phasing_insys.py`, `awg_phasing_insys.py`) can re-arm a *running* sequence without restarting the experiment. Editing a pulse parameter, with "Live mode" on, pushes the change to the acquisition worker after a debounced "Apply delay" instead of tearing down and rebuilding the scan. Supporting pieces:
 
-- **Settings tab** holds the Live/Apply-delay controls and a "Link Parameter" combo; **Link mode** gives each pulse a No/0.5×/1×/2× coupling factor so one edit proportionally shifts the linked pulses together.
+- **Settings tab** holds the Live/Apply-delay controls. The **Pulses tab Link row** holds the parameter selector, a × reset button, and per-pulse No/0.5×/1×/2× factors. Switching parameters retains the factors; Off temporarily disables linking; × resets the parameter to Off and all factors to No without changing pulse values.
 - Not every change can be applied in place: a change to the phase-cycle *structure* (number of steps, per-pulse phase text) forces an announced restart rather than a silent no-op — the tool hashes the sequence structure to decide. Loading a preset or pressing Open while a preview is live stops that preview first.
 - **Worker-side validation.** Before accepting a live edit the worker rebuilds the sequence under a throwaway **test-mode** `Insys_FPGA()` (see "Test mode") so the overlap/length asserts — which only fire in test mode — reject an illegal edit as `('LiveReject', reason)`; the GUI shows the reason and keeps the previous sequence running.
 - The AWG DETECTION-pulse frequency also re-arms live: it only drives the per-scan `digitizer_demodulate` demod (`iq_freq`), not an AWG waveform.
