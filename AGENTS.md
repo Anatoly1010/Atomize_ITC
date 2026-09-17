@@ -1,18 +1,18 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Repository instructions for Codex and other coding agents working in Atomize_ITC. Adapted from `CLAUDE.md`; keep shared project facts consistent when updating either guide.
 
-# Working rules
+## Working rules
 
-- Plan in the main session, together with me. Hand grunt work (board searches, repetitive edits, boilerplate, log digging) to subagents on lesser models: Sonnet for searches, triage, and trivial mechanical work, and Opus for writing code. Keep decisions, architecture, and final review in the main session.
-- Always look for the simplest solution first, and prefer it. The smallest change that solves the actual problem beats a bigger design, Extend existing patters before inventing new ones. No new dependencies or moving parts without a real reason.
-- Show me a checklist while you work (use the todo list tool), keep current, so I can see what you are working on, what is done, and what is next.
+- Keep planning, decisions, architecture, and final review in the main session with the user. When the session supports delegation, give independent searches, repetitive edits, boilerplate, or log analysis to subagents. Use available models appropriate to the task: lighter models for searches and mechanical work, capable coding models for implementation. Do small, tightly coupled tasks directly.
+- Always look for the simplest solution first, and prefer it. The smallest change that solves the actual problem beats a bigger design. Extend existing patterns before inventing new ones. No new dependencies or moving parts without a real reason.
+- For multi-step work, keep a short checklist current using the plan/todo tool when available, otherwise a concise progress update. Show what is done and what remains.
 - When you spawn a subagent, tell me at that moment: which model it runs on and what it is doing. Report what it came back with when it finishes.
-- Never use Haiku.
+- Never use Haiku. Do not assume Claude model names are available in a Codex session.
 - Comments: never multi-line. Omit the comment entirely when the code is obvious; otherwise one short line. Explain a fix in the commit message and the review/roadmap docs, not in the source. Docstrings are exempt (long explanatory docstrings are house style) but keep new ones tight.
 - No over-explaining: Deliver the exact output requested. Do not narrate internal steps or show reasoning chains. Do not use programming jargon.
 - Strict scope control: Stop when the requested task is complete. Do not expand, refactor unrequested areas, or suggest extra features.
-- Use one commit per session.
+- When committing, use one cohesive commit per repository for the requested task. Preserve unrelated user changes and do not rewrite existing commits without authorization.
 
 ## What this repo is
 
@@ -93,7 +93,7 @@ When adding hardware-touching code, always preserve the `argv[1] == 'test'` bran
 - `atomize/config.ini` → `<user_config_dir>/atomize-py/main_config.ini`
 - `atomize/device_modules/config/*` → `<user_config_dir>/atomize-py/device_config/`
 
-…but **only if** the user config directory is missing or empty. After first launch, device modules read from the user-config copy (via `lconf.load_config_device()`), not the repo copy. Editing `atomize/device_modules/config/Foo_config.ini` in-repo will **not** affect a running install; either edit the file under `user_config_dir("atomize-py")/device_config/` or wipe that directory to force a re-copy. On Windows this is typically `%LOCALAPPDATA%\atomize-py\atomize-py\` (resolved by `platformdirs`).
+…but **only if** the user config directory is missing or empty. After first launch, device modules read from the user-config copy (via `lconf.load_config_device()`), not the repo copy. Editing `atomize/device_modules/config/Foo_config.ini` in-repo will **not** affect a running install; inspect the active file under `user_config_dir("atomize-py")/device_config/` when diagnosing configuration issues. Preserve machine-specific settings; do not wipe the user configuration directory as a routine fix. On Windows this is typically `%LOCALAPPDATA%\atomize-py\atomize-py\` (resolved by `platformdirs`).
 
 `atomize/main/main_window.py` also `os.chdir`'s into `libs/` early in startup, so any relative paths after that point are resolved against `libs/`. The `libs/status` file and `*.param` files (`field.param`, `bridge.param`, `digitizer*.param`, `correction.param`) are runtime IPC files between control-center widgets and other processes — they're git-ignored and intentionally mutated at runtime.
 
@@ -135,4 +135,21 @@ import atomize.general_modules.csv_opener_saver as openfile
 
 The per-instrument function reference is Markdown in `atomize/documentation/`. When changing a device module's public API, update the matching page there.
 
-The published documentation is built with MkDocs Material from `docs/` in the separate sibling repository `../atomize_docs/`, at https://anatoly1010.github.io/atomize_docs/. Its legacy Jekyll tree is not deployed. Update the corresponding published reference when changing documented behavior, and read that repository's `CLAUDE.md` before editing it.
+The published documentation is built with MkDocs Material from `docs/` in the separate sibling repository `../atomize_docs/`, at https://anatoly1010.github.io/atomize_docs/. Its legacy Jekyll tree is not deployed. Update the corresponding published reference when changing documented behavior, and read that repository's `AGENTS.md` before editing it.
+
+For `epr_auto` step or parameter registration changes, regenerate the published `steps.md` from the runner registry rather than editing it by hand:
+
+```bash
+# Run from Atomize_ITC on Linux.
+python3 -m atomize.epr_auto.docgen /home/anatoly/atomize_docs/docs/projects/epr_auto/steps.md
+```
+
+Protocol-schema changes must also update `../atomize_docs/docs/projects/epr_auto/protocols.md` in the same task. Keep preset, tuning, troubleshooting, and error-message descriptions consistent with the code. Run the strict MkDocs build in the documentation repository after changing its pages.
+
+## Validation and hardware state
+
+- Select checks for the changed behavior. Use test mode for experimental scripts and the automation dry run for protocols; syntax checks alone do not validate pulse arguments or timing constraints.
+- Run the GUI/engine equivalence harness when the mirror rule above applies. Report unavailable hardware or harnesses accurately; do not report an unrun check as passed.
+- Preserve FPGA ownership and reboot-recovery checks. Test mode must not reserve the board. Only the owner may release it; do not manually clear busy status to bypass recovery after a crash or uncertain initialization/cleanup.
+- Keep runtime `libs/status`, parameter files, acquisition outputs, and machine-specific settings out of source commits.
+- Review the final diff for unrelated changes and report the relevant validation briefly.
