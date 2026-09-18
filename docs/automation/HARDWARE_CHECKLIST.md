@@ -29,7 +29,7 @@ python3 -m atomize.epr_auto run <protocol>.yaml
 
 A protocol names `.phase_awg` files; it does not define pulse geometry. Explicit preset names resolve beside the protocol, then in `atomize/epr_auto/presets/`, then the shipped experiments. Defaults use only the shipped directory. Use sample-specific copies and inspect the generated worker settings; `window`, phase, field and calibration can override stored values. Parameter defaults and full examples belong in the published epr_auto reference, not duplicated here.
 
-## Next: the final three-run workflow
+## Validated three-run workflow
 
 Use `~/experimental_data/Melnikov/2026_09_18_coal_auto/` with `preliminary.yaml`, the generated `tuned/fine_tuning.yaml`, and `t2.yaml`. Ticked on 2026-09-18 from the evening chain (`runs/2026-09-18_preliminary_run3`, `fine_run4`, `t2`).
 

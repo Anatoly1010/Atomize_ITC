@@ -2,7 +2,7 @@
 
 Updated 2026-09-18. Keep this file focused on current status, open work and dated evidence. Current preliminary-tuning decisions live in [PRELIMINARY_TUNING_PLAN.md](PRELIMINARY_TUNING_PLAN.md); bench acceptance checks live in [HARDWARE_CHECKLIST.md](HARDWARE_CHECKLIST.md). General design and the GUI/engine contract remain in [ARCHITECTURE.md](ARCHITECTURE.md).
 
-The hardware work comprises **two sessions**: **11 September — fine tuning only**; **18 September — implementation and trials of the complete workflow**. The final independent preliminary and fine-tuning runs worked without issues. The logic was improved on 18 September; the final combined preliminary → fine-tuning → T2 run is still pending.
+The hardware work comprises **two sessions**: **11 September — fine tuning only**; **18 September — implementation and trials of the complete workflow**. The final independent preliminary and fine-tuning runs worked without issues. The logic was improved on 18 September, and the final combined preliminary → fine-tuning → T2 run passed that evening.
 
 ## Implemented
 
@@ -13,17 +13,20 @@ The hardware work comprises **two sessions**: **11 September — fine tuning onl
 - Connected plot dots become grey after 10 s idle; the change is now carried to Atomize, NIOCH, NIOCH_Q and Cryomech. It is no longer backlog.
 - Public epr_auto documentation and regenerated step reference committed and pushed in `atomize_docs` as `614a3f0`. The completed documentation handoff is retired. Strict MkDocs build and the revised preliminary example's five-stage dry run passed on Windows.
 
-## Pending hardware validation
+## Hardware validation status
 
-The next validation vehicle is `~/experimental_data/Melnikov/2026_09_18_coal_auto/`:
+The completed three-run workflow is recorded in `~/experimental_data/Melnikov/2026_09_18_coal_auto/`:
 
 ```text
 preliminary.yaml → tuned/fine_tuning.yaml → t2.yaml
 ```
 
-- [ ] Run all three with the final equal-length preliminary pair, separate Rabi `calibration_length`, both pre-EDFS `tune.apply_calibration` calls, and the closing write to `tuned/echo_cal.phase_awg`.
-- [ ] Confirm the separate experiment consumes that file with `window: preset` and `apply_cal: none`, while retaining/restoring the tuned RV and synthesizer settings.
-- [ ] Verify `tuned/` publication beside the protocol, archive under the configured preliminary run directory, fine data under `runs/<date>_fine`, and repeat-run preservation.
+- [x] All three ran with the final equal-length preliminary pair, separate Rabi `calibration_length`, both pre-EDFS `tune.apply_calibration` calls, and the closing write to `tuned/echo_cal.phase_awg`.
+- [x] The separate experiment consumed that file with `window: preset` and `apply_cal: none`, while retaining/restoring the tuned RV and synthesizer settings.
+- [x] Confirmed `tuned/` publication beside the protocol, archive under the configured preliminary run directory, fine data under `runs/<date>_fine`, and repeat-run preservation.
+
+Remaining hardware checks:
+
 - [ ] Verify final bridge record-age/no-home behavior and remaining lifecycle cases: alternate startup order, close during automation, handback and abort. Normal operation with the bridge window opened first has been observed.
 - [ ] Exercise the ringing hard stop and settled 60 dB return, including reported return failures. No recorded trace exceeded 100 mV; this is not yet hardware-validated.
 - [ ] Verify live launcher Stop/Force stop, saved partial data, worker/FPGA cleanup, lock release and relaunch. Keep Windows launcher validation separate from the Windows CLI dry run.
@@ -36,6 +39,7 @@ preliminary.yaml → tuned/fine_tuning.yaml → t2.yaml
 
 ## Implementation backlog
 
+- [ ] Begin the strong-sample work with step 0 in the preliminary plan: assess existing 2D experiments for faster sweeps without reloading the Insys FPGA between points, while retaining per-point receiver-level checks and stop handling.
 - [ ] Protocol parameters for resonator-correction overrides and measured-H loading; the engine already carries the correction fields.
 - [ ] RECT-channel calibration and automation.
 - [ ] Optional detection `tau` for `exp.t1`, with an explicit rule for invalidating/recomputing the echo window or using `window: preset`.
@@ -71,7 +75,7 @@ Work expanded to preliminary preparation and its fine-tuning handoff, with logic
 - Ringing peaks 17–68 mV at 494–496 ns were power-independent protection transients; no >100 mV stop occurred. Bridge coexistence worked with the window already open.
 - Fine-tuning trials exposed a dropped relative move during Limit homing and a calibration preset whose detection pair assumed more B1. Fixes included full Limit travel timing, recorded-position adoption, reading record age before lock writes, and scaling export to the preliminary pair.
 - Run 5 and its intermediate handoff worked at 4 dB, 9696 MHz and 3436.5 G. The 32/64 ns pair used 35/70 % amplitudes. Fine calibration gave π 55.8 % / π/2 28.0 %, ratio 1.99; EDFS over 3376–3496 G found 3435.6 G with FWHM 15.7 G; repeat π was 55.2 %, ratio 1.98.
-- The design was then corrected to equal-length echo pulses at `a/2a`, with a separate Rabi target, four exported presets and explicit calibration writes. **The final combined preliminary → fine-tuning → T2 run remains pending.** The earlier 32/64 ns pair at `a/2a` had a fourfold area ratio; its numerical results describe that earlier setting, not the corrected equal-length pair.
+- The design was then corrected to equal-length echo pulses at `a/2a`, with a separate Rabi target, four exported presets and explicit calibration writes. The final combined preliminary → fine-tuning → T2 run passed that evening (below). The earlier 32/64 ns pair at `a/2a` had a fourfold area ratio; its numerical results describe that earlier setting, not the corrected equal-length pair.
 
 **Evening: the complete chain passed.** `~/experimental_data/Melnikov/2026_09_18_coal_auto/` holds `preliminary.yaml` → `tuned/fine_tuning.yaml` → `t2.yaml`, run in that order with the final logic (`runs/2026-09-18_preliminary_run3`, `runs/2026-09-18_fine_run4`, `runs/2026-09-18_t2`, 17:37–17:53):
 
@@ -82,6 +86,8 @@ Work expanded to preliminary preparation and its fine-tuning handoff, with logic
 Fixes during the evening: the resonator selector searched the trailing-edge peak from 12 ns before the pulse end and picked the reflected-pulse plateau when it exceeded the ringing (rejected an acceptable scan as "window touches the search boundary"); it now searches after the nominal pulse end. `tune.ringing_check` gained `done: true` for same-day reruns and its `max_length` became `pulse_length`: the ladder no longer limits later pulse lengths, only the IF and DAC amplitudes carry forward. A hand edit of `tuned/calibration.phase_awg` only changes the Rabi pulse (fine runs 1–3 transferred a 38.4 ns calibration onto 64 ns pairs by the length ratio); the experiment length must go through `calibration_length` and a preliminary rerun.
 
 Next, agreed the same evening and written up in the preliminary plan ("Planned next"): a strong-sample RV approach for `tune.find_echo` with a 150 mV receiver limit and stepwise VA1/VA2 escalation, a `tune.video_attenuation` step before experiments, and an operator `rep_rate` (10 kHz cap) on the preliminary steps with `auto` from `tune.rep_rate` as a follow-on.
+
+Before implementation, step 0 assesses whether existing 2D experiments can make these sweeps faster by keeping the Insys FPGA loaded between points. This is an analysis task; the acquisition approach has not yet been selected.
 
 The 10 G refinement span clipped the EDFS line, so the handoff now uses the original search span. Narrow 2 ns resonator windows showed 4–9 % single-frequency dropouts; the recommended window is 4 ns with stability comparisons shifted by 1 ns and 2 ns. Worker stdout now goes to the run's `worker_stdout.log`.
 
