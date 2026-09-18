@@ -6,6 +6,7 @@ The Worker (from awg_phasing_insys) reports over a multiprocessing Pipe:
     ('Error', text)    exception + traceback from the child
     ('Open', '')       request for a save path; answered with 'FL<path>'
     ('test', '')       script_test pre-flight finished successfully
+    ('ReceiverLevel', details) receiver limit stopped and saved the pass
     ('', 'Experiment <name> finished')   real run finished (after saving)
 Commands into the worker: 'exit' (stop; the worker still reads out the
 accumulated data and saves), 'SC<n>' (resize scan count mid-run — the
@@ -22,8 +23,10 @@ from multiprocessing import Pipe, Process
 
 import numpy as np
 
-from atomize.control_center.awg_phasing_insys import Worker
+from atomize.control_center.awg_phasing_insys import Worker as _Worker
 from atomize.epr_auto.engine.snapshot import CORRECTION_ATTRS, SWEEP_TYPES
+
+Worker = _Worker
 
 # Worker method per preset sweep type
 SWEEP_METHOD = {
@@ -45,6 +48,23 @@ if set(SWEEP_METHOD) != set(SWEEP_TYPES):
 
 class EngineError(RuntimeError):
     pass
+
+
+class ReceiverLevelExceeded(EngineError):
+    """A post-protection receiver peak exceeded the requested limit."""
+    def __init__(self, details):
+        if not isinstance(details, dict):
+            raise EngineError('worker sent malformed receiver-level result')
+        try:
+            self.peak_mv = float(details['peak_mv'])
+            self.limit_mv = float(details['limit_mv'])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise EngineError('worker sent malformed receiver-level result') from exc
+        self.point_index = details.get('point_index')
+        self.details = dict(details)
+        point = '' if self.point_index is None else f' at point {self.point_index}'
+        super().__init__(f'receiver level {self.peak_mv:.3f} mV exceeds '
+                         f'{self.limit_mv:.3f} mV{point}')
 
 
 def _quiet_worker_stdout():
@@ -193,6 +213,8 @@ def run_worker(worker_args, sweep_type, save_path=None, script_test=False,
             kind, payload = parent_conn.recv()
             if kind == 'Error':
                 raise EngineError(f'worker error:\n{payload}')
+            if kind == 'ReceiverLevel':
+                raise ReceiverLevelExceeded(payload)
             if kind == 'Status':
                 _safe_call(on_status, payload)
                 if scan_control is not None:
@@ -220,6 +242,8 @@ def _hand_attrs(worker, worker_args):
     """Copy the launch-time worker attributes (grid + correction state) the
     GUI sets next to Process creation — shared by run_worker/acquire_trace."""
     worker.awg_grid_cur = getattr(worker_args, 'awg_grid', 3.2)
+    worker.amplitude_sweep = getattr(worker_args, 'amplitude_sweep', None)
+    worker.receiver_guard = getattr(worker_args, 'receiver_guard', None)
     # opt-in scan-boundary data messages (target_snr policy); the GUI never
     # sets this, so GUI-launched workers behave exactly as before
     if getattr(worker_args, 'scan_data_flag', 0):
@@ -246,7 +270,10 @@ def _trace_child(worker, conn, args, phases, n_sweeps, script_test):
     signal.signal(signal.SIGINT, signal.SIG_IGN)   # see _shielded
     _quiet_worker_stdout()
     import atomize.general_modules.general_functions as general
-    state = {'calls': 0, 'cycles': 0, 'done': None}
+    guard = _Worker.receiver_guard_settings(getattr(worker, 'receiver_guard', None))
+    if script_test:
+        guard = None
+    state = {'calls': 0, 'cycles': 0, 'done': None, 'receiver_level': None}
     orig_plot = general.plot_1d
 
     def capture(strname, xd, yd, *a, **kw):
@@ -256,6 +283,9 @@ def _trace_child(worker, conn, args, phases, n_sweeps, script_test):
             t = np.asarray(xd, dtype=float)
             i = np.asarray(yd[0], dtype=float)
             q = np.asarray(yd[1], dtype=float)
+            if guard is not None:
+                limit_mv, start_ns = guard
+                peak_mv = _Worker.receiver_guard_peak(t * 1e9, i, q, start_ns)
             # A readout with no fresh driver buffer returns (None, None),
             # which dig_on writes into its data array as NaN. The
             # cycle-boundary readout blocks for the cycle's last pack
@@ -263,6 +293,14 @@ def _trace_child(worker, conn, args, phases, n_sweeps, script_test):
             # must never become the returned trace.
             if np.isfinite(i).all() and np.isfinite(q).all():
                 state['done'] = (t.tolist(), i.tolist(), q.tolist())
+                if guard is not None and state['receiver_level'] is None:
+                    if peak_mv > limit_mv:
+                        state['receiver_level'] = {
+                            'limit_mv': limit_mv, 'peak_mv': peak_mv,
+                            'start_ns': start_ns, 'scan': state['cycles'],
+                            'sweep_type': 'Trace',
+                        }
+                        conn.send(('ReceiverLevel', state['receiver_level']))
             conn.send(('Status', min(100, int(100 * state['cycles'] / n_sweeps))))
         try:
             orig_plot(strname, xd, yd, *a, **kw)
@@ -331,6 +369,8 @@ def acquire_trace(worker_args, n_sweeps=1, script_test=False,
             kind, payload = parent_conn.recv()
             if kind == 'Error':
                 raise EngineError(f'worker error:\n{payload}')
+            if kind == 'ReceiverLevel':
+                raise ReceiverLevelExceeded(payload)
             if kind == 'Status':
                 _safe_call(on_status, payload)
                 if payload >= 100 and not exit_sent and not script_test:

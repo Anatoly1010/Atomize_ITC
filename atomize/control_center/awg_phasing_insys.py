@@ -4477,6 +4477,52 @@ class Worker():
         """
         return round(( y * ( ( x // y ) + (round(x % y, 2) > 0) ) ), 1)
 
+    @staticmethod
+    def receiver_guard_settings(guard):
+        """Validate the optional post-protection receiver-level guard."""
+        if guard is None:
+            return None
+        if not isinstance(guard, dict):
+            raise ValueError('receiver guard must be a dictionary')
+        try:
+            limit_mv = float(guard['limit_mv'])
+            start_ns = float(guard['start_ns'])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError('receiver guard requires numeric limit_mv and start_ns') from exc
+        if not np.isfinite(limit_mv) or limit_mv <= 0:
+            raise ValueError('receiver guard limit_mv must be positive and finite')
+        if not np.isfinite(start_ns) or start_ns < 0:
+            raise ValueError('receiver guard start_ns must be nonnegative and finite')
+        return limit_mv, start_ns
+
+    @staticmethod
+    def receiver_guard_peak(time_ns, i_mv, q_mv, start_ns):
+        """Return an unsmoothed post-protection I/Q magnitude peak."""
+        time_ns, i_mv, q_mv = (np.asarray(v, dtype=float) for v in
+                               (time_ns, i_mv, q_mv))
+        if (time_ns.ndim != 1 or len(time_ns) < 3 or i_mv.shape != time_ns.shape
+                or q_mv.shape != time_ns.shape or not np.isfinite([time_ns, i_mv, q_mv]).all()
+                or np.any(np.diff(time_ns) <= 0)):
+            raise ValueError('receiver guard received malformed readout')
+        post_protection = time_ns >= start_ns
+        if not np.any(post_protection):
+            raise ValueError('receiver guard has no samples after LNA_PROTECT')
+        return float(np.max(np.hypot(i_mv[post_protection], q_mv[post_protection])))
+
+    def receiver_guard_excess(self, guard, time_ns, i_mv, q_mv, rng, counts, phases):
+        """Check received columns with data for every phase, without waiting."""
+        limit_mv, start_ns = guard
+        first, last = rng
+        counts = np.asarray(counts)[first * phases:last * phases]
+        if counts.size != (last - first) * phases:
+            raise ValueError('receiver guard received incomplete phase counts')
+        ready = np.all(counts.reshape(-1, phases) > 0, axis=1)
+        for offset in np.flatnonzero(ready):
+            peak_mv = self.receiver_guard_peak(time_ns, i_mv[:, offset], q_mv[:, offset], start_ns)
+            if peak_mv > limit_mv:
+                return first + int(offset), peak_mv
+        return None
+
     def exp(self, conn, decimation, num_ave, scans, points,
             exp_name, curve_name, rect1, rect2,
             rect3, rect4, rect5, rect6, rect7, rect8, rect9,
@@ -5929,6 +5975,10 @@ class Worker():
             POINTS = int( (END_FIELD - START_FIELD) / FIELD_STEP ) + 1
             data = np.zeros( ( 2, points_window, POINTS ) )
             dec_calc = 0.4 * DEC_COEF / 1e9
+            receiver_guard = self.receiver_guard_settings(getattr(self, 'receiver_guard', None))
+            if not script_test and receiver_guard is not None:
+                pb.digitizer_processing_thread(0)
+            receiver_level = None
 
             x_axis = np.linspace(START_FIELD, END_FIELD, num = POINTS)
             a = 0
@@ -6007,11 +6057,7 @@ class Worker():
                                 # patch them into the persistent arrays instead of
                                 # copying the full O(points x window) frame.
                                 a, b, rng = pb.digitizer_get_curve(
-                                    POINTS,
-                                    PHASES,
-                                    current_scan = k,
-                                    total_scan = SCANS,
-                                    partial = True )
+                                    POINTS, PHASES, current_scan=k, total_scan=SCANS, partial=True)
                                 if a is not None:
                                     data[0][:, rng[0]:rng[1]] = a
                                     data[1][:, rng[0]:rng[1]] = b
@@ -6024,6 +6070,24 @@ class Worker():
                                         data_x[rng[0]:rng[1]] = dx
                                         data_y[rng[0]:rng[1]] = dy
 
+                                    if not script_test and receiver_guard is not None:
+                                        limit_mv, start_ns = receiver_guard
+                                        time_ns = np.arange(a.shape[0]) * 0.4 * DEC_COEF
+                                        excess = self.receiver_guard_excess(
+                                            receiver_guard, time_ns, a, b, rng, pb.count_nip, PHASES)
+                                        if excess is not None:
+                                            point, peak_mv = excess
+                                            receiver_level = {
+                                                'limit_mv': limit_mv, 'peak_mv': peak_mv,
+                                                'start_ns': start_ns, 'point_index': point,
+                                                'scan': k, 'sweep_type': 'Field',
+                                                'field_g': float(START_FIELD + FIELD_STEP * point),
+                                            }
+                                            self.command = 'exit'
+
+                            if receiver_level is not None:
+                                data[0], data[1] = pb.digitizer_at_exit()
+                                break
                         field = round( (FIELD_STEP + field), 3 )
 
                         pb.pulser_shift()
@@ -6198,7 +6262,10 @@ class Worker():
                                 axes = axes_2d, axes_units = axes_units_2d
                             )
 
-                    conn.send( ('', f'Experiment {EXP_NAME} finished') )
+                    if receiver_level is None:
+                        conn.send( ('', f'Experiment {EXP_NAME} finished') )
+                    else:
+                        conn.send( ('ReceiverLevel', receiver_level) )
 
         except BaseException as e:
             exc_info = f"{type(e)} \n{str(e)} \n{traceback.format_exc()}"
@@ -6838,6 +6905,74 @@ class Worker():
             STEP = step_ampl
             FIELD = field
 
+            amplitude_sweep = getattr(self, 'amplitude_sweep', None)
+            table_mode = amplitude_sweep is not None
+            amplitude_axis = None
+            amplitude_rows = None
+            if table_mode:
+                if not isinstance(amplitude_sweep, dict):
+                    raise ValueError('Amplitude table must be a dictionary')
+                try:
+                    axis_raw = amplitude_sweep['axis']
+                    rows_raw = amplitude_sweep['pulses']
+                except KeyError as exc:
+                    raise ValueError('Amplitude table requires axis and pulses') from exc
+                if isinstance(axis_raw, (str, bytes)) or not hasattr(axis_raw, '__len__'):
+                    raise ValueError('Amplitude table axis must be a nonempty sequence')
+                if len(axis_raw) != POINTS or len(axis_raw) == 0:
+                    raise ValueError('Amplitude table axis must match POINTS')
+                try:
+                    amplitude_axis = np.asarray(axis_raw, dtype=float)
+                except (TypeError, ValueError) as exc:
+                    raise ValueError('Amplitude table axis must contain numbers') from exc
+                if amplitude_axis.ndim != 1:
+                    raise ValueError('Amplitude table axis must be one-dimensional')
+                if not np.all(np.isfinite(amplitude_axis)) or np.any(amplitude_axis <= 0) \
+                        or np.any(amplitude_axis > 100):
+                    raise ValueError('Amplitude table values must be in the range 0-100%')
+                if not isinstance(rows_raw, dict) or len(rows_raw) == 0:
+                    raise ValueError('Amplitude table pulses must be a nonempty dictionary')
+                amplitude_rows = {}
+                for pulse_name, row in rows_raw.items():
+                    if not isinstance(pulse_name, str):
+                        raise ValueError('Amplitude table pulse names must be strings')
+                    if isinstance(row, (str, bytes)) or not hasattr(row, '__len__') \
+                            or len(row) != POINTS:
+                        raise ValueError(f'Amplitude row for {pulse_name} must match POINTS')
+                    try:
+                        values = np.asarray(row, dtype=float)
+                    except (TypeError, ValueError) as exc:
+                        raise ValueError(f'Amplitude row for {pulse_name} must contain numbers') from exc
+                    if values.ndim != 1:
+                        raise ValueError(f'Amplitude row for {pulse_name} must be one-dimensional')
+                    if not np.all(np.isfinite(values)) or np.any(values <= 0) \
+                            or np.any(values > 100):
+                        raise ValueError('Amplitude table values must be in the range 0-100%')
+                    amplitude_rows[pulse_name] = values
+
+                table_triggers = ([rect2, rect3, rect4, rect5, rect6, rect7, rect8, rect9]
+                                  if laser_flag != 1 else [rect3, rect4, rect5, rect6, rect7, rect8, rect9])
+                active_awg_names = {
+                    f'P{2 * index + 2}' for index, trigger in enumerate(table_triggers)
+                    if int(float(trigger[1].split(' ')[0])) != 0
+                }
+                unknown_names = set(amplitude_rows) - active_awg_names
+                if unknown_names:
+                    raise ValueError('Amplitude table names are not active AWG pulses: '
+                                     + ', '.join(sorted(unknown_names)))
+                timing_values = [rect1[4], rect1[5]]
+                for trigger in (rect2, rect3, rect4, rect5, rect6, rect7, rect8, rect9):
+                    timing_values.extend(trigger[2:4])
+                for awg_pulse in (awg2, awg3, awg4, awg5, awg6, awg7, awg8, awg9):
+                    timing_values.extend(awg_pulse[8:10])
+                try:
+                    has_timing_increment = any(
+                        float(str(value).split()[0]) != 0 for value in timing_values)
+                except (IndexError, ValueError) as exc:
+                    raise ValueError('Amplitude table timing increments must be valid times') from exc
+                if has_timing_increment:
+                    raise ValueError('Amplitude table requires zero timing increments')
+
             AVERAGES = num_ave
             SCANS = scans
             PHASES = len(rect1[3])
@@ -6874,8 +7009,9 @@ class Worker():
 
                 for i, (tp, ap) in enumerate(zip(trigger_pulses, awg_params)):
                     if int(float(tp[1].split(' ')[0])) != 0:
+                        pulse_name = f'P{2*i + 2}'
                         if tp[2] != '0.0 ns':
-                            name_list.append(f'P{2*i + 2}')
+                            name_list.append(pulse_name)
                             f_delay = float( ap[6] )
                             ampl_list.append( float( ap[6] ) )
 
@@ -6883,14 +7019,15 @@ class Worker():
                         freq = (ap[1], ap[2]) if is_complex else ap[1]
                         
                         awg_kwargs = {
-                            'name': f'P{2*i + 2}',
+                            'name': pulse_name,
                             'channel': 'CH0',
                             'func': ap[0],
                             'frequency': freq,
                             'length': ap[3],
                             'sigma': ap[4],
                             'start': ap[5],
-                            'amplitude': ap[6],
+                            'amplitude': (amplitude_rows[pulse_name][0]
+                                          if table_mode and pulse_name in amplitude_rows else ap[6]),
                             'phase_list': ap[7],
                             'length_increment': ap[9]
                         }
@@ -6906,7 +7043,7 @@ class Worker():
                                 channel='TRIGGER_AWG', 
                                 start=tp[0], 
                                 length=tp[1], 
-                                delta_start=tp[2], 
+                                delta_start=tp[2],
                                 length_increment=tp[3]
                             )
                 pb.pulser_repetition_rate( REP_RATE )
@@ -6934,8 +7071,9 @@ class Worker():
                 for i, (tp, ap) in enumerate(zip(trigger_pulses, awg_params)):
 
                     if int(float(tp[1].split(' ')[0])) != 0:
+                        pulse_name = f'P{2*i + 2}'
                         if tp[2] != '0.0 ns':
-                            name_list.append(f'P{2*i + 2}')
+                            name_list.append(pulse_name)
                             f_delay = float( ap[6] )
                             ampl_list.append( float( ap[6] ) )
 
@@ -6948,14 +7086,15 @@ class Worker():
                         freq = (ap[1], ap[2]) if is_complex else ap[1]
                         
                         awg_kwargs = {
-                            'name': f'P{2*i + 2}',
+                            'name': pulse_name,
                             'channel': 'CH0',
                             'func': ap[0],
                             'frequency': freq,
                             'length': ap[3],
                             'sigma': ap[4],
                             'start': ap[5],
-                            'amplitude': ap[6],
+                            'amplitude': (amplitude_rows[pulse_name][0]
+                                          if table_mode and pulse_name in amplitude_rows else ap[6]),
                             'phase_list': ap[7],
                             'length_increment': ap[9]
                         }
@@ -6971,7 +7110,7 @@ class Worker():
                                 channel='TRIGGER_AWG', 
                                 start=tp[0], 
                                 length=tp[1], 
-                                delta_start=tp[2], 
+                                delta_start=tp[2],
                                 length_increment=tp[3]
                             )
 
@@ -6981,9 +7120,14 @@ class Worker():
                     pb.pulser_repetition_rate( REP_RATE )
 
 
-            if len(name_list) != 0:
+            if table_mode:
+                name_list = list(amplitude_rows)
                 point_flag = 0
-                pass
+                f_delay = amplitude_axis[0]
+                step = 0
+            elif len(name_list) != 0:
+                point_flag = 0
+                step = step_ampl
             else:
                 step = step_ampl
                 f_delay = 0
@@ -7002,9 +7146,13 @@ class Worker():
             data = np.zeros( ( 2, points_window, POINTS ) )
             dec_calc = 0.4 * DEC_COEF / 1e9
 
-            x_axis = f_delay + np.linspace(0, (POINTS - 1)*STEP, num = POINTS)
+            x_axis = amplitude_axis if table_mode else f_delay + np.linspace(0, (POINTS - 1)*STEP, num = POINTS)
             x_axis_plot = x_axis
             a = 0
+            receiver_guard = self.receiver_guard_settings(getattr(self, 'receiver_guard', None))
+            if not script_test and receiver_guard is not None:
+                pb.digitizer_processing_thread(0)
+            receiver_level = None
             # Partial-range readout state: rng = point range patched by the
             # most recent successful readout; data_x / data_y = persistent
             # per-point IQ-corrected integrals (patched per touched column).
@@ -7046,7 +7194,7 @@ class Worker():
                                         # redraw only the columns patched by the last
                                         # readout (full frame on the very first draw)
                                         p0, p1 = rng if rng is not None else (0, POINTS)
-                                        if point_flag != 1:
+                                        if point_flag != 1 and not table_mode:
                                             process = general.update_2d(
                                                 EXP_NAME,
                                                 data,
@@ -7080,7 +7228,7 @@ class Worker():
                                         # data_x / data_y are patched per touched column
                                         # at the readout below -- no full-array recompute
                                         if point_flag != 1:
-                                            general.plot_1d(EXP_NAME, x_axis_plot, ( data_x, data_y ), xname = 'Amplitude', xscale = '%', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Amplitude: ' + str(k) + ' / ' + str(round(f_delay + j * STEP, 1)))
+                                            general.plot_1d(EXP_NAME, x_axis_plot, ( data_x, data_y ), xname = 'Amplitude', xscale = '%', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Amplitude: ' + str(k) + ' / ' + str(round(x_axis_plot[j], 1)))
                                         else:
                                             general.plot_1d(EXP_NAME, x_axis, ( data_x, data_y ), xname = 'Point', xscale = '', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j, 1)))
 
@@ -7093,11 +7241,7 @@ class Worker():
                                 # patch them into the persistent arrays instead of
                                 # copying the full O(points x window) frame.
                                 a, b, rng = pb.digitizer_get_curve(
-                                    POINTS,
-                                    PHASES,
-                                    current_scan = k,
-                                    total_scan = SCANS,
-                                    partial = True )
+                                    POINTS, PHASES, current_scan=k, total_scan=SCANS, partial=True)
                                 if a is not None:
                                     data[0][:, rng[0]:rng[1]] = a
                                     data[1][:, rng[0]:rng[1]] = b
@@ -7110,13 +7254,37 @@ class Worker():
                                         data_x[rng[0]:rng[1]] = dx
                                         data_y[rng[0]:rng[1]] = dy
 
+                                    if not script_test and receiver_guard is not None:
+                                        limit_mv, start_ns = receiver_guard
+                                        time_ns = np.arange(a.shape[0]) * 0.4 * DEC_COEF
+                                        excess = self.receiver_guard_excess(
+                                            receiver_guard, time_ns, a, b, rng, pb.count_nip, PHASES)
+                                        if excess is not None:
+                                            point, peak_mv = excess
+                                            receiver_level = {
+                                                'limit_mv': limit_mv, 'peak_mv': peak_mv,
+                                                'start_ns': start_ns, 'point_index': point,
+                                                'scan': k, 'sweep_type': 'Amplitude',
+                                                'amplitude_pct': float(x_axis[point]),
+                                            }
+                                            self.command = 'exit'
+
+                            if receiver_level is not None:
+                                data[0], data[1] = pb.digitizer_at_exit()
+                                break
+
                         pb.pulser_shift()
                         pb.awg_pulse_reset()
 
-                        delta = STEP * (j + 1)
-                        ampl_list_cur = [x + delta for x in ampl_list]
-
-                        pb.awg_redefine_amplitude(name = name_list, amplitude = ampl_list_cur )
+                        if table_mode:
+                            if j + 1 < POINTS:
+                                pb.awg_redefine_amplitude(
+                                    name = name_list,
+                                    amplitude = [amplitude_rows[name][j + 1] for name in name_list] )
+                        else:
+                            delta = STEP * (j + 1)
+                            ampl_list_cur = [x + delta for x in ampl_list]
+                            pb.awg_redefine_amplitude(name = name_list, amplitude = ampl_list_cur )
 
                         if not script_test:
                             # min(): an 'SC' shrink below the running scan k
@@ -7151,7 +7319,7 @@ class Worker():
                 pb.pulser_close()
 
                 if iq_cor == 0:
-                    if point_flag != 1:
+                    if point_flag != 1 and not table_mode:
                         process = general.plot_2d(
                             EXP_NAME, 
                             data, 
@@ -7182,13 +7350,21 @@ class Worker():
                 elif iq_cor == 1:
                     data_x, data_y = pb.digitizer_demodulate(data[0], data[1], iq_freq, zp, first_order, sec_order, integral = True)
                     if point_flag != 1:
-                        general.plot_1d(EXP_NAME, x_axis_plot, ( data_x, data_y ), xname = 'Amplitude', xscale = '%', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Amplitude: ' + str(k) + ' / ' + str(round(f_delay + j * STEP, 1)))
+                        general.plot_1d(EXP_NAME, x_axis_plot, ( data_x, data_y ), xname = 'Amplitude', xscale = '%', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Amplitude: ' + str(k) + ' / ' + str(round(x_axis_plot[j], 1)))
                     else:
                         general.plot_1d(EXP_NAME, x_axis, ( data_x, data_y ), xname = 'Point', xscale = '', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j, 1)))
 
 
                 now = datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")
                 w = 30
+                amplitude_table_header = ''
+                amplitude_step = 'see Amplitude Axis' if table_mode else f'{STEP} %'
+                if table_mode:
+                    amplitude_table_header = (
+                        f"{'Amplitude Axis:':<{w}} {amplitude_axis.tolist()} %\n"
+                        f"{'Amplitude Values:':<{w}} "
+                        f"{ {name: values.tolist() for name, values in amplitude_rows.items()} }\n"
+                    )
 
                 # Data saving
                 header = (
@@ -7207,7 +7383,8 @@ class Worker():
                     f"{'Window:':<{w}} {rect1[2]}\n"
                     f"{'Horizontal Resolution:':<{w}} {0.4 * DEC_COEF:.1f} ns\n"
                     f"{'Start Amplitude:':<{w}} {f_delay} %\n"
-                    f"{'Vertical Resolution:':<{w}} {STEP} %\n"
+                    f"{'Vertical Resolution:':<{w}} {amplitude_step}\n"
+                    f"{amplitude_table_header}"
                     f"{'Temperature:':<{w}} {ls335.tc_temperature('A')} K\n"
                     f"{'Temperature Cernox:':<{w}} {ls335.tc_temperature('B')} K\n"
                     f"{'-'*50}\n"
@@ -7233,7 +7410,8 @@ class Worker():
                         f"{'Points:':<{w}} {POINTS}\n"
                         f"{'Window:':<{w}} {tb} ns\n"
                         f"{'Start Amplitude:':<{w}} {f_delay} %\n"
-                        f"{'Horizontal Resolution:':<{w}} {STEP} %\n"
+                        f"{'Horizontal Resolution:':<{w}} {amplitude_step}\n"
+                        f"{amplitude_table_header}"
                         f"{'Temperature:':<{w}} {ls335.tc_temperature('A')} K\n"
                         f"{'Temperature Cernox:':<{w}} {ls335.tc_temperature('B')} K\n"
                         f"{'-'*50}\n"
@@ -7288,7 +7466,10 @@ class Worker():
                                 axes = axes_2d, axes_units = axes_units_2d
                             )
 
-                    conn.send( ('', f'Experiment {EXP_NAME} finished') )
+                    if receiver_level is None:
+                        conn.send( ('', f'Experiment {EXP_NAME} finished') )
+                    else:
+                        conn.send( ('ReceiverLevel', receiver_level) )
 
         except BaseException as e:
             exc_info = f"{type(e)} \n{str(e)} \n{traceback.format_exc()}"

@@ -1,6 +1,7 @@
 """AWG preliminary tuning steps and settled bridge control."""
 import copy
 import json
+import math
 import os
 import sys
 import time
@@ -96,8 +97,12 @@ def _adopt_recorded_vane(session):
     session.state['_rv_homed'] = True
 
 
-def bridge_set(session, attenuation_db=None, frequency_mhz=None):
+def bridge_set(session, attenuation_db=None, frequency_mhz=None, video1_db=None, video2_db=None):
     """Set external bridge settings and invalidate dependent calibrations."""
+    for value, maximum, step in ((video1_db, 30, 2), (video2_db, 31.5, 0.5)):
+        if value is not None and (not math.isfinite(value) or not 0 <= value <= maximum
+                                  or not math.isclose(value / step, round(value / step))):
+            raise ValueError(f'video attenuation must be on the {step:g} dB grid within 0–{maximum:g} dB')
     stale = _stale_bridge_lock(session)
     _claim(session)
     mw = session.mw_bridge
@@ -120,7 +125,78 @@ def bridge_set(session, attenuation_db=None, frequency_mhz=None):
     if frequency_mhz is not None:
         result['frequency_mhz'] = int(frequency_mhz)
     session.state['bridge'] = result
+    for key, value, method in (('video1_db', video1_db, 'mw_bridge_att_prm'),
+                               ('video2_db', video2_db, 'mw_bridge_att2_prm')):
+        if value is not None:
+            if not session.test:
+                setter = getattr(mw, method)
+                setter(value)
+                time.sleep(0.1)
+                actual = float(setter().split(':')[-1].split()[0])
+                if not math.isclose(actual, value, abs_tol=1e-6):
+                    raise ValueError(f'{key} readback differs from requested setting')
+            result[key] = float(value)
     return result, []
+
+
+def _video_settings(session):
+    """Read both attenuators; test mode uses only simulated session settings."""
+    values = {}
+    if not session.test:
+        _claim(session)
+    for key, method, maximum, step in (
+            ('video1_db', 'mw_bridge_att_prm', 30, 2),
+            ('video2_db', 'mw_bridge_att2_prm', 31.5, 0.5)):
+        if session.test:
+            value = session.state.get('bridge', {}).get(key, 0.0)
+        else:
+            value = float(getattr(session.mw_bridge, method)().split(':')[-1].split()[0])
+        if (not math.isfinite(value) or not 0 <= value <= maximum
+                or not math.isclose(value / step, round(value / step))):
+            raise ValueError(f'invalid {key} readback')
+        values[key] = value
+    session.state.setdefault('bridge', {}).update(values)
+    return values
+
+
+def _raise_video(session, peak_mv, limit_mv=200):
+    """Apply the calculated gain reduction, rounding upward on each device grid."""
+    if not math.isfinite(peak_mv) or peak_mv <= limit_mv:
+        raise ValueError('invalid receiver excess')
+    values = _video_settings(session)
+    remaining = 20 * math.log10(peak_mv / limit_mv)
+    changes = {}
+    for key, maximum, step in (('video1_db', 30, 2), ('video2_db', 31.5, 0.5)):
+        if remaining <= 0:
+            break
+        increase = min(maximum - values[key], step * math.ceil(remaining / step))
+        if increase:
+            changes[key] = values[key] + increase
+            remaining -= increase
+    if not changes:
+        raise ValueError('signal too strong: video attenuation range exhausted')
+    bridge_set(session, **changes)
+    session.log(f'      receiver {peak_mv:g} mV > {limit_mv:g} mV; video attenuation {changes}')
+
+
+def _video_policy(session, adjust_video):
+    enabled = session.state.get('_adjust_video', True) if adjust_video is None else adjust_video
+    session.state['_adjust_video'] = bool(enabled)
+    if enabled:
+        _video_settings(session)
+    return bool(enabled)
+
+
+def _receiver_guard(wa, limit_mv=200):
+    wa.receiver_guard = {'limit_mv': float(limit_mv), 'start_ns': protection_trace_start_ns(wa)}
+
+
+def _repetition_rate(session, pre, rep_rate):
+    if rep_rate is None:
+        rep_rate = session.state.get('preliminary_echo', {}).get('rep_rate', pre.rep_rate)
+    if not math.isfinite(rep_rate) or not 0.1 <= rep_rate <= 10000:
+        raise ValueError('preliminary repetition rate must be within 0.1–10000 Hz')
+    pre.rep_rate = float(rep_rate)
 
 
 def _sine_preset(path):
@@ -170,9 +246,11 @@ def protection_trace_start_ns(wa):
     return protection_end_ns(wa) - protection_end_ns(reference_wa) + 147.6
 
 
-def _trace(session, pre, tag):
+def _trace(session, pre, tag, limit_mv=None):
     wa = snapshot.build_worker_args(copy.deepcopy(pre), exp_name=tag)
     wa.iq_cor = 1
+    if limit_mv is not None:
+        _receiver_guard(wa, limit_mv)
     executor.acquire_trace(wa, script_test=True)
     if session.test:
         t = np.arange(0, pre.slots[0].length, 0.4 * pre.decimation)
@@ -189,6 +267,27 @@ def _trace(session, pre, tag):
     path = session.save_path(tag)
     np.savetxt(path, np.column_stack((t, i, q)), delimiter=',', header='time_ns,I_mV,Q_mV')
     return t, i, q, path
+
+
+def _receiver_trace(session, pre, tag, limit_mv=200, restart=False):
+    """Remeasure unchanged excitation settings after each video correction."""
+    if not session.state.get('_adjust_video', False):
+        return _trace(session, pre, tag)
+    changed = False
+    while True:
+        try:
+            result = _trace(session, pre, tag, limit_mv=limit_mv)
+        except executor.ReceiverLevelExceeded as error:
+            _raise_video(session, error.peak_mv, limit_mv)
+            changed = True
+            continue
+        if changed and restart:
+            raise _VideoChanged
+        return result
+
+
+class _VideoChanged(Exception):
+    """Restart a comparison after its receiver gain changed."""
 
 
 def ringing_peak(time_ns, i_mv, q_mv, protection_ns):
@@ -404,6 +503,8 @@ def _sweep(session, pre, fields, window, tag):
                                     start_field=float(fields[0]), end_field=float(fields[-1]),
                                     step_field=float((fields[-1]-fields[0])/(len(fields)-1)*(1-1e-9)))
     wa.iq_cor = 0
+    if session.state.get('_adjust_video', False):
+        _receiver_guard(wa)
     executor.run_worker(wa, 'Field', script_test=True)
     if session.test:
         center = (fields[0]+fields[-1])/2
@@ -411,7 +512,14 @@ def _sweep(session, pre, fields, window, tag):
         paths = []
     else:
         path = session.save_path(tag)
-        executor.run_worker(wa, 'Field', save_path=path, on_message=session.log)
+        try:
+            executor.run_worker(wa, 'Field', save_path=path, on_message=session.log)
+        except executor.ReceiverLevelExceeded as error:
+            _raise_video(session, error.peak_mv)
+            check = copy.deepcopy(pre)
+            check.field = float(fields[error.point_index])
+            _receiver_trace(session, check, 'field_video_confirm')
+            raise _VideoChanged from error
         paths = [path, str(Path(path).with_name(Path(path).stem+'_1.csv'))]
         i, q = (np.loadtxt(name, delimiter=',', ndmin=2) for name in paths)
         if (i.shape != q.shape or i.shape[0] != len(fields)
@@ -427,12 +535,67 @@ def _sweep(session, pre, fields, window, tag):
                                 'scores': scores.tolist(), 'data_files': paths}
 
 
+def _rv_approach(session, pre, attenuation_db):
+    """Monitor the existing live preview while opening RV through the requested ladder."""
+    ladder = [db for db in (60, 40, 20, 15, 10, 5, 0) if db > attenuation_db]
+    ladder.append(float(attenuation_db))
+    approach = []
+    if session.test:
+        for db in ladder:
+            if db != 60:
+                bridge_set(session, attenuation_db=db)
+            t, i, q, path = _receiver_trace(session, pre, 'rv_approach')
+            approach.append({'attenuation_db': db, 'data_file': path,
+                             **_video_settings(session)})
+        return approach
+    from atomize.epr_auto.engine.live_receiver import monitor_trace
+    wa = snapshot.build_worker_args(copy.deepcopy(pre), exp_name='RVLiveApproach')
+    wa.iq_cor = 1
+    executor.acquire_trace(wa, script_test=True)
+    start_ns = protection_trace_start_ns(wa)
+    index, settled_at, discard_frame = 0, 0.0, False
+
+    def adjust(t, i, q):
+        nonlocal index, settled_at, discard_frame
+        if discard_frame:
+            discard_frame = False
+            return False
+        t_ns = np.asarray(t) * 1e9
+        peak = ringing_peak(t_ns, i, q, start_ns)
+        if peak > 200:
+            _raise_video(session, peak)
+            discard_frame = True
+            return False
+        if time.monotonic() < settled_at:
+            return False
+        path = session.save_path('rv_approach')
+        np.savetxt(path, np.column_stack((t_ns, i, q)), delimiter=',', header='time_ns,I_mV,Q_mV')
+        approach.append({'attenuation_db': ladder[index], 'peak_mv': peak,
+                         'data_file': path, **_video_settings(session)})
+        if index == len(ladder) - 1:
+            return True
+        previous, target = ladder[index], ladder[index + 1]
+        mw = session.mw_bridge
+        travel_s = abs(int(mw.calibration(target)) - int(mw.calibration(previous))) * 0.036
+        mw.mw_bridge_rotary_vane(target)
+        settled_at = time.monotonic() + travel_s + 0.2
+        session.invalidate_fine_calibrations('RV move')
+        session.state.setdefault('bridge', {})['attenuation_db'] = target
+        index += 1
+        return False
+
+    monitor_trace(wa, adjust, on_message=session.log)
+    return approach
+
+
 def find_echo(session, preset, center, span, points=41, attenuation_db=10,
               scans=1, averages=10, search_from='200 ns', min_width='20 ns',
-              frequency_shift_mhz=0, pulse_length=None):
+              frequency_shift_mhz=0, pulse_length=None, adjust_video=True, rep_rate=None):
     """Full-window magnitude field search followed by resolved-echo validation."""
     try:
         pre = _echo_preset(session, preset, scans, averages, pulse_length)
+        _repetition_rate(session, pre, rep_rate)
+        enabled = _video_policy(session, adjust_video)
         lo = parse_field_g(center) - parse_field_g(span) / 2
         hi = parse_field_g(center) + parse_field_g(span) / 2
         if lo < 0:
@@ -445,9 +608,25 @@ def find_echo(session, preset, center, span, points=41, attenuation_db=10,
                 reference = int(_synth_mhz(session))
                 session.state['_echo_frequency_reference_mhz'] = reference
         frequency = reference + frequency_shift_mhz
-        bridge_set(session, attenuation_db=attenuation_db, frequency_mhz=frequency)
-        best, sweep = _sweep(session, pre, np.linspace(lo, hi, points), None, 'find_echo')
-        t, i, q, path = _field_trace(session, pre, best, 'echo_confirm')
+        if attenuation_db < session.state['ringing_check']['min_attenuation_db']:
+            raise ValueError('RV setting exceeds the ringing-tested power')
+        approach = []
+        if enabled:
+            _home(session)
+            bridge_set(session, frequency_mhz=frequency)
+            pre.field, pre.scans = parse_field_g(center), 1
+            approach = _rv_approach(session, pre, attenuation_db)
+            pre.scans = scans
+        else:
+            bridge_set(session, attenuation_db=attenuation_db, frequency_mhz=frequency)
+        while True:
+            try:
+                best, sweep = _sweep(session, pre, np.linspace(lo, hi, points), None, 'find_echo')
+                pre.field = best
+                t, i, q, path = _receiver_trace(session, pre, 'echo_confirm', restart=True)
+                break
+            except _VideoChanged:
+                session.log('      video attenuation changed; repeating field search')
         window = _window(t, i, q, parse_time_ns(search_from), parse_time_ns(min_width), session.test)
         pre.win_left_ns, pre.win_right_ns = window.values()
         session.state['field'] = f'{best} G'
@@ -455,6 +634,8 @@ def find_echo(session, preset, center, span, points=41, attenuation_db=10,
         _remember_preset(session, pre)
         result = {'field_g': best, 'attenuation_db': attenuation_db, 'window': window,
                   'pulse_length_ns': pre.slots[1].length,
+                  'rep_rate': pre.rep_rate, 'adjust_video': enabled, 'rv_approach': approach,
+                  'video': _video_settings(session) if enabled else None,
                   'frequency_reference_mhz': reference, 'frequency_shift_mhz': frequency_shift_mhz,
                   'synthesizer_mhz': frequency, 'observation_mhz': frequency - _detection_if_mhz(pre),
                   'sweep': sweep, 'data_file': path, 'canned': session.test}
@@ -478,10 +659,55 @@ def _echo_roles(pre, pulse_map):
             next(i for i, r in roles.items() if r == 'pi'))
 
 
+def _amplitude_sweep(session, pre, amplitudes, p2, pi, tag):
+    """Acquire a stage's paired amplitudes with one FPGA initialization and full traces."""
+    candidate = copy.deepcopy(pre)
+    amplitudes = np.asarray(amplitudes, dtype=float)
+    candidate.slots[p2].coef = float(amplitudes[0])
+    candidate.slots[pi].coef = round(2 * float(amplitudes[0]), 1)
+    _covered(session, candidate)
+    wa = snapshot.build_worker_args(candidate, exp_name=tag, points=len(amplitudes), save2d=1)
+    wa.iq_cor = 1
+    wa.amplitude_sweep = {
+        'axis': amplitudes.tolist(),
+        'pulses': {f'P{2*p2}': amplitudes.tolist(),
+                   f'P{2*pi}': np.round(2 * amplitudes, 1).tolist()},
+    }
+    if session.state.get('_adjust_video', False):
+        _receiver_guard(wa)
+    executor.run_worker(wa, 'Amplitude', script_test=True)
+    samples = int(round(parse_time_ns(wa.rect[0][2]) / 0.4) / wa.decimation)
+    t = np.arange(samples) * 0.4 * wa.decimation
+    if session.test:
+        center = min(300, pre.slots[0].length * 0.6)
+        i = np.tile(10 * np.exp(-0.5 * ((t - center) / 25)**2), (len(amplitudes), 1))
+        return t, i, np.zeros_like(i), []
+    session.ensure_hardware_locks()
+    path = session.save_path(tag)
+    try:
+        executor.run_worker(wa, 'Amplitude', save_path=path, on_message=session.log)
+    except executor.ReceiverLevelExceeded as error:
+        _raise_video(session, error.peak_mv)
+        a = float(amplitudes[error.point_index])
+        candidate.slots[p2].coef, candidate.slots[pi].coef = a, round(2 * a, 1)
+        _receiver_trace(session, candidate, 'amplitude_video_confirm')
+        raise _VideoChanged from error
+    base = Path(path).with_suffix('')
+    paths = [path, f'{base}_2d.csv', f'{base}_2d_1.csv']
+    curve, i, q = (np.loadtxt(name, delimiter=',', ndmin=2) for name in paths)
+    if (curve.shape != (len(amplitudes), 3) or not np.isfinite(curve).all()
+            or not np.allclose(curve[:, 0], amplitudes, rtol=1e-6, atol=1e-6)
+            or samples < 3 or i.shape != (len(amplitudes), samples) or q.shape != i.shape
+            or not np.isfinite([i, q]).all()):
+        raise ValueError('invalid raw amplitude sweep')
+    return t, i, q, paths
+
+
 def maximize_echo(session, preset, attenuation_db=None, amplitude_range=(5, 50),
                   coarse_step=5, fine_step=1, field_span='10 G', points=21,
                   scans=1, averages=10, improvement=0.05, pulse_map=None,
-                  search_from='200 ns', min_width='20 ns', pulse_length=None):
+                  search_from='200 ns', min_width='20 ns', pulse_length=None,
+                  adjust_video=None, rep_rate=None):
     """Fixed-RV amplitude scan (pi/2 at a, pi at 2a), field refinement and confirmation."""
     try:
         if not session.state.get('preliminary_echo'):
@@ -489,6 +715,8 @@ def maximize_echo(session, preset, attenuation_db=None, amplitude_range=(5, 50),
         if pulse_length is None and session.state['preliminary_echo'].get('pulse_length_ns'):
             pulse_length = f"{session.state['preliminary_echo']['pulse_length_ns']} ns"
         pre = _echo_preset(session, preset, scans, averages, pulse_length)
+        _repetition_rate(session, pre, rep_rate)
+        enabled = _video_policy(session, adjust_video)
         if attenuation_db is None:
             attenuation_db = session.state['preliminary_echo']['attenuation_db']
         if attenuation_db < session.state['ringing_check']['min_attenuation_db']:
@@ -497,50 +725,57 @@ def maximize_echo(session, preset, attenuation_db=None, amplitude_range=(5, 50),
         window = dict(session.state['echo_window'])
         low, high = map(float, amplitude_range)
         bridge_set(session, attenuation_db=attenuation_db)
-        trials, scores, measured = [], {}, {}
+        initial = copy.deepcopy(pre)
+        while True:
+            pre = copy.deepcopy(initial)
+            try:
+                trials, scores, measured = [], {}, {}
 
-        def measure(a):
-            a = round(float(a), 1)
-            if a in scores:
-                return scores[a]
-            pre.slots[p2].coef, pre.slots[pi].coef = a, min(100.0, round(2 * a, 1))
-            _covered(session, pre)
-            t, i, q, path = _trace(session, pre, 'amplitude_optimize')
-            score = measured[a] = _score(t, i, q, window)
-            if session.test:
-                score *= 1 + np.exp(-((a - (low + high) / 2) / 8) ** 2)
-            scores[a] = score
-            trials.append({'pi2_amplitude': a, 'pi_amplitude': pre.slots[pi].coef,
-                           'score': score, 'data_file': path})
-            return score
+                def measure_stage(values, tag):
+                    values = sorted({round(float(a), 1) for a in values} - scores.keys())
+                    if not values:
+                        return
+                    t, i, q, paths = _amplitude_sweep(session, pre, values, p2, pi, tag)
+                    for row, a in enumerate(values):
+                        score = measured[a] = _score(t, i[row], q[row], window)
+                        if session.test:
+                            score *= 1 + np.exp(-((a - (low + high) / 2) / 8) ** 2)
+                        scores[a] = score
+                        trials.append({'pi2_amplitude': a, 'pi_amplitude': round(2 * a, 1),
+                                       'score': score, 'data_file': paths[1] if paths else None,
+                                       'data_files': paths[1:], 'data_row': row})
 
-        for a in np.unique(np.r_[np.arange(low, high, coarse_step), high]):
-            measure(a)
-        coarse_best = max(scores, key=scores.get)
-        for a in np.arange(max(low, coarse_best - coarse_step),
-                           min(high, coarse_best + coarse_step) + fine_step / 2, fine_step):
-            measure(a)
-        best_a = max(scores, key=scores.get)
-        if best_a >= high - fine_step / 2:
-            raise ValueError(f'echo still growing at {best_a:g} % (pi at {2 * best_a:g} %): reduce attenuation')
-        if best_a <= low + fine_step / 2:
-            raise ValueError(f'echo already falling at {best_a:g} %: increase attenuation')
-        best_score = measured[best_a]
-        pre.slots[p2].coef, pre.slots[pi].coef = best_a, round(2 * best_a, 1)
-        half = parse_field_g(field_span) / 2
-        best_field, field_sweep = _sweep(session, pre,
-                                        np.linspace(pre.field-half, pre.field+half, points),
-                                        window, 'field_optimize')
-        pre.field = best_field
-        t, i, q, path = _trace(session, pre, 'optimized_echo_confirm')
-        confirmed = _window(t, i, q, parse_time_ns(search_from), parse_time_ns(min_width), session.test)
-        if _score(t, i, q, confirmed) < best_score / (1 + improvement):
-            raise ValueError('best echo did not reproduce on confirmation')
+                measure_stage(np.r_[np.arange(low, high, coarse_step), high], 'amplitude_coarse')
+                coarse_best = max(scores, key=scores.get)
+                fine = np.arange(max(low, coarse_best - coarse_step),
+                                 min(high, coarse_best + coarse_step) + fine_step / 2, fine_step)
+                measure_stage(fine[fine <= high], 'amplitude_fine')
+                best_a = max(scores, key=scores.get)
+                if best_a >= high - fine_step / 2:
+                    raise ValueError(f'echo still growing at {best_a:g} % (pi at {2 * best_a:g} %): reduce attenuation')
+                if best_a <= low + fine_step / 2:
+                    raise ValueError(f'echo already falling at {best_a:g} %: increase attenuation')
+                best_score = measured[best_a]
+                pre.slots[p2].coef, pre.slots[pi].coef = best_a, round(2 * best_a, 1)
+                half = parse_field_g(field_span) / 2
+                best_field, field_sweep = _sweep(session, pre,
+                                                np.linspace(pre.field-half, pre.field+half, points),
+                                                window, 'field_optimize')
+                pre.field = best_field
+                t, i, q, path = _receiver_trace(session, pre, 'optimized_echo_confirm', restart=True)
+                confirmed = _window(t, i, q, parse_time_ns(search_from), parse_time_ns(min_width), session.test)
+                if _score(t, i, q, confirmed) < best_score / (1 + improvement):
+                    raise ValueError('best echo did not reproduce on confirmation')
+                break
+            except _VideoChanged:
+                session.log('      video attenuation changed; repeating amplitude and field optimization')
         pre.win_left_ns, pre.win_right_ns = confirmed.values()
         session.state['field'] = f'{best_field} G'
         _remember_preset(session, pre)
         session.stage_state('echo_window', confirmed)
         result = {'attenuation_db': float(attenuation_db), 'field_g': best_field,
+                  'rep_rate': pre.rep_rate, 'adjust_video': enabled,
+                  'video': _video_settings(session) if enabled else None,
                   'pi2_amplitude': best_a, 'pi_amplitude': round(2 * best_a, 1),
                   'amplitude_trials': trials, 'field_sweep': field_sweep,
                   'data_file': path, 'canned': session.test}
@@ -550,6 +785,45 @@ def maximize_echo(session, preset, attenuation_db=None, amplitude_range=(5, 50),
         raise
     except BaseException as error:
         _abort(session, f'echo maximization stopped: {error}')
+
+
+def video_attenuation(session, preset, adjust_video=None, limit_mv=200):
+    """Adjust the receiver on the final preset, preserving pulse lengths and field."""
+    try:
+        enabled = _video_policy(session, adjust_video)
+        if not enabled:
+            result = {'adjust_video': False, 'skipped': True}
+            session.stage_state('video_attenuation', result)
+            return result, []
+        if not math.isfinite(limit_mv) or not 0 < limit_mv <= 200:
+            raise ValueError('video level limit must be within 0–200 mV')
+        pre = _sine_preset(tune.load_tuned_preset(session, preset))
+        for slot in pre.slots:
+            slot.st_inc = slot.len_inc = slot.st_inc2 = 0.0
+        wa = snapshot.build_worker_args(copy.deepcopy(pre), exp_name='VideoCheck')
+        start_ns = protection_trace_start_ns(wa)
+        t, i, q, path = _receiver_trace(session, pre, 'video_check', limit_mv)
+        peak = ringing_peak(t, i, q, start_ns)
+        if not session.test:
+            stop = False
+            for key, step in (('video2_db', 0.5), ('video1_db', 2)):
+                while not stop:
+                    values = _video_settings(session)
+                    if values[key] < step or peak * 10**(step / 20) > limit_mv:
+                        break
+                    requested = values[key] - step
+                    bridge_set(session, **{key: requested})
+                    t, i, q, path = _receiver_trace(session, pre, 'video_open_check', limit_mv)
+                    peak = ringing_peak(t, i, q, start_ns)
+                    stop = _video_settings(session) != {**values, key: requested}
+        result = {'adjust_video': True, 'limit_mv': limit_mv, 'peak_mv': peak,
+                  **_video_settings(session), 'data_file': path, 'canned': session.test}
+        session.stage_state('video_attenuation', result)
+        return result, []
+    except KeyboardInterrupt:
+        raise
+    except BaseException as error:
+        _abort(session, f'video attenuation adjustment stopped: {error}')
 
 
 def _write_preset(pre, destination):
@@ -656,6 +930,7 @@ def save_presets(session, preset, calibration_preset, field_preset,
     freq = int(_detection_if_mhz(pre))
     for target in (field_pre, cal):
         target.field = pre.field
+        target.rep_rate = pre.rep_rate
         target.ampl_1, target.ampl_2 = pre.ampl_1, pre.ampl_2
         target.phase_deg = pre.phase_deg
         target.slots[0].freq = freq
@@ -702,6 +977,8 @@ def save_presets(session, preset, calibration_preset, field_preset,
         {'tune.pi_calibration': {'preset': names[1], 'mode': 'amplitude'}},
         {'tune.apply_calibration': {'preset': names[3], 'pulse_map': roles}},
     ]
+    steps.append({'tune.video_attenuation': {
+        'preset': names[3], 'adjust_video': session.state.get('_adjust_video', True)}})
     document = {'sample': session.sample, 'autonomy': 'supervised', 'steps': steps}
     from atomize.epr_auto.protocol import load_protocol
     if session.test:

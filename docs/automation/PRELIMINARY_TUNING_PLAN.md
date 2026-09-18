@@ -4,6 +4,8 @@ Updated 2026-09-18. Implemented in `atomize/epr_auto`. Hardware work comprised t
 
 ## Purpose and sequence
 
+**RV** (rotary-vane attenuator) controls the microwave excitation power at the sample. **VA** (video attenuation) controls the level of the received electrical signal sent to the ADC. It is set using two bridge controls: **VA1** (Video Attenuation 1, `video1_db`: 0–30 dB in 2 dB steps) and **VA2** (Video Attenuation 2, `video2_db`: 0–31.5 dB in 0.5 dB steps). Increasing either video attenuation reduces the measured signal amplitude; an additional 6 dB approximately halves it.
+
 Prepare AWG presets for fine tuning and a later experiment:
 
 ```text
@@ -70,7 +72,7 @@ Sweep the supplied field center/span with the existing field worker, integrating
 
 `tune.maximize_echo` holds RV and the common pulse length fixed, inheriting `tune.find_echo` settings unless explicitly overridden. It replaces the earlier RV and pulse-length searches.
 
-1. Scan π/2 amplitude `a`, with π amplitude `2a`, over `amplitude_range` (default 5–50 %). Use `coarse_step` (5 %) followed by `fine_step` (1 %) around the best point. Both pulses have the same length; pulse roles come from `pulse_map` or preset inference.
+1. Scan π/2 amplitude `a`, with π amplitude `2a`, over `amplitude_range` (default 5–50 %). Use `coarse_step` (5 %) followed by `fine_step` (1 %) around the best point. Each nonempty stage runs as one 2D acquisition, keeping the FPGA open across its amplitude points. Fine points already measured in the coarse stage reuse their scores. Both pulses have the same length; pulse roles come from `pulse_map` or preset inference.
 2. A maximum at the upper bound aborts with `reduce attenuation`; the lower bound aborts with `increase attenuation`. The operator chooses a new fixed RV setting before rerunning.
 3. Refine the field in `field_span` (default 10 G, 21 points), restore the best combination and confirm the echo. A result that does not reproduce is rejected.
 
@@ -102,26 +104,45 @@ bridge.set
 
 The EDFS uses the original `find_echo` span recentered on the tuned field, with `field_points: 200`, unless `field_span` overrides it. The narrower preliminary refinement span clipped the coal line and is not the handoff default.
 
-The closing `tune.apply_calibration` writes pulse amplitudes, zero-order phase, echo window and field into `echo_cal.phase_awg`. It rewrites the named preset unless an absolute `destination` is supplied. A separate experiment uses `tuned/echo_cal.phase_awg`, `window: preset`, and `apply_cal: none`; retain or restore RV and synthesizer settings separately because the preset does not store them.
+The final `tune.apply_calibration` writes pulse amplitudes, zero-order phase, echo window and field into `echo_cal.phase_awg`. It rewrites the named preset unless an absolute `destination` is supplied. A separate experiment uses `tuned/echo_cal.phase_awg`, `window: preset`, and `apply_cal: none`; retain or restore RV and synthesizer settings separately because the preset does not store them.
 
-## Planned next: strong-sample approach, video attenuation and repetition rate
+## Strong-sample approach, video attenuation and repetition rate
 
-Agreed with the operator on 2026-09-18 (evening), not implemented. The motivation is samples with huge signals: the manual procedure sets the field at the expected line (g = 2) with RV at 60 dB, opens RV gradually toward the target while keeping the receiver level under **150 mV**, raises video attenuation VA1 when needed and VA2 when VA1 is not enough, and changes the field gradually when no signal appears. Automation mirrors that.
+Implemented from the operator procedure clarified on 2026-09-18; hardware commissioning is pending. Video attenuation is unknown in advance. After ringing, `tune.find_echo` homes RV to 60 dB, sets the initial echo pulses at `center` near g = 2, and opens RV through **60 → 40 → 20 → 15 → 10 → 5 → 0 dB**, stopping at `attenuation_db`. A target between ladder values is inserted as the final point.
 
-Bridge facts (v2 Micran module used by the runner): VA1 is `mw_bridge_att_prm`, 0–30 dB in 2 dB steps; VA2 is `mw_bridge_att2_prm`, 0–31.5 dB in 0.5 dB steps; the getters return `'Video Attenuation N: X dB'`. No runner code touches them today, `bridge.param` records no video key, and the acquisition CSV header records both from the bridge. The level metric is the maximum `hypot(I, Q)` after the protection end, exactly the ringing-check metric; sweep workers return full per-point traces, so the check costs nothing extra.
+The approach uses the existing `awg_phasing_insys.Worker.dig_on` live preview (`l_mode=0`, driver `live_mode=1`) with one FPGA initialization. The parent monitors the current 1D time trace from the ADC buffers while RV moves and adjusts VA during the movement. Before the next RV command, the current move must finish and the receiver level must pass. Live snapshots replace previous data; they do not accumulate across changing RV or VA settings.
 
-0. **Analyze 2D experiments for faster sweeps.** Assess whether the existing 2D experiment workers can run the preliminary sweeps without reloading the Insys FPGA between points. Identify which field, amplitude and attenuation sweeps can reuse a loaded sequence, where reloading is still required, and the expected time savings. Check that this approach retains the full per-point traces needed for receiver-level decisions, complete phase cycles, instrument settling, video-attenuation changes and scan-stage restarts, and cancellation/cleanup. Record the findings and choose the simplest supported acquisition approach before implementing steps 1–5.
-1. **`tune.find_echo` approach.** Home to 60 dB, set the field to `center`, keep VA1/VA2 as found. Open RV along the ladder rungs 60, 40, 20, 10, 5 and then `attenuation_db`, acquiring one echo trace at the center field per rung (preset averages, one scan, full phase cycle). Above 150 mV raise VA1 in 2 dB steps and re-acquire; at 30 dB continue with VA2 in 0.5 dB steps; both exhausted aborts with "signal too strong". Only a level under the limit permits the next rung. Then run the field sweep as today; if any sweep trace exceeds the limit (line away from the center), raise the video attenuation by the dB that brings that maximum to about 120 mV in one move, repeat the sweep, then resolve the window at the best field.
-2. **`tune.maximize_echo`.** Check every trial trace; on an excess raise the video attenuation by the computed amount and restart the current scan stage so all scores in a stage share one setting.
-3. **Carry-over.** VA1/VA2 live in session state and the manifest; `bridge.set` gains `video1_db` and `video2_db`, and `tune.save_presets` writes the found values into the handoff's opening `bridge.set`. The fine steps get no guard: nothing there exceeds the preliminary optimum.
-4. **`tune.video_attenuation`** (new step, placed before an experiment step): `preset` (the target sequence, all increments zeroed, lengths unchanged), `limit_mv` (150). Read VA1/VA2 from the bridge, acquire one trace, raise if needed; otherwise open VA2 first and then VA1 one step at a time while the measured maximum times the step factor stays under the limit, stopping at the first step that would exceed. Final values go to the manifest.
-5. **Repetition rate.** `rep_rate` in Hz on `tune.find_echo`, inherited by `tune.maximize_echo` (override allowed), capped at **10 kHz** in the schema (no hardware limit exists in the code today; the only cap is the 9.9 Hz Nd:YAG rule in the snapshot). `tune.save_presets` writes it into all four exported presets so the fine run and the experiment use it; the ringing ladder stays at 500 Hz. Follow-on: accept `rep_rate: auto` there, fed by `tune.rep_rate`, as the `exp.*` steps already do.
+**One receiver threshold: 200 mV.** Above it, add video attenuation and remeasure. At fixed RV, field and pulses, repeat those same settings before continuing a search. The level is the maximum unsmoothed `hypot(I, Q)` after protection, in measured mV. The separate nonresonant ringing gate remains 100 mV.
 
-Test mode keeps the canned traces and never changes VA1/VA2. Regression cases to add: rung order and the VA1→VA2 escalation with a synthetic strong trace, the single-move raise after a sweep excess, the stage restart in the amplitude scan, the handoff `bridge.set` values, the reopen step stopping one step short of the limit, and the 10 kHz schema cap.
+`adjust_video: false` on `tune.find_echo` keeps VA unchanged and moves directly to the requested RV. `tune.maximize_echo` and `tune.video_attenuation` inherit that choice unless explicitly overridden. An explicitly disabled final video step performs no acquisition or bridge access.
+
+**Linear correction.** Request `20*log10(M/200)` additional dB for a peak `M > 200 mV`, rounded upward to device steps. Increasing attenuation by approximately 6 dB halves amplitude. Use VA1 first (0–30 dB, 2 dB steps), then VA2 (0–31.5 dB, 0.5 dB steps). Read back settings, allow settling, and verify the new signal. Excess at exhausted attenuation or invalid readout stops the protocol and attempts RV home.
+
+Field and amplitude workers inspect ready ADC buffers as data arrive. They evaluate only columns whose `count_nip` includes every receiver phase. There is no wait for the currently commanded point, so an excess can identify an earlier completed point. The worker stops, saves its partial data and closes normally; the parent increases VA and verifies that reported field/amplitude point. A field search restarts; maximization restarts its coarse/fine amplitude and field comparison, discarding all old-VA scores and cached points. Each restarted acquisition uses fresh ADC accumulators. The final optimized pulse pair is checked again.
+
+`tune.video_attenuation` measures the final target `preset`, with increments zeroed and pulse lengths and field preserved. Its `limit_mv` defaults to 200 mV and can only be lowered. It first corrects excessive levels, then opens VA2 and VA1 one step at a time only when the predicted level remains within the limit. Every move is remeasured; if correction is needed, opening stops. Final VA values and the measured level are recorded in the step result.
+
+`bridge.set` accepts `video1_db` and `video2_db` on their exact hardware grids. `tune.save_presets` carries known VA values into the handoff's opening `bridge.set`; the fine handoff ends with `tune.video_attenuation` on `echo_cal.phase_awg` after its final calibration is applied. This checks the actual final sequence, whose echo can grow during fine tuning.
+
+`rep_rate` in Hz is optional on `tune.find_echo` (preset default) and inherited by `tune.maximize_echo` (override allowed), with a 10 kHz cap. All four exported presets use the selected rate. The ringing ladder stays at 500 Hz. Automatic rate selection from `tune.rep_rate` remains a separate follow-on.
+
+Test mode uses canned traces and does not read or write hardware VA settings. Offline checks cover the single threshold, rounding and attenuator order, skip/inheritance behavior, remeasurement, handoff and rate limits. Live motion and receiver response need commissioning on the spectrometer.
+
+## Amplitude acquisition
+
+`tune.maximize_echo` reuses `awg_phasing_insys.Worker.exp_amplitude`, with one FPGA initialization per coarse/fine stage. The engine supplies explicit amplitude values for both pulses, including sparse fine-stage values and the exact coarse upper endpoint. Pulse timing stays fixed, each point completes the preset phase sequence, and every scan starts at the stage's first amplitude. The worker never extrapolates beyond the last requested pair. Existing GUI amplitude sweeps retain their preset-driven behavior.
+
+The worker retains its full `(I/Q, detection time, amplitude point)` array while displaying integrated results (`iq_cor = 1, save2d = 1`). Each stage saves the 1D curve plus `_2d.csv` / `_2d_1.csv` raw I/Q matrices. Headers record the explicit amplitude axis and both pulse-amplitude lists. `amplitude_trials` records the matrix files and zero-based `data_row` for each trial. Selection uses the same integral of `hypot(I, Q)` over the echo window as before; demodulation is a unit-magnitude rotation and does not alter this score. Missing, nonfinite or incorrectly shaped data and a mismatched saved axis abort the step.
+
+With the default range and a coarse optimum at 30 %, the search has 10 coarse points and 8 new fine points: two initializations instead of 18. At the operator's estimate of 2 s per initialization, this removes about 32 s of initialization work. The sweep worker's initial field settling and all acquisition/upload/readout costs remain; the net speedup needs a hardware measurement. Field and resonator sweeps already reuse the FPGA. RV travel and settling dominate the ringing ladder, which is unchanged.
+
+The existing worker stop, partial-save, ownership and reboot-recovery paths remain in use. The separate best-field and final confirmation traces are retained. Receiver limits and VA-driven restarts use the received-data checks described above. A new worker per restarted stage avoids mixing ADC accumulators across settings. The RV approach uses the separate live preview; the accumulating `acquire_trace` path retains fixed settings throughout each acquisition.
 
 ## Verification and remaining work
 
 Recorded offline coverage includes both diode signs; weak/competing/edge/clipped and nonfinite scans; protection changes with pulse length; ladder ordering and hard-abort precedence; amplitude bounds; export/reload and handoff validation; bridge lock/handback behavior; resonator stop handling. GUI/engine equivalence previously reported ALL PASS. These are historical results, not new hardware checks.
+
+The six-step protocol dry run, GUI/engine equivalence, amplitude worker checks, live frame-handshake checks, video correction/restart checks, targeted preliminary checks and Stop/cleanup checks passed. Receiver buffer checks also passed, including live snapshots with incomplete boundary windows and 2D readouts split across phase cycles. The full `preliminary_checks.py` retains its earlier ringing-timing assertion: this machine gives 496.4 ns while the check expects the recorded 493.2 ns; unchanged code gives the same result. Active device settings were preserved. The documentation strict build passed. Hardware timing, live RV/VA response and score comparisons remain pending.
 
 Linux regression commands (`python` instead of `python3` on Windows; the equivalence harness is Linux-only):
 
@@ -129,6 +150,11 @@ Linux regression commands (`python` instead of `python3` on Windows; the equival
 python3 -m atomize.epr_auto validate protocols/preliminary_tuning.yaml
 QT_QPA_PLATFORM=offscreen python3 -m atomize.epr_auto run protocols/preliminary_tuning.yaml --test
 QT_QPA_PLATFORM=offscreen python3 atomize/script_examples/epr_auto/preliminary_checks.py test
+QT_QPA_PLATFORM=offscreen python3 atomize/script_examples/epr_auto/amplitude_sweep_checks.py test
+python3 atomize/script_examples/epr_auto/preliminary_schema_checks.py test
+QT_QPA_PLATFORM=offscreen python3 atomize/script_examples/epr_auto/video_attenuation_checks.py test
+QT_QPA_PLATFORM=offscreen python3 atomize/script_examples/epr_auto/live_receiver_checks.py test
+QT_QPA_PLATFORM=offscreen python3 atomize/script_examples/epr_auto/receiver_guard_checks.py test
 python3 atomize/script_examples/epr_auto/resonator_stop_checks.py test
 QT_QPA_PLATFORM=offscreen python3 ~/epr_auto_dev/gui_vs_engine.py
 python3 -m atomize.epr_auto.preset_hash
@@ -141,5 +167,7 @@ python3 -m atomize.epr_auto.preset_hash
 - [ ] Bridge record-age/no-move behavior, live cancellation and recovery scenarios; use the hardware checklist.
 - [ ] Ringing hard-stop and settled 60 dB return on hardware; no measured trace exceeded 100 mV in the recorded runs.
 - [ ] Identify the resonator timing-jitter source if it continues to affect selection.
-- [ ] Analyze existing 2D experiments for faster sweeps without reloading the Insys FPGA between points (step 0 above).
-- [ ] Implement and commission the strong-sample approach, video attenuation step and `rep_rate` after the step 0 analysis (section above).
+- [x] Step 0 and amplitude optimization: reuse the existing 2D amplitude worker for each coarse/fine stage; retain full traces and cached coarse scores.
+- [ ] Bench-check the staged amplitude acquisition: paired values, repeated scans, full-trace scores, Stop/partial saving and total elapsed time.
+- [x] Implement the live strong-sample approach, optional video attenuation and preliminary `rep_rate`.
+- [ ] Commission receiver control during RV motion and ready-buffer field/amplitude checks; verify gain changes, repeat measurements and Stop on hardware.

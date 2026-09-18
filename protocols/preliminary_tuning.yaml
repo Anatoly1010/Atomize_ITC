@@ -25,6 +25,11 @@ steps:
       center: 3445 G
       span: 100 G
       attenuation_db: 10
+      # RV approach: 60, 40, 20, 15, 10, 5, 0 dB, ending at attenuation_db.
+      # False keeps the current VA settings; later tuning steps inherit it.
+      adjust_video: true
+      # Optional repetition rate in Hz, up to 10000; otherwise use the preset.
+      # rep_rate: 1000
       # Positive shifts the echo frequency above the resonator center.
       frequency_shift_mhz: 0
       # Target pi length; every echo pulse takes it, pi differs from pi/2 only in amplitude.
@@ -39,6 +44,8 @@ steps:
       field_span: 10 G
       points: 21
       pulse_map: {P2: pi2, P3: pi}
+  - tune.video_attenuation:
+      preset: hahn_echo_4s.phase_awg
   # Writes preset copies and fine_tuning.yaml into the run's handoff directory.
   - tune.save_presets:
       preset: hahn_echo_4s.phase_awg

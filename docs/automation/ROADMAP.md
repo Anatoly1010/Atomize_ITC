@@ -4,11 +4,14 @@ Updated 2026-09-18. Keep this file focused on current status, open work and date
 
 The hardware work comprises **two sessions**: **11 September — fine tuning only**; **18 September — implementation and trials of the complete workflow**. The final independent preliminary and fine-tuning runs worked without issues. The logic was improved on 18 September, and the final combined preliminary → fine-tuning → T2 run passed that evening.
 
+RV means rotary-vane attenuation of microwave excitation. VA means receiver video attenuation, set through Video Attenuation 1 (VA1) and Video Attenuation 2 (VA2) before the ADC.
+
 ## Implemented
 
 - YAML validation, test mode, supervised/checkpointed/autonomous runs, retries and failure policies, manifests, protocol copies, notifications, and field/temperature series with `foreach`.
 - Engine reuse of `awg_phasing_insys.Worker`, preset/snapshot equivalence, trace capture, phase/window/pulse calibration, EDFS, temperature control, T1/T2 acquisitions, repetition-rate selection, and downward-only scan limits from duration/SNR.
-- Preliminary ringing gate, optional AWG resonator scan, echo search, fixed-RV amplitude optimization and four-preset fine-tuning export. The final design sets both echo pulses to a common length; the Rabi pulse may use its own `calibration_length`. See the preliminary plan for exact behavior.
+- Preliminary ringing gate, optional AWG resonator scan, echo search, fixed-RV amplitude optimization and four-preset fine-tuning export. The final design sets both echo pulses to a common length; the Rabi pulse may use its own `calibration_length`. Amplitude optimization now uses one existing 2D worker per coarse/fine stage, with paired `a` / `2a` values, full traces and reuse of measured coarse points. See the preliminary plan for exact behavior.
+- Strong-sample receiver control: live RV approach through 60/40/20/15/10/5/0 dB, one 200 mV threshold, optional `adjust_video`, calculated VA1/VA2 changes, and ready-buffer field/amplitude checks that can report an earlier completed point. A VA change starts fresh comparisons. Final video check and VA handoff are implemented, with preliminary repetition-rate selection capped at 10 kHz. Hardware commissioning remains on the checklist; `rep_rate: auto` is a follow-on.
 - Main-window protocol launcher with dry-run dialogs, Stop/Force stop, worker drain, duplicate-run and exit guards. Operator GUI dry runs and Stop passed; live cleanup and Windows launcher execution remain unverified. Plan: [GUI_PROTOCOL_LAUNCHER_PLAN.md](GUI_PROTOCOL_LAUNCHER_PLAN.md). Regression scripts: `atomize/script_examples/epr_auto/gui_launcher_checks.py`, `gui_runner_checks.py` and `worker_stop_checks.py`.
 - Connected plot dots become grey after 10 s idle; the change is now carried to Atomize, NIOCH, NIOCH_Q and Cryomech. It is no longer backlog.
 - Public epr_auto documentation and regenerated step reference committed and pushed in `atomize_docs` as `614a3f0`. The completed documentation handoff is retired. Strict MkDocs build and the revised preliminary example's five-stage dry run passed on Windows.
@@ -27,6 +30,8 @@ preliminary.yaml → tuned/fine_tuning.yaml → t2.yaml
 
 Remaining hardware checks:
 
+- [ ] Verify the new staged amplitude search against matched single-trace measurements: paired amplitudes, repeated scans, full-trace scores, Stop/partial saves and elapsed time. The approximately 32 s initialization saving for an 18-trial search is an estimate, not a bench result.
+- [ ] Commission live receiver monitoring during RV motion, 200 mV corrections, optional VA control, ready-buffer sweep guards and final video checks after calibration.
 - [ ] Verify final bridge record-age/no-home behavior and remaining lifecycle cases: alternate startup order, close during automation, handback and abort. Normal operation with the bridge window opened first has been observed.
 - [ ] Exercise the ringing hard stop and settled 60 dB return, including reported return failures. No recorded trace exceeded 100 mV; this is not yet hardware-validated.
 - [ ] Verify live launcher Stop/Force stop, saved partial data, worker/FPGA cleanup, lock release and relaunch. Keep Windows launcher validation separate from the Windows CLI dry run.
@@ -39,7 +44,7 @@ Remaining hardware checks:
 
 ## Implementation backlog
 
-- [ ] Begin the strong-sample work with step 0 in the preliminary plan: assess existing 2D experiments for faster sweeps without reloading the Insys FPGA between points, while retaining per-point receiver-level checks and stop handling.
+- [ ] Accept `rep_rate: auto` in preliminary tuning, using the recommendation from `tune.rep_rate`.
 - [ ] Protocol parameters for resonator-correction overrides and measured-H loading; the engine already carries the correction fields.
 - [ ] RECT-channel calibration and automation.
 - [ ] Optional detection `tau` for `exp.t1`, with an explicit rule for invalidating/recomputing the echo window or using `window: preset`.
@@ -85,14 +90,13 @@ Work expanded to preliminary preparation and its fine-tuning handoff, with logic
 
 Fixes during the evening: the resonator selector searched the trailing-edge peak from 12 ns before the pulse end and picked the reflected-pulse plateau when it exceeded the ringing (rejected an acceptable scan as "window touches the search boundary"); it now searches after the nominal pulse end. `tune.ringing_check` gained `done: true` for same-day reruns and its `max_length` became `pulse_length`: the ladder no longer limits later pulse lengths, only the IF and DAC amplitudes carry forward. A hand edit of `tuned/calibration.phase_awg` only changes the Rabi pulse (fine runs 1–3 transferred a 38.4 ns calibration onto 64 ns pairs by the length ratio); the experiment length must go through `calibration_length` and a preliminary rerun.
 
-Next, agreed the same evening and written up in the preliminary plan ("Planned next"): a strong-sample RV approach for `tune.find_echo` with a 150 mV receiver limit and stepwise VA1/VA2 escalation, a `tune.video_attenuation` step before experiments, and an operator `rep_rate` (10 kHz cap) on the preliminary steps with `auto` from `tune.rep_rate` as a follow-on.
-
-Before implementation, step 0 assesses whether existing 2D experiments can make these sweeps faster by keeping the Insys FPGA loaded between points. This is an analysis task; the acquisition approach has not yet been selected.
+Next, agreed the same evening and subsequently implemented as described in the preliminary plan: a strong-sample RV approach for `tune.find_echo` with a 200 mV working threshold and VA1/VA2 adjustment, a `tune.video_attenuation` step before experiments, and an operator `rep_rate` (10 kHz cap) on the preliminary steps with `auto` from `tune.rep_rate` as a follow-on.
 
 The 10 G refinement span clipped the EDFS line, so the handoff now uses the original search span. Narrow 2 ns resonator windows showed 4–9 % single-frequency dropouts; the recommended window is 4 ns with stability comparisons shifted by 1 ns and 2 ns. Worker stdout now goes to the run's `worker_stdout.log`.
 
 ## Offline evidence and maintenance
 
+- Staged preliminary amplitude acquisition: protocol dry run, GUI/engine equivalence, targeted amplitude/export checks and worker stop checks passed. The full preliminary check script still stops at the pre-existing ringing reference mismatch (496.4 ns on this machine versus 493.2 ns expected; reproduced with unchanged code). Hardware speed/score validation remains open.
 - July oTerPhenyl phase/SNR and 56-/71-trace analyses are retained under the Linux `~/Documents/OTP/` datasets and `~/epr_auto_dev/field_phase_snr_check.py`. They support the field-phase behavior and relaxation gate; they are not additional automation hardware sessions.
 - The 2026-07-23 review's 13 confirmed findings were fixed on 2026-07-24. The three then-shipped protocols passed `run --test`; `~/epr_auto_dev/gui_vs_engine.py` reported ALL PASS. The removed full review is recoverable at commit `be42789`; scripts remain under `~/epr_auto_dev/review_wf_ef0c3f4c/`.
 - Preliminary offline regressions cover hard-abort precedence, ladder ordering, selection failures, amplitude bounds and export/reload. The June resonator reference and commands are in the preliminary plan.

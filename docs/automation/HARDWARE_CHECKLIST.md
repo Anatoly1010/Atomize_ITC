@@ -2,6 +2,8 @@
 
 Updated 2026-09-18. There were two hardware sessions: **11 September tested fine tuning**; **18 September worked toward the complete preliminary → fine-tuning → experiment workflow**. The final independent preliminary and fine-tuning runs worked without issues. The logic improved on 18 September, and the final combined preliminary → fine-tuning → T2 run passed that evening. Numerical results and artifact locations are recorded in [ROADMAP.md](ROADMAP.md); current preliminary behavior is in [PRELIMINARY_TUNING_PLAN.md](PRELIMINARY_TUNING_PLAN.md).
 
+RV means rotary-vane attenuation of microwave excitation. VA means receiver video attenuation, set through Video Attenuation 1 (VA1) and Video Attenuation 2 (VA2) before the ADC.
+
 ## What has been exercised
 
 | Session | Recorded hardware evidence | Limit of that evidence |
@@ -66,7 +68,8 @@ Use these when a change affects the corresponding behavior; do not repeat all ch
 
 Remaining commissioning:
 
-- [ ] **Strong-sample approach (planned, see the preliminary plan):** on a strong sample, confirm the rung order from 60 dB at the center field, VA1 rising in 2 dB steps before VA2, no rung opened while the level exceeds 150 mV, the single-move raise after a sweep excess, the amplitude-scan stage restart, and the handoff `bridge.set` restoring VA1/VA2. Then `tune.video_attenuation` before T2: opening stops one step short of the limit and the CSV header records the final values. Check `rep_rate` above the preset value reaches the exported presets and the 10 kHz cap rejects.
+- [ ] **Staged preliminary amplitude search:** compare full-trace scores and the selected `a` / `2a` pair against single-trace measurements at matched settings. Confirm one FPGA initialization per nonempty coarse/fine stage, correct sparse fine points and repeated scans, the 50/100 % endpoint, matrix rows/axes and Stop/partial-save cleanup. Measure total elapsed time; the estimated initialization saving is not yet a hardware result.
+- [ ] **Strong-sample approach:** verify ringing → live RV opening through 60/40/20/15/10/5/0 dB (ending at the requested RV) → field search → pulse tuning → final video check. Confirm that the phasing live mode stays running and adjusts VA while RV moves; advance to the next RV only after settling and a level at most 200 mV. For field and amplitude scans, verify ready-buffer checks only use columns with every receiver phase and that an excess stops at the reported completed point, which may precede the current command. Verify VA increase and remeasurement of that reported point, then fresh comparison with old-VA scores discarded. Check disabled `adjust_video`, exact VA grids and readback, VA1→VA2 escalation, VA2→VA1 reopening, exhausted range and missing-data failures, Stop/ownership cleanup, and the final target-preset check after fine calibration. Confirm handoff VA settings and repetition rate in all four presets; rates above 10 kHz reject.
 - [ ] **Temperature:** `temp.set`/`temp.wait`, reached-setpoint state, in-band hold and a deliberately short timeout at a suitable setpoint. Verify locking and readout. A move beyond `rephase_delta` (default 1 K) invalidates receiver phase; it does not invalidate fine pulse calibration.
 - [ ] **Repetition rate:** compare `tune.rep_rate` with a hand-measured recovery curve/T1. Check quantitative versus sensitivity modes, no extrapolation above tested rates, and saturated/flat-grid cases.
 - [ ] **T1:** validate log-grid deduplication (`npoints` may be below requested points), period fit and calibrated pulse transfer. Compare the saved curve/fit with a matched manual acquisition.

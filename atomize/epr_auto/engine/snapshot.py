@@ -269,6 +269,8 @@ class WorkerArgs:
     cycles: int = 1
     save_each: int = 0
     awg_grid: float = GRID_NS  # -> worker.awg_grid_cur (attribute, not an arg)
+    amplitude_sweep: dict | None = None
+    receiver_guard: dict | None = None
     # Resonator-correction state, handed to the worker as attributes exactly
     # like awg_grid (the GUI's _hand_correction_to_worker). Not stored in
     # presets; defaults = Worker.__init__ = GUI defaults. Set these on the

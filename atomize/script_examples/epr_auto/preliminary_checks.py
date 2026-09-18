@@ -188,6 +188,7 @@ def frequency_shift_checks():
     t = np.arange(640.)
     for scanned in (False, True):
         session = EPRSession('check', 'autonomous', True)
+        session.state['ringing_check'] = {'min_attenuation_db': 0}
         if scanned:
             session.state['resonator'] = {'synthesizer_mhz': 9440}
         current = [9490]
@@ -204,12 +205,12 @@ def frequency_shift_checks():
                 patch.object(p, '_synth_mhz', side_effect=lambda s: current[0]), \
                 patch.object(p, 'bridge_set', side_effect=bridge), \
                 patch.object(p, '_sweep', side_effect=sweep), \
-                patch.object(p, '_field_trace', return_value=(t, t, t, None)), \
+                patch.object(p, '_receiver_trace', return_value=(t, t, t, None)), \
                 patch.object(p, '_window', return_value={'win_left_ns':240, 'win_right_ns':360}), \
                 patch.object(p, '_remember_preset'):
             for shift in (0, -50, -50, 50):
                 result, _ = p.find_echo(session, pre.path, '3445 G', '100 G',
-                                        frequency_shift_mhz=shift)
+                                        frequency_shift_mhz=shift, adjust_video=False)
                 assert current[0] == expected_reference + shift
                 assert result['synthesizer_mhz'] == current[0]
                 assert result['observation_mhz'] == current[0] - 50
@@ -325,10 +326,55 @@ def export_checks():
     print('PASS: preset export and amplitude-range parameter validation')
 
 
+def amplitude_storage_checks():
+    pre = snapshot.load_preset(PRESET_DIR / 'hahn_echo_4s.phase_awg')
+    amplitudes = np.asarray([12.5, 30.0, 47.5])
+    session = SimpleNamespace(test=False, state={}, log=lambda msg: None,
+                              save_path=lambda tag: f'/tmp/{tag}.csv',
+                              ensure_hardware_locks=lambda: None)
+    calls = []
+    def run_worker(wa, sweep, **kwargs):
+        calls.append((wa, sweep, kwargs))
+    samples = int(round(pre.slots[0].length / 0.4) / pre.decimation)
+    curve = np.c_[amplitudes, np.ones((len(amplitudes), 2))]
+    raw_i = np.ones((len(amplitudes), samples))
+    raw_q = np.full_like(raw_i, 2.0)
+    with patch.object(p, '_covered'), patch.object(p.executor, 'run_worker', run_worker), \
+            patch.object(p.np, 'loadtxt', side_effect=[curve, raw_i, raw_q]):
+        t, i, q, paths = p._amplitude_sweep(session, pre, amplitudes, 1, 2, 'amplitude_batch')
+    wa = calls[0][0]
+    assert len(calls) == 2 and calls[0][2] == {'script_test': True}
+    assert calls[1][2]['save_path'].endswith('amplitude_batch.csv')
+    assert wa.points == len(amplitudes) and wa.iq_cor == wa.save2d == 1
+    assert wa.amplitude_sweep == {'axis': amplitudes.tolist(),
+                                  'pulses': {'P2': amplitudes.tolist(),
+                                             'P4': [25.0, 60.0, 95.0]}}
+    assert len(paths) == 3 and i.shape == q.shape == (3, samples) and len(t) == samples
+    invalid = SimpleNamespace(test=False, state={}, log=lambda msg: None,
+                              save_path=lambda tag: f'/tmp/{tag}.csv',
+                              ensure_hardware_locks=lambda: None)
+    with patch.object(p, '_covered'), patch.object(p.executor, 'run_worker'), \
+            patch.object(p.np, 'loadtxt', side_effect=[curve, raw_i, np.full((2, samples), np.nan)]):
+        try:
+            p._amplitude_sweep(invalid, pre, amplitudes, 1, 2, 'bad_amplitude_batch')
+        except ValueError as error:
+            assert 'invalid raw amplitude sweep' in str(error)
+        else:
+            raise AssertionError('invalid raw amplitude matrix accepted')
+    canned = SimpleNamespace(test=True, state={}, log=lambda msg: None,
+                             save_path=lambda tag: (_ for _ in ()).throw(AssertionError('canned save')),
+                             ensure_hardware_locks=lambda: (_ for _ in ()).throw(AssertionError('canned lock')))
+    with patch.object(p, '_covered'), patch.object(p.executor, 'run_worker') as worker:
+        _, ci, cq, canned_paths = p._amplitude_sweep(canned, pre, amplitudes, 1, 2, 'canned_batch')
+    assert worker.call_count == 1 and canned_paths == [] and ci.shape == cq.shape == (3, samples)
+    print('PASS: amplitude batch table, raw-file validation, canned data and physical pulse names')
+
+
 def optimization_checks():
     session = EPRSession('check', 'autonomous', False)
     session.log = lambda msg: None
-    session.state.update({'echo_window': {'win_left_ns':240,'win_right_ns':360},
+    session.state.update({'_adjust_video': False,
+                          'echo_window': {'win_left_ns':240,'win_right_ns':360},
                           'ringing_check': {'if_mhz':50,'pulse_length_ns':102.4,
                                             'min_attenuation_db':0,'ampl_1':260,'ampl_2':260},
                           'preliminary_echo': {'field_g':3493, 'attenuation_db':8.0,
@@ -338,29 +384,90 @@ def optimization_checks():
     def bridge(s, attenuation_db=None, **kw):
         moves.append(attenuation_db)
         s.state['bridge'] = {'attenuation_db':attenuation_db, 'frequency_mhz':9490}
+    batches = []
     def trace(s, candidate, tag):
         t = np.arange(0,512,0.4)
-        assert candidate.slots[2].coef == min(100, 2*candidate.slots[1].coef)
-        amplitude = 100 * np.sin(min(np.pi, np.pi/2 * candidate.slots[1].coef / optimum[0]))**3
+        pi2, pi = sorted((candidate.slots[1].coef, candidate.slots[2].coef))
+        assert pi == min(100, 2 * pi2)
+        amplitude = 100 * np.sin(min(np.pi, np.pi/2 * pi2 / optimum[0]))**3
         return t, amplitude*np.exp(-0.5*((t-300)/25)**2), np.zeros_like(t), None
+    def amplitude_batch(s, candidate, amplitudes, p2, pi, tag):
+        axis = np.asarray(amplitudes, dtype=float)
+        batches.append((axis.copy(), p2, pi, tag))
+        t = np.arange(0,512,0.4)
+        envelope = np.exp(-0.5*((t-300)/25)**2)
+        signal = 100 * np.sin(np.minimum(np.pi, np.pi/2 * axis / optimum[0]))**3
+        # A rotated IQ trace must score identically to the in-phase trace.
+        i = np.outer(signal * .6, envelope)
+        q = np.outer(signal * .8, envelope)
+        return t, i, q, [f'{tag}.csv', f'{tag}_2d.csv', f'{tag}_2d_1.csv']
     def sweep(s,candidate,fields,window,tag):
         return float(np.median(fields)), {'fields_g':fields.tolist()}
-    with patch.object(p,'bridge_set',bridge), patch.object(p,'_trace',trace), patch.object(p,'_sweep',sweep):
+    with patch.object(p,'bridge_set',bridge), patch.object(p,'_trace',trace), \
+            patch.object(p,'_amplitude_sweep',amplitude_batch), patch.object(p,'_sweep',sweep):
         result,_ = p.maximize_echo(session,str(PRESET_DIR/'hahn_echo_4s.phase_awg'),
                                    pulse_map={'P2':'pi2','P3':'pi'})
     assert moves == [8.0] and result['pi2_amplitude'] == 30 and result['pi_amplitude'] == 60, result
     assert all(tr['pi_amplitude'] == 2*tr['pi2_amplitude'] for tr in result['amplitude_trials'])
+    assert [len(row[0]) for row in batches] == [10, 8], batches
+    assert np.allclose(batches[0][0], np.arange(5, 51, 5))
+    assert np.allclose(batches[1][0], [26, 27, 28, 29, 31, 32, 33, 34])
+    assert all(len(tr['data_files']) == 2 and tr['data_files'][0] == tr['data_file']
+               for tr in result['amplitude_trials'])
+    assert sorted(tr['data_row'] for tr in result['amplitude_trials']).count(0) == 2
+    assert max(tr['data_row'] for tr in result['amplitude_trials']) == 9
+    assert result['amplitude_trials'][0]['score'] > 0
+    # The role map controls physical pulse names, independent of GUI slot order.
+    reordered = EPRSession('check', 'autonomous', False); reordered.log = lambda msg: None
+    reordered.state.update(session.state)
+    reordered_batches = []
+    def reordered_batch(*args):
+        reordered_batches.append((args[3], args[4]))
+        return amplitude_batch(*args)
+    with patch.object(p,'bridge_set',bridge), patch.object(p,'_trace',trace), \
+            patch.object(p,'_amplitude_sweep',reordered_batch), patch.object(p,'_sweep',sweep):
+        reordered_result,_ = p.maximize_echo(reordered,str(PRESET_DIR/'hahn_echo_4s.phase_awg'),
+                                               pulse_map={'P2':'pi','P3':'pi2'})
+    assert reordered_result['pi2_amplitude'] == 30 and reordered_batches[0] == (2, 1)
+    sparse = EPRSession('check', 'autonomous', False); sparse.log = lambda msg: None
+    sparse.state.update(session.state)
+    sparse_batches = []
+    def sparse_batch(*args):
+        sparse_batches.append(np.asarray(args[2], dtype=float))
+        return amplitude_batch(*args)
+    with patch.object(p,'bridge_set',bridge), patch.object(p,'_trace',trace), \
+            patch.object(p,'_amplitude_sweep',sparse_batch), patch.object(p,'_sweep',sweep):
+        sparse_result,_ = p.maximize_echo(sparse, str(PRESET_DIR/'hahn_echo_4s.phase_awg'),
+                                            amplitude_range=(10, 47), coarse_step=7, fine_step=3,
+                                            pulse_map={'P2':'pi2','P3':'pi'})
+    assert sparse_result['pi2_amplitude'] == 30
+    assert np.allclose(sparse_batches[0], [10, 17, 24, 31, 38, 45, 47])
+    assert np.allclose(sparse_batches[1], [27, 30, 33, 36, 39])
     for optimum[0], word in ((70.0, 'reduce'), (4.0, 'increase')):
         edge = EPRSession('check', 'autonomous', False); edge.log = lambda msg: None
         edge.state.update(session.state)
         with patch.object(p,'bridge_set',bridge), patch.object(p,'_trace',trace), \
-                patch.object(p,'_sweep',sweep), patch.object(p,'_home'):
+                patch.object(p,'_amplitude_sweep',amplitude_batch), patch.object(p,'_sweep',sweep), patch.object(p,'_home'):
             try:
                 p.maximize_echo(edge,str(PRESET_DIR/'hahn_echo_4s.phase_awg'), pulse_map={'P2':'pi2','P3':'pi'})
             except PreliminaryAbort as error:
                 assert word in str(error), error
             else:
                 raise AssertionError('amplitude edge accepted')
+    failed = EPRSession('check', 'autonomous', False); failed.log = lambda msg: None
+    failed.state.update(session.state)
+    with patch.object(p,'bridge_set',bridge), patch.object(p,'_amplitude_sweep',
+            return_value=(np.arange(2.), np.ones((2,2)), np.ones((1,2)), [])), \
+            patch.object(p,'_trace') as confirm, patch.object(p,'_sweep') as field, patch.object(p,'_home'):
+        try:
+            p.maximize_echo(failed,str(PRESET_DIR/'hahn_echo_4s.phase_awg'),
+                            pulse_map={'P2':'pi2','P3':'pi'})
+        except PreliminaryAbort:
+            pass
+        else:
+            raise AssertionError('invalid amplitude matrix accepted')
+        confirm.assert_not_called()
+        field.assert_not_called()
     session.commit_staged_state()
     chosen = session.state['_preliminary_preset']
     source = snapshot.load_preset(PRESET_DIR/'hahn_echo_4s.phase_awg')
@@ -391,7 +498,8 @@ def optimization_checks():
         assert all(s.length == 16 for s in echo16.slots[1:3]) and echo16.slots[2].coef > 60
         steps16=[st.name for st in load_protocol(short['protocol']).steps]
         assert steps16[3:6] == ['tune.pi_calibration','tune.apply_calibration','tune.apply_calibration'], steps16
-        assert steps16[-4:] == ['tune.echo_window','tune.auto_phase','tune.pi_calibration','tune.apply_calibration'], steps16
+        assert steps16[-5:] == ['tune.echo_window','tune.auto_phase','tune.pi_calibration',
+                               'tune.apply_calibration','tune.video_attenuation'], steps16
         session.state['pi_calibration']={'mode':'amplitude','pi':48.0,'pi2':24.0,'length_ns':16.0,'shape_factor':1.0}
         with patch.object(p.executor,'run_worker'):
             applied,_=p.apply_calibration(session, short['presets'][3], {'P2':'pi2','P3':'pi'})
@@ -413,7 +521,7 @@ def optimization_checks():
             saved=snapshot.load_preset(path)
             wa=snapshot.build_worker_args(saved, exp_name='ExportCheck')
             assert wa.awg[0][1]=='50 MHz'
-    print('PASS: fixed-RV amplitude scan, range-edge aborts, calibration export and handoff reload')
+    print('PASS: batched fixed-RV amplitude scan, IQ score, role mapping, malformed batch aborts, calibration export and handoff reload')
 
 
 selection_checks()
@@ -424,5 +532,6 @@ runner_checks()
 checkpoint_abort_checks()
 bridge_lock_checks()
 export_checks()
+amplitude_storage_checks()
 optimization_checks()
 print('ALL PASS')

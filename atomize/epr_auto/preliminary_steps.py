@@ -9,8 +9,14 @@ from atomize.epr_auto.params import (
 def _check(params, ctx):
     if any(isinstance(v, float) and not math.isfinite(v) for v in params.values()):
         raise ParamError('numeric parameters must be finite')
-    if set(params) == {'attenuation_db', 'frequency_mhz'} and all(v is None for v in params.values()):
-        raise ParamError('bridge.set needs attenuation_db and/or frequency_mhz')
+    if set(params) == {'attenuation_db', 'frequency_mhz', 'video1_db', 'video2_db'}:
+        if all(v is None for v in params.values()):
+            raise ParamError('bridge.set needs RV, frequency, VA1 and/or VA2')
+        for key, grid in (('video1_db', 2.0), ('video2_db', 0.5)):
+            value = params[key]
+            if value is not None and not math.isclose(value / grid, round(value / grid),
+                                                      abs_tol=1e-9):
+                raise ParamError(f'{key} must use {grid:g} dB increments')
     for key in ('amplitude_range', 'region'):
         pair = params.get(key)
         if pair is None:
@@ -62,9 +68,11 @@ def register_steps(register, run_primitive):
         'field': FieldStr(default='100 G', help='nonresonant field for the ringing ladder'),
         'done': Bool(default=False, help='the ladder already passed at this IF; record the limits, move nothing'),
     })
-    bind('bridge.set', 'Set RV and/or synthesizer with mechanical settling', {
-        'attenuation_db': Float(min=0, max=60),
+    bind('bridge.set', 'Set RV, synthesizer and/or video attenuation with settling', {
+        'attenuation_db': Float(min=0, max=60, help='rotary-vane (RV) attenuation of microwave excitation, in dB'),
         'frequency_mhz': Int(min=7000, max=12000),
+        'video1_db': Float(min=0, max=30, help='receiver Video Attenuation 1 (VA1), in 2 dB increments'),
+        'video2_db': Float(min=0, max=31.5, help='receiver Video Attenuation 2 (VA2), in 0.5 dB increments'),
     })
     bind('tune.resonator', 'AWG SINE diode scan; choose a stable early-ringing frequency maximum', {
         'if_mhz': Int(min=1, max=280, default=50, help='built-in SINE IF; must match the later echo preset DETECTION IF'),
@@ -86,6 +94,9 @@ def register_steps(register, run_primitive):
         'attenuation_db': Float(min=0, max=60, default=10, help='fixed RV for the echo search and maximization'),
         'frequency_shift_mhz': Int(default=0, help='signed shift from resonator center, or current bridge frequency without a scan'),
         'pulse_length': TimeStr(help='target pi pulse length; every echo pulse takes it (default: the preset\'s shortest MW pulse)'),
+        'adjust_video': Bool(default=True, help='adjust video attenuation to keep the echo at or below 200 mV'),
+        'rep_rate': Float(min=0.1, max=10000,
+                          help='repetition rate in Hz; omitted keeps the preset value'),
         **effort(), **echo_gate(),
     })
     bind('tune.maximize_echo', 'Fixed-RV amplitude scan (pi/2 at a, pi at 2a), then field refinement', {
@@ -99,7 +110,16 @@ def register_steps(register, run_primitive):
         'points': Int(min=7, max=1001, default=21),
         'improvement': Float(min=0.001, max=1, default=0.05),
         'pulse_map': CalMap(help='pi2/pi roles, e.g. {P2: pi2, P3: pi}; inferred from the preset when omitted'),
+        'adjust_video': Bool(help='omit to inherit tune.find_echo; true adjusts video attenuation to 200 mV'),
+        'rep_rate': Float(min=0.1, max=10000,
+                          help='repetition rate in Hz; omitted inherits tune.find_echo'),
         **effort(), **echo_gate(),
+    })
+    bind('tune.video_attenuation', 'Adjust video attenuation on the final preset, preserving pulse lengths and zeroing sweep increments', {
+        'preset': PresetFile(required=True),
+        'adjust_video': Bool(help='omit to inherit tune.find_echo, or enable adjustment when run standalone'),
+        'limit_mv': Float(min=0.001, max=200, default=200,
+                          help='maximum allowed echo magnitude in mV'),
     })
     bind('tune.apply_calibration', 'Write the session calibration, zero-order phase, echo window and field into a preset file', {
         'preset': PresetFile(required=True, help='preset file to rewrite in place, or to copy from when destination is given'),
