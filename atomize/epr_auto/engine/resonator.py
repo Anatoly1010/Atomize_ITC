@@ -5,7 +5,7 @@ from multiprocessing import Pipe, Process
 
 import numpy as np
 
-from atomize.epr_auto.engine.executor import EngineError, _wind_down
+from atomize.epr_auto.engine.executor import EngineError, _quiet_worker_stdout, _wind_down
 
 
 class _Pipe:
@@ -27,6 +27,7 @@ class _Pipe:
 
 def _child(conn, args, test):
     signal.signal(signal.SIGINT, signal.SIG_IGN)
+    _quiet_worker_stdout()
     sys.argv = [sys.argv[0], 'test' if test else 'None']
     from atomize.control_center.tune_preset import Worker
     try:

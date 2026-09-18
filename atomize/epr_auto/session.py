@@ -6,6 +6,7 @@ the test branch. The Insys driver also requires cwd == Atomize_ITC/libs at
 instantiation time; cli.py chdirs before the runner starts.
 """
 import datetime
+import os
 from pathlib import Path
 
 
@@ -100,6 +101,8 @@ class EPRSession:
                 self.log(f'      {base} already holds a run — using {run_dir}')
             self._run_dir = run_dir
             self._run_dir.mkdir(parents=True, exist_ok=True)
+            if not self.test:
+                os.environ['EPR_AUTO_WORKER_LOG'] = str(run_dir / 'worker_stdout.log')
         return self._run_dir
 
     def save_path(self, tag):

@@ -81,7 +81,7 @@ def ringing_checks():
     a = p.protection_end_ns(wa)
     hahn = snapshot.build_worker_args(snapshot.load_preset(PRESET_DIR / 'hahn_echo_4s.phase_awg'), exp_name='Reference')
     assert abs(p.protection_trace_start_ns(hahn) - 147.6) < .01
-    assert abs(p.protection_trace_start_ns(wa) - 496.4) < .01
+    assert abs(p.protection_trace_start_ns(wa) - 493.2) < .01
     pre.slots[1].length += 32
     b = p.protection_end_ns(snapshot.build_worker_args(pre, exp_name='Check'))
     assert abs(b-a-32) < 0.01, (a,b)
@@ -157,22 +157,25 @@ def ringing_checks():
 def homing_checks():
     from atomize.device_modules.Micran_X_band_MW_bridge_v2 import Micran_X_band_MW_bridge_v2
     from unittest.mock import Mock
-    for homed, origin, expected in ((False, 60, 70.596), (True, 5, 37.44)):
+    for homed, origin, expected, age in ((False, 12, 70.596, 1000), (False, 60, 0, 1000), (False, 60, 50.596, 20), (True, 5, 70.596, 20), (True, 60, 0, 20)):
         clock = [0.0]
         def join():
             clock[0] += 7
-        mw = SimpleNamespace(prev_dB=origin, calibration=lambda db:Micran_X_band_MW_bridge_v2.calibration(None, db),
+        mw = SimpleNamespace(prev_dB=origin if homed else 60, p1='None',
+                             calibration=lambda db:Micran_X_band_MW_bridge_v2.calibration(None, db),
                              mw_bridge_rotary_vane=Mock())
-        mw.mw_bridge_rotary_vane.side_effect = lambda *args, **kwargs:setattr(mw, 'p1', SimpleNamespace(join=join))
+        mw.mw_bridge_rotary_vane.side_effect = lambda *args, **kwargs:(
+            setattr(mw, 'p1', SimpleNamespace(join=join)) if args else f'{origin} dB')
         session = SimpleNamespace(test=False, mw_bridge=mw, state={'_rv_homed':homed},
                                   invalidate_fine_calibrations=lambda reason:None)
-        with patch.object(p, '_claim'), patch.object(p.time, 'monotonic', side_effect=lambda:clock[0]), \
+        with patch.object(p, '_claim'), patch.object(p, '_vane_record_age_s', return_value=age), \
+                patch.object(p.time, 'monotonic', side_effect=lambda:clock[0]), \
                 patch.object(p.time, 'sleep') as sleep:
             p._home(session)
-            assert abs(sleep.call_args.args[0] + 7 - (expected + .2)) < 1e-8
-            mw.mw_bridge_rotary_vane.assert_called_once_with(60.0, mode='Limit')
+            assert abs(sleep.call_args.args[0] - max(0, expected + .2 - 7)) < 1e-8
+            mw.mw_bridge_rotary_vane.assert_called_with(60.0, mode='Limit')
             assert session.state['bridge']['attenuation_db'] == 60
-    print('PASS: calibrated full-travel initial homing and known-position return wait')
+    print('PASS: limit homing waits full travel unless the vane is recorded at 60 dB, in-flight move allowance')
 
 
 def frequency_shift_checks():
@@ -254,13 +257,14 @@ def checkpoint_abort_checks():
     for name in ('resonator', 'find_echo', 'maximize_echo'):
         session = EPRSession('check', 'supervised', True)
         session.state['ringing_check'] = {'if_mhz':50, 'max_length_ns':102.4}
+        session.state['preliminary_echo'] = {'field_g':3445, 'attenuation_db':8.0}
         if name == 'resonator':
             from atomize.epr_auto.engine import resonator as engine
             target, method, args = engine, 'acquire', {}
         else:
             target, method = p, '_echo_preset'
             args = {'preset':'unused'}
-            args.update({'center':'3445 G', 'span':'100 G'} if name == 'find_echo' else {'rv_range':[0,10]})
+            args.update({'center':'3445 G', 'span':'100 G'} if name == 'find_echo' else {})
         with patch.object(target, method, side_effect=KeyboardInterrupt), patch.object(p, '_home') as home:
             try:
                 getattr(p, name)(session, **args)
@@ -306,49 +310,57 @@ def export_checks():
         assert (restored.win_left_ns,restored.win_right_ns) == (240,360)
         assert restored.slots[1].phase_text == pre.slots[1].phase_text
         protocol = Path(directory) / 'bad.yaml'
-        protocol.write_text('sample: check\nsteps:\n  - tune.maximize_echo:\n      rv_range: [0, 9.7]\n')
+        protocol.write_text('sample: check\nsteps:\n  - tune.maximize_echo:\n      amplitude_range: [40, 20]\n')
         try:
             load_protocol(protocol)
-        except ValueError:
-            pass
         except Exception as error:
-            assert '0.5 dB' in str(error)
+            assert 'increasing' in str(error), error
         else:
-            raise AssertionError('off-grid RV bound accepted')
-    print('PASS: preset export and 0.5 dB parameter validation')
+            raise AssertionError('decreasing amplitude range accepted')
+    print('PASS: preset export and amplitude-range parameter validation')
 
 
 def optimization_checks():
     session = EPRSession('check', 'autonomous', False)
     session.log = lambda msg: None
-    pre = snapshot.load_preset(PRESET_DIR/'hahn_echo_4s.phase_awg')
-    original_lengths = [s.length for s in pre.slots]
-    session.state.update({'preliminary_echo': {}, 'echo_window': {'win_left_ns':240,'win_right_ns':360},
+    session.state.update({'echo_window': {'win_left_ns':240,'win_right_ns':360},
                           'ringing_check': {'if_mhz':50,'max_length_ns':102.4,
-                                            'min_attenuation_db':0,'ampl_1':260,'ampl_2':260}})
-    session.state['preliminary_echo'] = {'field_g':3493}
+                                            'min_attenuation_db':0,'ampl_1':260,'ampl_2':260},
+                          'preliminary_echo': {'field_g':3493, 'attenuation_db':8.0,
+                                               'sweep': {'fields_g': [3400.0, 3500.0]}}})
     moves = []
+    optimum = [30.0]
     def bridge(s, attenuation_db=None, **kw):
         moves.append(attenuation_db)
         s.state['bridge'] = {'attenuation_db':attenuation_db, 'frequency_mhz':9490}
     def trace(s, candidate, tag):
         t = np.arange(0,512,0.4)
-        amplitude = 100 * np.exp(-moves[-1]/4) * candidate.slots[1].length / original_lengths[1]
+        assert candidate.slots[2].coef == min(100, 2*candidate.slots[1].coef)
+        amplitude = 100 * np.sin(min(np.pi, np.pi/2 * candidate.slots[1].coef / optimum[0]))**3
         return t, amplitude*np.exp(-0.5*((t-300)/25)**2), np.zeros_like(t), None
     def sweep(s,candidate,fields,window,tag):
         return float(np.median(fields)), {'fields_g':fields.tolist()}
     with patch.object(p,'bridge_set',bridge), patch.object(p,'_trace',trace), patch.object(p,'_sweep',sweep):
-        result,_ = p.maximize_echo(session,str(PRESET_DIR/'hahn_echo_4s.phase_awg'),[0,10],
-                                   length_range=['22.4 ns','51.2 ns'], length_points=3,
+        result,_ = p.maximize_echo(session,str(PRESET_DIR/'hahn_echo_4s.phase_awg'),
                                    pulse_map={'P2':'pi2','P3':'pi'})
-    assert result['power_limited'] and len(result['length_trials'])==3
-    assert all(db*2==round(db*2) for db in moves)
+    assert moves == [8.0] and result['pi2_amplitude'] == 30 and result['pi_amplitude'] == 60, result
+    assert all(tr['pi_amplitude'] == 2*tr['pi2_amplitude'] for tr in result['amplitude_trials'])
+    for optimum[0], word in ((70.0, 'reduce'), (4.0, 'increase')):
+        edge = EPRSession('check', 'autonomous', False); edge.log = lambda msg: None
+        edge.state.update(session.state)
+        with patch.object(p,'bridge_set',bridge), patch.object(p,'_trace',trace), \
+                patch.object(p,'_sweep',sweep), patch.object(p,'_home'):
+            try:
+                p.maximize_echo(edge,str(PRESET_DIR/'hahn_echo_4s.phase_awg'), pulse_map={'P2':'pi2','P3':'pi'})
+            except PreliminaryAbort as error:
+                assert word in str(error), error
+            else:
+                raise AssertionError('amplitude edge accepted')
     session.commit_staged_state()
     chosen = session.state['_preliminary_preset']
     source = snapshot.load_preset(PRESET_DIR/'hahn_echo_4s.phase_awg')
     assert chosen.slots[0].st_inc == source.slots[0].st_inc
-    assert max(s.length for s in chosen.slots[1:])<=102.4
-    assert chosen.slots[1].length>original_lengths[1]
+    assert (chosen.slots[1].coef, chosen.slots[2].coef) == (30, 60)
     with tempfile.TemporaryDirectory() as directory:
         session._run_dir=Path(directory)
         with patch.object(p.executor,'run_worker'):
@@ -356,13 +368,47 @@ def optimization_checks():
                                     str(PRESET_DIR/'ampl_4s.phase_awg'),str(PRESET_DIR/'ed_4s.phase_awg'))
         protocol=load_protocol(result['protocol'])
         assert protocol.steps[0].params['frequency_mhz']==9490
+        edfs=next(st.params for st in protocol.steps if st.name=='field.edfs')
+        assert [float(x.split()[0]) for x in edfs['range']]==[3443.0, 3543.0], edfs
         loaded=snapshot.load_preset(result['presets'][0])
-        assert loaded.slots[1].length==chosen.slots[1].length
+        assert (loaded.slots[1].coef, loaded.slots[2].coef) == (30, 60)
+        cal=snapshot.load_preset(result['presets'][1])
+        assert cal.slots[1].typ == 'SINE' and cal.slots[1].length == chosen.slots[2].length
+        assert sorted(s.coef for s in cal.slots[2:4]) == [30, 60]
+        assert len(result['presets']) == 4 and result['calibration_length_ns'] == chosen.slots[2].length
+        session._run_dir=Path(directory)/'second'; session._run_dir.mkdir()
+        with patch.object(p.executor,'run_worker'):
+            short,_=p.save_presets(session,str(PRESET_DIR/'hahn_echo_4s.phase_awg'),
+                                   str(PRESET_DIR/'ampl_4s.phase_awg'),str(PRESET_DIR/'ed_4s.phase_awg'),
+                                   calibration_length='16 ns', publish_dir=str(Path(directory)/'tuned'))
+        cal16=snapshot.load_preset(short['presets'][1]); echo16=snapshot.load_preset(short['presets'][3])
+        assert cal16.slots[1].length == 16 and sorted(s.coef for s in cal16.slots[2:4]) == [30, 60]
+        assert all(s.length == 16 for s in echo16.slots[1:3]) and echo16.slots[2].coef > 60
+        steps16=[st.name for st in load_protocol(short['protocol']).steps]
+        assert steps16[3:6] == ['tune.pi_calibration','tune.apply_calibration','tune.apply_calibration'], steps16
+        assert steps16[-4:] == ['tune.echo_window','tune.auto_phase','tune.pi_calibration','tune.apply_calibration'], steps16
+        session.state['pi_calibration']={'mode':'amplitude','pi':48.0,'pi2':24.0,'length_ns':16.0,'shape_factor':1.0}
+        with patch.object(p.executor,'run_worker'):
+            applied,_=p.apply_calibration(session, short['presets'][3], {'P2':'pi2','P3':'pi'})
+        written=snapshot.load_preset(short['presets'][3])
+        assert (written.slots[1].coef, written.slots[2].coef) == (24.0, 48.0), applied
+        session.state['auto_phase']={'zero_order_deg':12.5}; session.state['field']='3436.5 G'
+        published=Path(directory)/'tuned'/'echo_cal.phase_awg'
+        with patch.object(p.executor,'run_worker'):
+            p.apply_calibration(session, short['presets'][3], {'P2':'pi2','P3':'pi'}, destination=str(published))
+        final=snapshot.load_preset(published)
+        window=session.state['echo_window']
+        assert final.zero_order_deg == 12.5 and final.field == 3436.5, (final.zero_order_deg, final.field)
+        assert np.allclose((final.win_left_ns, final.win_right_ns), (window['win_left_ns'], window['win_right_ns']), atol=0.01)
+        assert (final.slots[1].coef, final.slots[2].coef) == (24.0, 48.0)
+        t2=Path(directory)/'t2.yaml'
+        t2.write_text('sample: check\nsteps:\n  - exp.t2:\n      preset: tuned/echo_cal.phase_awg\n      points: 50\n      window: preset\n      apply_cal: none\n')
+        assert load_protocol(t2).steps[0].params['preset'] == str(published)
         for path in result['presets']:
             saved=snapshot.load_preset(path)
             wa=snapshot.build_worker_args(saved, exp_name='ExportCheck')
             assert wa.awg[0][1]=='50 MHz'
-    print('PASS: power-limited length branch, 0.5 dB moves and complete handoff reload')
+    print('PASS: fixed-RV amplitude scan, range-edge aborts, calibration export and handoff reload')
 
 
 selection_checks()

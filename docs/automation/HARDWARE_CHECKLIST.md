@@ -6,6 +6,11 @@ Ordered so that each item builds confidence for the next; items 1–3 are
 safe to interleave with normal lab work. Written 2026-07-17; Phase 4 items
 added 2026-07-18.
 
+> 2026-09-18: the preliminary tuning protocol and its handoff are the
+> intended daily flow now (three runs from one folder, see
+> PRELIMINARY_TUNING_PLAN.md section 5 and ROADMAP.md "Pending hardware
+> validation"). The items below remain valid as single-step checks.
+
 ## Prerequisites (once per lab session)
 
 - Launch the main Atomize GUI first — the Worker child pushes live plots to

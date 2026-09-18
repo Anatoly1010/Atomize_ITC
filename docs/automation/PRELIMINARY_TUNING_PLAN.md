@@ -1,8 +1,8 @@
 # Preliminary tuning — implementation plan
 
 Planned 2026-09-13 with the operator and reviewed against the code the same
-day. The YAML steps are implemented and checked offline. Supervised
-hardware validation remains pending.
+day. The YAML steps are implemented and checked offline. The full sequence
+ran on the spectrometer on 2026-09-18 (see the roadmap session entry).
 
 ## Purpose and sequence
 
@@ -100,8 +100,8 @@ Implemented 2026-09-13, the field/temperature pattern and nothing more:
   IF equal to the tuning preset's DETECTION IF; P2 SINE at 0 ns, 102.4 ns,
   same IF, amplitude coefficient 100; both `[+x,+x]`; 500 Hz; 10
   acquisitions; one scan; all increments zero; other slots inactive.
-  Automation overrides the placeholder field with the current field and
-  keeps the current frequency. Validate the `+x,+x` invariant on the built
+  Automation overrides the placeholder field with the nonresonant `field`
+  parameter (default 100 G) and keeps the current frequency. Validate the `+x,+x` invariant on the built
   worker arguments (receiver phase list and SINE phase list) after
   expansion; a violation is a hard-stop implementation error before any
   hardware command, never a skippable step.
@@ -115,14 +115,20 @@ Implemented 2026-09-13, the field/temperature pattern and nothing more:
   |I + iQ| in mV after protection ends; this bounds the per-channel maximum
   from above and is the conservative form. No integrals, no smoothing, no
   transient-width rejection, no skipping of the onset.
-- Home to 60 dB in Limit mode first. Use the GUI red/green calibration:
-  36 ms × absolute difference of integer calibrated motor positions. The
-  first home allows full 0→60 dB travel (70.596 s plus 0.2 s margin), since
-  `bridge.param` records a target and a GUI move may still be in flight.
-  Subsequent homes use the driver's known position after joining its prior
-  move. Join the Limit thread, then wait any remaining calibrated duration;
-  its legacy seven-second first-home timer alone is insufficient. Homing
-  resets `prev_dB` and rewrites `bridge.param`.
+- Home to 60 dB in Limit mode first. The limit-switch homing speed is not
+  calibrated (the 36 ms/step red/green calibration applies to relative
+  moves only), and the bridge ignores a relative command that arrives while
+  homing runs — measured 2026-09-18, when a 12 dB move sent 23 s after a
+  home from 12 dB was lost and a trace was taken at 60 dB. So after a home
+  from any position other than 60 dB wait the full 0→60 dB travel (70.6 s)
+  plus 0.2 s margin. If the vane is recorded at 60 dB in `bridge.param`
+  (the bridge window's last target, which it also records for its open/close
+  homing), wait only what remains of the full travel since that record was
+  written, normally nothing. Read that age before taking the bridge lock:
+  the lock write itself rewrites `bridge.param` (found 2026-09-18, it made
+  every first home wait the full travel). Join the Limit thread first; its legacy
+  seven-second first-home timer alone is insufficient. Homing resets
+  `prev_dB` and rewrites `bridge.param`.
 - Then visit **60, 40, 20, 10, 5, 0 dB** through the existing `_vane_set`
   (from-above approach, calibrated settle wait). At every point: move →
   settle → acquire → check; only a pass permits the next dB. Do not queue
@@ -250,27 +256,32 @@ and record it for the later presets.
 
 ## 4. Maximize the echo
 
-Use finite searches within supplied bounds, retaining the best validated
-settings and their traces. Hold acquisition effort and the echo measurement
-method constant across comparisons; reject noise-only improvements.
+Revised 2026-09-18 at the bench (operator decision; the original RV and
+pulse-length searches were run once on hardware and then replaced). The
+rotary vane attenuation is fixed by the operator per sample, the pulse
+lengths are fixed by the preset, and only the amplitudes move:
 
-1. **RV:** bounded coarse then finer attenuation search through `_vane_set`,
-   with **0.5 dB final precision**; candidates and the optimum lie on the
-   0.5 dB grid. The lower bound may not go below the attenuation range the
-   section 1 ladder covered (0 dB). No ringing check per point.
-2. **Field:** a narrower sweep around the best echo, at the selected RV.
-3. **Pulse length, only if power is insufficient:** a bounded length search
-   when the RV search reaches its permitted power limit with evidence that
-   longer pulses may help. Lengths may not exceed the length used in the
-   section 1 ringing check. Preserve the preset's pulse roles, linked
-   timing and AWG grid; validate every candidate; recalculate protection
-   timing and echo window per candidate.
+1. **Amplitude:** with the echo window from section 3, scan the pi/2
+   amplitude a over a bounded range (default 5–50 % of full scale) with the
+   pi pulse at 2a, coarse grid then a finer grid around the best point.
+   The operator gives the target pi length (`pulse_length`, on the echo
+   search and the scan; default the preset's shortest MW pulse) and every
+   echo pulse takes it, so pi differs from pi/2 only in amplitude (a first
+   bench run with 32 and 64 ns pulses at a and 2a gave pi four times the
+   pi/2 area and a wrong optimum). For
+   a Hahn echo the signal follows sin³ of the flip angle, so the maximum is
+   the pi/2 point itself and a, 2a are directly usable pulses. A maximum on
+   the upper edge (pi would exceed 100 %) or the lower edge aborts with
+   "reduce" / "increase attenuation"; the operator then changes the RV
+   parameter rather than the protocol searching power on its own.
+2. **Field:** a narrower sweep around the best echo at the chosen amplitudes.
+3. Restore the best combination and confirm the echo there; if confirmation
+   fails, abort with diagnostics.
 
-Do not trigger length changes from low SNR alone. Pulse slots and length
-coupling come from the preset / explicit mapping. Search bounds, increments
-and a minimum meaningful improvement are protocol parameters. At completion
-restore the best tested combination and confirm the echo there; if
-confirmation fails, abort with diagnostics.
+Pulse roles come from an explicit `pulse_map` or the preset's own two
+amplitude/length levels. Hold acquisition effort and the echo measurement
+method constant across comparisons; reject noise-only improvements. The RV
+may not go below the attenuation the section 1 ladder covered (0 dB).
 
 ## 5. Export for fine tuning
 
@@ -286,6 +297,47 @@ the previously tested fine-tuning chain. Keep selective calibration
 detection-pulse roles intact; preliminary echo maximization is not a
 measurement of pi or pi/2. Apply the existing calibration-transfer rules
 only after the fine calibration has actually run.
+
+Scale the calibration preset to the tuned echo (added 2026-09-18 after the
+shipped `ampl_4s` amplitudes, meant for several times more B1, gave no echo
+and a high amplitude rail at 12 dB): the largest tuned pulse area
+(length × amplitude × envelope area) is taken as pi; the swept pulse becomes
+a SINE long enough to pass pi at about 65 % of full scale, capped at the
+ringing-tested length; the detection pair takes the tuned echo pulses
+themselves (lower preset amplitude ← smaller tuned area), keeping the
+pair's timing and phase cycle. A sweep that cannot reach pi is logged as a
+warning and left to the fine-tuning rail judges.
+
+Revised the same day: the fine calibration tunes a separate Rabi pulse at
+its own target, `calibration_length` (default the preliminary length),
+detected with the preliminary pair. The handoff exports four presets:
+`echo` (preliminary pulses) for the first echo-window/auto-phase pass,
+`calibration` (swept pulse at the fine target, preliminary detection
+pair), and `field` plus `echo_cal` with every pulse at the fine target and
+placeholder amplitudes; the handoff's `tune.apply_calibration` steps rewrite
+those two files with the measured pi/2 and pi amplitudes right after the
+first calibration, so the EDFS, the second pass and the closing calibration
+run on calibrated pulses. The handoff (`fine_tuning.yaml` and its four
+presets) is published to `publish_dir` (default `tuned` beside the
+preliminary protocol; the run directory keeps an archive copy) and closes
+with one more `tune.apply_calibration` that writes the final amplitudes,
+zero-order phase, echo window and field into `tuned/echo_cal.phase_awg`,
+so a separate experiment protocol run later (`exp.t2` with
+`window: preset`, `apply_cal: none`) needs nothing from the tuning
+session: the day is preliminary → fine → experiment, three runs from one
+folder. Fine-tuning runs land in `runs/<date>_fine` beside the folder's
+other runs.
+
+The handoff's field sweep covers the `tune.find_echo` span (or `field_span`
+when given) in `field_points` (default 200) around the tuned field, not the 10 G refinement
+sweep of section 4 (2026-09-18: that sweep clipped the coal line on both
+sides and the EDFS pick was meaningless).
+
+`bridge.set` in the handoff no longer homes the vane unless a crashed run
+left the bridge lock behind: it waits out any recorded move still in
+flight, adopts the recorded position as the driver's origin and moves
+relative to it (operator decision 2026-09-18, replacing the 12→60→12 dB
+travel at every fine-tuning start).
 
 Reload exported presets through the existing parser and pre-flight their
 worker arguments. The handoff protocol then invokes the existing
@@ -315,16 +367,21 @@ the tested order.
       preset export, `bridge.set` and the handoff protocol.
 - [x] Register step parameters and provide a complete example protocol.
 - [x] Exercise test mode without hardware, including failure and abort paths.
-- [x] Verify `+x,+x` on the built worker arguments, the 0.5 dB grid, and
-      that no ringing gate runs during RV optimization.
+- [x] Verify `+x,+x` on the built worker arguments, and that no ringing
+      gate runs during the amplitude scan.
 - [x] Check known-center synthetic scans of both signs, noise, competing
       peaks, edge peaks and clipping; report the real scan's window
       sensitivity.
 - [x] Re-run GUI/engine equivalence if worker signatures, preset handling or
       argument packing change, as required by CLAUDE.md.
 - [x] Use the calibrated GUI RV movement duration and September 11 defense-transient timing.
-- [ ] Supervised end-to-end validation of ringing stop/return, bridge coexistence,
-      frequency selection and fine-tuning handoff.
+- [x] Supervised end-to-end run on hardware (2026-09-18): bridge coexistence,
+      frequency selection, echo search and maximization, handoff export.
+- [x] Exported fine-tuning protocol on hardware (2026-09-18, coal at 4 dB:
+      echo window, auto-phase, pi calibration, 120 G EDFS, repeat).
+- [ ] The final three-run day (`2026_09_18_coal_auto`: preliminary →
+      `tuned/fine_tuning.yaml` with `tune.apply_calibration` → `t2.yaml`).
+- [ ] Ringing hard-stop/return (never triggered on this resonator).
 
 ## Implementation notes and verification (2026-09-13)
 
@@ -356,14 +413,12 @@ single-worker field sweep. Subsequent trace confirmation uses `acquire_trace`.
 Zero sweep increments apply only to preliminary measurements; exported echo
 presets retain the source's increments for later experiments.
 
-Optional length search currently supports a two-pulse SINE echo with explicit
-`pulse_map: {P2: pi2, P3: pi}`. `length_range` bounds the pi/2 pulse; the other
-length scales by the preset's ratio. Pulse centers are preserved, with a
-common sequence offset if needed to avoid a negative start. For the default
-22.4/44.8 ns echo, `[22.4 ns, 51.2 ns]` is covered by a `max_length` of
-102.4 ns. The branch runs only when the best RV is at the lower bound and
-the adjacent power point is measurably weaker. Invalid or uncovered candidates
-abort before their acquisition.
+The amplitude scan keeps the preset lengths; `amplitude_range`, `coarse_step`
+and `fine_step` are protocol parameters and `attenuation_db` defaults to the
+`tune.find_echo` setting. The exported calibration preset takes the tuned
+pulses as its detection pair and the tuned pi pulse's shape and length as
+the swept pulse, so pi is expected at the tuned pi amplitude; aim the RV so
+that 2a lands near 60 % of full scale.
 
 The resonator scan runs in a child process, pre-flights the same AWG worker,
 and serves its existing save/stop pipe messages. AWG frequency changes now
@@ -375,7 +430,10 @@ The real June 24 scan selects **9439 MHz**, reported as **9440 MHz** at 5 MHz
 precision. Its common window is 152.8125–154.6875 ns; this and two neighboring
 later early-ringing windows give 9439, 9439 and 9436 MHz. Later windows are
 used for the stability check so an abrupt synthetic onset cannot accidentally
-compare against the before-ringing signal. Original and processed sections,
+compare against the before-ringing signal. The comparison windows are shifted
+by 1 ns and 2 ns regardless of the window width (2026-09-18: with a 4 ns
+window, shifts scaled to the width walked off the 2 ns ring-down spike and
+failed the check on a good scan). Original and processed sections,
 window and reasons for rejection are saved alongside the diode CSV.
 
 Commands used without hardware:
@@ -392,15 +450,15 @@ python3 -m atomize.epr_auto.preset_hash
 The example dry-run completes 5/5. Offline checks cover both diode signs,
 weak/competing/edge/clipped peaks, nonfinite data, protection timing changes
 with pulse length, every-rung ordering, threshold abort before the next RV
-move, hard-abort precedence over retries/skip, the power-limited length branch,
-0.5 dB candidates, preset reload and handoff YAML validation. GUI/engine
+move, hard-abort precedence over retries/skip, the amplitude scan with its
+range-edge aborts, calibration export, preset reload and handoff YAML validation. GUI/engine
 equivalence reports ALL PASS. The prepared protection endpoint for the
-102.4 ns test pulse has a TTL endpoint of 291.2 ns relative to DETECTION.
-The September 11 standard Hahn preset has a calculated endpoint of −57.6 ns
+102.4 ns test pulse has a TTL endpoint of 134.4 ns relative to DETECTION (spectrometer pulser delays).
+The September 11 standard Hahn preset has a calculated endpoint of −211.2 ns
 and its measured defense transient occupies the recorded 147.6–155.2 ns
 window (peak approximately 150 ns). Transfer this measured reference by
 the calculated difference in protection timing. Start the ringing check at
-the window's early edge: 291.2 − (−57.6) + 147.6 = 496.4 ns, so the initial
+the window's early edge: 134.4 − (−211.2) + 147.6 = 493.2 ns, so the initial
 amplitude is included. No additional onset blanking is applied. The raw
 September CSV is not present at the session-log path on this machine; this
 calibration uses the recorded window and the operator-confirmed standard

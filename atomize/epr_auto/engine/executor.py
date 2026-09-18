@@ -13,7 +13,9 @@ scan_control callback below is the channel for judge/budget-driven
 early finish; a count at or below the scans already done makes the
 worker finish after the current scan, still reading out and saving).
 """
+import os
 import signal
+import sys
 import time
 import traceback
 from multiprocessing import Pipe, Process
@@ -45,12 +47,24 @@ class EngineError(RuntimeError):
     pass
 
 
+def _quiet_worker_stdout():
+    """Send the worker's stdout (vendor FPGA library chatter) to the run's worker log when the runner set one."""
+    path = os.environ.get('EPR_AUTO_WORKER_LOG')
+    if not path:
+        return
+    sys.stdout.flush()
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
+    os.dup2(fd, 1)
+    os.close(fd)
+
+
 def _shielded(target, *args):
     """Child entry point: ignore SIGINT so a terminal Ctrl-C reaches only the
     parent — the parent then commands 'exit' and the worker reads out, saves
     and closes the card instead of dying mid-scan in its BaseException
     handler (the whole process group receives the terminal's SIGINT)."""
     signal.signal(signal.SIGINT, signal.SIG_IGN)
+    _quiet_worker_stdout()
     return target(*args)
 
 
@@ -230,6 +244,7 @@ def _trace_child(worker, conn, args, phases, n_sweeps, script_test):
     l_mode=1 the digitizer accumulates across cycles, so that final trace
     is the phase-cycled average of everything acquired."""
     signal.signal(signal.SIGINT, signal.SIG_IGN)   # see _shielded
+    _quiet_worker_stdout()
     import atomize.general_modules.general_functions as general
     state = {'calls': 0, 'cycles': 0, 'done': None}
     orig_plot = general.plot_1d

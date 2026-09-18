@@ -6,7 +6,7 @@ needs the lab machine / real hardware under **Pending hardware validation**.
 Design decisions live in [ARCHITECTURE.md](ARCHITECTURE.md) — update it when a
 decision changes, don't fork it here.
 
-## Preliminary tuning — implemented 2026-09-13, hardware validation pending
+## Preliminary tuning — implemented 2026-09-13, validated on hardware 2026-09-18
 
 The [complete preliminary-tuning plan](PRELIMINARY_TUNING_PLAN.md) specifies
 the receiver ringing gate, optional resonator scan, bounded echo search
@@ -49,10 +49,11 @@ scan. The shifted frequency carries through optimization and handoff.
 Two independent agents reviewed this implementation on 2026-09-13. Fixes
 cover abort homing, queued manual RV commands after locking, resonator stop
 handling and strong-ringing onset detection. Offline regressions cover each;
-initial homing now uses the calibrated red/green motor travel time (70.596 s
-for full travel, plus 0.2 s margin). Protection timing uses the September 11
+limit homing waits the full 0→60 dB travel unless the vane is recorded at
+60 dB in `bridge.param`, then only what remains of that travel since the
+record was written (2026-09-18: relative moves sent during homing are lost). Protection timing uses the September 11
 standard Hahn defense-transient window (147.6–155.2 ns); the built-in ringing
-check starts at its transferred early edge, 496.4 ns. These replace the
+check starts at its transferred early edge, 493.2 ns. These replace the
 previous timing uncertainties; end-to-end hardware validation remains pending.
 
 Model workflow: most items are Opus-suitable (the constraints are written down);
@@ -504,18 +505,38 @@ clamp touched the Worker → mirror rule exercised).
 - Assistant layer (Claude emits/edits protocols, reacts at checkpoints)
 - Resonator tuning (needs actuation path assessment)
 - Port to fork repos once stable
+- Main-window live marks: every plot from a protocol run arrives over the
+  runner's one plot client (acquisition workers are forked and inherit it), so
+  all docks stay green until the runner exits. Grey a dock after some seconds
+  without data using the last-data time it already tracks (operator request,
+  2026-09-18).
 
 ## Pending hardware validation
-- **Phase 2 primitives on the spectrometer** (all code-complete, dry-run
-  clean; nothing has touched hardware): auto-phase round-trip (zero-order
-  sign: digitizer_demodulate rotates by exp(−i·z), so z_new = z_used − φ_residual —
-  verify the corrected run comes out real-positive); pi_calibration amplitude
-  sweep on `ampl_4s` (fit + rails on real compression); power_for_length vane
-  loop (dB step direction, mechanical wait long enough, backlash approach);
-  edfs pick=max lands on the line; field.param/temp.param locks vs an open
-  field_control/temp_control GUI.
-- LivePlot behaviour of engine-run Workers (plots go to the open GUI exactly
-  like GUI-launched runs — expected but unverified).
+
+Validated on the ITC spectrometer (coal, 2026-09-11 and 2026-09-18): auto-phase
+round-trip, pi_calibration amplitude sweep with rails, edfs pick=max, the
+field/temperature/bridge locks against open control windows, LivePlot from
+engine-run workers, the preliminary tuning protocol (ringing ladder, resonator
+scan, echo search, fixed-RV amplitude scan, export) and the fine-tuning handoff
+up to and including the EDFS and the repeated calibration.
+
+Still pending — the validation vehicle is the clean three-run day in
+`~/experimental_data/Melnikov/2026_09_18_coal_auto/` (`preliminary.yaml` →
+`tuned/fine_tuning.yaml` → `t2.yaml`), all with the final design of 2026-09-18:
+- the fine chain as exported now: Rabi pulse at `calibration_length`,
+  `tune.apply_calibration` rewriting `field`/`echo_cal`, the closing apply that
+  publishes `tuned/echo_cal.phase_awg`, and `exp.t2` in a separate run on that
+  file with `window: preset` / `apply_cal: none`;
+- the published handoff layout (`tuned/` beside the protocols, archive copy
+  under `runs/`), the lock-age fix for the first home and the no-move bridge
+  step (all code-verified only);
+- the ringing hard-stop and 60 dB return (never triggered: nothing exceeded
+  100 mV on this resonator);
+- power_for_length is no longer part of the intended flow (the amplitude scan
+  at a fixed RV replaced it); leave it untested unless it is needed again.
+
+Record the outcome of the three runs in the session log and tick the last
+boxes of PRELIMINARY_TUNING_PLAN.md.
 
 ## Session log
 - **2026-07-16** — Variants discussed, decisions fixed (see ARCHITECTURE.md
@@ -2240,3 +2261,80 @@ deadlines, forced stop and the save handshake. POSIX GUI Stop now sends SIGINT
 to the runner so blocking waits wake promptly. The full dummy-data checks
 pass; Windows and live hardware cleanup remain unverified. Public docs were
 left untouched during this review while the operator reads the prose.
+
+## Session 2026-09-18 — PRELIMINARY TUNING ON HARDWARE (ITC, coal, room temperature)
+
+`preliminary_coal.yaml` (in the coal bench directory) ran 5/5 on the third
+launch: ringing ladder at 100 G, resonator scan 9500–9950 MHz, echo search,
+maximization and handoff export (`runs/2026-09-18_preliminary_run3`).
+
+Results: synthesizer 9696 MHz (9646 MHz observation, section SNR 220, three
+windows within 1 MHz); echo at 3440 G in the 120 G search, optimum 12 dB and
+3437 G after the RV ladder (peak score at 10.5 dB, 12 dB within the 5 %
+band), not power-limited so no length search; window 241.6–400.8 ns for the
+32/64 ns SINE echo. Ringing peaks 17–68 mV were the protection switch
+transient at 494–496 ns, power-independent; no resonator ringing reached the
+receiver at 0 dB with 102.4 ns pulses. Bridge coexistence worked with the
+window open before the run (locked banner, no exit move).
+
+Fixes made at the bench: `_home` joined the driver's `'None'` placeholder
+thread (TypeError before the first vane command); first home now waits the
+calibrated travel from the vane position recorded in `bridge.param` instead
+of full travel (the bridge window homes before every run); the ringing step
+takes `field` (default 100 G) instead of reading `field.param`; the repo
+pulser config now carries this spectrometer's protect delays, so the
+transferred ringing start is 493.2 ns everywhere; `tune_preset.py` applies
+fixed scope settings for the diode scan (200 ns range, 160 ns delay, CH1
+50 mV/div, CH2 1 V/div trigger at 0.75 V) because other experiments retune
+the scope. Two aborted launches taught: only the leading edge on screen makes
+the selector reject with "ringing window touches the search boundary"; the
+2 ns selection window on the ring-down spike shows 4–9 % single-frequency
+dropouts from edge-timing jitter between shots, so the bench protocol uses
+`window: 4 ns`.
+
+Still open: ringing hard-stop and return never triggered (nothing exceeded
+100 mV); the exported `fine_tuning.yaml` has not been run; jitter source
+(FPGA trigger/AWG clock crossing vs scope trigger) unmeasured.
+
+### 2026-09-18 (2) — fine-tuning handoff on hardware; maximize step redesigned
+
+The exported `fine_tuning.yaml` ran twice. First attempt: the trace was taken
+at 60 dB because the engine's move to 12 dB, sent 23 s after the limit home,
+was dropped by the bridge while it was still homing (limit homing is slower
+than the calibrated relative travel). Second attempt: echo window and
+auto-phase passed (window 242.8–398.4 ns, zero order 21.3°), then the
+amplitude pi calibration saw no echo and railed high: the shipped `ampl_4s`
+pulses assume several times more B1 than this setup has at 12 dB.
+
+Changes: limit homing waits the full travel unless the vane is recorded at
+60 dB; the bridge window records its open/close homing in `bridge.param`;
+`bridge.set` no longer homes unless a crashed run left the bridge lock behind
+(it adopts the recorded position, operator decision); `tune.maximize_echo`
+is now a fixed-RV amplitude scan (pi/2 at a, pi at 2a) with range-edge
+aborts, replacing the RV and length searches (operator decision, so the
+tuned pulses serve directly as detection pulses); `tune.save_presets` gives
+the calibration preset the tuned pulses as its detection pair and the tuned
+pi length as its swept pulse; the main window greys a plot dock idle for
+10 s while its source is still connected (backlog item, done); worker
+processes send their stdout (vendor FPGA library chatter such as
+`before BRD_init` / `closing Brd`) to `worker_stdout.log` in the run
+directory, so the terminal shows only the runner's own lines. Offline
+checks rewritten for the amplitude scan.
+
+Validated the same afternoon: preliminary run 5 (coal, 4 dB, 9696 MHz,
+3436.5 G, pi/2 35 % / pi 70 % on 32/64 ns SINE, 11 min) and its handoff
+(echo window 246–398 ns, zero order 16.5°, pi 55.8 % / pi/2 28.0 %, ratio
+1.99; EDFS 3376–3496 G finds the line at 3435.6 G, FWHM 15.7 G; the repeat
+gives pi 55.2 %, ratio 1.98). Two more bench fixes on the way: the vane
+record age must be read before the lock write (it made every first home wait
+the full travel), and the handoff EDFS defaults to the `find_echo` span
+instead of the 10 G refinement sweep (which clipped the line). Later the
+same day (operator design): the echo search and the scan take an explicit
+target pi length and set every echo pulse to it (a first run with 32/64 ns
+at a/2a gave pi four times the pi/2 area); the fine calibration sweeps a
+separate Rabi pulse at `calibration_length` detected with the preliminary
+pair; the handoff exports `echo_cal` and `field` at that length and a new
+`tune.apply_calibration` step rewrites both files with the measured
+amplitudes before the EDFS and the second pass. Not yet run on hardware.
+The published step reference (`docgen.py`, Windows side) still has to be
+regenerated.

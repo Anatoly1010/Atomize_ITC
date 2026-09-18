@@ -71,7 +71,7 @@ def select_frequency(time_ns, frequency_mhz, voltage_mv, pulse_ns=102.4,
     floor = float(np.median(np.r_[smooth[:3], smooth[-3:]]))
     height = float(smooth[best] - floor)
     snr = height / noise
-    shift = max(1, round(window_ns / (2 * dt)))
+    shift = max(1, round(1.0 / dt))
     nearby = []
     for center in (peak_time, peak_time + shift, peak_time + 2*shift):
         _, _, _, s = section(center)

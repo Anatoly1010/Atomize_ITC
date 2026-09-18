@@ -627,6 +627,25 @@ class Worker():
 
         self.command = 'start'
                    
+    def scope_defaults(self, a2012):
+        """
+        Apply the scope settings used for resonator tuning (recorded from the
+        DSO-X 2012A on 2026-09-18), so a scope left in another experiment's
+        state does not change the diode scan.
+        """
+        a2012.oscilloscope_timebase('200 ns')
+        a2012.oscilloscope_horizontal_offset('160 ns')
+        for ch, sens, offset in (('CH1', '50 mV', '50 mV'), ('CH2', '1000 mV', '0 mV')):
+            a2012.oscilloscope_coupling(ch, 'DC')
+            a2012.oscilloscope_impedance(ch, '1 M')
+            a2012.oscilloscope_sensitivity(ch, sens)
+            a2012.oscilloscope_offset(ch, offset)
+        a2012.oscilloscope_command(':CHANnel1:BWLimit 0')
+        a2012.oscilloscope_trigger_mode('Normal')
+        a2012.oscilloscope_trigger_channel('CH2')
+        a2012.oscilloscope_command(':TRIGger:EDGE:SLOPe POSitive')
+        a2012.oscilloscope_command(':TRIGger:EDGE:LEVel 0.75')
+
     def exp_on(self, conn, p2, p4, p5, p6, p7, p8, p9, p10):
         """
         function that contains experimental script
@@ -691,7 +710,7 @@ class Worker():
                 general.wait('200 ms')
 
             a2012.oscilloscope_acquisition_type('Average')
-            a2012.oscilloscope_trigger_channel('CH2')
+            self.scope_defaults(a2012)
             a2012.oscilloscope_number_of_averages(AVERAGES)
             a2012.oscilloscope_run_stop()
 
@@ -876,7 +895,7 @@ class Worker():
                 general.wait('200 ms')
 
             a2012.oscilloscope_acquisition_type('Average')
-            a2012.oscilloscope_trigger_channel('CH2')
+            self.scope_defaults(a2012)
             a2012.oscilloscope_number_of_averages(AVERAGES)
             a2012.oscilloscope_run_stop()
 
@@ -1067,7 +1086,7 @@ class Worker():
                 general.wait('200 ms')
 
             a2012.oscilloscope_acquisition_type('Average')
-            a2012.oscilloscope_trigger_channel('CH2')
+            self.scope_defaults(a2012)
             a2012.oscilloscope_number_of_averages(AVERAGES)
             a2012.oscilloscope_run_stop()
 

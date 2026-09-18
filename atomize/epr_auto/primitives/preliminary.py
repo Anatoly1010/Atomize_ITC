@@ -1,6 +1,7 @@
 """AWG preliminary tuning steps and settled bridge control."""
 import copy
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -17,20 +18,48 @@ from atomize.epr_auto.primitives.judges import echo_snr
 
 def _claim(session):
     if not session.test and not session.state.get('_bridge_ready'):
+        session.state['_vane_record'] = (_vane_record_age_s(), time.monotonic())
         session.ensure_hardware_locks()
         time.sleep(1.1)
         session.state['_bridge_ready'] = True
+
+
+def _vane_age_s(session):
+    """Age of the vane record as seen before this run's lock rewrote bridge.param."""
+    record = session.state.get('_vane_record')
+    if record is None:
+        return _vane_record_age_s()
+    age, seen = record
+    return age + time.monotonic() - seen
+
+
+FULL_TRAVEL_S = 70.596
+
+
+def _vane_record_age_s():
+    """Seconds since bridge.param last changed; a recorded move may still be in flight before FULL_TRAVEL_S."""
+    from atomize.control_center import bridge_param
+    try:
+        return time.time() - Path(bridge_param.path()).stat().st_mtime
+    except OSError:
+        return 0.0
 
 
 def _home(session):
     _claim(session)
     mw = session.mw_bridge
     if not session.test:
-        pending = getattr(mw, 'p1', None)
-        if pending is not None:
-            pending.join()
-        origin = mw.prev_dB if session.state.get('_rv_homed') else 0.0
-        wait_s = abs(36 * (int(mw.calibration(60)) - int(mw.calibration(origin)))) / 1000
+        try:
+            mw.p1.join()
+        except (AttributeError, TypeError):
+            pass
+        origin = mw.prev_dB if session.state.get('_rv_homed') else tune._vane_db(mw)
+        if origin != 60:
+            wait_s = FULL_TRAVEL_S
+        elif session.state.get('_rv_homed'):
+            wait_s = 0.0
+        else:
+            wait_s = max(0.0, FULL_TRAVEL_S - _vane_age_s(session))
         started = time.monotonic()
     mw.mw_bridge_rotary_vane(60.0, mode='Limit')
     if not session.test:
@@ -51,8 +80,25 @@ def _abort(session, reason):
     raise PreliminaryAbort(f'{reason}; RV returned to 60 dB')
 
 
+def _stale_bridge_lock(session):
+    if session.test:
+        return False
+    from atomize.control_center import bridge_param
+    return bridge_param.is_locked() and bridge_param.lock_source() == 'epr_auto'
+
+
+def _adopt_recorded_vane(session):
+    """Trust bridge.param after any recorded move has finished; the driver then moves relative to it."""
+    mw = session.mw_bridge
+    if not session.test:
+        time.sleep(max(0.0, FULL_TRAVEL_S - _vane_age_s(session)))
+        mw.prev_dB = mw.curr_dB = tune._vane_db(mw)
+    session.state['_rv_homed'] = True
+
+
 def bridge_set(session, attenuation_db=None, frequency_mhz=None):
     """Set external bridge settings and invalidate dependent calibrations."""
+    stale = _stale_bridge_lock(session)
     _claim(session)
     mw = session.mw_bridge
     if frequency_mhz is not None:
@@ -60,7 +106,7 @@ def bridge_set(session, attenuation_db=None, frequency_mhz=None):
             raise ValueError('synthesizer frequency outside device limits')
     if attenuation_db is not None:
         if not session.state.get('_rv_homed'):
-            _home(session)
+            _home(session) if stale else _adopt_recorded_vane(session)
         tune._vane_set(session, attenuation_db)
         session.invalidate_fine_calibrations('RV move')
     if frequency_mhz is not None:
@@ -157,8 +203,8 @@ def ringing_peak(time_ns, i_mv, q_mv, protection_ns):
     return float(np.max(np.hypot(i[mask], q[mask])))
 
 
-def ringing_check(session, if_mhz=50, max_length='102.4 ns'):
-    """Run one settled RV ladder; every failed check hard-aborts the protocol."""
+def ringing_check(session, if_mhz=50, max_length='102.4 ns', field='100 G'):
+    """Run one settled RV ladder at a nonresonant field; every failed check hard-aborts the protocol."""
     if session.state.get('ringing_check'):
         _abort(session, 'ringing_check may run only once per preliminary run')
     try:
@@ -191,13 +237,7 @@ def ringing_check(session, if_mhz=50, max_length='102.4 ns'):
     try:
         _home(session)
         session.state['bridge']['frequency_mhz'] = int(_synth_mhz(session))
-        if not session.test:
-            from atomize.control_center import field_param
-            if not Path(field_param.path()).is_file():
-                raise ValueError('current field is unavailable in field.param')
-            pre.field = float(field_param.read()['Field'])
-            if not np.isfinite(pre.field):
-                raise ValueError('current field in field.param is invalid')
+        pre.field = parse_field_g(field)
         for db in (60, 40, 20, 10, 5, 0):
             session.log(f'      ringing: RV {db} dB — move, settle, acquire, check')
             bridge_set(session, attenuation_db=db)
@@ -212,7 +252,7 @@ def ringing_check(session, if_mhz=50, max_length='102.4 ns'):
                 raise ValueError(f'ringing {peak:.2f} mV exceeds 100 mV at {db} dB')
     except BaseException as error:
         _abort(session, f'ringing check stopped: {error}')
-    result = {'max_length_ns': length, 'if_mhz': freq, 'min_attenuation_db': 0,
+    result = {'max_length_ns': length, 'if_mhz': freq, 'min_attenuation_db': 0, 'field_g': pre.field,
               'protection_end_ns': end_ns, 'protection_ttl_end_ns': ttl_end_ns,
               'defense_reference_window_ns': [147.6, 155.2],
               'measurements': history, 'canned': session.test,
@@ -293,11 +333,20 @@ def _covered(session, pre):
         raise PreliminaryAbort('tuning preset exceeds the ringing-tested IF, length or DAC amplitude')
 
 
-def _echo_preset(session, path, scans, averages):
+def _echo_preset(session, path, scans, averages, pulse_length=None):
+    """Tuning copy of the echo preset: no increments, and every MW pulse at the target pi
+    length (default: the shortest active pulse) so pi differs from pi/2 only in amplitude."""
     pre = _sine_preset(tune.load_tuned_preset(session, path))
     pre.scans, pre.averages = scans, averages
     for s in pre.slots:
         s.st_inc = s.len_inc = s.st_inc2 = 0.0
+    if pulse_length is None:
+        length = min(s.length for s in pre.slots[1:] if s.active)
+    else:
+        length = snapshot._snap(parse_time_ns(pulse_length), pre.awg_grid)
+    for s in pre.slots[1:]:
+        if s.active:
+            s.length = length
     if session.state.get('field'):
         pre.field = parse_field_g(session.state['field'])
     wa = snapshot.build_worker_args(copy.deepcopy(pre), exp_name='EchoSearch')
@@ -373,10 +422,10 @@ def _sweep(session, pre, fields, window, tag):
 
 def find_echo(session, preset, center, span, points=41, attenuation_db=10,
               scans=1, averages=10, search_from='200 ns', min_width='20 ns',
-              frequency_shift_mhz=0):
+              frequency_shift_mhz=0, pulse_length=None):
     """Full-window magnitude field search followed by resolved-echo validation."""
     try:
-        pre = _echo_preset(session, preset, scans, averages)
+        pre = _echo_preset(session, preset, scans, averages, pulse_length)
         lo = parse_field_g(center) - parse_field_g(span) / 2
         hi = parse_field_g(center) + parse_field_g(span) / 2
         if lo < 0:
@@ -398,6 +447,7 @@ def find_echo(session, preset, center, span, points=41, attenuation_db=10,
         session.stage_state('echo_window', window)
         _remember_preset(session, pre)
         result = {'field_g': best, 'attenuation_db': attenuation_db, 'window': window,
+                  'pulse_length_ns': pre.slots[1].length,
                   'frequency_reference_mhz': reference, 'frequency_shift_mhz': frequency_shift_mhz,
                   'synthesizer_mhz': frequency, 'observation_mhz': frequency - _detection_if_mhz(pre),
                   'sweep': sweep, 'data_file': path, 'canned': session.test}
@@ -409,96 +459,71 @@ def find_echo(session, preset, center, span, points=41, attenuation_db=10,
         _abort(session, f'echo search stopped: {error}')
 
 
-def maximize_echo(session, preset, rv_range, field_span='10 G', points=21,
-                  coarse_step_db=2, scans=1, averages=10, improvement=0.05,
-                  length_range=None, length_points=5, pulse_map=None,
-                  search_from='200 ns', min_width='20 ns'):
-    """Finite RV, field and optional mapped pulse-length optimization."""
+def _echo_roles(pre, pulse_map):
+    if pulse_map and pulse_map != 'none':
+        roles = {int(name[1:]) - 1: role for name, role in pulse_map.items()}
+    else:
+        roles = {int(name[1:]) - 1: role for name, role in tune._infer_cal_map(pre).items()}
+    active = {i for i, s in enumerate(pre.slots[1:], 1) if s.active}
+    if set(roles) != active or sorted(roles.values()) != ['pi', 'pi2']:
+        raise ValueError('amplitude scan requires a two-pulse pi2/pi echo map')
+    return (next(i for i, r in roles.items() if r == 'pi2'),
+            next(i for i, r in roles.items() if r == 'pi'))
+
+
+def maximize_echo(session, preset, attenuation_db=None, amplitude_range=(5, 50),
+                  coarse_step=5, fine_step=1, field_span='10 G', points=21,
+                  scans=1, averages=10, improvement=0.05, pulse_map=None,
+                  search_from='200 ns', min_width='20 ns', pulse_length=None):
+    """Fixed-RV amplitude scan (pi/2 at a, pi at 2a), field refinement and confirmation."""
     try:
-        pre = _echo_preset(session, preset, scans, averages)
         if not session.state.get('preliminary_echo'):
             raise ValueError('run tune.find_echo first')
-        low, high = rv_range
-        if low < session.state['ringing_check']['min_attenuation_db']:
-            raise ValueError('RV search exceeds the ringing-tested power')
+        if pulse_length is None and session.state['preliminary_echo'].get('pulse_length_ns'):
+            pulse_length = f"{session.state['preliminary_echo']['pulse_length_ns']} ns"
+        pre = _echo_preset(session, preset, scans, averages, pulse_length)
+        if attenuation_db is None:
+            attenuation_db = session.state['preliminary_echo']['attenuation_db']
+        if attenuation_db < session.state['ringing_check']['min_attenuation_db']:
+            raise ValueError('RV setting exceeds the ringing-tested power')
+        p2, pi = _echo_roles(pre, pulse_map)
         window = dict(session.state['echo_window'])
-        trials = []
-        scores = {}
+        low, high = map(float, amplitude_range)
+        bridge_set(session, attenuation_db=attenuation_db)
+        trials, scores, measured = [], {}, {}
 
-        def measure(db):
-            db = round(float(db) * 2) / 2
-            if db in scores:
-                return scores[db]
-            bridge_set(session, attenuation_db=db)
-            t, i, q, path = _trace(session, pre, 'rv_optimize')
-            score = _score(t, i, q, window)
+        def measure(a):
+            a = round(float(a), 1)
+            if a in scores:
+                return scores[a]
+            pre.slots[p2].coef, pre.slots[pi].coef = a, min(100.0, round(2 * a, 1))
+            _covered(session, pre)
+            t, i, q, path = _trace(session, pre, 'amplitude_optimize')
+            score = measured[a] = _score(t, i, q, window)
             if session.test:
-                score *= 1 + np.exp(-((db - (low + high) / 2) / 3)**2)
-            scores[db] = score
-            trials.append({'attenuation_db': db, 'score': score, 'data_file': path})
+                score *= 1 + np.exp(-((a - (low + high) / 2) / 8) ** 2)
+            scores[a] = score
+            trials.append({'pi2_amplitude': a, 'pi_amplitude': pre.slots[pi].coef,
+                           'score': score, 'data_file': path})
             return score
 
-        grid = np.unique(np.r_[np.arange(high, low, -coarse_step_db), low])
-        for db in grid[::-1]:
-            measure(db)
+        for a in np.unique(np.r_[np.arange(low, high, coarse_step), high]):
+            measure(a)
         coarse_best = max(scores, key=scores.get)
-        fine = np.arange(max(low, coarse_best-coarse_step_db),
-                         min(high, coarse_best+coarse_step_db)+0.25, 0.5)
-        for db in fine[::-1]:
-            measure(db)
-        peak = max(scores.values())
-        best_db = max(db for db, score in scores.items() if score >= peak / (1 + improvement))
-        bridge_set(session, attenuation_db=best_db)
+        for a in np.arange(max(low, coarse_best - coarse_step),
+                           min(high, coarse_best + coarse_step) + fine_step / 2, fine_step):
+            measure(a)
+        best_a = max(scores, key=scores.get)
+        if best_a >= high - fine_step / 2:
+            raise ValueError(f'echo still growing at {best_a:g} % (pi at {2 * best_a:g} %): reduce attenuation')
+        if best_a <= low + fine_step / 2:
+            raise ValueError(f'echo already falling at {best_a:g} %: increase attenuation')
+        best_score = measured[best_a]
+        pre.slots[p2].coef, pre.slots[pi].coef = best_a, round(2 * best_a, 1)
         half = parse_field_g(field_span) / 2
         best_field, field_sweep = _sweep(session, pre,
                                         np.linspace(pre.field-half, pre.field+half, points),
                                         window, 'field_optimize')
-        pre.field = best_field
-        t, i, q, path = _trace(session, pre, 'before_length')
-        best_score = _score(t, i, q, window)
-        length_trials = []
-        power_limited = (best_db == low and len(scores) > 1
-                         and scores[low] > scores[sorted(scores)[1]] * (1 + improvement))
-        if length_range is not None and power_limited:
-            if not pulse_map or pulse_map == 'none':
-                raise ValueError('length search requires pulse_map with explicit pi/pi2 roles')
-            lo, hi = map(parse_time_ns, length_range)
-            indices = {int(name[1:])-1: role for name, role in pulse_map.items()}
-            active = {i for i, s in enumerate(pre.slots[1:], 1) if s.active}
-            if set(indices) != active or len(active) != 2 or set(indices.values()) != {'pi', 'pi2'}:
-                raise ValueError('length search requires an explicit two-pulse pi2/pi echo map')
-            p2 = next(i for i, role in indices.items() if role == 'pi2')
-            pi = next(i for i, role in indices.items() if role == 'pi')
-            original = copy.deepcopy(pre)
-            base_length = original.slots[p2].length
-            if lo < base_length:
-                raise ValueError('insufficient-power search may only lengthen the pulses')
-            for length in np.unique([snapshot._snap(x, pre.awg_grid)
-                                     for x in np.linspace(lo, hi, length_points)]):
-                candidate = copy.deepcopy(original)
-                factor = length / base_length
-                for idx in active:
-                    candidate.slots[idx].length = snapshot._snap(original.slots[idx].length * factor,
-                                                                 pre.awg_grid)
-                shift2 = (original.slots[p2].length-candidate.slots[p2].length) / 2
-                shiftpi = (original.slots[pi].length-candidate.slots[pi].length) / 2
-                for idx, shift in ((p2, shift2), (pi, shiftpi)):
-                    candidate.slots[idx].start = snapshot._snap(original.slots[idx].start+shift,
-                                                                pre.awg_grid)
-                offset = max(0, -min(candidate.slots[idx].start for idx in active))
-                for s in candidate.slots:
-                    if s.active:
-                        s.start += offset
-                _covered(session, candidate)
-                protection_end_ns(snapshot.build_worker_args(copy.deepcopy(candidate), exp_name='LengthCheck'))
-                t, i, q, path = _trace(session, candidate, 'length_optimize')
-                candidate_window = _window(t, i, q, parse_time_ns(search_from),
-                                           parse_time_ns(min_width), session.test)
-                score = _score(t, i, q, candidate_window)
-                length_trials.append({'pi2_length_ns': float(length), 'score': score, 'data_file': path})
-                if score > best_score * (1 + improvement):
-                    pre, window, best_score = candidate, candidate_window, score
-        bridge_set(session, attenuation_db=best_db)
         pre.field = best_field
         t, i, q, path = _trace(session, pre, 'optimized_echo_confirm')
         confirmed = _window(t, i, q, parse_time_ns(search_from), parse_time_ns(min_width), session.test)
@@ -508,9 +533,10 @@ def maximize_echo(session, preset, rv_range, field_span='10 G', points=21,
         session.state['field'] = f'{best_field} G'
         _remember_preset(session, pre)
         session.stage_state('echo_window', confirmed)
-        result = {'attenuation_db': best_db, 'field_g': best_field, 'rv_trials': trials,
-                  'field_sweep': field_sweep, 'length_trials': length_trials,
-                  'power_limited': power_limited, 'data_file': path, 'canned': session.test}
+        result = {'attenuation_db': float(attenuation_db), 'field_g': best_field,
+                  'pi2_amplitude': best_a, 'pi_amplitude': round(2 * best_a, 1),
+                  'amplitude_trials': trials, 'field_sweep': field_sweep,
+                  'data_file': path, 'canned': session.test}
         session.stage_state('preliminary_optimum', result)
         return result, []
     except KeyboardInterrupt:
@@ -534,19 +560,94 @@ def _write_preset(pre, destination):
         lines[idx] = lines[idx].split(':  ')[0] + ':  ' + str(getattr(pre, attr))
     lines = lines[:39] + [f'Amplitude Step:  {pre.step_ampl}', f'Cycles:  {pre.cycles}',
                          f'Save Each Cycle:  {2 * pre.save_each}', f'AWG grid:  {pre.awg_grid}']
+    if Path(destination).exists():
+        staged = Path(destination).with_suffix('.tmp')
+        staged.write_text('\n'.join(lines) + '\n')
+        os.replace(staged, destination)
+        return
     with Path(destination).open('x') as output:
         output.write('\n'.join(lines) + '\n')
 
 
-def save_presets(session, preset, calibration_preset, field_preset):
+def apply_calibration(session, preset, pulse_map=None, destination=None):
+    """Write the session's tuning into a preset file so the file alone can drive a later run:
+    calibrated amplitudes, zero-order phase, echo window and field."""
+    pre = snapshot.load_preset(preset)
+    mapping = None if not pulse_map or pulse_map == 'none' else dict(pulse_map)
+    patched = tune.apply_calibration(session, pre, mapping)
+    if patched is None:
+        raise ValueError('no pi_calibration result in the session (run tune.pi_calibration first)')
+    if session.state.get('auto_phase'):
+        pre.zero_order_deg = session.state['auto_phase']['zero_order_deg']
+    if session.state.get('echo_window'):
+        pre.win_left_ns = session.state['echo_window']['win_left_ns']
+        pre.win_right_ns = session.state['echo_window']['win_right_ns']
+    if session.state.get('field'):
+        pre.field = parse_field_g(session.state['field'])
+    executor.run_worker(snapshot.build_worker_args(copy.deepcopy(pre), exp_name='ApplyCheck'),
+                        pre.sweep_type, script_test=True)
+    target = Path(destination) if destination else Path(preset)
+    result = {'preset': str(preset), 'written': str(target), 'patched': patched,
+              'zero_order_deg': pre.zero_order_deg, 'field_g': pre.field,
+              'window_ns': [pre.win_left_ns, pre.win_right_ns]}
+    if session.test:
+        return {**result, 'canned': True}, []
+    target.parent.mkdir(parents=True, exist_ok=True)
+    _write_preset(pre, target)
+    return result, []
+
+
+def _scale_calibration(cal, pre, length_ns):
+    """Fit the amplitude-calibration preset to the tuned echo: the swept (Rabi) pulse becomes a
+    SINE of the fine target length, and the detection pair takes the preliminary pulses
+    (lower preset amplitude <- smaller tuned area)."""
+    tuned = sorted(((s.length * s.coef / 100 * tune._slot_area(s, pre.awg_grid), s)
+                    for s in pre.slots[1:] if s.active), key=lambda item: item[0])
+    pi_area, pi_slot = tuned[-1]
+    swept = tune._swept_slot(cal, 'amplitude')
+    sweep_hi = cal.slots[swept].coef + (cal.points - 1) * cal.step_ampl
+    cal.slots[swept].typ, cal.slots[swept].sigma, cal.slots[swept].length = 'SINE', 0.0, length_ns
+    notes = []
+    expected = 100 * pi_area / length_ns
+    if expected > sweep_hi:
+        notes.append(f'amplitude sweep ends at {sweep_hi:g} % but pi on a {length_ns:g} ns pulse is '
+                     f'expected near {expected:.0f} %; the calibration will rail unless power is raised')
+    pair = sorted((s for i, s in enumerate(cal.slots) if i > 0 and i != swept and s.active),
+                  key=lambda s: s.coef)
+    for dst, (_, src) in zip(pair, tuned[-len(pair):]):
+        dst.typ, dst.length, dst.sigma, dst.coef = src.typ, src.length, src.sigma, src.coef
+    return notes
+
+
+def _at_length(pre, length_ns):
+    """Copy of the tuned echo with every MW pulse at length_ns and linearly rescaled amplitudes
+    as placeholders; the fine calibration replaces the amplitudes when the copy is used."""
+    out = copy.deepcopy(pre)
+    for s in out.slots[1:]:
+        if s.active:
+            s.coef = min(100.0, round(s.coef * s.length / length_ns, 1))
+            s.length = length_ns
+    return out
+
+
+def save_presets(session, preset, calibration_preset, field_preset,
+                 field_span=None, field_points=200, calibration_length=None, publish_dir=None):
     """Export new preset copies and a YAML protocol restoring bridge settings."""
     import yaml
     pre = tune.load_tuned_preset(session, preset)
     if not session.state.get('preliminary_optimum'):
         raise PreliminaryAbort('run tune.maximize_echo before saving the handoff')
+    tuned_length = max(s.length for s in pre.slots[1:] if s.active)
+    cal_length = tuned_length if calibration_length is None else snapshot._snap(
+        parse_time_ns(calibration_length), pre.awg_grid)
+    if cal_length > session.state['ringing_check']['max_length_ns']:
+        raise ValueError('calibration_length exceeds the ringing-tested pulse length')
+    echo_cal = _at_length(pre, cal_length)
     field_pre = _sine_preset(field_preset)
     field_pre.awg_grid = pre.awg_grid
     cal = snapshot.load_preset(calibration_preset)
+    for note in _scale_calibration(cal, pre, cal_length):
+        session.log(f'      calibration preset: {note}')
     freq = int(_detection_if_mhz(pre))
     for target in (field_pre, cal):
         target.field = pre.field
@@ -556,7 +657,7 @@ def save_presets(session, preset, calibration_preset, field_preset):
         for s in target.slots[1:]:
             if s.active:
                 s.freq = freq
-    active = [s for s in pre.slots[1:] if s.active]
+    active = [s for s in echo_cal.slots[1:] if s.active]
     target_active = [s for s in field_pre.slots[1:] if s.active]
     if len(active) != len(target_active):
         raise ValueError('field preset must have the same echo-pulse count as the tuned preset')
@@ -564,38 +665,65 @@ def save_presets(session, preset, calibration_preset, field_preset):
         dst.start, dst.length, dst.coef = src.start, src.length, src.coef
     field_pre.slots[0].start = pre.slots[0].start
     field_pre.slots[0].length = pre.slots[0].length
-    bounds = session.state['preliminary_optimum']['field_sweep']['fields_g']
-    field_pre.start_field, field_pre.end_field = bounds[0], bounds[-1]
-    field_pre.step_field = (bounds[-1] - bounds[0]) / (len(bounds) - 1)
-    for target in (pre, field_pre):
+    if field_span is None:
+        searched = session.state['preliminary_echo']['sweep']['fields_g']
+        half = (searched[-1] - searched[0]) / 2
+    else:
+        half = parse_field_g(field_span) / 2
+    if pre.field - half < 0:
+        raise ValueError('EDFS span extends below zero field')
+    field_pre.start_field, field_pre.end_field = pre.field - half, pre.field + half
+    field_pre.step_field = 2 * half / (field_points - 1)
+    for target in (pre, echo_cal, field_pre):
         target.win_left_ns = session.state['echo_window']['win_left_ns']
         target.win_right_ns = session.state['echo_window']['win_right_ns']
-    for target in (pre, cal, field_pre):
+    exports = (pre, cal, field_pre, echo_cal)
+    for target in exports:
         wa = snapshot.build_worker_args(copy.deepcopy(target), exp_name='HandoffCheck')
         executor.run_worker(wa, target.sweep_type, script_test=True)
-    names = ('echo.phase_awg', 'calibration.phase_awg', 'field.phase_awg')
+    names = ('echo.phase_awg', 'calibration.phase_awg', 'field.phase_awg', 'echo_cal.phase_awg')
+    roles = tune._infer_cal_map(pre)
     steps = [
         {'bridge.set': dict(session.state['bridge'])},
         {'tune.echo_window': {'preset': names[0]}},
         {'tune.auto_phase': {'preset': names[0]}},
         {'tune.pi_calibration': {'preset': names[1], 'mode': 'amplitude'}},
-        {'field.edfs': {'preset': names[2], 'range': [f'{field_pre.start_field} G', f'{field_pre.end_field} G']}},
-        {'tune.echo_window': {'preset': names[0]}},
-        {'tune.auto_phase': {'preset': names[0]}},
+        {'tune.apply_calibration': {'preset': names[2], 'pulse_map': roles}},
+        {'tune.apply_calibration': {'preset': names[3], 'pulse_map': roles}},
+        {'field.edfs': {'preset': names[2], 'range': [f'{field_pre.start_field} G', f'{field_pre.end_field} G'],
+                        'points': int(field_points)}},
+        {'tune.echo_window': {'preset': names[3]}},
+        {'tune.auto_phase': {'preset': names[3]}},
+        {'tune.pi_calibration': {'preset': names[1], 'mode': 'amplitude'}},
+        {'tune.apply_calibration': {'preset': names[3], 'pulse_map': roles}},
     ]
-    steps.append({'tune.pi_calibration': {'preset': names[1], 'mode': 'amplitude'}})
     document = {'sample': session.sample, 'autonomy': 'supervised', 'steps': steps}
+    from atomize.epr_auto.protocol import load_protocol
     if session.test:
-        return {'presets': list(names), 'protocol': document, 'canned': True}, []
-    directory = session.run_dir / f'handoff_{session._save_counter+1:03d}'
-    directory.mkdir()
-    for name, target in zip(names, (pre, cal, field_pre)):
-        _write_preset(target, directory / name)
-        loaded = snapshot.load_preset(directory / name)
+        import tempfile
+        with tempfile.TemporaryDirectory() as scratch:
+            probe = Path(scratch) / 'fine_tuning.yaml'
+            probe.write_text(yaml.safe_dump(document, sort_keys=False))
+            for name in names:
+                (Path(scratch) / name).write_text(Path(pre.path).read_text())
+            load_protocol(probe)
+        return {'presets': list(names), 'protocol': document, 'calibration_length_ns': cal_length,
+                'canned': True}, []
+    archive = session.run_dir / f'handoff_{session._save_counter+1:03d}'
+    archive.mkdir()
+    publish = Path(publish_dir) if publish_dir else session.run_dir / 'tuned'
+    publish.mkdir(parents=True, exist_ok=True)
+    document['output'] = str(publish.parent / 'runs' / '{date}_fine')
+    for name, target in zip(names, exports):
+        for folder in (archive, publish):
+            _write_preset(target, folder / name)
+        loaded = snapshot.load_preset(publish / name)
         executor.run_worker(snapshot.build_worker_args(loaded, exp_name='SavedCheck'),
                             loaded.sweep_type, script_test=True)
-    path = directory / 'fine_tuning.yaml'
-    path.write_text(yaml.safe_dump(document, sort_keys=False))
-    from atomize.epr_auto.protocol import load_protocol
+    text = yaml.safe_dump(document, sort_keys=False)
+    (archive / 'fine_tuning.yaml').write_text(text)
+    path = publish / 'fine_tuning.yaml'
+    path.write_text(text)
     load_protocol(path)
-    return {'presets': [str(directory / n) for n in names], 'protocol': str(path)}, []
+    return {'presets': [str(publish / n) for n in names], 'protocol': str(path),
+            'archive': str(archive), 'calibration_length_ns': cal_length}, []

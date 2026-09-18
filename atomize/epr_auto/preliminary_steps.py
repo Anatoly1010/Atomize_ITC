@@ -1,7 +1,7 @@
 """Headless parameter schemas for the preliminary AWG steps."""
 import math
 from atomize.epr_auto.params import (
-    PresetFile, Float, Int, TimeStr, FieldStr, PairOf, CalMap,
+    PresetFile, Float, Int, TimeStr, FieldStr, PairOf, CalMap, Str, DirStr,
     ParamError, parse_time_ns, parse_field_g,
 )
 
@@ -11,25 +11,22 @@ def _check(params, ctx):
         raise ParamError('numeric parameters must be finite')
     if set(params) == {'attenuation_db', 'frequency_mhz'} and all(v is None for v in params.values()):
         raise ParamError('bridge.set needs attenuation_db and/or frequency_mhz')
-    for key in ('rv_range', 'length_range', 'region'):
+    for key in ('amplitude_range', 'region'):
         pair = params.get(key)
         if pair is None:
             continue
-        values = pair if key == 'rv_range' else list(map(parse_time_ns, pair))
+        values = pair if key == 'amplitude_range' else list(map(parse_time_ns, pair))
         if not all(math.isfinite(v) for v in values):
             raise ParamError(f'{key} bounds must be finite')
         if values[0] >= values[1]:
             raise ParamError(f'{key} must be increasing')
-    for db in list(params.get('rv_range', [])) + [params.get('coarse_step_db', 0)]:
-        if abs(db * 2 - round(db * 2)) > 1e-8:
-            raise ParamError('RV optimization settings must lie on the 0.5 dB grid')
-    if params.get('length_range') and (not params.get('pulse_map') or params['pulse_map'] == 'none'):
-        raise ParamError('length_range requires an explicit pulse_map')
-    for key in ('max_length', 'pulse_length', 'window', 'search_from', 'min_width'):
-        if key in params and not math.isfinite(parse_time_ns(params[key])):
+    if 'amplitude_range' in params and params.get('fine_step', 1) > params.get('coarse_step', 5):
+        raise ParamError('fine_step must not exceed coarse_step')
+    for key in ('max_length', 'pulse_length', 'calibration_length', 'window', 'search_from', 'min_width'):
+        if params.get(key) is not None and not math.isfinite(parse_time_ns(params[key])):
             raise ParamError(f'{key} must be finite')
-    for key in ('center', 'span', 'field_span'):
-        if key in params and not math.isfinite(parse_field_g(params[key])):
+    for key in ('center', 'span', 'field_span', 'field'):
+        if params.get(key) is not None and not math.isfinite(parse_field_g(params[key])):
             raise ParamError(f'{key} must be finite')
     if 'start_mhz' in params:
         if params['start_mhz'] >= params['end_mhz']:
@@ -62,6 +59,7 @@ def register_steps(register, run_primitive):
     bind('tune.ringing_check', 'Home RV; check magnitude at each of 60,40,20,10,5,0 dB; hard-stop above 100 mV', {
         'if_mhz': Int(min=1, max=280, default=50, help='built-in SINE IF; must match the later echo preset DETECTION IF'),
         'max_length': TimeStr(default='102.4 ns', help='longest MW pulse any preliminary stage may use'),
+        'field': FieldStr(default='100 G', help='nonresonant field for the ringing ladder'),
     })
     bind('bridge.set', 'Set RV and/or synthesizer with mechanical settling', {
         'attenuation_db': Float(min=0, max=60),
@@ -84,23 +82,35 @@ def register_steps(register, run_primitive):
     bind('tune.find_echo', 'Full-window magnitude field search, then resolve the echo window', {
         'preset': preset(), 'center': FieldStr(required=True), 'span': FieldStr(required=True),
         'points': Int(min=7, max=1001, default=41),
-        'attenuation_db': Float(min=5, max=10, default=10),
+        'attenuation_db': Float(min=0, max=60, default=10, help='fixed RV for the echo search and maximization'),
         'frequency_shift_mhz': Int(default=0, help='signed shift from resonator center, or current bridge frequency without a scan'),
+        'pulse_length': TimeStr(help='target pi pulse length; every echo pulse takes it (default: the preset\'s shortest MW pulse)'),
         **effort(), **echo_gate(),
     })
-    bind('tune.maximize_echo', 'Bounded RV (0.5 dB), field and optional mapped length optimization', {
-        'preset': preset(), 'rv_range': PairOf(Float(min=0, max=60), default=[0, 10]),
-        'coarse_step_db': Float(min=0.5, max=10, default=2),
+    bind('tune.maximize_echo', 'Fixed-RV amplitude scan (pi/2 at a, pi at 2a), then field refinement', {
+        'preset': preset(),
+        'attenuation_db': Float(min=0, max=60, help='fixed RV; defaults to the find_echo setting'),
+        'pulse_length': TimeStr(help='target pi pulse length for all echo pulses; defaults to the find_echo setting'),
+        'amplitude_range': PairOf(Float(min=1, max=50), default=[5, 50], help='pi/2 amplitude bounds in %'),
+        'coarse_step': Float(min=1, max=25, default=5),
+        'fine_step': Float(min=0.5, max=5, default=1),
         'field_span': FieldStr(default='10 G'),
         'points': Int(min=7, max=1001, default=21),
         'improvement': Float(min=0.001, max=1, default=0.05),
-        'length_range': PairOf(TimeStr(), help='pi/2 length bounds; mapped lengths scale together'),
-        'length_points': Int(min=2, max=101, default=5),
-        'pulse_map': CalMap(help='explicit two-pulse map, e.g. {P2: pi2, P3: pi}'),
+        'pulse_map': CalMap(help='pi2/pi roles, e.g. {P2: pi2, P3: pi}; inferred from the preset when omitted'),
         **effort(), **echo_gate(),
+    })
+    bind('tune.apply_calibration', 'Write the session calibration, zero-order phase, echo window and field into a preset file', {
+        'preset': PresetFile(required=True, help='preset file to rewrite in place, or to copy from when destination is given'),
+        'pulse_map': CalMap(help='pi2/pi roles; inferred from the preset when omitted'),
+        'destination': Str(help='absolute path of the file to write instead of rewriting the preset in place'),
     })
     bind('tune.save_presets', 'Export echo/calibration/field preset copies and a fine-tuning YAML handoff', {
         'preset': preset(),
         'calibration_preset': PresetFile(default='ampl_4s.phase_awg'),
         'field_preset': PresetFile(default='ed_4s.phase_awg'),
+        'field_span': FieldStr(help='EDFS span of the handoff, centered on the tuned field; default: the find_echo span'),
+        'field_points': Int(min=2, max=5001, default=200),
+        'calibration_length': TimeStr(help='target length of the Rabi pulse the fine calibration sweeps; default: the preliminary pulse length'),
+        'publish_dir': DirStr(default='tuned', help='where the handoff (fine_tuning.yaml and its presets) is published; the run directory keeps an archive copy'),
     })

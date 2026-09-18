@@ -227,6 +227,18 @@ class CalMap(Param):
         return out
 
 
+class DirStr(Param):
+    typename = 'directory path (relative to the protocol file)'
+
+    def validate(self, value, ctx):
+        if not isinstance(value, str) or not value.strip():
+            raise ParamError(f'expected a directory path, got {value!r}')
+        path = Path(value).expanduser()
+        if not path.is_absolute():
+            path = Path(ctx['protocol_dir']) / path
+        return str(path.resolve())
+
+
 class PresetFile(Param):
     """A pulse-sequence preset. Returns the resolved absolute path.
 

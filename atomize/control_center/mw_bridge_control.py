@@ -723,7 +723,9 @@ class MainWindow(QMainWindow):
         #self.telemetry_text.appendPlainText( 'Rotary Vane: ' + str( self.curr_dB ) + ' dB')
 
         self.prev_dB = self.curr_dB
+        self._record_vane()
 
+    def _record_vane(self):
         try:
             with open(self.path_status_file, 'r', encoding = 'utf-8') as f:
                 lines = f.readlines()
@@ -796,6 +798,7 @@ class MainWindow(QMainWindow):
         
         self.curr_dB = 60
         self.prev_dB = 60
+        self._record_vane()
 
         #self.telemetry_text.appendPlainText( 'Initialization done' )
     
@@ -823,6 +826,7 @@ class MainWindow(QMainWindow):
         
         self.curr_dB = 60
         self.prev_dB = 60
+        self._record_vane()
 
     def turn_off(self):
         """
