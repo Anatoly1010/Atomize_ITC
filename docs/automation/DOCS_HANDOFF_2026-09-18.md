@@ -47,7 +47,9 @@ green while data flows; no dot after the source disconnects. Tooltip:
 
 ## 4. Siblings
 
-The grey-dot change is isolated in `atomize/main/main_window.py`; apply it to
-the other Atomize variants with
-`patches/2026-09-18_main_window_idle_plot_marks.patch` (see
-`patches/README.md`).
+The grey-dot change is isolated in `atomize/main/main_window.py` in commit
+`ef16693`; carry it to the other Atomize variants from that commit:
+
+```bash
+git -C <Atomize_ITC> show ef16693 -- atomize/main/main_window.py | git -C <sibling> apply --3way
+```
