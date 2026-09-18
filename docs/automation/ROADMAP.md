@@ -65,13 +65,23 @@ The defense transient could out-peak the echo; `search_from: 200 ns` and `min_wi
 
 ### 2026-09-18 — complete-workflow implementation and trials
 
-Work expanded to preliminary preparation and its fine-tuning handoff, with logic improvements during the session. The operator confirms the final independent preliminary and fine-tuning runs worked without issues; the complete preliminary → fine-tuning → T2 run remains pending. The recorded measurements below retain their original pulse settings for context:
+Work expanded to preliminary preparation and its fine-tuning handoff, with logic improvements during the session. The operator confirms the final independent preliminary and fine-tuning runs worked without issues; the complete preliminary → fine-tuning → T2 run passed in the evening (below). The recorded measurements below retain their original pulse settings for context:
 
 - `preliminary_coal.yaml` completed 5/5 on run 3 (`runs/2026-09-18_preliminary_run3` in the coal bench directory). Ringing ladder at 100 G, synthesizer 9696 MHz / observation 9646 MHz, resonator section SNR 220 and centers within 1 MHz. The earlier RV-search design chose about 12 dB and 3437 G, with 32/64 ns pulses and window 241.6–400.8 ns.
 - Ringing peaks 17–68 mV at 494–496 ns were power-independent protection transients; no >100 mV stop occurred. Bridge coexistence worked with the window already open.
 - Fine-tuning trials exposed a dropped relative move during Limit homing and a calibration preset whose detection pair assumed more B1. Fixes included full Limit travel timing, recorded-position adoption, reading record age before lock writes, and scaling export to the preliminary pair.
 - Run 5 and its intermediate handoff worked at 4 dB, 9696 MHz and 3436.5 G. The 32/64 ns pair used 35/70 % amplitudes. Fine calibration gave π 55.8 % / π/2 28.0 %, ratio 1.99; EDFS over 3376–3496 G found 3435.6 G with FWHM 15.7 G; repeat π was 55.2 %, ratio 1.98.
 - The design was then corrected to equal-length echo pulses at `a/2a`, with a separate Rabi target, four exported presets and explicit calibration writes. **The final combined preliminary → fine-tuning → T2 run remains pending.** The earlier 32/64 ns pair at `a/2a` had a fourfold area ratio; its numerical results describe that earlier setting, not the corrected equal-length pair.
+
+**Evening: the complete chain passed.** `~/experimental_data/Melnikov/2026_09_18_coal_auto/` holds `preliminary.yaml` → `tuned/fine_tuning.yaml` → `t2.yaml`, run in that order with the final logic (`runs/2026-09-18_preliminary_run3`, `runs/2026-09-18_fine_run4`, `runs/2026-09-18_t2`, 17:37–17:53):
+
+- Preliminary: ladder 45–76 mV at 100 G; resonator 9692 MHz (4 ns window, SNR ~155, shifted windows within 2 MHz); echo at 3432 G, 4 dB, 64 ns pair; amplitude maximum 20/40 %, field refinement 3430.5 G; `calibration_length: 38.4 ns` exported.
+- Fine: Rabi 38.4 ns gave π 90.0 % then 89.4 % (ratio 2.05/2.06), EDFS 3435.6 G with FWHM 18 G and 1–3 % edges over 3372.5–3492.5 G; final `echo_cal.phase_awg` carries 38.4 ns pulses at 43.4/89.4 %, zero order 54°, window 227.6–338 ns, field 3435.63 G.
+- T2 on that preset (`window: preset`, `apply_cal: none`, 200 points, 2 scans, 44 s): stretched exponential T2 = 208 ns, β 0.99, echo SNR 19, ΔAICc/n 4.5 on the absolute 2τ origin. No manual comparison run was made.
+
+Fixes during the evening: the resonator selector searched the trailing-edge peak from 12 ns before the pulse end and picked the reflected-pulse plateau when it exceeded the ringing (rejected an acceptable scan as "window touches the search boundary"); it now searches after the nominal pulse end. `tune.ringing_check` gained `done: true` for same-day reruns and its `max_length` became `pulse_length`: the ladder no longer limits later pulse lengths, only the IF and DAC amplitudes carry forward. A hand edit of `tuned/calibration.phase_awg` only changes the Rabi pulse (fine runs 1–3 transferred a 38.4 ns calibration onto 64 ns pairs by the length ratio); the experiment length must go through `calibration_length` and a preliminary rerun.
+
+Next, agreed the same evening and written up in the preliminary plan ("Planned next"): a strong-sample RV approach for `tune.find_echo` with a 150 mV receiver limit and stepwise VA1/VA2 escalation, a `tune.video_attenuation` step before experiments, and an operator `rep_rate` (10 kHz cap) on the preliminary steps with `auto` from `tune.rep_rate` as a follow-on.
 
 The 10 G refinement span clipped the EDFS line, so the handoff now uses the original search span. Narrow 2 ns resonator windows showed 4–9 % single-frequency dropouts; the recommended window is 4 ns with stability comparisons shifted by 1 ns and 2 ns. Worker stdout now goes to the run's `worker_stdout.log`.
 

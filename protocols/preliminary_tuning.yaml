@@ -8,13 +8,18 @@ steps:
   # Built-in sequences; both IF values must match the later echo preset.
   - tune.ringing_check:
       if_mhz: 50
-      max_length: 102.4 ns
+      pulse_length: 102.4 ns
+  # Optional:
+  #   done: true
   # Optional: omit this step to keep the current synthesizer frequency.
   - tune.resonator:
       if_mhz: 50
       start_mhz: 9200
       end_mhz: 9600
       step_mhz: 1
+  # Optional: an absolute synthesizer frequency instead of the resonator scan.
+  # - bridge.set:
+  #     frequency_mhz: 9440
   - tune.find_echo:
       preset: hahn_echo_4s.phase_awg
       center: 3445 G

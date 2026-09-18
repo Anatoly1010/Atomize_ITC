@@ -1,13 +1,13 @@
 # Hardware validation checklist
 
-Updated 2026-09-18. There were two hardware sessions: **11 September tested fine tuning**; **18 September worked toward the complete preliminary → fine-tuning → experiment workflow**. The final independent preliminary and fine-tuning runs worked without issues. The logic improved on 18 September; the final combined preliminary → fine-tuning → T2 run remains pending. Numerical results and artifact locations are recorded in [ROADMAP.md](ROADMAP.md); current preliminary behavior is in [PRELIMINARY_TUNING_PLAN.md](PRELIMINARY_TUNING_PLAN.md).
+Updated 2026-09-18. There were two hardware sessions: **11 September tested fine tuning**; **18 September worked toward the complete preliminary → fine-tuning → experiment workflow**. The final independent preliminary and fine-tuning runs worked without issues. The logic improved on 18 September, and the final combined preliminary → fine-tuning → T2 run passed that evening. Numerical results and artifact locations are recorded in [ROADMAP.md](ROADMAP.md); current preliminary behavior is in [PRELIMINARY_TUNING_PLAN.md](PRELIMINARY_TUNING_PLAN.md).
 
 ## What has been exercised
 
 | Session | Recorded hardware evidence | Limit of that evidence |
 | --- | --- | --- |
 | 2026-09-11, coal | Auto-phase round trip, accumulating echo window, amplitude calibration and high-rail detection, explicit EDFS, repeated fine tuning and supporting T2 checks. | Fine-tuning session only; not preliminary preparation or the final three-run design. |
-| 2026-09-18, coal | Preliminary and fine tuning each worked independently without issues; logic was improved during the session. Recorded runs include 5/5 preliminary completion and fine tuning through EDFS/repeated calibration. Normal bridge coexistence with the window already open. | The complete preliminary → fine-tuning → T2 run with the final logic is pending; historical numerical results retain the pulse settings used at the time. |
+| 2026-09-18, coal | Preliminary and fine tuning each worked independently without issues; logic was improved during the session. Recorded runs include 5/5 preliminary completion and fine tuning through EDFS/repeated calibration. Normal bridge coexistence with the window already open. | The evening chain (`preliminary_run3` → `fine_run4` → `t2`) is the acceptance evidence below; earlier numerical results retain the pulse settings used at the time. |
 
 GUI launcher dummy-data checks and operator dry-run Stop passed. Do not treat those as live cancellation, Windows launcher, or FPGA recovery validation. The 100 mV ringing stop never triggered in the recorded hardware sessions.
 
@@ -31,16 +31,16 @@ A protocol names `.phase_awg` files; it does not define pulse geometry. Explicit
 
 ## Next: the final three-run workflow
 
-Use `~/experimental_data/Melnikov/2026_09_18_coal_auto/` with `preliminary.yaml`, the generated `tuned/fine_tuning.yaml`, and `t2.yaml`. The unchecked items below are acceptance checks for this combined run, not claims that preliminary or fine tuning have never worked independently.
+Use `~/experimental_data/Melnikov/2026_09_18_coal_auto/` with `preliminary.yaml`, the generated `tuned/fine_tuning.yaml`, and `t2.yaml`. Ticked on 2026-09-18 from the evening chain (`runs/2026-09-18_preliminary_run3`, `fine_run4`, `t2`).
 
-- [ ] **Preliminary stage in the combined run:** both microwave pulses use the chosen common length, π/2 amplitude `a` and π amplitude `2a`, at a fixed operator-selected RV. Verify geometry against the preset/scope, the amplitude maximum lies inside the configured range, field refinement reproduces the echo, and no RV/length search is performed.
-- [ ] **Ringing/frequency:** confirm nonresonant field, settled rung order 60/40/20/10/5/0 dB, magnitude limit and calculated protection start. Use `window: 4 ns` for resonator selection; verify centers from +1 ns/+2 ns windows and synthesizer-minus-IF bookkeeping.
-- [ ] **Export:** confirm `echo`, `calibration`, `field` and `echo_cal` presets plus `fine_tuning.yaml` under `tuned/`, with an archive in the preliminary run's `handoff_NNN/`. With `output: runs/{date}_preliminary` from the working folder, the archive is under that `runs/` child; do not confuse this with literal `output: runs/`.
-- [ ] **Fine stage in the combined run:** Rabi pulse uses `calibration_length`, its detection pair uses the preliminary pulses, and `tune.apply_calibration` writes measured amplitudes into both `field` and `echo_cal` before EDFS. Inspect the pulse roles and values in those files.
-- [ ] **EDFS:** use the original `find_echo` span recentered on the tuned field (or explicit export override), default 200 points; confirm the line is not clipped by the narrower preliminary refinement span.
-- [ ] **Closing calibration:** after repeated window/phase/calibration, confirm the final `echo_cal.phase_awg` contains measured amplitudes, zero-order phase, echo window and field. Fine-run data should be under `runs/<date>_fine`.
-- [ ] **Separate T2 run:** consume `tuned/echo_cal.phase_awg` with `window: preset` and `apply_cal: none`, while retaining/restoring RV and synthesizer settings. Confirm no calibration state from the previous process is needed; compare the stored sequence and fit with a matched manual run.
-- [ ] **Repeat-run records:** verify earlier manifests/CSVs remain intact and a fresh `_run2`/`_run3` directory is selected where required.
+- [x] **Preliminary stage in the combined run:** both microwave pulses use the chosen common length, π/2 amplitude `a` and π amplitude `2a`, at a fixed operator-selected RV. Verify geometry against the preset/scope, the amplitude maximum lies inside the configured range, field refinement reproduces the echo, and no RV/length search is performed.
+- [x] **Ringing/frequency:** confirm nonresonant field, settled rung order 60/40/20/10/5/0 dB, magnitude limit and calculated protection start. Use `window: 4 ns` for resonator selection; verify centers from +1 ns/+2 ns windows and synthesizer-minus-IF bookkeeping.
+- [x] **Export:** confirm `echo`, `calibration`, `field` and `echo_cal` presets plus `fine_tuning.yaml` under `tuned/`, with an archive in the preliminary run's `handoff_NNN/`. With `output: runs/{date}_preliminary` from the working folder, the archive is under that `runs/` child; do not confuse this with literal `output: runs/`.
+- [x] **Fine stage in the combined run:** Rabi pulse uses `calibration_length`, its detection pair uses the preliminary pulses, and `tune.apply_calibration` writes measured amplitudes into both `field` and `echo_cal` before EDFS. Inspect the pulse roles and values in those files.
+- [x] **EDFS:** use the original `find_echo` span recentered on the tuned field (or explicit export override), default 200 points; confirm the line is not clipped by the narrower preliminary refinement span.
+- [x] **Closing calibration:** after repeated window/phase/calibration, confirm the final `echo_cal.phase_awg` contains measured amplitudes, zero-order phase, echo window and field. Fine-run data should be under `runs/<date>_fine`.
+- [x] **Separate T2 run:** consume `tuned/echo_cal.phase_awg` with `window: preset` and `apply_cal: none`, while retaining/restoring RV and synthesizer settings. Confirm no calibration state from the previous process is needed. The comparison with a matched manual run was not made.
+- [x] **Repeat-run records:** verify earlier manifests/CSVs remain intact and a fresh `_run2`/`_run3` directory is selected where required.
 
 ## Live stop, bridge and failure checks
 
@@ -66,6 +66,7 @@ Use these when a change affects the corresponding behavior; do not repeat all ch
 
 Remaining commissioning:
 
+- [ ] **Strong-sample approach (planned, see the preliminary plan):** on a strong sample, confirm the rung order from 60 dB at the center field, VA1 rising in 2 dB steps before VA2, no rung opened while the level exceeds 150 mV, the single-move raise after a sweep excess, the amplitude-scan stage restart, and the handoff `bridge.set` restoring VA1/VA2. Then `tune.video_attenuation` before T2: opening stops one step short of the limit and the CSV header records the final values. Check `rep_rate` above the preset value reaches the exported presets and the 10 kHz cap rejects.
 - [ ] **Temperature:** `temp.set`/`temp.wait`, reached-setpoint state, in-band hold and a deliberately short timeout at a suitable setpoint. Verify locking and readout. A move beyond `rephase_delta` (default 1 K) invalidates receiver phase; it does not invalidate fine pulse calibration.
 - [ ] **Repetition rate:** compare `tune.rep_rate` with a hand-measured recovery curve/T1. Check quantitative versus sensitivity modes, no extrapolation above tested rates, and saturated/flat-grid cases.
 - [ ] **T1:** validate log-grid deduplication (`npoints` may be below requested points), period fit and calibrated pulse transfer. Compare the saved curve/fit with a matched manual acquisition.

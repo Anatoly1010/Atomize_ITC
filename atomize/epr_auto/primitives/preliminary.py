@@ -203,14 +203,16 @@ def ringing_peak(time_ns, i_mv, q_mv, protection_ns):
     return float(np.max(np.hypot(i[mask], q[mask])))
 
 
-def ringing_check(session, if_mhz=50, max_length='102.4 ns', field='100 G'):
-    """Run one settled RV ladder at a nonresonant field; every failed check hard-aborts the protocol."""
+def ringing_check(session, if_mhz=50, pulse_length='102.4 ns', field='100 G', done=False):
+    """Run one settled RV ladder at a nonresonant field; every failed check hard-aborts the protocol.
+    With done=True the operator declares an earlier pass at this IF: the preflight
+    still runs and the limits are recorded, but the RV, field and receiver are not touched."""
     if session.state.get('ringing_check'):
         _abort(session, 'ringing_check may run only once per preliminary run')
     try:
         pre = snapshot.load_preset(PRESET_DIR / 'ringing_check.phase_awg')
         freq = if_mhz
-        length = snapshot._snap(parse_time_ns(max_length), pre.awg_grid)
+        length = snapshot._snap(parse_time_ns(pulse_length), pre.awg_grid)
         pre.slots[0].start = pre.slots[1].start = 0.0
         pre.slots[1].coef = 100
         pre.slots[1].length = length
@@ -234,6 +236,14 @@ def ringing_check(session, if_mhz=50, max_length='102.4 ns', field='100 G'):
     except Exception as error:
         raise PreliminaryAbort(f'ringing preflight failed before hardware access: {error}') from error
     history = []
+    if done:
+        session.log(f'      ringing: declared done by the operator at IF {freq} MHz, {length} ns; no RV moves')
+        result = {'pulse_length_ns': length, 'if_mhz': freq, 'min_attenuation_db': 0, 'field_g': None,
+                  'protection_end_ns': end_ns, 'protection_ttl_end_ns': ttl_end_ns,
+                  'defense_reference_window_ns': [147.6, 155.2], 'measurements': [],
+                  'declared': True, 'canned': session.test, 'ampl_1': pre.ampl_1, 'ampl_2': pre.ampl_2}
+        session.stage_state('ringing_check', result)
+        return result, []
     try:
         _home(session)
         session.state['bridge']['frequency_mhz'] = int(_synth_mhz(session))
@@ -252,7 +262,7 @@ def ringing_check(session, if_mhz=50, max_length='102.4 ns', field='100 G'):
                 raise ValueError(f'ringing {peak:.2f} mV exceeds 100 mV at {db} dB')
     except BaseException as error:
         _abort(session, f'ringing check stopped: {error}')
-    result = {'max_length_ns': length, 'if_mhz': freq, 'min_attenuation_db': 0, 'field_g': pre.field,
+    result = {'pulse_length_ns': length, 'if_mhz': freq, 'min_attenuation_db': 0, 'field_g': pre.field,
               'protection_end_ns': end_ns, 'protection_ttl_end_ns': ttl_end_ns,
               'defense_reference_window_ns': [147.6, 155.2],
               'measurements': history, 'canned': session.test,
@@ -277,8 +287,6 @@ def resonator(session, if_mhz=50, start_mhz=9200, end_mhz=9600, step_mhz=1,
         if freq != checked['if_mhz']:
             raise PreliminaryAbort('resonator IF differs from the ringing-tested IF')
         length = snapshot._snap(parse_time_ns(pulse_length))
-        if length > checked['max_length_ns']:
-            raise PreliminaryAbort('resonator pulse exceeds the ringing-tested length')
         path = None if session.test else session.save_path('resonator')
         args = ('Resonator', length, start_mhz, 500, scans, end_mhz,
                 step_mhz, averages, freq)
@@ -328,9 +336,8 @@ def _covered(session, pre):
     if not checked:
         raise PreliminaryAbort('run tune.ringing_check before preliminary acquisition')
     if (_detection_if_mhz(pre) != checked['if_mhz']
-            or max(snapshot._snap(s.length, pre.awg_grid) for s in pre.slots[1:] if s.active) > checked['max_length_ns']
             or pre.ampl_1 > checked['ampl_1'] or pre.ampl_2 > checked['ampl_2']):
-        raise PreliminaryAbort('tuning preset exceeds the ringing-tested IF, length or DAC amplitude')
+        raise PreliminaryAbort('tuning preset exceeds the ringing-tested IF or DAC amplitude')
 
 
 def _echo_preset(session, path, scans, averages, pulse_length=None):
@@ -640,8 +647,6 @@ def save_presets(session, preset, calibration_preset, field_preset,
     tuned_length = max(s.length for s in pre.slots[1:] if s.active)
     cal_length = tuned_length if calibration_length is None else snapshot._snap(
         parse_time_ns(calibration_length), pre.awg_grid)
-    if cal_length > session.state['ringing_check']['max_length_ns']:
-        raise ValueError('calibration_length exceeds the ringing-tested pulse length')
     echo_cal = _at_length(pre, cal_length)
     field_pre = _sine_preset(field_preset)
     field_pre.awg_grid = pre.awg_grid

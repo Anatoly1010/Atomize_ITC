@@ -1,6 +1,6 @@
 # Preliminary tuning — current design and validation
 
-Updated 2026-09-18. Implemented in `atomize/epr_auto`. Hardware work comprised two sessions: 11 September tested fine tuning; 18 September improved the logic and worked toward the complete workflow. The final independent preliminary and fine-tuning runs worked without issues. The final combined preliminary → fine-tuning → T2 run is still pending. See [ROADMAP.md](ROADMAP.md) for dated evidence and [HARDWARE_CHECKLIST.md](HARDWARE_CHECKLIST.md) for remaining checks.
+Updated 2026-09-18. Implemented in `atomize/epr_auto`. Hardware work comprised two sessions: 11 September tested fine tuning; 18 September improved the logic and worked toward the complete workflow. The final independent preliminary and fine-tuning runs worked without issues, and the combined preliminary → fine-tuning → T2 run passed the same evening. See [ROADMAP.md](ROADMAP.md) for dated evidence and [HARDWARE_CHECKLIST.md](HARDWARE_CHECKLIST.md) for remaining checks.
 
 ## Purpose and sequence
 
@@ -28,9 +28,9 @@ Normal bridge coexistence was observed on hardware with the window opened first.
 
 ## 1. Receiver ringing check
 
-`tune.ringing_check` sets a nonresonant `field` (default 100 G), retains the current frequency, homes to 60 dB, and visits **60, 40, 20, 10, 5, 0 dB**. At each point: move → settle → acquire → check. Only a pass permits the next move; there is one ladder per preliminary run.
+`tune.ringing_check` sets a nonresonant `field` (default 100 G), retains the current frequency, homes to 60 dB, and visits **60, 40, 20, 10, 5, 0 dB**. At each point: move → settle → acquire → check. Only a pass permits the next move; there is one ladder per preliminary run. `done: true` declares an earlier pass at the same IF: the preflight and limit record still happen, but nothing moves and no trace is taken. Use it only for a rerun on the same day and setup.
 
-The internal `ringing_check.phase_awg` has DETECTION and one SINE pulse, both `[+x,+x]`, at the same IF. The default SINE length is 102.4 ns, DETECTION length 640 ns, repetition rate 500 Hz, with 10 acquisitions and one scan. Both DAC amplitudes are 260 mV. Validate the additive phase cycle on the built worker arguments before hardware access. Later pulses must remain within the tested length, DAC amplitude and IF limits; `max_length` must cover preliminary and calibration pulses.
+The internal `ringing_check.phase_awg` has DETECTION and one SINE pulse, both `[+x,+x]`, at the same IF. The default SINE length is 102.4 ns, DETECTION length 640 ns, repetition rate 500 Hz, with 10 acquisitions and one scan. Both DAC amplitudes are 260 mV. Validate the additive phase cycle on the built worker arguments before hardware access. Later pulses must remain within the tested DAC amplitude and IF; `pulse_length` sets the ladder pulse. Pulse length is not limited: the ringing after a pulse is set by the resonator ring-down, and the protection timing is derived from each run's own geometry.
 
 The limit is **100 mV on the maximum unsmoothed `hypot(I, Q)` after protection**. Demodulation rotates I/Q without changing this magnitude. Do not integrate, smooth, reject narrow transients or blank the onset. Missing, nonfinite or otherwise invalid traces fail the check. A failure or cancellation inside the ladder attempts the settled 60 dB return before aborting. Save traces, attenuation, maxima and calculated protection endpoints.
 
@@ -46,7 +46,7 @@ The GUI retains RECT mode and supports AWG mode with IF 1–280 MHz. Optional tr
 
 Selection procedure:
 
-1. Validate array shape, finite values, ordered frequency/time samples and units. Locate the pulse and trailing edge from the ensemble, accounting for trigger offset; allow an explicit `region`.
+1. Validate array shape, finite values, ordered frequency/time samples and units. Locate the pulse onset from the ensemble, accounting for trigger offset, and search the ringing peak only after the nominal pulse end, because the reflected-pulse plateau at off-resonance frequencies can exceed the ringing; an explicit `region` is searched in full.
 2. Subtract the pre-pulse baseline and determine the ringing polarity. Average one common early-ringing time window across all frequencies; never maximize over time independently for each frequency.
 3. Smooth modestly across frequency to locate a candidate while retaining the original section. Check noise, competitors, clipping, scan edges and centers from windows shifted by **1 ns and 2 ns**.
 4. Reject weak, competing, boundary, clipped or unstable peaks with diagnostic maps/sections. Do not expand the supplied frequency bounds automatically. Apply an accepted synthesizer value directly and invalidate phase, window and pulse calibration.
@@ -74,7 +74,7 @@ Sweep the supplied field center/span with the existing field worker, integrating
 2. A maximum at the upper bound aborts with `reduce attenuation`; the lower bound aborts with `increase attenuation`. The operator chooses a new fixed RV setting before rerunning.
 3. Refine the field in `field_span` (default 10 G, 21 points), restore the best combination and confirm the echo. A result that does not reproduce is rejected.
 
-Keep acquisition effort and scoring comparable, and stay within the ringing-tested power and pulse limits. The equal-length requirement corrects the intermediate 32/64 ns at `a/2a` design, which gave four times the pulse area for the nominal π pulse. Recorded results from that earlier pulse pair should not be presented as measurements of the corrected equal-length pair.
+Keep acquisition effort and scoring comparable, and stay within the ringing-tested power and DAC limits. The equal-length requirement corrects the intermediate 32/64 ns at `a/2a` design, which gave four times the pulse area for the nominal π pulse. Recorded results from that earlier pulse pair should not be presented as measurements of the corrected equal-length pair.
 
 ## 5. Export for fine tuning
 
@@ -87,7 +87,7 @@ Keep acquisition effort and scoring comparable, and stay within the ringing-test
 | `field.phase_awg` | Field sweep with both echo pulses at `calibration_length`. |
 | `echo_cal.phase_awg` | Equal-length echo pair for the second tuning pass and later experiments. |
 
-`calibration_length` defaults to the preliminary length and cannot exceed the ringing-tested maximum. Field/echo-cal amplitudes start as scaled placeholders; measured fine calibration replaces them. Exported presets are reloaded and their exact worker arguments pre-flighted.
+`calibration_length` defaults to the preliminary length. Field/echo-cal amplitudes start as scaled placeholders; measured fine calibration replaces them. Exported presets are reloaded and their exact worker arguments pre-flighted.
 
 The generated sequence is:
 
@@ -103,6 +103,20 @@ bridge.set
 The EDFS uses the original `find_echo` span recentered on the tuned field, with `field_points: 200`, unless `field_span` overrides it. The narrower preliminary refinement span clipped the coal line and is not the handoff default.
 
 The closing `tune.apply_calibration` writes pulse amplitudes, zero-order phase, echo window and field into `echo_cal.phase_awg`. It rewrites the named preset unless an absolute `destination` is supplied. A separate experiment uses `tuned/echo_cal.phase_awg`, `window: preset`, and `apply_cal: none`; retain or restore RV and synthesizer settings separately because the preset does not store them.
+
+## Planned next: strong-sample approach, video attenuation and repetition rate
+
+Agreed with the operator on 2026-09-18 (evening), not implemented. The motivation is samples with huge signals: the manual procedure sets the field at the expected line (g = 2) with RV at 60 dB, opens RV gradually toward the target while keeping the receiver level under **150 mV**, raises video attenuation VA1 when needed and VA2 when VA1 is not enough, and changes the field gradually when no signal appears. Automation mirrors that.
+
+Bridge facts (v2 Micran module used by the runner): VA1 is `mw_bridge_att_prm`, 0–30 dB in 2 dB steps; VA2 is `mw_bridge_att2_prm`, 0–31.5 dB in 0.5 dB steps; the getters return `'Video Attenuation N: X dB'`. No runner code touches them today, `bridge.param` records no video key, and the acquisition CSV header records both from the bridge. The level metric is the maximum `hypot(I, Q)` after the protection end, exactly the ringing-check metric; sweep workers return full per-point traces, so the check costs nothing extra.
+
+1. **`tune.find_echo` approach.** Home to 60 dB, set the field to `center`, keep VA1/VA2 as found. Open RV along the ladder rungs 60, 40, 20, 10, 5 and then `attenuation_db`, acquiring one echo trace at the center field per rung (preset averages, one scan, full phase cycle). Above 150 mV raise VA1 in 2 dB steps and re-acquire; at 30 dB continue with VA2 in 0.5 dB steps; both exhausted aborts with "signal too strong". Only a level under the limit permits the next rung. Then run the field sweep as today; if any sweep trace exceeds the limit (line away from the center), raise the video attenuation by the dB that brings that maximum to about 120 mV in one move, repeat the sweep, then resolve the window at the best field.
+2. **`tune.maximize_echo`.** Check every trial trace; on an excess raise the video attenuation by the computed amount and restart the current scan stage so all scores in a stage share one setting.
+3. **Carry-over.** VA1/VA2 live in session state and the manifest; `bridge.set` gains `video1_db` and `video2_db`, and `tune.save_presets` writes the found values into the handoff's opening `bridge.set`. The fine steps get no guard: nothing there exceeds the preliminary optimum.
+4. **`tune.video_attenuation`** (new step, placed before an experiment step): `preset` (the target sequence, all increments zeroed, lengths unchanged), `limit_mv` (150). Read VA1/VA2 from the bridge, acquire one trace, raise if needed; otherwise open VA2 first and then VA1 one step at a time while the measured maximum times the step factor stays under the limit, stopping at the first step that would exceed. Final values go to the manifest.
+5. **Repetition rate.** `rep_rate` in Hz on `tune.find_echo`, inherited by `tune.maximize_echo` (override allowed), capped at **10 kHz** in the schema (no hardware limit exists in the code today; the only cap is the 9.9 Hz Nd:YAG rule in the snapshot). `tune.save_presets` writes it into all four exported presets so the fine run and the experiment use it; the ringing ladder stays at 500 Hz. Follow-on: accept `rep_rate: auto` there, fed by `tune.rep_rate`, as the `exp.*` steps already do.
+
+Test mode keeps the canned traces and never changes VA1/VA2. Regression cases to add: rung order and the VA1→VA2 escalation with a synthetic strong trace, the single-move raise after a sweep excess, the stage restart in the amplitude scan, the handoff `bridge.set` values, the reopen step stopping one step short of the limit, and the 10 kHz schema cap.
 
 ## Verification and remaining work
 
@@ -121,7 +135,8 @@ python3 -m atomize.epr_auto.preset_hash
 
 - [x] Fine tuning exercised on 2026-09-11; preliminary and fine tuning each used independently without issues on 2026-09-18, as confirmed by the operator. The roadmap preserves recorded pulse settings and results.
 - [x] Public documentation and regenerated step reference committed and pushed in `atomize_docs` as `614a3f0`; strict build and the revised five-stage example dry run passed.
-- [ ] Final three-run day in `~/experimental_data/Melnikov/2026_09_18_coal_auto/`: equal-length preliminary pulses → current `tuned/fine_tuning.yaml` → `t2.yaml` using the saved calibration.
+- [x] Final three-run day in `~/experimental_data/Melnikov/2026_09_18_coal_auto/`: equal-length preliminary pulses → current `tuned/fine_tuning.yaml` → `t2.yaml` using the saved calibration (evening of 2026-09-18, see the roadmap).
 - [ ] Final publication layout, bridge record-age/no-move behavior, live cancellation and recovery scenarios; use the hardware checklist.
 - [ ] Ringing hard-stop and settled 60 dB return on hardware; no measured trace exceeded 100 mV in the recorded runs.
 - [ ] Identify the resonator timing-jitter source if it continues to affect selection.
+- [ ] Implement and commission the strong-sample approach, video attenuation step and `rep_rate` (section above).

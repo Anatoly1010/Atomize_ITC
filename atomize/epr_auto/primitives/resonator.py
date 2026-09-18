@@ -41,16 +41,22 @@ def select_frequency(time_ns, frequency_mhz, voltage_mv, pulse_ns=102.4,
     residual = v - np.median(v[:baseline_end], axis=0)
     noise = max(float(1.4826 * np.median(np.abs(
         residual[:baseline_end] - np.median(residual[:baseline_end], axis=0)))), 1e-9)
+    search_from = None
     if region_ns is None:
         end = t[onset] + pulse_ns
         region_ns = (end - max(10.0, pulse_ns * 0.12), end + max(10.0, pulse_ns * 0.12))
+        search_from = end
     lo, hi = map(float, region_ns)
     candidates = np.flatnonzero((t >= lo) & (t <= hi))
     if len(candidates) < 3:
         raise ValueError('trailing-edge region lies outside the recorded trace')
-    local = residual[candidates]
+    # The reflected-pulse plateau can exceed the ringing, so search only after the nominal end.
+    searched = candidates if search_from is None else candidates[t[candidates] >= search_from]
+    if len(searched) == 0:
+        raise ValueError('trailing-edge region lies outside the recorded trace')
+    local = residual[searched]
     flat_peak = np.unravel_index(np.argmax(np.abs(local)), local.shape)
-    peak_time = int(candidates[flat_peak[0]])
+    peak_time = int(searched[flat_peak[0]])
     polarity = 1 if local[flat_peak] >= 0 else -1
     width = max(1, round(window_ns / dt))
     smooth_n = max(1, round(precision_mhz / df))

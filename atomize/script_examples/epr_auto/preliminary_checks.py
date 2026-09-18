@@ -37,6 +37,10 @@ def selection_checks():
         assert result['accepted'], result['reasons']
         assert abs(result['frequency_mhz'] - 9440) <= 5
     assert not select_frequency(t, f, v, clip_mv=50)['accepted']
+    plateau = v.copy()
+    plateau[(t >= 50) & (t < 152.4)] += 60 * (1 - profile)[None, :]
+    result = select_frequency(t, f, plateau)
+    assert result['accepted'] and abs(result['frequency_mhz'] - 9440) <= 5, result['reasons']
     competing = v.copy()
     competing[tail] += 70 * np.exp(-(t[tail, None] - 152.4) / 5) * np.exp(-0.5*((f-9320)/15)**2)
     assert not select_frequency(t, f, competing)['accepted']
@@ -86,7 +90,7 @@ def ringing_checks():
     b = p.protection_end_ns(snapshot.build_worker_args(pre, exp_name='Check'))
     assert abs(b-a-32) < 0.01, (a,b)
 
-    def simulate(fail_at=None, if_mhz=50, interrupt=False):
+    def simulate(fail_at=None, if_mhz=50, interrupt=False, **kwargs):
         events = []
         session = EPRSession('check', 'autonomous', True)
         session.log = lambda msg: None
@@ -108,7 +112,7 @@ def ringing_checks():
         with patch.object(p, '_home', home), patch.object(p, 'bridge_set', move), \
                 patch.object(p, '_trace', trace), patch.object(p.executor, 'acquire_trace'):
             try:
-                p.ringing_check(session, if_mhz=if_mhz)
+                p.ringing_check(session, if_mhz=if_mhz, **kwargs)
             except PreliminaryAbort:
                 assert fail_at is not None
             else:
@@ -118,6 +122,7 @@ def ringing_checks():
     assert events == [('home',60)] + [item for db in (60,40,20,10,5,0)
                                       for item in [('move',db),('trace',db)]]
     assert simulate(if_mhz=80) == events
+    assert simulate(done=True) == []
     events = simulate(20)
     assert events[-1] == ('home',60) and ('move',10) not in events
     assert simulate(20, interrupt=True)[-1] == ('home',60)
@@ -130,11 +135,11 @@ def ringing_checks():
         else:
             raise AssertionError('invalid ringing passed')
     session = EPRSession('check', 'autonomous', True)
-    session.state['ringing_check'] = {'if_mhz': 50, 'max_length_ns': 102.4}
+    session.state['ringing_check'] = {'if_mhz': 50, 'pulse_length_ns': 102.4}
     from atomize.epr_auto.engine import resonator as engine
     with patch.object(engine, 'acquire') as acquire, patch.object(p, '_home') as home:
-        for params in ({'if_mhz': 80}, {'pulse_length': '103 ns'}):
-            session.state['ringing_check'] = {'if_mhz': 50, 'max_length_ns': 102.4}
+        for params in ({'if_mhz': 80},):
+            session.state['ringing_check'] = {'if_mhz': 50, 'pulse_length_ns': 102.4}
             try:
                 p.resonator(session, **params)
             except PreliminaryAbort:
@@ -142,7 +147,7 @@ def ringing_checks():
             else:
                 raise AssertionError('untested resonator settings passed')
         acquire.assert_not_called()
-        assert home.call_count == 2
+        assert home.call_count == 1
         session.state['ringing_check'] = {'if_mhz': 50}
         try:
             p.ringing_check(session)
@@ -150,7 +155,7 @@ def ringing_checks():
             pass
         else:
             raise AssertionError('duplicate ringing check passed')
-        assert home.call_count == 3
+        assert home.call_count == 2
     print('PASS: built-in cycles, explicit IF, pulse-derived timing, every-rung check and early abort')
 
 
@@ -256,7 +261,7 @@ def checkpoint_abort_checks():
             assert 'ringing_check' in session.state
     for name in ('resonator', 'find_echo', 'maximize_echo'):
         session = EPRSession('check', 'supervised', True)
-        session.state['ringing_check'] = {'if_mhz':50, 'max_length_ns':102.4}
+        session.state['ringing_check'] = {'if_mhz':50, 'pulse_length_ns':102.4}
         session.state['preliminary_echo'] = {'field_g':3445, 'attenuation_db':8.0}
         if name == 'resonator':
             from atomize.epr_auto.engine import resonator as engine
@@ -324,7 +329,7 @@ def optimization_checks():
     session = EPRSession('check', 'autonomous', False)
     session.log = lambda msg: None
     session.state.update({'echo_window': {'win_left_ns':240,'win_right_ns':360},
-                          'ringing_check': {'if_mhz':50,'max_length_ns':102.4,
+                          'ringing_check': {'if_mhz':50,'pulse_length_ns':102.4,
                                             'min_attenuation_db':0,'ampl_1':260,'ampl_2':260},
                           'preliminary_echo': {'field_g':3493, 'attenuation_db':8.0,
                                                'sweep': {'fields_g': [3400.0, 3500.0]}}})

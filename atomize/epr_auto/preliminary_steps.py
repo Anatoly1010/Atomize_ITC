@@ -1,7 +1,7 @@
 """Headless parameter schemas for the preliminary AWG steps."""
 import math
 from atomize.epr_auto.params import (
-    PresetFile, Float, Int, TimeStr, FieldStr, PairOf, CalMap, Str, DirStr,
+    PresetFile, Float, Int, Bool, TimeStr, FieldStr, PairOf, CalMap, Str, DirStr,
     ParamError, parse_time_ns, parse_field_g,
 )
 
@@ -22,7 +22,7 @@ def _check(params, ctx):
             raise ParamError(f'{key} must be increasing')
     if 'amplitude_range' in params and params.get('fine_step', 1) > params.get('coarse_step', 5):
         raise ParamError('fine_step must not exceed coarse_step')
-    for key in ('max_length', 'pulse_length', 'calibration_length', 'window', 'search_from', 'min_width'):
+    for key in ('pulse_length', 'calibration_length', 'window', 'search_from', 'min_width'):
         if params.get(key) is not None and not math.isfinite(parse_time_ns(params[key])):
             raise ParamError(f'{key} must be finite')
     for key in ('center', 'span', 'field_span', 'field'):
@@ -58,8 +58,9 @@ def register_steps(register, run_primitive):
 
     bind('tune.ringing_check', 'Home RV; check magnitude at each of 60,40,20,10,5,0 dB; hard-stop above 100 mV', {
         'if_mhz': Int(min=1, max=280, default=50, help='built-in SINE IF; must match the later echo preset DETECTION IF'),
-        'max_length': TimeStr(default='102.4 ns', help='longest MW pulse any preliminary stage may use'),
+        'pulse_length': TimeStr(default='102.4 ns', help='SINE pulse length of the ladder'),
         'field': FieldStr(default='100 G', help='nonresonant field for the ringing ladder'),
+        'done': Bool(default=False, help='the ladder already passed at this IF; record the limits, move nothing'),
     })
     bind('bridge.set', 'Set RV and/or synthesizer with mechanical settling', {
         'attenuation_db': Float(min=0, max=60),
