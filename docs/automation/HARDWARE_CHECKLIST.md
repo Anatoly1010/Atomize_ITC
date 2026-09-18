@@ -1,436 +1,89 @@
-# Hardware checklist — what can be run on the spectrometer TODAY
+# Hardware validation checklist
 
-Everything below is implemented and dry-run-verified but has never touched
-the real instrument (epr_auto Phases 2/3/5, and Phase 4 — items 8–10).
-Ordered so that each item builds confidence for the next; items 1–3 are
-safe to interleave with normal lab work. Written 2026-07-17; Phase 4 items
-added 2026-07-18.
+Updated 2026-09-18. There were two hardware sessions: **11 September tested fine tuning**; **18 September worked toward the complete preliminary → fine-tuning → experiment workflow**. The final independent preliminary and fine-tuning runs worked without issues. The logic improved on 18 September; the final combined preliminary → fine-tuning → T2 run remains pending. Numerical results and artifact locations are recorded in [ROADMAP.md](ROADMAP.md); current preliminary behavior is in [PRELIMINARY_TUNING_PLAN.md](PRELIMINARY_TUNING_PLAN.md).
 
-> 2026-09-18: the preliminary tuning protocol and its handoff are the
-> intended daily flow now (three runs from one folder, see
-> PRELIMINARY_TUNING_PLAN.md section 5 and ROADMAP.md "Pending hardware
-> validation"). The items below remain valid as single-step checks.
+## What has been exercised
 
-## Prerequisites (once per lab session)
+| Session | Recorded hardware evidence | Limit of that evidence |
+| --- | --- | --- |
+| 2026-09-11, coal | Auto-phase round trip, accumulating echo window, amplitude calibration and high-rail detection, explicit EDFS, repeated fine tuning and supporting T2 checks. | Fine-tuning session only; not preliminary preparation or the final three-run design. |
+| 2026-09-18, coal | Preliminary and fine tuning each worked independently without issues; logic was improved during the session. Recorded runs include 5/5 preliminary completion and fine tuning through EDFS/repeated calibration. Normal bridge coexistence with the window already open. | The complete preliminary → fine-tuning → T2 run with the final logic is pending; historical numerical results retain the pulse settings used at the time. |
 
-- Launch the main Atomize GUI first — the Worker child pushes live plots to
-  its LivePlot server; a real run dies without it. Keep it open.
-- Close the interactive field / temperature tools (or expect the runner to
-  refuse: it seizes the `field.param` / `temp.param` / `bridge.param` locks
-  as `epr_auto` and releases them in `finally` + `atexit`). The MW bridge
-  window may stay open: it never holds the lock and goes read-only while
-  the runner does.
-- Run from the repo root. The CLI chdirs to `libs/` itself (Insys driver
-  requirement) and pre-flights every step in test mode before touching
-  hardware.
-- Every acquisition lands in the run directory (default
-  `~/epr_data/epr_auto_<date>_<sample>/`) together with `manifest.json`
-  (per-step params/results/judges/attempts) and a copy of the protocol.
-- Any step can be wrapped in a one-step YAML; snippets below are complete
-  files. Start everything in `autonomy: supervised` (Enter to continue at
-  every step) until trusted.
+GUI launcher dummy-data checks and operator dry-run Stop passed. Do not treat those as live cancellation, Windows launcher, or FPGA recovery validation. The 100 mV ringing stop never triggered in the recorded hardware sessions.
+
+## Before a lab run
+
+- Keep the main Atomize GUI open for LivePlot. Open the MW bridge window and let its vane homing finish; it may remain open and should become read-only during automation.
+- Close the temperature-control tool and stop other acquisitions holding field/temperature/bridge locks. The standalone field-control window may remain open and should back off while locked. Preserve instrument settings and ownership; do not clear busy status to bypass FPGA reboot recovery.
+- Start supervised. Answer checkpoints in the main-window dialogs or a real terminal. Choose the sample's field/frequency bounds, fixed RV and pulse lengths before running; dry-run the exact protocol first.
+- Record protocol and preset versions, active device configuration, bridge settings, CSVs, `manifest.json`, the protocol copy and `worker_stdout.log`. Relative `output` resolves from the launch directory; `publish_dir` resolves from the preliminary YAML's directory.
+- Use **Stop protocol** or terminal `Ctrl-C` for the normal save/drain/abort path. A second interrupt requests bounded forced cleanup. Do not use terminal killing as a routine check; forced process loss needs an explicit board-recovery plan.
+
+Commands from the ITC checkout on Linux (`python` instead of `python3` on Windows for non-hardware checks):
 
 ```bash
-python -m atomize.epr_auto run <protocol>.yaml --test   # always dry-run first
-python -m atomize.epr_auto run <protocol>.yaml          # live
-python -m atomize.epr_auto steps                        # list all steps + params
-python -m atomize.epr_auto validate <file>.yaml         # check without running
+python3 -m atomize.epr_auto validate <protocol>.yaml
+python3 -m atomize.epr_auto run <protocol>.yaml --test
+python3 -m atomize.epr_auto run <protocol>.yaml
 ```
 
-## Presets — where the pulse sequence actually comes from
+A protocol names `.phase_awg` files; it does not define pulse geometry. Explicit preset names resolve beside the protocol, then in `atomize/epr_auto/presets/`, then the shipped experiments. Defaults use only the shipped directory. Use sample-specific copies and inspect the generated worker settings; `window`, phase, field and calibration can override stored values. Parameter defaults and full examples belong in the published epr_auto reference, not duplicated here.
 
-**A protocol never describes a pulse sequence.** It names a `.phase_awg`
-preset, and every pulse parameter — types, starts, lengths, amplitude
-coefficients, phase-cycle text, increments, rep rate, detection window — is
-read out of that file by `engine/snapshot.py:load_preset`, using the same
-line indices as the phasing GUI's `open_file()`. To change a sequence, edit
-or copy the preset; the YAML can only reach the scalars a step chooses to
-expose.
+## Next: the final three-run workflow
 
-The snippets below mostly write a step as a bare string:
+Use `~/experimental_data/Melnikov/2026_09_18_coal_auto/` with `preliminary.yaml`, the generated `tuned/fine_tuning.yaml`, and `t2.yaml`. The unchecked items below are acceptance checks for this combined run, not claims that preliminary or fine tuning have never worked independently.
 
-```yaml
-steps:
-  - tune.auto_phase          # <- no preset named, but one IS used
-```
+- [ ] **Preliminary stage in the combined run:** both microwave pulses use the chosen common length, π/2 amplitude `a` and π amplitude `2a`, at a fixed operator-selected RV. Verify geometry against the preset/scope, the amplitude maximum lies inside the configured range, field refinement reproduces the echo, and no RV/length search is performed.
+- [ ] **Ringing/frequency:** confirm nonresonant field, settled rung order 60/40/20/10/5/0 dB, magnitude limit and calculated protection start. Use `window: 4 ns` for resonator selection; verify centers from +1 ns/+2 ns windows and synthesizer-minus-IF bookkeeping.
+- [ ] **Export:** confirm `echo`, `calibration`, `field` and `echo_cal` presets plus `fine_tuning.yaml` under `tuned/`, with an archive in the preliminary run's `handoff_NNN/`. With `output: runs/{date}_preliminary` from the working folder, the archive is under that `runs/` child; do not confuse this with literal `output: runs/`.
+- [ ] **Fine stage in the combined run:** Rabi pulse uses `calibration_length`, its detection pair uses the preliminary pulses, and `tune.apply_calibration` writes measured amplitudes into both `field` and `echo_cal` before EDFS. Inspect the pulse roles and values in those files.
+- [ ] **EDFS:** use the original `find_echo` span recentered on the tuned field (or explicit export override), default 200 points; confirm the line is not clipped by the narrower preliminary refinement span.
+- [ ] **Closing calibration:** after repeated window/phase/calibration, confirm the final `echo_cal.phase_awg` contains measured amplitudes, zero-order phase, echo window and field. Fine-run data should be under `runs/<date>_fine`.
+- [ ] **Separate T2 run:** consume `tuned/echo_cal.phase_awg` with `window: preset` and `apply_cal: none`, while retaining/restoring RV and synthesizer settings. Confirm no calibration state from the previous process is needed; compare the stored sequence and fit with a matched manual run.
+- [ ] **Repeat-run records:** verify earlier manifests/CSVs remain intact and a fresh `_run2`/`_run3` directory is selected where required.
 
-That is the shorthand form (`protocol.py:_parse_step`); the loader fills in
-every omitted parameter from its spec default, so the line above is exactly
-equivalent to:
+## Live stop, bridge and failure checks
 
-```yaml
-steps:
-  - tune.auto_phase:
-      preset: hahn_echo_4s.phase_awg    # the default, filled in for you
-      points: 4
-      scans: 1
-```
+These are targeted checks; the ordinary successful workflow does not prove them.
 
-Use that mapping form (note the colon and the indented block) to name your
-own preset. Defaults per step:
+- [ ] **Bridge lifecycle:** test both startup orders, close while automation holds the lock, normal handback and abort. No queued setter, initialization or exit move should run while locked; widgets and driver position must resynchronize afterwards.
+- [ ] **Recorded move handling:** confirm the September fixes through the combined run, including the record-age handling, waiting for an in-flight move, and a same-setting `bridge.set` without an unnecessary 60 dB excursion. A stale runner bridge lock must take the recovery/homing path. Confirm Limit homing waits the full travel unless an existing 60 dB record accounts for it.
+- [ ] **Ringing failure:** exercise a controlled rejection without deliberately exposing the receiver to excess power. Confirm no next rung is commanded, the sequence stops, the settled 60 dB return is attempted, and the protocol hard-aborts despite retries/skip/foreach continuation. Record return failures as failures, never as successful homing.
+- [ ] **Cancellation:** during the ringing ladder, Stop must return RV to 60 dB. At a checkpoint or another step it must leave RV unchanged while saving/draining the worker and releasing owned locks.
+- [ ] **Launcher cleanup:** live normal Stop, bounded Force stop, interruption during save, duplicate launch/exit guards and relaunch. Verify partial CSV/manifest status and FPGA release; only the owner releases the board. Windows launcher checks remain separate and pending.
+- [ ] **Resonator rejection/stop:** confirm diagnostics for clipped/boundary/unstable scans and pulser cleanup/previous-frequency restoration on cancellation. Investigate narrow-window dropouts if they persist.
 
-| step | default preset |
-|---|---|
-| `tune.auto_phase` | `hahn_echo_4s.phase_awg` |
-| `tune.echo_window` | `hahn_echo_4s.phase_awg` |
-| `tune.power_for_length` | `rabi_echo_4s.phase_awg` |
-| `tune.pi_calibration` | `ampl_4s.phase_awg` (mode: amplitude) / `rabi_echo_4s.phase_awg` (mode: length) |
-| `field.edfs` | `ed_4s.phase_awg` |
-| `exp.t2` | `hahn_echo_4s.phase_awg` |
-| `exp.t1` | `inversion_recovery_echo_4s_log.phase_awg` |
+## Targeted tuning checks
 
-Rules (`params.py:PresetFile`, `primitives/tune.py:_build`):
+Use these when a change affects the corresponding behavior; do not repeat all checks for unrelated edits.
 
-- A bare name resolves against **your protocol's own directory first**, then
-  `atomize/epr_auto/presets/` (USER_PRESET_DIR), then
-  `atomize/control_center/experiments/`; an absolute path also works. A name
-  that resolves nowhere is a load-time error with a file:line, not a
-  surprise at the bench. (A step *default* preset resolves against the
-  shipped `experiments/` set only — see PresetFile.)
-- The preset's **Shift Offset** checkbox state (`IQ Correction:` line) no
-  longer matters: the automation always needs the demodulated 1-D mode, so
-  `_build` force-enables `iq_cor = 1` (with a log line) when the preset was
-  saved with the box off. The checkbox only affects interactive GUI runs.
-- `python -m atomize.epr_auto steps` prints every step's parameters and
-  defaults, and `validate` resolves each preset to its absolute path without
-  running anything. Use both before a bench session.
-- What runs is *not* the preset as saved: the step's own parameters
-  (`points`, `scans`, …) plus the session's calibrations override it —
-  `field.edfs` replaces the stored `Field:`, `tune.echo_window` replaces
-  `Window left/right` (consumed by exp.* via `window: auto`; `window:
-  preset` pins the stored values), `tune.auto_phase` replaces the
-  zero-order, and `tune.pi_calibration`'s result patches the exp.* pulse
-  amplitudes (`apply_cal`; `none` opts out). exp.t2 additionally re-anchors
-  the tau sweep (`tau_start`/`tau_step`) and exp.t1 the log axis
-  (`t_start`/`t_end`); both can override `rep_rate`. So the preset supplies
-  the pulse *geometry*; the run supplies the state.
-- `tune.auto_phase`, `tune.echo_window` and `field.edfs` now take `apply_cal`
-  too, with an omitted-means-if-available rule: omitted patches the preset
-  from the session's `tune.pi_calibration` result when one exists (and runs
-  the stored values when none does), `none` never patches, and an explicit
-  map like `{P2: pi2, P3: pi}` patches and errors when no calibration is
-  there — so a re-tune after a calibration measures with the calibrated
-  pulses, while the same steps run before it are untouched.
-- Choosing a preset per step is rarely about the experiment: `tune.auto_phase`
-  just needs an echo, so `hahn_echo_4s` serves. Override it only when that
-  sequence does not suit the sample — e.g. its fixed 288 ns τ is too long for
-  a short-Tm sample, so you copy the preset with a shorter τ and point at the
-  copy.
+| Check | Acceptance evidence |
+| --- | --- |
+| Auto-phase | Two passes leave a predominantly real echo and small residual phase; use the current 16-point default, not the retired four-point example. Record zero order and coherence. |
+| Echo window | Accumulating preview has no cycle-boundary stall/blank result; SNR improves with averaging. Window brackets the resolved echo, with `search_from: 200 ns` and `min_width: 20 ns` excluding the measured defense transient. Record FWHM, edges and trace. |
+| Amplitude calibration | Compare π/π2 with manual values and check rails, calibrated shape/area transfer and detection-pair scaling. Inspect the rewritten field/echo-cal arguments and preset reload in test mode. If `refine: true` is used, confirm repeat agreement. Fine calibration need not force a ratio of exactly 2. |
+| EDFS | Check line location and width in an explicit sample-appropriate range, then auto prediction/offset. The −7.5 G default is setup-specific; record `shift_g` when remeasuring. Exercise no-line escalation only with bounded fields and verify failure does not choose a noise maximum. |
 
-## 1. tune.auto_phase — first hardware contact (no moving parts)
+Remaining commissioning:
 
-Sets only the digitizer demod phase. Compare `zero_order_deg` with the
-value you would set by hand in the phasing tool.
+- [ ] **Temperature:** `temp.set`/`temp.wait`, reached-setpoint state, in-band hold and a deliberately short timeout at a suitable setpoint. Verify locking and readout. A move beyond `rephase_delta` (default 1 K) invalidates receiver phase; it does not invalidate fine pulse calibration.
+- [ ] **Repetition rate:** compare `tune.rep_rate` with a hand-measured recovery curve/T1. Check quantitative versus sensitivity modes, no extrapolation above tested rates, and saturated/flat-grid cases.
+- [ ] **T1:** validate log-grid deduplication (`npoints` may be below requested points), period fit and calibrated pulse transfer. Compare the saved curve/fit with a matched manual acquisition.
+- [ ] **T2/relaxation gate:** confirm the physical `2τ` axis after re-anchoring and fit on its absolute origin. Recheck the hard `relaxation_fit` criterion `dAICc/n >= 0.375` on a new real T1/T2 series; `echo_snr` is advisory for relaxation experiments. Record β, fitted time, score and data path.
+- [ ] **Duration limit:** choose `max_duration` below the projected run duration; confirm a downward-only scan limit and saved/fitted partial data.
+- [ ] **Adaptive SNR/series:** check `field.edfs target_snr` on a strong line and `foreach` T1/T2 over suitable fields. Strong signals should stop early, weak ones approach the scan ceiling; combined duration/SNR limits must never increase scans. Check loop tags and continuation after a controlled failed iteration, then run the same preset interactively as a GUI regression.
+- [ ] **Runner policies:** transient retry, manifest updates, notifications when configured, and an autonomous run without prompts. Verify interruption remains an abort and is never retried or continued by foreach.
 
-```yaml
-sample: hw_check
-autonomy: supervised
-steps:
-  - tune.auto_phase
-```
+The older `tune.power_for_length`/length-mode coarse-fallback route is implemented but outside the current daily workflow. Commission its SNR-gated moves, from-above settling, target convergence, length rails and fallback only if it is needed again. `protocols/tune_up.yaml` and `overnight_t2.yaml` remain examples of that older route, not evidence that the final three-run workflow has passed.
 
-Expect: `phase_coherence` PASS, echo mostly in I after a re-run
-(`phase_deg` near 0 on the second pass). Record: zero_order before/after.
+## Separate bench backlog
 
-Scope of one auto-phase (ARCHITECTURE.md 'Temperature rules'): the result is
-a property of the detection chain, not of the sequence — the same value
-serves T1, T2, ESEEM and DEER at a given (temperature, vane) state, so it is
-run once per state and *not* once per experiment. It does drift strongly with
-temperature (190° over 80–280 K on oTP), so a setpoint move beyond
-`rephase_delta` (default 1 K) drops it and the protocol must re-run
-`tune.auto_phase` after the new temperature settles. The fine calibration is
-not dropped — temperature does not move B₁.
+No later pass evidence was found for these inherited items; check their current implementation before scheduling a retest.
 
-## 2. tune.echo_window — NEW Phase 5, engine trace path (no moving parts)
+- [ ] Insys swComp hybrid wait/acquisition and parsing speedups: compare DEER scan timing and data. The old note claiming these were uncommitted is not a current status statement.
+- [ ] Live Edit round 8: AWG-start amplitude-gate tracking and N/B changes during live preview.
+- [ ] ESEEM Avg cumulative tau averaging and Inc2 cut/copy/paste/reset regression (`f5411fc`).
+- [ ] 0.8 ns AWG grid: TTL versus DAC at residual positions 0–3, moving echo shape, four-point residual flatness and GIM re-arm when the gate changes by one tick. Follow [AWG_FINE_STEP_PLAN.md](AWG_FINE_STEP_PLAN.md).
+- [ ] `points_plot` benchmark suite under `~/q/2026_07_06_insys_efficiency_auto/` (`run_benchmarks.py`).
 
-First hardware exercise of `executor.acquire_trace` (dig_on preview reused
-by the engine, accumulating mode). The 'Dig' plot in the GUI shows the
-preview live while the engine captures it.
-
-NOTE this doubles as the first-ever hardware use of dig_on's accumulating
-readout (the "L. mode" checkbox path, l_mode=1 → live_mode=0): the code
-audit says it reuses the everyday multi-scan exp accumulate machinery
-(per-cycle pack-counter reset, blocking per-cycle drain), but nobody has
-run it. Watch for: a stall at a cycle boundary (drain never satisfied), a
-NaN/blank 'Dig' frame becoming the result (guarded engine-side — would
-surface as 'preview ended without a captured trace'), or a trace whose SNR
-does NOT grow with `sweeps:` (accumulation not actually happening).
-Single-phase presets are rejected by the engine on purpose — the
-accumulating readout is only well-defined per phase cycle.
-
-```yaml
-sample: hw_check
-autonomy: supervised
-steps:
-  - tune.echo_window:
-      factor: 2.0
-      sweeps: 3
-```
-
-Expect: `win_left/right_ns` bracketing the echo you see in the phasing
-tool's preview; `echo_in_trace` + `echo_snr` PASS; trace CSV in the run
-dir. Cross-check: open the preset in the phasing GUI and eyeball the
-window against the echo. Record: center_ns, fwhm_ns, window, trace file.
-
-The peak search is gated (2026-09-11: the receiver defence transient, a
-few-sample spike ~150 ns into the trace, out-peaked the echo and the window
-came out 3.6 ns wide). `search_from` (default '200 ns') ignores the trace
-before that time and `min_width` (default '20 ns') rejects any candidate
-narrower than a real echo — the narrow one is masked out and the search
-continues on what is left; when nothing wider remains the step fails on
-`echo_in_trace` with the rejected candidates in the details. On this
-spectrometer the echo sits ~300 ns after the DETECTION start (a constant
-ADC/detection-chain delay, same as the shipped ampl_4s window 250–430 ns),
-so both defaults are comfortably clear of it. Raise `search_from` if a
-later transient appears; lower `min_width` only for a genuinely sharp echo.
-
-## 3. tune.pi_calibration (amplitude mode) — fine cal + detection pair
-
-```yaml
-sample: hw_check
-autonomy: supervised
-steps:
-  - tune.auto_phase
-  - tune.pi_calibration:
-      mode: amplitude
-      retries: 1
-      # refine: true        # second pass with the re-scaled detection pair
-```
-
-Expect: pi/pi2 within a few % of your manual values, ratio ≈ 2 (judge
-`pi_ratio_linearity`), `amplitude_rails` PASS, and the NEW
-`detection_pair` result key with the inverse-length-scaled pair
-amplitudes — sanity-check them against the preset's stored 9/18-style
-values. With `refine: true`: the second nutation should reproduce pi/pi2
-within the fit noise (this validates the amp-linearity scaling rule on
-hardware). Record: pi, pi2, ratio, detection_pair, both data files.
-
-## 4. field.edfs — explicit range first, then range: auto
-
-MOVES THE MAGNET. Explicit range (known sample) first:
-
-```yaml
-sample: hw_check
-autonomy: supervised
-steps:
-  - field.edfs:
-      range: [338 mT, 352 mT]
-      pick: max
-      checkpoint: true
-```
-
-Then the NEW auto search — this is the calibration-shift measurement run:
-
-```yaml
-sample: hw_check
-autonomy: supervised
-steps:
-  - field.edfs:
-      range: auto
-      g: 2.0023           # your sample's g
-      # offset: -7.5 G    # the default; re-measure with shift_g (below)
-      checkpoint: true
-```
-
-Expect: the line found inside the sweep; the result's **`shift_g` is the
-measured line-minus-predicted-center distance** (the magnet is not
-absolutely calibrated). The standing correction for this setup, −7.5 G
-(coal, 2026-09-11, 9680 MHz), is already the `offset:` default — re-measure
-it from `shift_g` and set `offset:` explicitly if the magnet or the sample
-changes. Also worth one deliberate failure: set `g` absurdly (e.g. 4.5) and
-check the one span-×2 escalation fires, the magnet is NOT moved afterwards,
-and the failure diagnosis ("flat everywhere" vs "weak line found") makes
-sense.
-
-## 5. temp.set / temp.wait — Lakeshore on
-
-```yaml
-sample: hw_check
-autonomy: supervised
-steps:
-  - temp.set:
-      setpoint: 80.0
-      heater_range: 5 W
-  - temp.wait:
-      band: 0.3
-      channels: B
-      timeout: 1800 s
-```
-
-Expect: same behavior as the temp_control "Set && Wait" button; an open
-temp_control window keeps showing live readings (the waiter mirrors into
-temp.param). Also check the timeout path: unreachable setpoint + short
-timeout → `temperature_band` FAIL → the step's on_fail policy fires.
-
-## 6. tune.power_for_length — coarse stage (MOVES THE ROTARY VANE)
-
-Most invasive single primitive; run only after 1–3 look right.
-`checkpoint: true` (default in tune_up.yaml) asks before the chain runs.
-
-```yaml
-sample: hw_check
-autonomy: supervised
-steps:
-  - tune.power_for_length:
-      target_length: 32 ns
-      amplitude: 95
-      checkpoint: true
-```
-
-Expect: converges within `max_iter: 4` (judge `pi_length_target`),
-from-above vane approach audible, reported (attenuation_db, pi_length)
-describing the final vane state. Record: iterations, dB trail from the
-log, final pi length.
-
-## 7. Full canonical chain + runner policies
-
-```bash
-python -m atomize.epr_auto run protocols/tune_up.yaml        # supervised-ish (checkpointed)
-```
-
-Runs power_for_length → edfs(auto) → echo_window → auto_phase →
-pi_calibration → field.set. While it runs, verify the Phase 3 machinery on
-real hardware:
-
-- `manifest.json` rewritten after every step; kill the terminal mid-run
-  once and check the manifest still reads consistently (status stays the
-  last written state, no truncation). NB a terminal kill delivers SIGHUP —
-  no Python unwinding in either process, so the worker's `pulser_close`
-  does NOT run: expect to power-cycle/recover the Insys board after this
-  test (Ctrl-C is the clean stop; it saves, closes the card and aborts).
-- `retries: 1` on pi_calibration: if a judge fails transiently, one retry.
-- Rail fallback: provoke by calibrating with a too-low held amplitude so
-  pi lands beyond the sweep (`rails: high`) → the runner should offer /
-  auto-run the coarse re-tune (+ auto_phase re-run), recorded in the
-  manifest as 'ok (rail fallback)' entries.
-- `notify: telegram` (needs bot token in main_config.ini): checkpoint /
-  finish / abort messages arrive.
-- Repeat once with `autonomy: autonomous` end-to-end: no prompts,
-  checkpoints auto-approved with notifications.
-
-## 8. exp.t2 — first real experiment on the engine path (Phase 4, NEW)
-
-Needs a phased detection chain: run after item 1 (or inside a tuned
-protocol). The magnet stays wherever the session put it.
-
-```yaml
-sample: hw_check
-autonomy: supervised
-steps:
-  - tune.auto_phase
-  - exp.t2:
-      tau_start: 300 ns
-      tau_step: 12 ns
-      points: 400
-      scans: 4
-      checkpoint: true
-```
-
-The sweep is the preset's own, re-anchored: every moving pulse shifts in
-the preset's increment ratio, so P3 lands at `tau_start` and DETECTION at
-its preset offset + 2×. The worker's saved time axis starts at the
-DETECTION start (`2·tau_start`) with the DETECTION increment (`2·tau_step`)
-as its step, so **the CSV time column IS the physical evolution time
-`2·tau`**. The T2 fit runs on this ABSOLUTE axis — it must NOT rebase to
-`x − x[0]`, because `x[0] = 2·tau_start` is a nonzero origin that, for a
-stretched exponential, does not fold into the amplitude (rebasing biased
-`t2`/`beta` 8–32% low for `beta ≠ 1`). First bench run: check the pulse
-geometry on the scope after re-anchoring, then compare the acquisition with
-a manual phasing-tool run of the same preset.
-
-Expect: `echo_snr` + `relaxation_fit` PASS. `relaxation_fit` gates on the
-PER-POINT evidence density dAICc/n ≥ 0.375 (N-invariant, so short or
-log-deduplicated sweeps are judged the same as the N~300–500 the 0.375 was
-calibrated to on the 2026-07-03 oTP campaign; equals the old absolute-150
-floor at n=400). `echo_snr` is ADVISORY here (it does not abort the step —
-`relaxation_fit` is the sole hard gate, so a noisy-but-valid decay is
-kept); `adj_r2`/`rmse`/`n`/`delta_aicc_per_pt` are informational in the
-manifest. Fitted `t2`/`beta` should match a manual Data-Treatment fit of
-the saved CSV exactly — Data Treatment fits the same absolute evolution-time
-axis (`a·exp(−(x/k)^β)+b`). If
-`tune.pi_calibration` ran earlier in the protocol, the pulse amplitudes
-are patched first (log line `apply_cal -> ...`; `apply_cal: none` opts
-out, an explicit map like `{P2: pi2, P3: pi}` overrides the inference).
-Record: t2, beta, dAICc score, data file.
-
-## 9. exp.t1 — Log Time sweep (Phase 4, NEW; mind rep_rate)
-
-```yaml
-sample: hw_check
-autonomy: supervised
-steps:
-  - tune.auto_phase
-  - exp.t1:
-      t_start: 500 ns
-      t_end: 2 ms
-      points: 300
-      scans: 4
-      rep_rate: 100        # the sweep must fit one repetition period
-      checkpoint: true
-```
-
-`t_start`/`t_end` map to the preset's Log Start/End (log10 ns); the worker
-grid-rounds and deduplicates the log axis, so **`npoints` in the result is
-expected below `points`** — not a bug. The step pre-checks that the
-sequence at `t_end` fits one repetition period and names the knob in the
-error; physically the period must also exceed ~5× the expected T1 (the
-preset's 480 Hz suits sub-ms T1 only). Fit: a − b·exp(−t/T1) with a
-characteristic-time initial guess (validated against the oTP campaign
-data). Bench cross-check: T1 vs the manual run at matched (T, field) —
-the 2026-07-03 campaign values are the reference. Record: t1, npoints,
-dAICc score, data file.
-
-## 10. max_duration + the overnight chain
-
-The scan_control policy's bench debut: give exp.t2 a `max_duration` about
-half the projected run time and watch the log line (`max_duration ...:
-projected N s over budget M s -> scan limit k of K`) followed by an early
-finish with the data acquired so far saved and fitted (the scan count only
-ever shrinks — 'SC<n>' ratchet). Then the full unattended chain:
-
-```bash
-python -m atomize.epr_auto run protocols/overnight_t2.yaml   # checkpointed
-```
-
-tune-up steps → exp.t2, with `manifest.json` carrying per-step
-params/judges/fit results. This is the Phase 4 exit criterion.
-
-## 11. foreach + target_snr — field series (Phase 6, NEW)
-
-```bash
-python -m atomize.epr_auto run protocols/field_series_t1t2.yaml   # checkpointed
-```
-
-Tune-once → foreach over 4 fields, T2 + T1 each, `target_snr: 10` with
-`scans: 48` as the ceiling. Bench checks:
-
-- CSV names carry the loop stamp (`NNN_t2_B_3318G.csv`); manifest entries
-  carry `loop: {var, value, index}`.
-- At the line max the log shows `target_snr 10: reached NN.N after scan k`
-  and an early stop after a FEW scans; at the 3000 G shoulder it runs to
-  (or near) the ceiling — compare against the operator's hand-adapted
-  6→46 range from the 2026-07 oTP campaign.
-- Deliberately mis-set one field (or unplug the BH-15) and confirm the
-  iteration records + the series CONTINUES to the next value
-  (`on_fail: continue`), then finishes.
-- With BOTH `target_snr` and `max_duration` set, confirm the scan count
-  only ever shrinks (shared downward ratchet — the log may show either
-  policy winning, never a raise).
-- GUI regression: launch the SAME preset from the phasing tool afterwards
-  and confirm normal behaviour (the ScanData path is opt-in; the GUI never
-  sets `scan_data_flag`).
-
-## Other pending bench items (outside epr_auto)
-
-- **Insys swComp hybrid wait + acq/parse speedups** — ported byte-identical
-  to all repos, UNCOMMITTED, pending an ITC hardware re-test (DEER scan
-  timing back to normal, data identical). See memory notes / commit after.
-- **Live Edit round 8** — AWG-Start amp-gate tracking + N/B mid-preview
-  reshape on the running preview (phasing tool, Live mode on).
-- **ESEEM Avg** — final re-validation of the cumulative τ-averaging sweep
-  incl. the just-pushed cut/copy/paste/reset Inc2 fix (`f5411fc`).
-- **0.8 ns AWG fine step** — lab-bench validation plan in
-  `docs/automation/AWG_FINE_STEP_PLAN.md` (echo position/shape vs the
-  3.2 ns grid, opt-in preset line `AWG grid:  0.8`).
-- **Benchmark `points_plot` suite** — `~/q/2026_07_06_insys_efficiency_auto/`
-  run_benchmarks.py, lab run pending.
+After a lab session, record date, tested version, outcome and artifact path in the roadmap and tick only the checks actually performed. Earlier detailed snippets and session history remain available in git at `56a1a66`.
