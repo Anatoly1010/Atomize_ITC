@@ -192,6 +192,7 @@ def _receiver_guard(wa, limit_mv=200):
 
 
 def _repetition_rate(session, pre, rep_rate):
+    rep_rate = tune._resolve_rep_rate(session, rep_rate)
     if rep_rate is None:
         rep_rate = session.state.get('preliminary_echo', {}).get('rep_rate', pre.rep_rate)
     if not math.isfinite(rep_rate) or not 0.1 <= rep_rate <= 10000:

@@ -179,7 +179,7 @@ def _lint_step_order(steps, warnings):
     """Warn on statically dead step orders. (1) a phase/amplitude tuning step
     before any field.* step: on a cold start there is no echo to tune on
     unless the magnet was already parked on the line. (2) rep_rate: auto with
-    no earlier tune.rep_rate: exp.* resolves it at run time and aborts. Walks
+    no earlier tune.rep_rate: the step resolves it at run time and aborts. Walks
     execution order; a foreach block's body is walked in place (once — every
     iteration has the same step order)."""
     field_seen = [False]

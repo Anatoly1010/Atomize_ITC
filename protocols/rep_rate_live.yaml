@@ -1,0 +1,16 @@
+sample: rep_rate_live
+autonomy: supervised
+notify: none
+
+steps:
+  - field.set:
+      value: 3318 G
+  - tune.auto_phase
+  - tune.rep_rate:
+      rate_min: 10
+      rate_max: 2000
+      steps: 6
+      points: 3
+      scans: 1
+      max_wait: 120 s
+      mode: quantitative

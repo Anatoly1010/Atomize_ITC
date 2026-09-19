@@ -1,0 +1,50 @@
+# Set the sample, field, and shipped presets for the real setup before acquisition.
+sample: temperature_series_t1t2
+autonomy: checkpointed
+notify: none
+
+steps:
+  - field.set:
+      value: 3318 G
+  - temp.set:
+      setpoint: 80
+      heater_range: 5 W
+  - temp.wait:
+      band: 0.3
+      timeout: 1800 s
+  - tune.echo_window
+  - tune.auto_phase
+  - tune.pi_calibration:
+      mode: amplitude
+
+  - foreach:
+      var: T
+      values: [80, 100, 120, 140]
+      on_fail: continue
+      steps:
+        - temp.set:
+            setpoint: $T
+            heater_range: 5 W
+        - temp.wait:
+            band: 0.3
+            timeout: 1800 s
+        - tune.echo_window
+        - tune.auto_phase
+        # Seed the first curve; later temperatures reuse accepted measured ranges.
+        - exp.t2:
+            tau_start: 300 ns
+            tau_step: 20 ns
+            points: 400
+            scans: 64
+            target_snr: 20
+            max_duration: 600 s
+            adjust_range: true
+        - exp.t1:
+            t_start: 500 ns
+            t_end: 5 ms
+            points: 200
+            scans: 64
+            target_snr: 20
+            max_duration: 600 s
+            rep_rate: 100
+            adjust_range: true

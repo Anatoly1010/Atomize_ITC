@@ -1,0 +1,20 @@
+# Set the sample, field and initial T2 range for the experiment.
+sample: t2_auto_range
+autonomy: checkpointed
+notify: none
+
+steps:
+  - field.set:
+      value: 3318 G
+  - tune.auto_phase
+  - tune.pi_calibration:
+      mode: amplitude
+  - exp.t2:
+      preset: hahn_echo_4s.phase_awg
+      tau_start: 300 ns
+      tau_step: 20 ns
+      points: 400
+      scans: 64
+      target_snr: 20
+      max_duration: 600 s
+      adjust_range: true

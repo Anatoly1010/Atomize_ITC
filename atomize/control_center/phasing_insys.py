@@ -2152,7 +2152,7 @@ class MainWindow(QMainWindow):
             self.repetition_rate = '9.9 Hz'
             ###self.pb.pulser_repetition_rate( self.repetition_rate )
             self.Rep_rate.setValue(9.9)
-            self.errors.appendPlainText( '9.9 Hz is a maximum repetiton rate with LASER pulse' )
+            self.errors.appendPlainText( '9.9 Hz is the fixed repetition rate for Nd:YAG' )
         elif self.laser_flag == 1 and self.combo_laser_num == 2:
             pass
 

@@ -14,6 +14,8 @@
 - [x] Opus code-review — 15-agent workflow, 6 findings all fixed (2026-07-16); golden BIT-EXACT + all suites green after fixes
 - [ ] Bench validation (lab) — see Verification table below
 
+The GUI/engine equivalence harness was rerun on 2026-09-19 after the live-rate and adaptive-relaxation changes and reports ALL PASS, including its existing fine-grid cases. This is an argument-equivalence check; no new golden waveform comparison or 0.8 ns hardware measurement was performed. Current automation evidence is recorded in [ROADMAP.md](ROADMAP.md).
+
 ## Context
 
 The Insys DAC runs at 1250 MHz → **0.8 ns per sample; 3.2 ns = exactly 4 samples**. The 3.2 ns grid is not a DAC hardware limit: it is (a) software rounding/asserts in `Insys_FPGA.py` and the GUIs, and (b) the pulser's 312.5 MHz TTL instruction clock, which **is** hardware — TTL trigger/gate edges can only move in 3.2 ns steps. The DAC buffer is already assembled at single-sample resolution and played from a fixed-clock trigger, so **a 0.8 ns effective AWG pulse start/length step is real and is achieved exactly as the user proposed: zero samples in the DAC buffer**, while the TRIGGER_AWG gate stays on the 3.2 ns grid.

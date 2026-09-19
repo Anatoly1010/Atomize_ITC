@@ -11,7 +11,7 @@ import json
 import tempfile
 import traceback
 import numpy as np
-from multiprocessing import Process, Pipe
+from multiprocessing import Process, Pipe, parent_process
 from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QLabel, QDoubleSpinBox, QSpinBox, QComboBox, QPushButton, QTextEdit, QGridLayout, QFrame, QCheckBox, QFileDialog, QVBoxLayout, QTabWidget, QScrollArea, QHBoxLayout, QPlainTextEdit, QProgressBar,  QTreeView, QHeaderView, QSizeGrip, QLineEdit, QFileIconProvider
 from PyQt6.QtGui import QIcon, QColor, QAction, QTextCursor
 from PyQt6.QtCore import Qt, QTimer
@@ -3072,7 +3072,7 @@ class MainWindow(QMainWindow):
             self.repetition_rate = '9.9 Hz'
             ###self.pb.pulser_repetition_rate( self.repetition_rate )
             self.Rep_rate.setValue(9.9)
-            self.errors.appendPlainText( '9.9 Hz is a maximum repetiton rate with LASER pulse' )
+            self.errors.appendPlainText( '9.9 Hz is the fixed repetition rate for Nd:YAG' )
         elif self.laser_flag == 1 and self.combo_laser_num == 2:
             pass
 
@@ -3876,6 +3876,10 @@ class Worker():
         if script_test:
             sys.argv = ['', 'test']
 
+        live_rates = getattr(self, 'live_rates', None)
+        live_buffer_restore = None
+        live_rate_finished = False
+        pb = None
         try:
             import time
             import numpy as np
@@ -3890,6 +3894,16 @@ class Worker():
             import atomize.device_modules.BH_15 as itc
 
             pb = pb_pro.Insys_FPGA()
+            if live_rates is not None:
+                if not live_rates or not all(np.isfinite(rate) and 10 <= rate <= 100000 for rate in live_rates):
+                    raise ValueError('Live repetition rates must be within 10–100000 Hz')
+                ini_path = os.path.join(os.path.dirname(pb_pro.__file__), '..', '..', 'libs', 'exam_adc.ini')
+                with open(ini_path, encoding='utf-8') as stream:
+                    sizes = re.findall(r'^[ \t]*streamBufSizeKb[ \t]*=[ \t]*(\d+)\b', stream.read(), re.MULTILINE)
+                if len(sizes) != 1 or int(sizes[0]) <= 0:
+                    raise ValueError('Live rate tuning needs one positive streamBufSizeKb in exam_adc.ini')
+                live_buffer_restore = sizes[0]
+                pb._stream_buffer_kb_for = lambda rep_time, adc_window: 512
             pb.awg_time_resolution(f'{self.awg_grid_cur} ns')
             fft = fft_module.Fast_Fourier()
             bh15 = itc.BH_15()
@@ -4070,8 +4084,19 @@ class Worker():
                 pb.digitizer_number_of_averages(n_averages)
             PHASES = len( rect1[3] )
 
-            #pb.pulser_visualize()
+            live_rate_index = 0
+            if live_rates is not None:
+                if l_mode != 0 or PHASES < 2:
+                    raise ValueError('Live rate tuning needs live mode and a phase-cycled echo')
+                if laser_flag == 1 and laser_num == 1:
+                    raise ValueError('Nd:YAG repetition rate is fixed at 9.9 Hz')
+                pb.pulser_repetition_rate(str(live_rates[0]) + ' Hz')
+                pb.digitizer_number_of_averages(n_averages)
             pb.pulser_open()
+            if live_rates is not None:
+                if PHASES >= pb.number_adc_window_in_buffer():
+                    raise ValueError('Too many phases for live repetition-rate tuning')
+                conn.send(('LiveRate', live_rate_index))
 
             # Pristine (post-setup) stored start of every pulse, keyed by name.
             # Live Edit ('PU') repositions a pulse as orig_start + GUI-space
@@ -4129,6 +4154,16 @@ class Worker():
                     win_left = int( self.command[2:] )
                 elif self.command[0:2] == 'WR':
                     win_right = int( self.command[2:] )
+                elif self.command[0:2] == 'LR' and live_rates is not None:
+                    live_rate_index = int(self.command[2:])
+                    rep_rate = live_rates[live_rate_index]
+                    pb.pulser_repetition_rate(str(rep_rate) + ' Hz')
+                    n_averages = max(n_averages, int(np.ceil(ms_per_point * rep_rate)))
+                    if n_averages > 10000:
+                        raise ValueError('Live repetition-rate tuning exceeds 10000 averages')
+                    pb.digitizer_number_of_averages(n_averages)
+                    conn.send(('LiveRate', live_rate_index))
+
                 elif self.command[0:2] == 'RR':
                     rep_rate = float( self.command[2:] )
 
@@ -4368,7 +4403,10 @@ class Worker():
                     pb.pulser_update()
                     
                     if l_mode == 0:
-                        data[0], data[1] = pb.digitizer_get_curve(POINTS, PHASES, live_mode = 1)
+                        live_i, live_q = pb.digitizer_get_curve(POINTS, PHASES, live_mode = 1)
+                        if live_rates is not None and live_i is None:
+                            continue
+                        data[0], data[1] = live_i, live_q
                     elif l_mode == 1:
                         data[0], data[1] = pb.digitizer_get_curve(POINTS, PHASES, live_mode = 0)
                     ##general.wait('100 ms')
@@ -4381,6 +4419,14 @@ class Worker():
                         data_x, data_y = pb.digitizer_demodulate(data_x, data_y, iq_freq, zero_order, first_order, second_order)
                     else:
                         pass
+
+                    if live_rates is not None and not script_test:
+                        valid = (np.all(pb.count_nip > 0)
+                                 and np.isfinite(data_x).all() and np.isfinite(data_y).all())
+                        signal_i = float(np.sum(data_x[win_left:win_right]) * t_res)
+                        signal_q = float(np.sum(data_y[win_left:win_right]) * t_res)
+                        conn.send(('LiveCurve', (live_rate_index, signal_i, signal_q,
+                                                bool(valid), pb.nStrmBufTotalCnt_brd)))
 
                     if script_test:
                         general.plot_1d('Dig', x_axis / 1e9, ( data_x, data_y ),
@@ -4437,17 +4483,23 @@ class Worker():
                 else:
                     pass
                 if script_test:
-                    self.command = 'exit'
+                    if live_rates is not None and live_rate_index + 1 < len(live_rates):
+                        self.command = 'LR' + str(live_rate_index + 1)
+                    else:
+                        self.command = 'exit'
 
-                # poll() checks whether there is data in the Pipe to read
-                # we use it to stop the script if the exit command was sent from the main window
-                # we read data by conn.recv() only when there is the data to read
+                if live_rates is not None and not script_test:
+                    from multiprocessing import parent_process
+                    parent = parent_process()
+                    if parent is not None and not parent.is_alive():
+                        self.command = 'exit'
                 if conn.poll() == True:
                     self.command = conn.recv()
 
             if self.command == 'exit':
                 ##print('exit')
                 pb.pulser_close()
+                live_rate_finished = live_rates is not None
                 if not script_test:
                     conn.send( ('', f'Pulses are stopped') )
                 else:
@@ -4467,9 +4519,16 @@ class Worker():
             # exception). The card can only be freed by this process, so this is
             # the last line of defence against leaving it in an open state.
             try:
-                pb.pulser_close()
-            except Exception:
-                pass
+                if pb is not None:
+                    pb.pulser_close()
+                if live_buffer_restore is not None:
+                    pb._set_stream_buffer_kb(live_buffer_restore)
+            except Exception as error:
+                if live_rates is not None:
+                    conn.send(('Error', f'Live rate cleanup or ADC buffer restoration failed: {error}'))
+            else:
+                if live_rate_finished:
+                    conn.send(('LiveEnd', ''))
 
     def round_to_closest(self, x, y):
         """
@@ -4522,6 +4581,31 @@ class Worker():
             if peak_mv > limit_mv:
                 return first + int(offset), peak_mv
         return None
+
+    def _scan_data_boundary(self, conn, scan, data_x, data_y, scans):
+        """Wait for the engine's completed-scan policy before acquiring again."""
+        conn.send(('ScanData', (scan, data_x.copy(), data_y.copy())))
+        if not getattr(self, 'scan_data_wait', 0):
+            return scans
+        if self.command.startswith('SC'):
+            scans = int(self.command[2:])
+            self.command = 'start'
+        parent = parent_process()
+        while True:
+            if not conn.poll(0.2):
+                if parent is not None and not parent.is_alive():
+                    raise RuntimeError('Experiment runner exited before the completed-scan acknowledgment')
+                continue
+            command = conn.recv()
+            if command == 'ScanContinue':
+                return scans
+            if command == 'exit':
+                self.command = 'exit'
+                return min(scans, scan)
+            if isinstance(command, str) and command.startswith('SC'):
+                scans = int(command[2:])
+            else:
+                raise ValueError(f'Unexpected completed-scan command: {command!r}')
 
     def exp(self, conn, decimation, num_ave, scans, points,
             exp_name, curve_name, rect1, rect2,
@@ -4862,7 +4946,7 @@ class Worker():
                                     POINTS,
                                     PHASES,
                                     current_scan = k,
-                                    total_scan = SCANS,
+                                    total_scan = k if getattr(self, 'scan_data_wait', 0) and iq_cor == 1 else SCANS,
                                     partial = True )
                                 if a is not None:
                                     data[0][:, rng[0]:rng[1]] = a
@@ -4914,7 +4998,7 @@ class Worker():
                     # instance before Process start (like awg_grid_cur).
                     if getattr(self, 'scan_data_flag', 0) and iq_cor == 1 \
                             and not script_test and self.command != 'exit':
-                        conn.send( ('ScanData', (k, data_x.copy(), data_y.copy())) )
+                        SCANS = self._scan_data_boundary(conn, k, data_x, data_y, SCANS)
 
                 self.command = 'exit'
 
@@ -6634,7 +6718,7 @@ class Worker():
                                     POINTS,
                                     PHASES,
                                     current_scan = k,
-                                    total_scan = SCANS,
+                                    total_scan = k if getattr(self, 'scan_data_wait', 0) and iq_cor == 1 else SCANS,
                                     partial = True )
                                 if a is not None:
                                     data[0][:, rng[0]:rng[1]] = a
@@ -6650,7 +6734,7 @@ class Worker():
 
                         # nonlinear_time_shift is calculated from the initial position of the pulses
                         if j > 0:
-                            new_delta_start = nonlinear_diff[j-1]
+                            new_delta_start = nonlinear_diff[j]
 
                             delta_starts = [f"{self.round_to_closest(x * new_delta_start, 3.2 if nm == 'L1' else self.awg_grid_cur)} ns" for nm, x in zip(name_list, rel_shift)]
                             pb.pulser_redefine_delta_start(name = name_list, delta_start = delta_starts )
@@ -6683,7 +6767,7 @@ class Worker():
                     # target_snr policy; default off => GUI runs unchanged.
                     if getattr(self, 'scan_data_flag', 0) and iq_cor == 1 \
                             and not script_test and self.command != 'exit':
-                        conn.send( ('ScanData', (k, data_x.copy(), data_y.copy())) )
+                        SCANS = self._scan_data_boundary(conn, k, data_x, data_y, SCANS)
 
                 self.command = 'exit'
 

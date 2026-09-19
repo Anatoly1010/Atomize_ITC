@@ -372,9 +372,7 @@ def build_worker_args(preset, exp_name, curve_name='exp', combo_cor=0,
 
     slots = preset.slots
 
-    # LASER: P2 becomes the laser pulse (worker's laser branch shifts the MW
-    # pulses to P3+); the laser combo picks the flavour, and Nd:YaG forces the
-    # 9.9 Hz repetition-rate cap exactly like the GUI's rep_rate() handler.
+    # Nd:YAG fixes the repetition rate at 9.9 Hz in the GUI and worker.
     laser_flag = 1 if slots[1].typ == 'LASER' else 0
     laser_num = 2 if preset.laser == 'NovoFEL' else 1
     rep_rate = str(float(preset.rep_rate))

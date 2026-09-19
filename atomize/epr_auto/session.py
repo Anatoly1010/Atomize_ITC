@@ -186,9 +186,9 @@ class EPRSession:
 
     def invalidate_fine_calibrations(self, reason):
         """Any rotary-vane move changes B1 for everything: auto-phase and the
-        fine amplitude calibration are no longer valid (ARCHITECTURE.md
-        'Vane rules')."""
-        self._drop(('auto_phase', 'pi_calibration'), reason)
+        fine amplitude calibration and learned ranges are no longer valid
+        (ARCHITECTURE.md 'Vane rules')."""
+        self._drop(('auto_phase', 'pi_calibration', '_relaxation_ranges'), reason)
 
     def invalidate_phase(self, reason):
         """Temperature detunes the resonator, so the demod zero-order drifts —

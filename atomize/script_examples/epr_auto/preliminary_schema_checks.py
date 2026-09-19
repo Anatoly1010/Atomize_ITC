@@ -42,6 +42,10 @@ def main():
     }
 
     echo = validate('tune.find_echo', {'center': '3445 G', 'span': '100 G'})
+    assert validate('tune.rep_rate', {})['rate_min'] == 10.0
+    assert validate('tune.rep_rate', {'rate_min': 10, 'rate_max': 20})['rate_max'] == 20.0
+    rejects('tune.rep_rate', {'rate_min': 9.9})
+    rejects('tune.rep_rate', {'rate_max': 9.9})
     assert echo['adjust_video'] is True
     assert echo['rep_rate'] is None
     assert validate('tune.find_echo', {
@@ -51,6 +55,11 @@ def main():
     rejects('tune.maximize_echo', {'rep_rate': 10000.1})
     maximum = validate('tune.maximize_echo', {'adjust_video': False, 'rep_rate': 500})
     assert maximum['adjust_video'] is False and maximum['rep_rate'] == 500.0
+    for name, supplied in (('tune.find_echo', {'center': '3445 G', 'span': '100 G'}),
+                           ('tune.maximize_echo', {})):
+        assert validate(name, {**supplied, 'rep_rate': 'auto'})['rep_rate'] == 'auto'
+        for rate in (float('nan'), float('inf'), 0.09, 'invalid', True):
+            rejects(name, {**supplied, 'rep_rate': rate})
 
     assert 'tune.video_attenuation' in STEPS
     video = validate('tune.video_attenuation', {

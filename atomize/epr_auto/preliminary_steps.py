@@ -1,7 +1,7 @@
 """Headless parameter schemas for the preliminary AWG steps."""
 import math
 from atomize.epr_auto.params import (
-    PresetFile, Float, Int, Bool, TimeStr, FieldStr, PairOf, CalMap, Str, DirStr,
+    PresetFile, Float, Int, Bool, TimeStr, FieldStr, PairOf, CalMap, Str, DirStr, AutoOr,
     ParamError, parse_time_ns, parse_field_g,
 )
 
@@ -95,8 +95,9 @@ def register_steps(register, run_primitive):
         'frequency_shift_mhz': Int(default=0, help='signed shift from resonator center, or current bridge frequency without a scan'),
         'pulse_length': TimeStr(help='target pi pulse length; every echo pulse takes it (default: the preset\'s shortest MW pulse)'),
         'adjust_video': Bool(default=True, help='adjust video attenuation to keep the echo at or below 200 mV'),
-        'rep_rate': Float(min=0.1, max=10000,
-                          help='repetition rate in Hz; omitted keeps the preset value'),
+        'rep_rate': AutoOr(Float(min=0.1, max=10000),
+                          help="repetition rate in Hz, 0.1–10000; 'auto' uses an earlier "
+                               'tune.rep_rate recommendation within that range; omitted keeps the preset value'),
         **effort(), **echo_gate(),
     })
     bind('tune.maximize_echo', 'Fixed-RV amplitude scan (pi/2 at a, pi at 2a), then field refinement', {
@@ -111,8 +112,9 @@ def register_steps(register, run_primitive):
         'improvement': Float(min=0.001, max=1, default=0.05),
         'pulse_map': CalMap(help='pi2/pi roles, e.g. {P2: pi2, P3: pi}; inferred from the preset when omitted'),
         'adjust_video': Bool(help='omit to inherit tune.find_echo; true adjusts video attenuation to 200 mV'),
-        'rep_rate': Float(min=0.1, max=10000,
-                          help='repetition rate in Hz; omitted inherits tune.find_echo'),
+        'rep_rate': AutoOr(Float(min=0.1, max=10000),
+                          help="repetition rate in Hz, 0.1–10000; 'auto' uses an earlier "
+                               'tune.rep_rate recommendation within that range; omitted inherits tune.find_echo'),
         **effort(), **echo_gate(),
     })
     bind('tune.video_attenuation', 'Adjust video attenuation on the final preset, preserving pulse lengths and zeroing sweep increments', {

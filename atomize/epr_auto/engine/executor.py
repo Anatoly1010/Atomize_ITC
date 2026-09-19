@@ -161,6 +161,8 @@ def run_worker(worker_args, sweep_type, save_path=None, script_test=False,
     one ratchet: a resize is only ever sent DOWNWARD from the lowest value
     already sent, so composed policies (duration + SNR) min-combine and a
     later, larger projection can never re-raise a sent limit.
+    For Linear/Log Time, scan_data_wait requests complete scan snapshots and
+    pauses the worker until this callback has finished, including no-op calls.
     Raises EngineError on a worker-side error. The child ignores SIGINT
     (_shielded), so a terminal Ctrl-C reaches only this parent: 'exit' is
     sent, the worker reads out and saves within the cleanup grace, and the
@@ -181,6 +183,8 @@ def run_worker(worker_args, sweep_type, save_path=None, script_test=False,
     # attributes (pickled with the instance), exactly like the GUI's
     # dig_start_exp / _hand_correction_to_worker.
     _hand_attrs(worker, worker_args)
+    worker.scan_data_wait = bool(getattr(worker_args, 'scan_data_wait', 0)
+                                 and sweep_type in ('Linear Time', 'Log Time'))
     parent_conn, child_conn = Pipe()
     process = Process(target=_shielded,
                       args=(getattr(worker, method_name),
@@ -224,6 +228,8 @@ def run_worker(worker_args, sweep_type, save_path=None, script_test=False,
                 if on_scan_data is not None:
                     k, i_arr, q_arr = payload
                     _maybe_resize(_safe_call(on_scan_data, k, i_arr, q_arr))
+                if worker.scan_data_wait:
+                    parent_conn.send('ScanContinue')
             elif kind == 'Message':
                 _safe_call(on_message, payload)
             elif kind == 'Open':
@@ -244,10 +250,12 @@ def _hand_attrs(worker, worker_args):
     worker.awg_grid_cur = getattr(worker_args, 'awg_grid', 3.2)
     worker.amplitude_sweep = getattr(worker_args, 'amplitude_sweep', None)
     worker.receiver_guard = getattr(worker_args, 'receiver_guard', None)
+    worker.live_rates = getattr(worker_args, 'live_rates', None)
     # opt-in scan-boundary data messages (target_snr policy); the GUI never
     # sets this, so GUI-launched workers behave exactly as before
     if getattr(worker_args, 'scan_data_flag', 0):
         worker.scan_data_flag = 1
+    worker.scan_data_wait = bool(getattr(worker_args, 'scan_data_wait', 0))
     # opt-in HDF5 for the full 2D dumps; the GUI checkbox route, same default
     if getattr(worker_args, 'save_hdf5', 0):
         worker.save_hdf5 = 1
@@ -405,6 +413,92 @@ def acquire_trace(worker_args, n_sweeps=1, script_test=False,
         except (BrokenPipeError, OSError):
             pass
         raise
+    finally:
+        _wind_down(parent_conn, process, None, poll_s)
+
+
+def acquire_live_rates(worker_args, rates, points=3, scans=1, max_wait=120.0,
+                       script_test=False, on_curve=None, on_message=None, poll_s=0.2):
+    """Keep one live preview open; accept fresh curves stable to 5% at each rate.
+
+    Each LiveCurve is one nonempty digitizer_get_curve(live_mode=1) result,
+    not a phase-cycle tick or an accumulated experiment scan. Transitional
+    old-rate packets are handled by the stability check. Callbacks can persist every
+    observation, including rejected readouts, before convergence or failure.
+    """
+    from atomize.epr_auto.engine.live_rate import LiveRateStability
+
+    policy = LiveRateStability(points, scans)
+    rates = tuple(float(rate) for rate in rates)
+    if not rates or not np.isfinite(rates).all() or min(rates) < 10 or max(rates) > 100000:
+        raise EngineError('live repetition rates must be within 10–100000 Hz')
+    if not np.isfinite(max_wait) or max_wait <= 0:
+        raise EngineError('max_wait must be positive and finite')
+    if len(worker_args.rect[0][3]) < 2:
+        raise EngineError('live repetition-rate tuning needs a phase-cycled echo')
+    worker = Worker()
+    _hand_attrs(worker, worker_args)
+    worker.live_rates = rates
+    args = worker_args.dig_args(l_mode=0)
+    parent_conn, child_conn = Pipe()
+    process = Process(target=_shielded, args=(worker.dig_on, child_conn, *args, script_test))
+    process.start()
+    index, waiting, last_buffer = 0, True, -1
+    started = time.monotonic()
+    results = []
+    try:
+        while True:
+            if not script_test and time.monotonic() - started > max_wait:
+                raise EngineError(f'echo did not stabilize within {max_wait:g} s at '
+                                  f'{rates[index]:g} Hz (5%, {points} fresh live curves)')
+            if not parent_conn.poll(poll_s):
+                if not process.is_alive():
+                    raise EngineError('live repetition-rate worker exited without a result')
+                continue
+            kind, payload = parent_conn.recv()
+            if kind == 'Error':
+                raise EngineError(f'worker error:\n{payload}')
+            if kind == 'LiveRate':
+                if script_test:
+                    continue
+                if payload != index:
+                    raise EngineError('unexpected live repetition-rate transition')
+                policy.reset()
+                last_buffer = -1
+                started = time.monotonic()
+                waiting = False
+                _safe_call(on_message, f'      live rep_rate {rates[index]:g} Hz')
+            elif kind == 'LiveCurve' and not script_test:
+                epoch, i, q, valid, buffer_number = payload
+                if waiting or epoch != index or buffer_number <= last_buffer:
+                    continue
+                last_buffer = buffer_number
+                observation = {'rate_index': index, 'rate_hz': rates[index],
+                               'elapsed_s': time.monotonic() - started,
+                               'buffer': buffer_number, 'i': i, 'q': q, 'valid': valid}
+                accepted = policy.add(complex(i, q)) if valid else policy.reset()
+                observation['spread'] = policy.spread
+                if on_curve is not None:
+                    on_curve(observation)
+                if accepted is not None:
+                    results.append(accepted)
+                    _safe_call(on_message, f'      stable: amplitude {abs(np.mean(accepted)):.4g}, '
+                               f'spread {policy.spread:.1%}, {len(accepted)} live curves')
+                    waiting = True
+                    started = time.monotonic()
+                    if index + 1 == len(rates):
+                        parent_conn.send('exit')
+                    else:
+                        index += 1
+                        parent_conn.send(f'LR{index}')
+            elif kind == 'LiveEnd':
+                if script_test:
+                    return {'status': 'test-ok'}
+                if len(results) != len(rates):
+                    raise EngineError('live repetition-rate sweep stopped before convergence')
+                return results
+            elif kind in ('Message', 'test') and payload:
+                _safe_call(on_message, payload)
     finally:
         _wind_down(parent_conn, process, None, poll_s)
 

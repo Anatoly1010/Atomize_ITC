@@ -35,8 +35,14 @@ steps:
       # Target pi length; every echo pulse takes it, pi differs from pi/2 only in amplitude.
       pulse_length: 22.4 ns
       points: 41
+  - tune.rep_rate:
+      preset: hahn_echo_4s.phase_awg
+      mode: quantitative
+      rate_min: 10
+      rate_max: 2000
   - tune.maximize_echo:
       preset: hahn_echo_4s.phase_awg
+      rep_rate: auto
       # pi/2 amplitude a in %, pi at 2a; the optimum must lie inside the range.
       amplitude_range: [5, 50]
       coarse_step: 5

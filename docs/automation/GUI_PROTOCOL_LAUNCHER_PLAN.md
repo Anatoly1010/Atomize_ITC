@@ -99,10 +99,14 @@ hardware is accessed in a dry run; `main_window.py` has no changes.
 
 `protocol_launcher.py` owns the QProcess, line buffering, dialogs and run state. `main.py` embeds it and includes its process in exit guards. The protocol process does not use the control-center output parser. `main_window.py` is unchanged.
 
-See [dummy-data test instructions](GUI_PROTOCOL_LAUNCHER_TEST.md). Live cleanup and Windows execution remain operator-validation items. The operator completed prose review and approved commit and push after confirming GUI dry runs and Stop.
+Use the current [hardware checklist](HARDWARE_CHECKLIST.md) for launch, Stop and relaunch checks. Live cleanup and Windows execution remain operator-validation items. The operator completed prose review and approved commit and push after confirming GUI dry runs and Stop.
 
 ## Independent verification
 
 An independent agent verified the launcher before the operator dummy-data test. The review corrected the executor's unbounded first-interrupt drain and repeated grace after a second interrupt. Cleanup now uses one bounded drain and terminates the worker on a second interrupt. On POSIX, the GUI stop reader sends SIGINT to the runner process so blocking waits are interrupted; the non-POSIX fallback remains scheduled Python interruption and still needs platform validation.
 
 The full launcher, runner, preliminary and worker-stop offline checks pass. No blocker remains for Linux dummy-data testing. No hardware was operated and the public documentation prose was left untouched during this review.
+
+## Current acquisition paths — 2026-09-19
+
+The launcher also runs [live rate tuning](../../protocols/rep_rate_live.yaml), [one T2 with automatic 2τ range](../../protocols/t2_auto_range.yaml) and [T1/T2 temperature series](../../protocols/temperature_series_t1t2.yaml). Live-rate tuning keeps the card open across frequencies and preserves its observation history on interruption. Adaptive T1/T2 can stop one early acquisition to extend its time range, then continue toward target SNR with a second acquisition. These paths use the existing runner interrupt and worker cleanup; CLI/worker checks pass. Check GUI Stop during rate convergence, range assessment and the revised acquisition on hardware before marking live cancellation complete.

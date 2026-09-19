@@ -1,6 +1,6 @@
 # Preliminary tuning — current design and validation
 
-Updated 2026-09-18. Implemented in `atomize/epr_auto`. Hardware work comprised two sessions: 11 September tested fine tuning; 18 September improved the logic and worked toward the complete workflow. The final independent preliminary and fine-tuning runs worked without issues, and the combined preliminary → fine-tuning → T2 run passed the same evening. See [ROADMAP.md](ROADMAP.md) for dated evidence and [HARDWARE_CHECKLIST.md](HARDWARE_CHECKLIST.md) for remaining checks.
+Updated 2026-09-19. Implemented in `atomize/epr_auto`. Hardware work comprised two sessions: 11 September tested fine tuning; 18 September improved the logic and worked toward the complete workflow. The final independent preliminary and fine-tuning runs worked without issues, and the combined preliminary → fine-tuning → T2 run passed the same evening. See [ROADMAP.md](ROADMAP.md) for dated evidence and [HARDWARE_CHECKLIST.md](HARDWARE_CHECKLIST.md) for remaining checks.
 
 ## Purpose and sequence
 
@@ -124,7 +124,15 @@ Field and amplitude workers inspect ready ADC buffers as data arrive. They evalu
 
 `bridge.set` accepts `video1_db` and `video2_db` on their exact hardware grids. `tune.save_presets` carries known VA values into the handoff's opening `bridge.set`; the fine handoff ends with `tune.video_attenuation` on `echo_cal.phase_awg` after its final calibration is applied. This checks the actual final sequence, whose echo can grow during fine tuning.
 
-`rep_rate` in Hz is optional on `tune.find_echo` (preset default) and inherited by `tune.maximize_echo` (override allowed), with a 10 kHz cap. All four exported presets use the selected rate. The ringing ladder stays at 500 Hz. Automatic rate selection from `tune.rep_rate` remains a separate follow-on.
+`rep_rate` in Hz is optional on `tune.find_echo` (preset default) and inherited by `tune.maximize_echo` (override allowed), with a 10 kHz cap. On tunable sources, both accept `auto` from an earlier accepted `tune.rep_rate` in the same session. Nd:YAG uses its fixed 9.9 Hz rate and does not support automatic rate tuning. Missing or temperature-invalidated recommendations fail; recommendations outside 0.1–10000 Hz fail rather than being silently changed. All four exported presets use the selected rate. The ringing ladder stays at 500 Hz.
+
+The `tune.rep_rate` scan grid starts at 10 Hz at minimum and defaults to `rate_min: 10`; this grid floor does not raise the 0.1 Hz hardware floor for ordinary acquisitions or fitted recommendations.
+
+`tune.rep_rate` keeps the FPGA open at a fixed field and fixed τ. Every ordinary, nonempty `digitizer_get_curve(live_mode=1)` result supplies one complex echo integral. A software phase-cycle iteration or an empty poll is not an observation. Results are consumed as returned, including old or mixed-rate packets; there is no packet tagging or epoch filtering. The default criterion is `(max |sig| − min |sig|) / mean |sig| ≤ 0.05` over three consecutive curves (`points: 3`, minimum 3). The mean complex signal supplies that rate's amplitude, then the next rate starts without stopping or reopening the card. There is no separate pause or fixed 50-repetition warmup.
+
+`scans` requests disjoint stable groups (default 1), which must also agree within 5% when combined. During tuning, the Worker pins the ADC stream buffer to 512 KB before opening the card, regardless of the ADC window or rate, then restores the previous value after the card closes, including on Stop or failure. This tuning allocation does not add live-rate-specific changes to `Insys_FPGA`. `max_wait: 120 s` limits each rate, including buffer arrival; slow rates or higher averaging may need a longer limit. Timeout or Stop preserves the numbered `*_rep_rate_live.csv` observations. A completed grid also saves `*_rep_rate_curve.csv`. The standalone [live-rate protocol](../../protocols/rep_rate_live.yaml) shows the settings.
+
+The shipped example finds an echo first, scans repetition rate on that selected pulse sequence, then maximizes with `rep_rate: auto`. The scan retains the selected preliminary settings, inherits the current field, echo window and phase, and applies fine pulse calibration when available. It uses `mode: quantitative`; the fit remains `A0 * (1 - exp(-T / T1_eff))` and still assumes the repeated sequence resets longitudinal magnetization. A 5% steady curve is a stability criterion, not proof of quantitative 1% saturation accuracy. A flat curve selects the fastest tested rate under the same 5% tolerance; existing fit and coverage gates still apply. Nd:YAG runs at a fixed 9.9 Hz, so automatic or variable-rate tuning is unavailable. The live-rate policy, Worker/engine checks, protocol dry run and GUI/engine equivalence pass; hardware testing remains pending.
 
 Test mode uses canned traces and does not read or write hardware VA settings. Offline checks cover the single threshold, rounding and attenuator order, skip/inheritance behavior, remeasurement, handoff and rate limits. Live motion and receiver response need commissioning on the spectrometer.
 
@@ -144,6 +152,8 @@ Recorded offline coverage includes both diode signs; weak/competing/edge/clipped
 
 The six-step protocol dry run, GUI/engine equivalence, amplitude worker checks, live frame-handshake checks, video correction/restart checks, targeted preliminary checks and Stop/cleanup checks passed. Receiver buffer checks also passed, including live snapshots with incomplete boundary windows and 2D readouts split across phase cycles. The full `preliminary_checks.py` retains its earlier ringing-timing assertion: this machine gives 496.4 ns while the check expects the recorded 493.2 ns; unchanged code gives the same result. Active device settings were preserved. The documentation strict build passed. Hardware timing, live RV/VA response and score comparisons remain pending.
 
+The current live-rate checks cover convergence, ordinary curve handling, one card/field setup, timeout and Stop, and partial-history saving. These results do not replace the open hardware checks.
+
 Linux regression commands (`python` instead of `python3` on Windows; the equivalence harness is Linux-only):
 
 ```bash
@@ -152,6 +162,11 @@ QT_QPA_PLATFORM=offscreen python3 -m atomize.epr_auto run protocols/preliminary_
 QT_QPA_PLATFORM=offscreen python3 atomize/script_examples/epr_auto/preliminary_checks.py test
 QT_QPA_PLATFORM=offscreen python3 atomize/script_examples/epr_auto/amplitude_sweep_checks.py test
 python3 atomize/script_examples/epr_auto/preliminary_schema_checks.py test
+QT_QPA_PLATFORM=offscreen python3 atomize/script_examples/epr_auto/rep_rate_checks.py test
+python3 -m atomize.script_examples.epr_auto.live_rate_policy_checks
+python3 -m atomize.script_examples.epr_auto.live_rate_driver_checks test
+QT_QPA_PLATFORM=offscreen python3 atomize/script_examples/epr_auto/live_rate_worker_checks.py test
+QT_QPA_PLATFORM=offscreen python3 -m atomize.epr_auto run protocols/rep_rate_live.yaml --test
 QT_QPA_PLATFORM=offscreen python3 atomize/script_examples/epr_auto/video_attenuation_checks.py test
 QT_QPA_PLATFORM=offscreen python3 atomize/script_examples/epr_auto/live_receiver_checks.py test
 QT_QPA_PLATFORM=offscreen python3 atomize/script_examples/epr_auto/receiver_guard_checks.py test
@@ -171,3 +186,5 @@ python3 -m atomize.epr_auto.preset_hash
 - [ ] Bench-check the staged amplitude acquisition: paired values, repeated scans, full-trace scores, Stop/partial saving and total elapsed time.
 - [x] Implement the live strong-sample approach, optional video attenuation and preliminary `rep_rate`.
 - [ ] Commission receiver control during RV motion and ready-buffer field/amplitude checks; verify gain changes, repeat measurements and Stop on hardware.
+- [x] Replace separate per-rate acquisitions with continuous live-rate convergence at fixed τ; preserve selected preliminary pulses and apply available fine calibration.
+- [ ] Compare the live convergence and inferred recovery against manual measurements, including rate changes, low-rate timeout and Stop.

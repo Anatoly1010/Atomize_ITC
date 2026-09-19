@@ -16,8 +16,9 @@ Sweep mechanics (mirrors the Worker's own axis rules):
   stretched exponential, does not fold into the amplitude.
 - Log Time: the worker builds the delays itself from Log Start/Log End
   (10^linspace, grid-rounded, deduplicated — the POINT COUNT MAY SHRINK),
-  and offsets the axis by the first moving pulse's start. t_start/t_end map
-  to log10(ns); the swept ADDED delay spans ~[0, t_end - t_start] with
+  and offsets/scales the axis using the preset's moving pulses or manual
+  origin. t_start/t_end map to log10(ns); the swept ADDED delay spans
+  ~[0, t_end - t_start] with
   t_start setting the log-spacing density floor (the GUI's own semantics).
 
 Fits use a characteristic-time initial guess (1/e crossing of the tail-
@@ -25,6 +26,9 @@ anchored amplitude) — a free fit from generic p0 degenerates on log-spaced
 T1 data. Gated by the HARD `relaxation_fit` judge (deliberately not named
 'fit_quality', which steps.py treats as advisory).
 """
+import copy
+import time
+
 import numpy as np
 from scipy.optimize import curve_fit
 
@@ -32,7 +36,9 @@ from atomize.epr_auto.engine import snapshot
 from atomize.epr_auto.primitives.judges import (
     JudgeReport, echo_snr, relaxation_fit,
 )
-from atomize.epr_auto.primitives.tune import _acquire, _build, _to_real
+from atomize.epr_auto.primitives.tune import _acquire, _build, _resolve_rep_rate, _to_real
+from atomize.epr_auto.primitives.relaxation_range import decision, plateau
+from atomize.epr_auto.primitives import relaxation_series
 
 
 def _fmt_s(seconds):
@@ -45,7 +51,7 @@ def _fmt_s(seconds):
 
 
 def _load(preset, want):
-    pre = preset if isinstance(preset, snapshot.Preset) \
+    pre = copy.deepcopy(preset) if isinstance(preset, snapshot.Preset) \
         else snapshot.load_preset(preset)
     if pre.sweep_type != want:
         raise ValueError(f'{pre.path}: needs a {want!r} preset, '
@@ -121,22 +127,6 @@ def _period_check(pre, extent_ns, knob):
 def _apply_rep_rate(pre, rep_rate):
     if rep_rate is not None:
         pre.rep_rate = float(rep_rate)
-
-
-def _resolve_rep_rate(session, rep_rate):
-    """'auto' -> the tune.rep_rate recommendation stored in the session
-    (quantitative or sensitivity, whichever mode that step ran)."""
-    if rep_rate != 'auto':
-        return rep_rate
-    rr = session.state.get('rep_rate')
-    if not rr or rr.get('rep_rate_hz') is None:
-        raise ValueError('rep_rate: auto — no tune.rep_rate result in the '
-                         'session (run tune.rep_rate first)')
-    session.log(f"      rep_rate auto -> {rr['rep_rate_hz']:g} Hz "
-                f"({rr['mode']}, T1_eff "
-                + (_fmt_s(rr['t1_eff_s']) if rr.get('t1_eff_s') else 'below the grid')
-                + ')')
-    return rr['rep_rate_hz']
 
 
 def _duration_policy(session, max_duration, scans):
@@ -309,82 +299,408 @@ def _finish(session, acq, fit_func, key, fit_name, extra):
     sig = i + 1j * q
     y = _to_real(sig)
     snr = echo_snr(sig)
+    measured = {'npoints': int(len(x)), 'start_s': float(x[0]),
+                'end_s': float(x[-1]), 'data_file': path}
     try:
         fit = fit_func(x, y)
     except (RuntimeError, ValueError) as e:   # curve_fit no-convergence
         judge = JudgeReport('relaxation_fit', False, 0.0,
                             {'note': f'fit failed: {e}'})
-        return ({key: None, 'fit': fit_name, 'data_file': path, **extra},
+        return ({key: None, 'fit': fit_name, **measured, **extra},
                 [snr, judge])
     judge = relaxation_fit(y, fit['y_fit'], fit['n_params'])
     result = {key: _fmt_s(fit['t_s']), f'{key}_s': fit['t_s'],
-              'fit': fit_name, 'npoints': int(len(x)), 'data_file': path,
+              'fit': fit_name, **measured,
               **{k: v for k, v in fit.items() if k not in ('y_fit', 'n_params', 't_s')},
               **extra}
     return result, [snr, judge]
 
 
+def _measure(session, pre, wa, tag, scans, max_duration, target_snr, range_check=None):
+    snr_policy = _snr_policy(session, target_snr, scans)
+    on_scan_data = None
+    if snr_policy is not None or range_check is not None:
+        wa.scan_data_flag = 1
+        wa.scan_data_wait = 1
+
+        def on_scan_data(k, i_arr, q_arr):
+            if range_check is not None:
+                limit = range_check(k, i_arr, q_arr)
+                if limit is not None or range_check.pending:
+                    return limit
+            return None if snr_policy is None else snr_policy(k, i_arr, q_arr)
+
+    return _acquire(session, wa, pre.sweep_type, tag, log=session.log,
+                    scan_control=_duration_policy(session, max_duration, scans),
+                    on_scan_data=on_scan_data)
+
+
+def _log_grid(wa):
+    raw = 10 ** np.linspace(wa.log_start, wa.log_end, wa.points)
+    return np.unique(wa.awg_grid * np.round(raw / wa.awg_grid))
+
+
+def _revised_sweep(session, pre, wa, acq, kind, plan, max_points,
+                    minimum_span=0.0, check_period=True):
+    """Preserve spacing where possible and count the actual snapped grid."""
+    revised = copy.deepcopy(pre)
+    x = np.asarray(acq[0], float)
+    window = {'win_left_ns': pre.win_left_ns, 'win_right_ns': pre.win_right_ns}
+    if kind == 't2':
+        count = (2 * len(x) - 1 if plan['action'] == 'extend'
+                 else plan['target_points'])
+        count = max(count, int(np.ceil(1 + minimum_span * (len(x) - 1))))
+        points = min(count, max_points)
+        swept = [s for s in revised.slots if s.active and s.st_inc != 0]
+        step = min(abs(s.st_inc) for s in swept)
+        if count > max_points:
+            if revised.xdelta != 0:
+                raise ValueError('cannot rescale a manual T2 axis at adjust_max_points')
+            new_step = snapshot._snap(step * (count - 1) / (points - 1), revised.awg_grid)
+            for s in swept:
+                s.st_inc = round(s.st_inc / step * new_step, 1)
+        if check_period:
+            _period_check(revised, snapshot.AWG_OUTPUT_SHIFT_NS + max(
+                s.start + s.length + (points - 1) * s.st_inc
+                for s in revised.slots if s.active), 'the revised tau sweep')
+        revised, args = _build(session, revised, exp_name='T2_revised', points=points, **window)
+        return revised, args
+    grid = _log_grid(wa)
+    if len(grid) != len(x):
+        raise ValueError('saved T1 axis does not match the prepared logarithmic grid')
+    scale = (x[-1] - x[0]) / (grid[-1] - grid[0])
+    if not np.allclose(x, x[0] + scale * (grid - grid[0]), rtol=1e-5, atol=1e-11):
+        raise ValueError('saved T1 axis is inconsistent with the prepared logarithmic grid')
+    spacing = (wa.log_end - wa.log_start) / (wa.points - 1)
+    if plan['action'] == 'extend':
+        end = grid[0] + 2 * (grid[-1] - grid[0])
+    elif plan['target_points'] <= len(grid):
+        end = grid[plan['target_points'] - 1]
+    else:
+        extra = plan['target_points'] - len(grid)
+        end = min(grid[-1] * 10 ** min(extra * spacing, 1),
+                  grid[0] + 2 * (grid[-1] - grid[0]))
+    floor = grid[0] + minimum_span * (grid[-1] - grid[0])
+    limited = end < floor
+    log_end = snapshot._log_snap(np.log10(max(end, floor)), wa.awg_grid == snapshot.AWG_GRID_NS)
+    requested_end = log_end
+    while wa.awg_grid * round(10 ** log_end / wa.awg_grid) < floor:
+        requested_end += 0.001
+        log_end = snapshot._log_snap(requested_end, wa.awg_grid == snapshot.AWG_GRID_NS)
+    points = min(max_points, max(60, int(round((log_end - wa.log_start) / spacing)) + 1))
+    revised, args = _build(session, revised, exp_name='T1_revised', points=points,
+                            log_start=wa.log_start, log_end=log_end, **window)
+    if plan['action'] == 'resize' and plan['target_points'] <= len(grid) and not limited:
+        wanted = min(plan['target_points'], max_points)
+        for _ in range(8):
+            actual = len(_log_grid(args))
+            if actual == wanted or args.points >= max_points:
+                break
+            points = min(max_points, max(60, args.points + wanted - actual))
+            revised, args = _build(session, revised, exp_name='T1_revised', points=points,
+                                    log_start=wa.log_start, log_end=log_end, **window)
+    return revised, args
+
+
+def _range_settings(pre, wa, kind):
+    if kind == 't2':
+        moving = [s for s in pre.slots if s.active and s.st_inc != 0]
+        anchor = next(s for s in pre.slots[1:] if s.active and s.st_inc != 0)
+        return {'points': wa.points, 'tau_start_ns': anchor.start,
+                'tau_step_ns': min(abs(s.st_inc) for s in moving),
+                'span_ns': (wa.points - 1) * abs(pre.slots[0].st_inc)}
+    grid = _log_grid(wa)
+    return {'points': wa.points, 'log_start': wa.log_start, 'log_end': wa.log_end,
+            'span_ns': float(grid[-1] - grid[0])}
+
+
+def _reuse_range(session, pre, wa, kind, key):
+    """Apply only sweep controls to freshly loaded and calibrated pulses."""
+    selected = relaxation_series.choose(session, key)
+    if selected is None:
+        return pre, wa, None
+    settings = selected['range']
+    candidate = copy.deepcopy(pre)
+    overrides = {'points': settings['points'], 'win_left_ns': pre.win_left_ns,
+                 'win_right_ns': pre.win_right_ns}
+    try:
+        if kind == 't2':
+            _retau(candidate, settings['tau_start_ns'], settings['tau_step_ns'])
+        else:
+            overrides.update(log_start=settings['log_start'], log_end=settings['log_end'])
+        candidate, args = _build(session, candidate, exp_name=kind.upper(), **overrides)
+        if kind == 't1':
+            from atomize.epr_auto.primitives.relaxation_timing import maximum_t1_rate
+            rate = maximum_t1_rate(args)
+            args.rep_rate = str(rate)
+            candidate.rep_rate = rate
+        else:
+            _period_check(candidate, snapshot.AWG_OUTPUT_SHIFT_NS + max(
+                s.start + s.length + (args.points - 1) * s.st_inc
+                for s in candidate.slots if s.active), 'the carried tau sweep')
+    except ValueError as error:
+        session.log(f'      adjust_range: carried range cannot be used — {error}; using protocol range')
+        return pre, wa, {'status': 'skipped_limits', 'reason': str(error), **selected}
+    session.log(f"      adjust_range: using range from {selected['source_data_file']} "
+                f"at {selected['source_temperature_k']} K; {args.points} requested points, "
+                f'{float(args.rep_rate):g} Hz')
+    return candidate, args, {'status': 'used', **selected}
+
+
+def _learn_range(session, pre, wa, acq, kind, key, max_points, result, judges):
+    """Prepare the next range without another measurement at this temperature."""
+    report = result['range_adjustment']
+    record = report.get('final', report['initial'])
+    if record['plateau']['status'] != 'confirmed':
+        return
+    if not any(j.name == 'relaxation_fit' and j.passed for j in judges):
+        return
+    measured = _range_settings(pre, wa, kind)
+    plan = decision(record['plateau'], kind, record['npoints'])
+    proposed = measured
+    if plan.get('next_action') == 'resize':
+        next_plan = {**plan, 'action': 'resize'}
+        try:
+            candidate, args = _revised_sweep(session, pre, wa, acq, kind, next_plan,
+                                             max_points, minimum_span=0.75, check_period=False)
+            proposed = _range_settings(candidate, args, kind)
+        except ValueError as error:
+            report['planning_note'] = str(error)
+    report['next_range'] = proposed
+    report['next_range_rule'] = 'warming: shorten by at most 25%; cooling/unknown: retain measured span'
+    relaxation_series.stage(session, key, measured, proposed, acq[3])
+    session.log(f"      adjust_range: accepted current curve; next range span "
+                f"{_fmt_s(proposed['span_ns'] * 1e-9)}, {proposed['points']} requested points")
+
+
+def _range_record(acq, wa, kind):
+    x, i, q, path = acq
+    measured = plateau(x, _to_real(i + 1j * q), kind)
+    return {'data_file': str(path), 'npoints': len(x),
+            'start_s': float(x[0]), 'end_s': float(x[-1]),
+            'rep_rate_hz': float(wa.rep_rate), 'plateau': measured}
+
+
+class _EarlyRangeCheck:
+    """Use up to three complete scans before allowing normal SNR accumulation."""
+
+    def __init__(self, session, pre, wa, kind, max_points, scans, max_duration, started):
+        from atomize.epr_auto.params import parse_time_ns
+        self.session, self.pre, self.wa, self.kind = session, pre, wa, kind
+        self.max_points = max_points
+        self.limit = min(3, scans)
+        self.started = started
+        self.budget = None if max_duration is None else parse_time_ns(max_duration) / 1e9
+        self.revised = None
+        self.report = {'status': 'pending', 'checked_scans': 0}
+
+    @property
+    def pending(self):
+        return self.report['status'] == 'pending'
+
+    def remaining(self):
+        return None if self.budget is None else self.budget - (time.monotonic() - self.started)
+
+    def __call__(self, k, i_arr, q_arr):
+        if not self.pending:
+            return self.report['checked_scans'] if self.revised is not None else None
+        grid = _log_grid(self.wa) if self.kind == 't1' else np.arange(self.wa.points)
+        y = _to_real(np.asarray(i_arr) + 1j * np.asarray(q_arr))
+        measured = plateau(grid, y, self.kind)
+        plan = decision(measured, self.kind, len(grid))
+        self.report.update(checked_scans=k, reason=plan['reason'],
+                           plateau={key: value for key, value in measured.items() if key != 'onset_s'})
+        if plan['action'] == 'keep':
+            self.report['status'] = 'confirmed'
+            self.session.log(f'      adjust_range: plateau confirmed after scan {k}; continue accumulation')
+        elif plan['action'] == 'extend':
+            seconds = self.remaining()
+            if seconds is not None and seconds <= 0:
+                self.report.update(status='skipped_budget', reason='time budget exhausted')
+                return None
+            try:
+                preview = (grid * 1e-9, np.asarray(i_arr), np.asarray(q_arr), '')
+                revised, args = _revised_sweep(self.session, self.pre, self.wa, preview,
+                                               self.kind, plan, self.max_points)
+                if self.kind == 't1':
+                    from atomize.epr_auto.primitives.relaxation_timing import maximum_t1_rate
+                    revised.rep_rate = maximum_t1_rate(args)
+                    args.rep_rate = str(revised.rep_rate)
+                else:
+                    from atomize.epr_auto.engine import executor
+                    executor.run_worker(args, 'Linear Time', script_test=True)
+            except (ValueError, RuntimeError) as error:
+                self.report.update(status='skipped_limits', reason=str(error))
+                self.session.log(f'      adjust_range: extension unavailable; continue current range — {error}')
+                return None
+            seconds = self.remaining()
+            if seconds is not None and seconds < _scan_seconds(args, self.kind):
+                self.report.update(status='skipped_budget', reason='remaining budget is shorter than one revised scan')
+                self.session.log('      adjust_range: no time for an extension; continue current range')
+                return None
+            self.revised = revised, args
+            self.report['status'] = 'extend'
+            self.session.log(f'      adjust_range: unfinished tail after scan {k}; stop early for one extension')
+            return k
+        elif k >= self.limit:
+            self.report['status'] = 'unresolved'
+            self.session.log(f'      adjust_range: tail uncertain after {k} scans; continue current range without a late repeat')
+        return None
+
+
+def _scan_seconds(wa, kind):
+    points = len(_log_grid(wa)) if kind == 't1' else wa.points
+    return points * len(wa.rect[0][3]) * wa.averages / float(wa.rep_rate)
+
+
+def _adjust_range(session, pre, wa, acq, kind, scans, target_snr, range_check):
+    """Use only an early extension decision; never restart a long completed run."""
+    initial = _range_record(acq, wa, kind)
+    plan = decision(initial['plateau'], kind, initial['npoints'])
+    early = range_check.report
+    report = {'status': plan['action'], 'reason': plan['reason'], 'initial': initial,
+              'early_check': early}
+    if range_check.revised is None:
+        if early['status'] in ('skipped_budget', 'skipped_limits'):
+            report.update(status=early['status'], reason=early['reason'])
+        elif plan['action'] == 'extend':
+            report.update(status='kept_unconfirmed', reason='no early extension decision; no late repeat')
+        session.log(f"      adjust_range: {report['reason']}")
+        return acq, pre, wa, report
+    seconds = range_check.remaining()
+    if seconds is not None and seconds <= 0:
+        return acq, pre, wa, {**report, 'status': 'skipped_budget', 'reason': 'time budget exhausted'}
+    revised, args = range_check.revised
+    if kind == 't1':
+        rate = float(args.rep_rate)
+        session.log(f'      revised T1: maximum timing-compatible repetition rate {rate:g} Hz')
+    actual_points = len(_log_grid(args)) if kind == 't1' else args.points
+    minimum_scan_s = _scan_seconds(args, kind)
+    if seconds is not None and seconds < minimum_scan_s:
+        session.log('      adjust_range: insufficient remaining time for one revised scan')
+        return acq, pre, wa, {**report, 'status': 'skipped_budget',
+                             'reason': 'remaining budget is shorter than one revised scan'}
+    repeat_scans = scans if seconds is None else min(scans, max(1, int(seconds / minimum_scan_s)))
+    args.scans = revised.scans = repeat_scans
+    repeat_duration = None if seconds is None else f'{seconds:.9g} s'
+    session.log(f"      adjust_range: {plan['reason']} — one revised acquisition, "
+                f'{actual_points} points, {repeat_scans} scans')
+    second = _measure(session, revised, args, f'{kind}_revised', repeat_scans,
+                       repeat_duration, target_snr)
+    if second is None:
+        return acq, pre, wa, {**report, 'status': 'dry_run'}
+    final = _range_record(second, args, kind)
+    checked = decision(final['plateau'], kind, final['npoints'])
+    satisfied = final['plateau']['status'] == 'confirmed'
+    if not satisfied:
+        session.log(f"      adjust_range: plateau not confirmed ({checked['reason']}); "
+                    'no further automatic acquisition')
+    report.update(status='repeated', final=final, plateau_confirmed=satisfied,
+                  requested_points=args.points, scans=repeat_scans)
+    return second, revised, args, report
+
+
 def t2(session, preset, tau_start, tau_step, points, scans, window='auto',
-       max_duration=None, rep_rate=None, target_snr=None):
+       max_duration=None, rep_rate=None, target_snr=None, adjust_range=False,
+       adjust_max_points=4096):
     """Hahn echo decay: linear tau sweep re-anchored to tau_start/tau_step,
     stretched-exponential fit. `preset` may be an already-loaded (e.g.
     apply_cal-patched) Preset."""
     from atomize.epr_auto.params import parse_time_ns
+    started = time.monotonic()
     pre = _load(preset, 'Linear Time')
     tau_s, tau_st = _retau(pre, parse_time_ns(tau_start),
                            parse_time_ns(tau_step))
     _apply_rep_rate(pre, _resolve_rep_rate(session, rep_rate))
-    _period_check(pre, snapshot.AWG_OUTPUT_SHIFT_NS + max(
-        s.start + s.length + (points - 1) * s.st_inc
-        for s in pre.slots if s.active), 'the tau sweep (tau_step x points)')
     pre, wa = _build(session, pre, exp_name='T2', points=points, scans=scans,
                      **_window_override(pre, window))
-    snr_policy = _snr_policy(session, target_snr, scans)
-    if snr_policy is not None:
-        wa.scan_data_flag = 1      # opt into the worker's ScanData messages
-    acq = _acquire(session, wa, pre.sweep_type, 't2', log=session.log,
-                   scan_control=_duration_policy(session, max_duration, scans),
-                   on_scan_data=snr_policy)
-    extra = {'tau_start_ns': tau_s, 'tau_step_ns': tau_st, 'window': window}
+    pre.rep_rate = float(wa.rep_rate)
+    key, carried = None, None
+    if adjust_range:
+        key = relaxation_series.context_key(session, pre, 't2', _range_settings(pre, wa, 't2'),
+                                             adjust_max_points)
+        pre, wa, carried = _reuse_range(session, pre, wa, 't2', key)
+        settings = _range_settings(pre, wa, 't2')
+        tau_s, tau_st = settings['tau_start_ns'], settings['tau_step_ns']
+    _period_check(pre, snapshot.AWG_OUTPUT_SHIFT_NS + max(
+        s.start + s.length + (wa.points - 1) * s.st_inc
+        for s in pre.slots if s.active), 'the tau sweep (tau_step x points)')
+    early = (_EarlyRangeCheck(session, pre, wa, 't2', adjust_max_points,
+                              scans, max_duration, started) if adjust_range else None)
+    acq = _measure(session, pre, wa, 't2', scans, max_duration, target_snr, early)
+    extra = {'tau_start_ns': tau_s, 'tau_step_ns': tau_st, 'window': window,
+             'rep_rate_hz': float(wa.rep_rate)}
     if acq is None:
+        if adjust_range:
+            extra['range_adjustment'] = {'status': 'dry_run', 'reason': 'measured data required'}
         return ({'t2': '1.8 us', 'fit': 'stretched_exp', 'canned': True,
                  **extra},
                 [JudgeReport('relaxation_fit', True, float('inf'),
                              {'note': 'dry-run, not judged'})])
-    return _finish(session, acq, _fit_stretched, 't2', 'stretched_exp', extra)
+    if adjust_range:
+        acq, pre, wa, report = _adjust_range(session, pre, wa, acq, 't2', scans, target_snr, early)
+        extra['range_adjustment'] = report
+        if carried is not None:
+            report['carried_range'] = carried
+        extra['tau_step_ns'] = min(abs(s.st_inc) for s in pre.slots if s.active and s.st_inc != 0)
+    extra['rep_rate_hz'] = float(wa.rep_rate)
+    result, judges = _finish(session, acq, _fit_stretched, 't2', 'stretched_exp', extra)
+    if adjust_range:
+        _learn_range(session, pre, wa, acq, 't2', key, adjust_max_points, result, judges)
+    return result, judges
 
 
 def t1(session, preset, t_start, t_end, points, scans, window='auto',
-       max_duration=None, rep_rate=None, target_snr=None):
+       max_duration=None, rep_rate=None, target_snr=None, adjust_range=False,
+       adjust_max_points=4096):
     """Inversion recovery: log-time sweep (Log Start/End = log10 ns),
     a - b*exp(-t/T1) fit with the characteristic-time initial guess. The
     worker deduplicates the grid-rounded log axis, so the result's npoints
     may be below `points`. A T1 sweep needs 1/rep_rate longer than the
     sequence at t_end — and physically several times the expected T1."""
     from atomize.epr_auto.params import parse_time_ns
+    started = time.monotonic()
     pre = _load(preset, 'Log Time')
     t_start_ns = parse_time_ns(t_start)
     t_end_ns = parse_time_ns(t_end)
     log_start = float(np.log10(t_start_ns))
     log_end = float(np.log10(t_end_ns))
     _apply_rep_rate(pre, _resolve_rep_rate(session, rep_rate))
-    _period_check(pre, snapshot.AWG_OUTPUT_SHIFT_NS + (t_end_ns - t_start_ns)
-                  + max(s.start + s.length for s in pre.slots if s.active),
-                  't_end')
     pre, wa = _build(session, pre, exp_name='T1', points=points, scans=scans,
                      log_start=log_start, log_end=log_end,
                      **_window_override(pre, window))
-    snr_policy = _snr_policy(session, target_snr, scans)
-    if snr_policy is not None:
-        wa.scan_data_flag = 1      # opt into the worker's ScanData messages
-    acq = _acquire(session, wa, pre.sweep_type, 't1', log=session.log,
-                   scan_control=_duration_policy(session, max_duration, scans),
-                   on_scan_data=snr_policy)
+    pre.rep_rate = float(wa.rep_rate)
+    key, carried = None, None
+    if adjust_range:
+        key = relaxation_series.context_key(session, pre, 't1', _range_settings(pre, wa, 't1'),
+                                             adjust_max_points)
+        pre, wa, carried = _reuse_range(session, pre, wa, 't1', key)
+    if carried is None or carried['status'] != 'used':
+        _period_check(pre, snapshot.AWG_OUTPUT_SHIFT_NS + (t_end_ns - t_start_ns)
+                      + max(s.start + s.length for s in pre.slots if s.active),
+                      't_end')
+    early = (_EarlyRangeCheck(session, pre, wa, 't1', adjust_max_points,
+                              scans, max_duration, started) if adjust_range else None)
+    acq = _measure(session, pre, wa, 't1', scans, max_duration, target_snr, early)
     extra = {'t_start': ' '.join(str(t_start).split()),
-             't_end': ' '.join(str(t_end).split()), 'window': window}
+             't_end': ' '.join(str(t_end).split()), 'window': window,
+             'rep_rate_hz': float(wa.rep_rate)}
     if acq is None:
+        if adjust_range:
+            extra['range_adjustment'] = {'status': 'dry_run', 'reason': 'measured data required'}
         return ({'t1': '1.2 ms', 'fit': 'exp_recovery', 'canned': True,
                  **extra},
                 [JudgeReport('relaxation_fit', True, float('inf'),
                              {'note': 'dry-run, not judged'})])
-    return _finish(session, acq, _fit_recovery, 't1', 'exp_recovery', extra)
+    if adjust_range:
+        acq, pre, wa, report = _adjust_range(session, pre, wa, acq, 't1', scans, target_snr, early)
+        extra['range_adjustment'] = report
+        if carried is not None:
+            report['carried_range'] = carried
+        extra['t_start'] = f'{10 ** wa.log_start:.9g} ns'
+        extra['t_end'] = f'{10 ** wa.log_end:.9g} ns'
+    extra['rep_rate_hz'] = float(wa.rep_rate)
+    result, judges = _finish(session, acq, _fit_recovery, 't1', 'exp_recovery', extra)
+    if adjust_range:
+        _learn_range(session, pre, wa, acq, 't1', key, adjust_max_points, result, judges)
+    return result, judges

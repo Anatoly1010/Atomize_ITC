@@ -232,24 +232,27 @@ def _check_rep_rate(params, ctx):
 
 
 @register('tune.rep_rate',
-          'Repetition-rate saturation scan: quick echo per rate on a log grid, '
+          'Fixed-tau live repetition-rate scan with a temporary 512 KB ADC buffer: '
+          'consecutive fresh curves stable to 5%, '
           'fit A = A0*(1 - exp(-T/T1_eff)); stores the recommendation for '
-          "the exp.* steps' rep_rate: auto",
+          "preliminary tuning and exp.* steps using rep_rate: auto",
           params={
               'preset': PresetFile(default='hahn_echo_4s.phase_awg',
-                                   help='echo preset for the per-rate quick acquisitions'),
-              'rate_min': Float(min=0.1, max=100000, default=20.0,
-                                help='slowest rate (Hz) — must reach the '
+                                   help='two-pulse echo preset; tau remains fixed during live tuning'),
+              'rate_min': Float(min=10.0, max=100000, default=10.0,
+                                help='slowest rate (Hz), at least 10 — must reach the '
                                      'unsaturated plateau'),
-              'rate_max': Float(min=0.1, max=100000, default=2000.0,
+              'rate_max': Float(min=10.0, max=100000, default=2000.0,
                                 help='fastest rate (Hz); recommendations are '
                                      'never extrapolated above it'),
               'steps': Int(min=3, max=20, default=6,
                            help='log-grid rates between rate_min and rate_max'),
-              'points': Int(min=2, default=4,
-                            help='sweep points per quick acquisition'),
+              'points': Int(min=3, default=3,
+                            help='consecutive fresh live curves within 5%; no tau sweep'),
               'scans': Int(min=1, default=1,
-                           help='scans per quick acquisition'),
+                           help='disjoint stable groups required per rate; all groups must agree within 5%'),
+              'max_wait': TimeStr(default='120 s',
+                                 help='time limit per rate, including arrival of fresh ADC buffers'),
               'factor': Float(min=1, max=20, default=5.0,
                               help='quantitative-mode period = factor x T1_eff '
                                    '(5 -> <1% residual saturation)'),
@@ -261,12 +264,12 @@ def _check_rep_rate(params, ctx):
           },
           check=_check_rep_rate)
 def tune_rep_rate(session, preset, rate_min, rate_max, steps, points, scans,
-                  factor, mode):
+                  factor, mode, max_wait):
     from atomize.epr_auto.primitives import tune
     return _run_primitive(session, tune.rep_rate,
                           preset=preset, rate_min=rate_min, rate_max=rate_max,
                           steps=steps, points=points, scans=scans,
-                          factor=factor, mode=mode)
+                          factor=factor, mode=mode, max_wait=max_wait)
 
 
 # ---------------------------------------------------------------- field
@@ -464,6 +467,14 @@ def _apply_cal_if_any(session, preset, mapping):
                                         'evolution time 2*tau'),
               'tau_step': TimeStr(default='12 ns',
                                   help='tau increment per point'),
+              'adjust_range': Bool(default=False,
+                                    help='check the range during the first 1–3 scans before '
+                                         'SNR stopping; only a clearly unfinished tail gets '
+                                         'one early extension; plan 50–60% baseline for '
+                                         'the next temperature'),
+              'adjust_max_points': Int(min=60, max=100000, default=4096,
+                                       help='point ceiling when automatically resizing a sweep; '
+                                            'increase the grid step if needed'),
               'points': Int(min=2, required=True,
                             help='sweep points'),
               'scans': Int(min=1, default=1,
@@ -490,14 +501,16 @@ def _apply_cal_if_any(session, preset, mapping):
                                        'max_duration)'),
           })
 def exp_t2(session, preset, tau_start, tau_step, points, scans, window,
-           apply_cal, max_duration, rep_rate, target_snr):
+           apply_cal, max_duration, rep_rate, target_snr, adjust_range,
+           adjust_max_points):
     pre = _apply_cal(session, preset, apply_cal)
     from atomize.epr_auto.primitives import exp as exp_primitives
     return _run_primitive(session, exp_primitives.t2, advisory_extra=('echo_snr',),
                           preset=pre, tau_start=tau_start, tau_step=tau_step,
                           points=points, scans=scans, window=window,
                           max_duration=max_duration, rep_rate=rep_rate,
-                          target_snr=target_snr)
+                          target_snr=target_snr, adjust_range=adjust_range,
+                          adjust_max_points=adjust_max_points)
 
 
 def _check_t1(params, ctx):
@@ -516,6 +529,15 @@ def _check_t1(params, ctx):
               't_end': TimeStr(default='5 ms',
                                help='longest recovery delay — physically '
                                     'several times the expected T1'),
+              'adjust_range': Bool(default=False,
+                                    help='check the range during the first 1–3 scans before '
+                                         'SNR stopping; only a clearly unfinished tail gets '
+                                         'one early extension; plan 45–50 plateau points '
+                                         'for the next temperature; '
+                                         'reused/repaired ranges use the maximum timing-compatible rate'),
+              'adjust_max_points': Int(min=60, max=100000, default=4096,
+                                       help='point ceiling when automatically resizing a sweep; '
+                                            'reduce log-grid density if needed'),
               'points': Int(min=2, required=True,
                             help='log-grid points; the worker deduplicates '
                                  'the grid-rounded axis, so the saved curve '
@@ -546,14 +568,15 @@ def _check_t1(params, ctx):
           },
           check=_check_t1)
 def exp_t1(session, preset, t_start, t_end, points, scans, window, apply_cal,
-           max_duration, rep_rate, target_snr):
+           max_duration, rep_rate, target_snr, adjust_range, adjust_max_points):
     pre = _apply_cal(session, preset, apply_cal)
     from atomize.epr_auto.primitives import exp as exp_primitives
     return _run_primitive(session, exp_primitives.t1, advisory_extra=('echo_snr',),
                           preset=pre, t_start=t_start, t_end=t_end,
                           points=points, scans=scans, window=window,
                           max_duration=max_duration, rep_rate=rep_rate,
-                          target_snr=target_snr)
+                          target_snr=target_snr, adjust_range=adjust_range,
+                          adjust_max_points=adjust_max_points)
 
 
 from atomize.epr_auto.preliminary_steps import register_steps

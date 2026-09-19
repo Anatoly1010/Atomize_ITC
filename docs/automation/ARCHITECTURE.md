@@ -1,13 +1,9 @@
 # EPR Experiment Automation — Architecture
 
 Project: automated pulsed-EPR experiments on the ITC endstation (Insys FM214x3GDA),
-built on Atomize. Companion file: [ROADMAP.md](ROADMAP.md) (phases + session log).
+built on Atomize. Companion file: [ROADMAP.md](ROADMAP.md) (current status and dated evidence).
 
-Implemented extension (2026-09-13): [preliminary tuning](PRELIMINARY_TUNING_PLAN.md)
-adds a receiver ringing gate, optional resonator-frequency selection with an
-AWG SINE pulse (typical precision 5 MHz), echo search/maximization and preset
-handoff to fine tuning. This extends the original v1 resonator-tuning scope exclusion below;
-the YAML dry-run and offline checks pass; supervised hardware validation remains pending.
+Updated 2026-09-19. [Preliminary tuning](PRELIMINARY_TUNING_PLAN.md) adds a receiver ringing gate, optional resonator-frequency selection with an AWG SINE pulse, echo search/maximization and preset handoff. The complete preliminary → fine-tuning → T2 workflow passed on hardware on 18 September. Later changes to staged amplitude acquisition, receiver control, live repetition-rate convergence and adaptive relaxation ranges have offline validation; their remaining bench checks are tracked separately in [HARDWARE_CHECKLIST.md](HARDWARE_CHECKLIST.md). The original v1 decisions below retain their historical scope; the implemented extensions are described in this document and the current roadmap.
 
 ## Decisions (agreed 2026-07-16)
 
@@ -85,11 +81,9 @@ A monotonic 190° swing. Hence: (a) a setpoint move beyond `rephase_delta`
 `session.invalidate_phase` + `session.invalidate_rep_rate` (T₁, the basis
 of `tune.rep_rate`, is strongly temperature-dependent), checked in both
 `temp.set` and `temp.wait`, each against its **own** measurement
-temperature; field moves deliberately invalidate neither (the field effect
-on T₁ is minor and appears only in systems with two different spins);
+temperature; field moves deliberately invalidate neither, so field-dependent recovery must be checked when the sample requires it;
 (b) the fine amplitude calibration **survives** a
-temperature change — only the vane moves B₁, and in practice the vane is
-re-set only after a large ΔT, to hold bandwidth; (c) `tune.auto_phase`
+temperature change under the current reuse policy; the protocol can explicitly recalibrate after a large change when needed; (c) `tune.auto_phase`
 and `tune.rep_rate` stamp `temperature_k` on their results so the manifest
 records where each was taken — before any temp step has run, the stamp is
 the measured channel-B temperature (None only if the Lakeshore is
@@ -198,8 +192,7 @@ timeout}` — per-channel band around the setpoint, consecutive in-band polls
 (hold default 3 at 1 s cadence — GPIB is slow), wall-clock timeout ⇒
 StepFailure so the `on_fail`/retry/notify policy applies. temp.param lock
 seized with source 'epr_auto' (already in session.ensure_hardware_locks).
-Temperature *series* (T1 vs T): v1 = explicit repeated steps in the YAML; the
-`foreach:` block is Phase 6 (see "Series & SNR-driven scans" below).
+Temperature series use the implemented `foreach:` block described below. The temperature protocols also support the early range assessment and run-local range carryover described in [RELAXATION_RANGE.md](RELAXATION_RANGE.md).
 
 ### Series & SNR-driven scans (`foreach:` / `target_snr:`) — Phase 6 (implemented 2026-07-19)
 
@@ -231,8 +224,23 @@ from `exp`/`exp_log`, gated on the `scan_data_flag` worker ATTRIBUTE (set via
 run_worker's `on_scan_data(k, i, q)` consumes it; scan_control and
 on_scan_data share ONE downward-only resize ratchet (`_maybe_resize`), which
 is what "min wins" means mechanically: a resize is only ever sent below the
-lowest already sent. Validation data + numbers: ROADMAP Phase 6; harness
-`~/epr_auto_dev/field_phase_snr_check.py`.
+lowest already sent. Validation data and current status are recorded in [ROADMAP.md](ROADMAP.md); the measured-data harness is `~/epr_auto_dev/field_phase_snr_check.py`.
+
+### Early T1/T2 range assessment
+
+With `adjust_range: true`, the first complete scan is checked before SNR stopping or projection. Noisy data can extend this assessment to three scans while duration and scan limits remain active. A confirmed plateau keeps the same acquisition and its accumulated signal. A clearly unfinished tail can cause one extension after the revised sequence and remaining budget are checked. An unresolved early check resumes normal SNR control without a late repeat. After an accepted final fit, the measured range can guide the next temperature in the same run; the default future targets are 55% T2 baseline or 47 T1 plateau points.
+
+`scan_data_wait` requests a complete ADC drain at each relevant scan boundary. The Worker sends `ScanData`, and the executor answers `ScanContinue` after the range/SNR callback finishes, including when it makes no change. This is a software decision boundary: it does not switch off the pulse train. The callback must preserve the existing Stop and downward scan-limit handling. An early extension closes and saves the first acquisition before starting one revised acquisition. The [range notes](RELAXATION_RANGE.md) specify cache context, warming/cooling limits, point ceilings and T1 rate recomputation. Nd:YAG remains fixed at 9.9 Hz; automatic rate tuning is unavailable.
+
+### Live repetition-rate convergence
+
+`tune.rep_rate` reuses `Worker.dig_on` with GUI `l_mode=0`, which calls the driver with `live_mode=1`. Field and τ remain fixed across a logarithmic rate grid. Each ordinary, nonempty `digitizer_get_curve` result provides an echo integral; software loop iterations and phase cycles are not observations. The stability policy accepts three consecutive returned curves when `(max - min) / mean <= 0.05`, then stores their mean complex signal and requests the next rate. The result is consumed as returned, including when its underlying buffer contains old or mixed-rate packets; no packet tags or epoch filter are used. `points` increases the window; `scans` requests disjoint stable groups, with a combined 5% check. `max_wait` limits each rate, including buffer arrival.
+
+The scanned `tune.rep_rate` grid has a 10 Hz lower bound and a 10 Hz default `rate_min`. This floor applies only to the grid used for tuning. Ordinary acquisition rates and fitted recommendations may still use the hardware's 0.1 Hz lower bound, subject to sequence timing; Nd:YAG remains fixed at 9.9 Hz and has no rate-tuning path.
+
+During tuning, the Worker pins the ADC stream buffer to 512 KB before opening the card, regardless of the ADC window or rate. This is a tuning-only allocation; after the card closes, including on Stop or failure, the previous `streamBufSizeKb` value is restored. There are no live-rate-specific packet or epoch changes in `Insys_FPGA`. No separate pause or fixed warmup train is inserted.
+
+This path is separate from `acquire_trace`, whose accumulating readout still forbids parameter changes. `acquire_live_rates` uses the same Worker, ownership and cleanup paths; test mode preflights the complete grid without hardware access. The primitive applies available fine pulse calibration and inherited preliminary settings, records numbered `*_rep_rate_live.csv` observations and fits the accepted amplitudes in `*_rep_rate_curve.csv`. The recovery model still assumes sufficient longitudinal reset by the repeated sequence; 5% stability alone does not establish the quantitative model's nominal under-1% saturation bound. See [the live-rate protocol](../../protocols/rep_rate_live.yaml) and the remaining hardware checks.
 
 ### Initial signal search (`field.edfs range: auto`)
 
@@ -275,7 +283,7 @@ device modules (Insys_FPGA, Micran bridge, BH_15, Lakeshore_335)
 Each layer is usable without the ones above it (primitives callable from a
 plain script; engine usable without protocols).
 
-## Package layout (target)
+## Package layout (implemented core)
 
 ```
 atomize/epr_auto/
@@ -286,12 +294,17 @@ atomize/epr_auto/
     runner.py         # step loop, checkpoint gating, retry policy, manifest
     steps.py          # registry mapping YAML step names -> primitive callables
     engine/
-        sequence.py   # .phase_awg preset -> pulse program (from awg_phasing_insys)
-        acquisition.py# scan loop, digitizer readout, phase-cycle handling
+        snapshot.py   # .phase_awg preset -> exact GUI-compatible Worker arguments
+        executor.py   # reused Worker processes, readout, callbacks and cleanup
+        live_rate.py  # convergence of fresh live echo curves
     primitives/
-        tune.py       # auto_phase(), pi_calibration()
+        tune.py       # phase/window/pulse calibration and live repetition rate
+        preliminary.py # ringing, echo search, receiver control and handoff
         field.py      # edfs(), set_field()
-        relaxation.py # t1(), t2()
+        exp.py        # t1(), t2(), early range assessment and SNR control
+        relaxation_range.py  # measured plateau and proposed range
+        relaxation_series.py # accepted range carryover between temperatures
+        relaxation_timing.py # full-sequence timing and T1 rate selection
         judges.py     # echo SNR, fit quality, convergence — pass/fail + score
 protocols/            # in-repo example protocols (overnight_t2.yaml, ...)
 docs/automation/      # this file + ROADMAP.md
@@ -344,8 +357,7 @@ later steps see them via the session state and presets are patched accordingly.
   redefining MW pulses must keep the partner in sync.
 - Respect the cross-process GPIB locks (`temp.param`, `field.param`) when
   touching Lakeshore/BH_15 — same discipline as the four experiment runners.
-- Buffer forcing order: `streamBufSizeKb` only after `pulser_repetition_rate`
-  (memory `insys-benchmark-automation`).
+- Normal acquisitions select `streamBufSizeKb` through `pulser_repetition_rate` before opening the card. The tuning live-rate sweep pins a 512 KB stream buffer for its whole run, regardless of ADC window or rate, then restores the prior value after the card closes; this does not change normal-rate handling or the Insys driver API. The INI writer keeps atomic temporary-file replacement and preserves the other INI keys. `change_three_ini_files` writes in test mode for compatibility, while the other INI setters retain their test guards; test mode still does not claim FPGA ownership.
 
 ## Engine ↔ GUI contract (Phase 1)
 
@@ -353,8 +365,7 @@ later steps see them via the session state and presets are patched accordingly.
 `open_file/setter → update_* handlers → dig_start_exp` packing. The sweep
 type picks the Worker method: Linear Time→`exp`, Log Time→`exp_log`,
 Amplitude→`exp_amplitude`, Field→`exp_field`, ESEEM Avg→`exp_eseem` (no
-protocol step exposes ESEEM Avg yet, but any tune primitive accepts a preset
-of that family).
+protocol step exposes ESEEM Avg yet; individual primitives still enforce their own pulse/preset requirements).
 **Any edit to either side must be followed by re-running
 `~/epr_auto_dev/gui_vs_engine.py`** (offscreen GUI vs engine, all presets,
 element-wise). Executor stop semantics: the worker child ignores SIGINT
