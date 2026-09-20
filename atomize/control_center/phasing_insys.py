@@ -734,7 +734,7 @@ class MainWindow(QMainWindow):
 
         # ---- Labels & Inputs ----
         labels = [("Acquisitions", "label_17"), ("Integration Left", "label_18"), ("Integration Right", "label_19"), ("Decimation", "label_20"), ("Points", "label_e1"), ("Scans", "label_e2"), ("Experiment Name", "label_e3"), ("Curve Name", "label_e4"), ("Start Field", "label_f1"), ("End Field", "label_f2"), ("Field Step", "label_f3"), ("Sweep Type", "label_c1"), ("Start Log Time", "label_e5"), ("End Log Time", "label_e6"),
-            ('X<sub style="font-size: 12pt;">0</sub>', "label_e7"), ("ΔX ", "label_e8")]
+            ('X<sub style="font-size: 12pt;">0</sub>', "label_e7"), ("ΔX ", "label_e8"), ("Auto Window", "label_aw")]
 
         for name, attr_name in labels:
             lbl = QLabel(name)
@@ -747,6 +747,7 @@ class MainWindow(QMainWindow):
                       (QSpinBox, "Dec", "decimation", self.decimat, 1, 4, 1, 1, 0, ""),
                       (QDoubleSpinBox, "Win_left", "cur_win_left", self.win_left, 0, 6400, 0, 0.4, 1, " ns"),
                       (QDoubleSpinBox, "Win_right", "cur_win_right", self.win_right, 0, 6400, 320, 0.4, 1, " ns"),
+                      (QDoubleSpinBox, "Win_width", "win_width", self.win_width_func, 0.4, 6400, 100, 0.4, 1, " ns"),
                       (QSpinBox, "box_points", "cur_points", self.points, 1, 20000, 500, 10, 0, ""),
                       (QSpinBox, "box_scan", "cur_scan", self.scan, 1, 100, 1, 1, 0, ""),
                       (QDoubleSpinBox, "box_st_field", "cur_start_field", self.st_field, 0, 15000, 3000, 1, 1, " G"),
@@ -898,8 +899,29 @@ class MainWindow(QMainWindow):
         right_grid.addWidget(self.Win_right, 1, 1)
         right_grid.addWidget(self.label_20, 2, 0)
         right_grid.addWidget(self.Dec, 2, 1)
-        right_grid.addWidget(hline(), 3, 0, 1, 2)
-        right_grid.setRowStretch(4, 1)
+        aw_controls = QWidget()
+        aw_controls.setFixedSize(360, 26)
+        aw_layout = QHBoxLayout(aw_controls)
+        aw_layout.setContentsMargins(0, 0, 0, 0)
+        aw_layout.setSpacing(0)
+        self.label_aw.setFixedSize(140, 26)
+        aw_layout.addWidget(self.label_aw)
+        aw_layout.addSpacing(20)
+        self.button_auto_window = QPushButton("A")
+        self.button_auto_window.setFixedSize(26, 26)
+        self.button_auto_window.setStyleSheet(
+            REFINED_STYLES['DOCK_CLOSE_STYLE'] + "QPushButton { font-size: 15px; }")
+        self.button_auto_window.setAccessibleName("Auto window")
+        self.button_auto_window.setToolTip(
+            "Auto window: centre an integration window of the given width on the echo "
+            "maximum and update Integration Left/Right. Needs a running preview.")
+        self.button_auto_window.clicked.connect(self.auto_window)
+        aw_layout.addWidget(self.button_auto_window)
+        aw_layout.addSpacing(4)
+        aw_layout.addWidget(self.Win_width)
+        right_grid.addWidget(aw_controls, 3, 0, 1, 2)
+        right_grid.addWidget(hline(), 4, 0, 1, 2)
+        right_grid.setRowStretch(5, 1)
         right_grid.setColumnStretch(4, 1)
 
         third_grid = QGridLayout()
@@ -1042,8 +1064,27 @@ class MainWindow(QMainWindow):
         
         gridLayout.addWidget(self.label_11, 3, 0)
         gridLayout.addWidget(self.P_to_drop, 3, 1)
-        gridLayout.addWidget(self.label_12, 4, 0)
-        gridLayout.addWidget(self.Zero_order, 4, 1)
+        zo_controls = QWidget()
+        zo_controls.setFixedSize(360, 26)
+        zo_layout = QHBoxLayout(zo_controls)
+        zo_layout.setContentsMargins(0, 0, 0, 0)
+        zo_layout.setSpacing(0)
+        self.label_12.setFixedSize(140, 26)
+        zo_layout.addWidget(self.label_12)
+        zo_layout.addSpacing(20)
+        self.button_auto_phase = QPushButton("A")
+        self.button_auto_phase.setFixedSize(26, 26)
+        self.button_auto_phase.setStyleSheet(
+            REFINED_STYLES['DOCK_CLOSE_STYLE'] + "QPushButton { font-size: 15px; }")
+        self.button_auto_phase.setAccessibleName("Auto phase")
+        self.button_auto_phase.setToolTip(
+            "Auto phase: set Zero Order so the I/Q integral over the Integration Left/Right "
+            "window falls on the I axis. Needs a running preview with Phase Correction checked.")
+        self.button_auto_phase.clicked.connect(self.auto_phase)
+        zo_layout.addWidget(self.button_auto_phase)
+        zo_layout.addSpacing(4)
+        zo_layout.addWidget(self.Zero_order)
+        gridLayout.addWidget(zo_controls, 4, 0, 1, 2)
         gridLayout.addWidget(self.label_13, 5, 0)
         gridLayout.addWidget(self.First_order, 5, 1)
         gridLayout.addWidget(self.label_14, 6, 0)
@@ -1451,6 +1492,30 @@ class MainWindow(QMainWindow):
             except AttributeError:
                 pass
 
+    def auto_phase(self):
+        """Ask the running preview for the zero-order phase of its integrated I/Q."""
+        if getattr(self, 'is_experiment', False):
+            self.message('Auto phase works only in the preview, not during an experiment.')
+            return
+        if not self._live_run_alive():
+            self.message('Auto phase: start the preview first.')
+            return
+        if not self.Quad_cor.isChecked():
+            self.message('Auto phase: check Phase Correction first; Zero Order has no effect without it.')
+            return
+        self.parent_conn_dig.send('AP')
+
+    def auto_window(self):
+        """Ask the running preview to centre the integration window on the echo."""
+        if getattr(self, 'is_experiment', False):
+            self.message('Auto window works only in the preview, not during an experiment.')
+            return
+        if not self._live_run_alive():
+            self.message('Auto window: start the preview first.')
+            return
+        width_pts = max(1, int(round(self.win_width / self.time_per_point)))
+        self.parent_conn_dig.send('AW' + str(width_pts))
+
     def first_order_func(self):
         """
         A function to change the first order phase correction value
@@ -1528,6 +1593,12 @@ class MainWindow(QMainWindow):
                 self.parent_conn_dig.send( 'WR' + str( self.cur_win_right ) )
             except AttributeError:
                 pass
+
+    def win_width_func(self):
+        """
+        A function to change the auto window width
+        """
+        self.win_width = float( self.Win_width.value() )
 
     def acq_number(self):
         """
@@ -1637,6 +1708,14 @@ class MainWindow(QMainWindow):
 
         text = open(filename).read()
         lines = text.split('\n')
+
+        for line in lines:
+            if line.startswith('Auto window:'):
+                try:
+                    self.Win_width.setValue( float( line.split(':  ')[1] ) )
+                except (IndexError, ValueError):
+                    pass
+                break
 
         try:
             self.P_to_drop.setValue( int( lines[16].split(':  ')[1] ) )
@@ -1812,6 +1891,7 @@ class MainWindow(QMainWindow):
 
             file.write( 'X0:  ' + str( self.X0.value() ) + '\n' )
             file.write( 'dX:  ' + str( self.XDelta.value() ) + '\n' )
+            file.write( 'Auto window:  ' + str( self.Win_width.value() ) + '\n' )
 
     def phase_converted(self, ph_str):
         if ph_str == '+x':
@@ -2442,6 +2522,15 @@ class MainWindow(QMainWindow):
             self.update_count_nip(data)
         elif msg_type == 'PulseList':
             self.update_pulse_list_display(data)
+        elif msg_type == 'AutoWindow':
+            left_ns, right_ns, peak_ns = data
+            self.Win_left.setValue(round(left_ns, 1))
+            self.Win_right.setValue(round(right_ns, 1))
+            self.errors.appendPlainText(f'Auto window: {left_ns:.1f} to {right_ns:.1f} ns, peak at {peak_ns:.1f} ns')
+        elif msg_type == 'AutoPhase':
+            phase_deg, magnitude = data
+            self.Zero_order.setValue(round(phase_deg, 4))
+            self.errors.appendPlainText(f'Auto phase: Zero Order = {phase_deg:.1f} deg, |I+iQ| = {magnitude:.1f}')
         elif msg_type == 'LiveReject':
             # The worker's test-mode Insys rebuild found the live edit invalid
             # (e.g. an overlap the AMP_ON/LNA_PROTECT join cannot resolve). The
@@ -2832,6 +2921,8 @@ class Worker():
             DETECTION_WINDOW = round( pb.adc_window * 3.2, 1 )
             TR_ADC = round(3.2 / 8, 1)
             WIN_ADC = int( pb.adc_window * 8 / decimation )
+            auto_phase_req = False
+            auto_window_pts = 0
 
             #31/03/2026
             if DETECTION_WINDOW <= 1200:
@@ -2928,6 +3019,10 @@ class Worker():
                     quad = int( self.command[2:] )
                 elif self.command[0:2] == 'ZO':
                     zero_order = float( self.command[2:] )
+                elif self.command[0:2] == 'AP':
+                    auto_phase_req = True
+                elif self.command[0:2] == 'AW':
+                    auto_window_pts = int( self.command[2:] )
                 elif self.command[0:2] == 'FO':
                     first_order = float( self.command[2:] )
                 elif self.command[0:2] == 'SO':
@@ -3107,6 +3202,31 @@ class Worker():
                                 xname = 'Offset', xscale = 'Hz',
                                 yscale = 'A.U.', label = 'FFT'
                                 )
+
+                if auto_phase_req:
+                    auto_phase_req = False
+                    if quad == 1 and win_right > win_left:
+                        integral = np.sum(data_x[win_left:win_right] + 1j * data_y[win_left:win_right])
+                        if np.isfinite(integral) and integral != 0:
+                            zero_order = (zero_order + np.angle(integral)) % (2 * np.pi)
+                            conn.send(('AutoPhase', (float(np.degrees(zero_order)), float(np.abs(integral) * t_res))))
+                        else:
+                            conn.send(('Message', 'Auto phase: no signal in the integration window.'))
+                    else:
+                        conn.send(('Message', 'Auto phase needs Phase Correction and a non-empty integration window.'))
+
+                if auto_window_pts > 0:
+                    width = min(auto_window_pts, WIN_ADC)
+                    auto_window_pts = 0
+                    envelope = np.abs(data_x + 1j * data_y)
+                    if np.isfinite(envelope).all() and np.any(envelope > 0):
+                        smooth = np.convolve(envelope, np.ones(width) / width, mode = 'same')
+                        centre = int(np.argmax(smooth))
+                        left = min(max(centre - width // 2, 0), WIN_ADC - width)
+                        right = left + width
+                        conn.send(('AutoWindow', (left * t_res, right * t_res, centre * t_res)))
+                    else:
+                        conn.send(('Message', 'Auto window: no signal in the detection window.'))
 
                 if not script_test:
                     self.command = 'start'
