@@ -959,6 +959,7 @@ class Worker():
                     msg = conn.recv()
                     if msg.startswith('FL'):
                         file_save_1 = msg[2:]
+                        file_handler.save_cancelled = file_save_1 in (None, '', 'None')
                         break
                 general.wait('200 ms')
 
