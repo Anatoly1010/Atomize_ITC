@@ -1,4 +1,5 @@
 import os
+import json
 import re
 import sys
 import time
@@ -336,6 +337,8 @@ class MainExtended(MainWindow):
         for line in lines:
             if line.startswith("print "):
                 self.text_errors.appendPlainText(line[6:].strip())
+            elif line.startswith("track "):
+                self.handle_track(sending_process, line[6:])
             # Sequence Calculator one-click open: launch the target phasing tool
             # pre-loaded with the preset it just wrote.
             elif line.startswith("open_awg "):
@@ -352,6 +355,45 @@ class MainExtended(MainWindow):
             elif self.skip_lines != 1:
                 self.text_errors.appendPlainText(line)
 
+    def handle_track(self, process, payload):
+        """Capture references from this phasing worker's displayed curves."""
+        if process not in (self.process_phasing, self.process_awg_phasing):
+            return
+        try:
+            request = json.loads(payload)
+            action = request['action']
+            pid = request['pid']
+        except (ValueError, KeyError, TypeError):
+            return
+        if action in ('clear', 'clear_fft'):
+            self.clear_track(process, fft_only=action == 'clear_fft')
+            return
+        if action != 'capture' or not isinstance(pid, int):
+            return
+        self.clear_track(process)
+        owner = (process, process.processId())
+        targets = [('Dig', ('ch', 'ch_1'))]
+        if request.get('fft'):
+            labels = ('FFT', 'FFT_1') if request.get('quad') else ('FFT',)
+            targets.append(('FFT', labels))
+        for name, labels in targets:
+            dock = self.namelist.plot_dict.get(name)
+            if (dock is None or getattr(dock, 'live_source_pid', None) != pid
+                    or getattr(dock, 'live_parent_pid', None) != owner[1]
+                    or getattr(dock, 'live_labels', ()) != labels
+                    or dock.live_source not in self.namelist.plot_sources.get(name, set())):
+                self.text_errors.appendPlainText(f'Track: no current {name} curves; click T off and on after data arrives.')
+                continue
+            dock.capture_track(labels, owner)
+
+    def clear_track(self, process, fft_only=False):
+        """Clear references owned by one control-center process."""
+        for name in (('FFT',) if fft_only else ('Dig', 'FFT')):
+            dock = self.namelist.plot_dict.get(name)
+            owner = getattr(dock, 'track_owner', None)
+            if owner is not None and owner[0] is process:
+                dock.clear_track()
+
     def _cc_output_finished(self, *args):
         """On process exit, flush any buffered final line (the child emitted
         it without a trailing '\n') and drop the per-process line buffer, so a
@@ -361,13 +403,14 @@ class MainExtended(MainWindow):
         process = self.sender()
         if not process:
             return
+        self.clear_track(process)
         leftover = self.__dict__.get('_cc_linebuf', {}).pop(id(process), '')
         if not leftover:
             return
         if leftover.startswith("print "):
             self.text_errors.appendPlainText(leftover[6:].strip())
         elif (self.skip_lines != 1
-                and not leftover.startswith(("open_awg ", "open_rect ", "before ", "closing "))
+                and not leftover.startswith(("open_awg ", "open_rect ", "track ", "before ", "closing "))
                 and 'ret = 0' not in leftover):
             self.text_errors.appendPlainText(leftover)
 

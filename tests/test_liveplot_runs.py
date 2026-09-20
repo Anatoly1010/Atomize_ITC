@@ -33,6 +33,179 @@ def push(window, source, name, offset=0):
     window.do_operation(np.arange(5) + offset, source=source)
 
 
+def push_iq(window, source, name='Dig', offset=0, pair=True, pid=42, parent_pid=7, x=None):
+    if x is None:
+        x = np.arange(5, dtype=float) * (1e-9 if name == 'Dig' else 1e6)
+    y = np.arange(len(x), dtype=float) + offset
+    window.meta = dict(operation='plot_xy', name=name, rank=1, pid=pid, parent_pid=parent_pid,
+                       label='ch' if name == 'Dig' else 'FFT',
+                       Xname='Time' if name == 'Dig' else 'Frequency',
+                       X='s' if name == 'Dig' else 'Hz', Yname='Intensity', Y='mV', Scatter='False',
+                       TimeAxis='False', Vline='False', value='')
+    data = np.array([[x, x], [y, -y]]) if pair else np.array([x, y])
+    window.do_operation(data, source=source)
+
+
+def track_controller(window):
+    from types import MethodType, SimpleNamespace
+    from unittest.mock import Mock
+    from atomize.main.main import MainExtended
+
+    controller = SimpleNamespace(namelist=window.namelist, text_errors=Mock(),
+                                 process_phasing=Mock(), process_awg_phasing=Mock())
+    controller.process_phasing.processId.return_value = 7
+    controller.process_awg_phasing.processId.return_value = 7
+    controller.clear_track = MethodType(MainExtended.clear_track, controller)
+    controller.handle_track = MethodType(MainExtended.handle_track, controller)
+    return controller
+
+
+@pytest.mark.parametrize('fft_pair', [False, True])
+def test_track_copies_dig_and_hidden_fft_without_changing_live_data(liveplot, fft_pair):
+    import json
+
+    source = QObject()
+    push_iq(liveplot, source)
+    push_iq(liveplot, source, 'FFT', pair=fft_pair)
+    liveplot.namelist['FFT'].close()
+    original = liveplot.namelist['Dig'].curves['ch']
+    original.setPos(2e-9, 3)
+    original.setTransform(original.transform().scale(1, 2))
+    controller = track_controller(liveplot)
+    owner = controller.process_awg_phasing
+    controller.handle_track(owner, json.dumps(dict(action='capture', pid=42, fft=True, quad=int(fft_pair))))
+    snapshots = {}
+    for name, count in [('Dig', 2), ('FFT', 2 if fft_pair else 1)]:
+        dock = liveplot.namelist[name]
+        assert len(dock.track_curves) == count
+        assert len(dock.curves) == count
+        snapshots[name] = [(curve.xData.copy(), curve.yData.copy()) for curve in dock.track_curves]
+        for reference, original in zip(dock.track_curves, dock.curves.values()):
+            assert reference.opacity() == pytest.approx(0.3)
+            assert reference.opts['pen'].color() == original.opts['pen'].color()
+            assert reference.zValue() < original.zValue()
+            assert reference.pos() == original.pos()
+            assert reference.transform() == original.transform()
+            assert not np.shares_memory(reference.yData, original.yData)
+    assert liveplot.namelist['FFT'].closed
+    push_iq(liveplot, source, offset=10)
+    push_iq(liveplot, source, 'FFT', offset=20, pair=fft_pair)
+    for name in snapshots:
+        for reference, (x, y) in zip(liveplot.namelist[name].track_curves, snapshots[name]):
+            np.testing.assert_array_equal(reference.xData, x)
+            np.testing.assert_array_equal(reference.yData, y)
+    controller.clear_track(owner)
+    for name in snapshots:
+        assert not liveplot.namelist[name].track_curves
+        assert liveplot.namelist[name].curves
+    np.testing.assert_array_equal(liveplot.namelist['Dig'].curves['ch'].yData, np.arange(5) + 10)
+
+
+def test_track_rejects_stale_and_missing_data_and_clears_only_its_owner(liveplot):
+    import json
+
+    controller = track_controller(liveplot)
+    request = json.dumps(dict(action='capture', pid=42, fft=False))
+    controller.handle_track(controller.process_phasing, request)
+    assert 'Dig' not in liveplot.namelist
+    source = QObject()
+    push_iq(liveplot, source, pid=41)
+    controller.handle_track(controller.process_phasing, request)
+    assert not liveplot.namelist['Dig'].track_curves
+    push_iq(liveplot, source)
+    controller.handle_track(controller.process_phasing, request)
+    assert len(liveplot.namelist['Dig'].track_curves) == 2
+    controller.clear_track(controller.process_awg_phasing)
+    assert len(liveplot.namelist['Dig'].track_curves) == 2
+    liveplot.namelist.source_disconnected(source)
+    assert len(liveplot.namelist['Dig'].track_curves) == 2
+    controller.clear_track(controller.process_phasing)
+    controller.handle_track(controller.process_phasing, request)
+    assert not liveplot.namelist['Dig'].track_curves
+
+
+def test_track_fft_mode_change_and_new_source(liveplot):
+    import json
+
+    source = QObject()
+    controller = track_controller(liveplot)
+    owner = controller.process_phasing
+    push_iq(liveplot, source)
+    push_iq(liveplot, source, 'FFT', pair=True)
+    controller.handle_track(owner, json.dumps(dict(action='capture', pid=42, fft=True, quad=1)))
+    controller.handle_track(owner, json.dumps(dict(action='clear_fft', pid=42)))
+    assert not liveplot.namelist['FFT'].track_curves
+    assert len(liveplot.namelist['Dig'].track_curves) == 2
+    controller.handle_track(owner, json.dumps(dict(action='capture', pid=42, fft=True, quad=0)))
+    assert not liveplot.namelist['FFT'].track_curves
+    push_iq(liveplot, QObject(), pid=43, parent_pid=8)
+    assert not liveplot.namelist['Dig'].track_curves
+
+
+def test_track_survives_worker_restart_in_same_phasing_window(liveplot):
+    import json
+
+    source = QObject()
+    controller = track_controller(liveplot)
+    owner = controller.process_phasing
+    push_iq(liveplot, source)
+    push_iq(liveplot, source, 'FFT', pair=False)
+    controller.handle_track(owner, json.dumps(dict(action='capture', pid=42, fft=True, quad=0)))
+    saved = {name: tuple(liveplot.namelist[name].track_curves) for name in ('Dig', 'FFT')}
+    liveplot.namelist.source_disconnected(source)
+    new_source = QObject()
+    push_iq(liveplot, new_source, pid=43, offset=20)
+    push_iq(liveplot, new_source, 'FFT', pid=43, offset=30, pair=False)
+    for name, references in saved.items():
+        assert tuple(liveplot.namelist[name].track_curves) == references
+        np.testing.assert_array_equal(references[0].yData, np.arange(5))
+    controller.clear_track(owner)
+    assert all(not liveplot.namelist[name].track_curves for name in saved)
+
+
+@pytest.mark.parametrize('fft_pair', [False, True], ids=['magnitude', 'phase_corrected'])
+@pytest.mark.parametrize('new_samples', [
+    np.arange(1, 4),
+    np.arange(-2, 8),
+    np.arange(8, 13),
+    np.arange(5) * 0.5,
+], ids=['shorter', 'longer', 'shifted', 'different_spacing'])
+def test_track_preserves_independent_axes_after_worker_restart(liveplot, fft_pair, new_samples):
+    import json
+
+    source = QObject()
+    controller = track_controller(liveplot)
+    owner = controller.process_phasing
+    old_axes = {'Dig': np.arange(5) * 1e-9, 'FFT': (np.arange(5) - 2) * 1e6}
+    new_axes = {'Dig': new_samples * 1e-9, 'FFT': (new_samples - 2) * 1e6}
+    for name, x in old_axes.items():
+        push_iq(liveplot, source, name, pair=name == 'Dig' or fft_pair, x=x)
+    controller.handle_track(owner, json.dumps(dict(action='capture', pid=42, fft=True, quad=int(fft_pair))))
+    saved = {name: tuple(liveplot.namelist[name].track_curves) for name in old_axes}
+    liveplot.namelist.source_disconnected(source)
+    new_source = QObject()
+    for name, x in new_axes.items():
+        push_iq(liveplot, new_source, name, pid=43, offset=20,
+                pair=name == 'Dig' or fft_pair, x=x)
+        dock = liveplot.namelist[name]
+        assert tuple(dock.track_curves) == saved[name]
+        assert len(dock.track_curves) == len(dock.curves) == (2 if name == 'Dig' or fft_pair else 1)
+        for index, (reference, current) in enumerate(zip(dock.track_curves, dock.curves.values())):
+            sign = 1 if index == 0 else -1
+            np.testing.assert_array_equal(reference.xData, old_axes[name])
+            np.testing.assert_array_equal(reference.yData, sign * np.arange(5))
+            np.testing.assert_array_equal(current.xData, x)
+            np.testing.assert_array_equal(current.yData, sign * (np.arange(len(x)) + 20))
+            assert not np.shares_memory(reference.xData, current.xData)
+            assert not np.shares_memory(reference.yData, current.yData)
+        view = dock.plot_item.getViewBox()
+        view.enableAutoRange(x=True, y=True)
+        view.updateAutoRange()
+        lower, upper = view.viewRange()[0]
+        assert lower <= min(old_axes[name].min(), x.min())
+        assert upper >= max(old_axes[name].max(), x.max())
+
+
 def visible(window):
     return {name for name, plot in window.namelist.plot_dict.items()
             if plot.area is window.dockarea and not plot.closed}

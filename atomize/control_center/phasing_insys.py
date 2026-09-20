@@ -660,9 +660,30 @@ class MainWindow(QMainWindow):
             box_c += 1
             rr_box.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
 
-        label_widget = getattr(self, f"label_7")
-        self.buttons_layout.addWidget(label_widget, 0, 0)
-        label_widget.setFixedSize(170, 26)
+        rate_controls = QWidget()
+        rate_controls.setFixedSize(360, 26)
+        rate_layout = QHBoxLayout(rate_controls)
+        rate_layout.setContentsMargins(0, 0, 0, 0)
+        rate_layout.setSpacing(0)
+        self.label_7.setFixedSize(140, 26)
+        rate_layout.addWidget(self.label_7)
+        rate_layout.addSpacing(20)
+        self.button_track = QPushButton("T")
+        self.button_track.setFixedSize(26, 26)
+        self.button_track.setCheckable(True)
+        self.button_track.setEnabled(False)
+        self.button_track.setStyleSheet(
+            REFINED_STYLES['DOCK_CLOSE_STYLE']
+            + "QPushButton { font-size: 15px; } QPushButton:checked { color: #c1cae3; background: #454b63; }")
+        self.button_track.setAccessibleName("Track live curves")
+        self.button_track.setToolTip(
+            "Keep current I/Q and enabled FFT curves as faded references. Click again to clear. "
+            "Works in live and accumulation previews; references survive stop/restart.")
+        self.button_track.clicked.connect(self.track_curves)
+        rate_layout.addWidget(self.button_track)
+        rate_layout.addSpacing(4)
+        rate_layout.addWidget(self.Rep_rate)
+        self.buttons_layout.addWidget(rate_controls, 0, 0, 1, 2)
         label_widget = getattr(self, f"label_8")
         label_widget.setFixedSize(170, 26)
         self.buttons_layout.addWidget(label_widget, 1, 0)
@@ -1463,6 +1484,7 @@ class MainWindow(QMainWindow):
         """
         Select time-domain zero order or frequency-domain orders 0–2
         """
+        self.clear_track(fft_only=True)
         if self.Quad_cor.checkState().value == 2: # checked
             self.quad = 1
         elif self.Quad_cor.checkState().value == 0: # unchecked
@@ -1503,13 +1525,42 @@ class MainWindow(QMainWindow):
             except AttributeError:
                 pass
 
+    def _track_available(self):
+        return (not getattr(self, 'is_testing', False)
+                and not getattr(self, 'stop_requested', False)
+                and self._live_run_alive())
+
+    def track_curves(self):
+        """Freeze the displayed live curves through the main window."""
+        if not self.button_track.isChecked():
+            self._track_command('clear')
+        elif self._track_available():
+            self._track_command('capture')
+        else:
+            self.button_track.setChecked(False)
+        self.button_track.setEnabled(self.button_track.isChecked() or self._track_available())
+
+    def _track_command(self, action):
+        proc = getattr(self, 'digitizer_process', None)
+        self.message('track ' + json.dumps({
+            'action': action, 'pid': getattr(proc, 'pid', None),
+            'fft': bool(self.fft), 'quad': self.quad,
+        }))
+
+    def clear_track(self, fft_only=False):
+        button = getattr(self, 'button_track', None)
+        if button is not None and button.isChecked():
+            self._track_command('clear_fft' if fft_only else 'clear')
+            if not fft_only:
+                button.setChecked(False)
+
     def auto_phase(self):
         """Ask the running preview for the zero-order phase of its integrated I/Q."""
         if getattr(self, 'is_experiment', False):
             self.message('Auto phase works only in the preview, not during an experiment.')
             return
-        if not self._live_run_alive():
-            self.message('Auto phase: start the preview first.')
+        if getattr(self, 'is_testing', False) or not self._live_run_alive():
+            self.message('Auto phase: start the preview and wait for preflight to finish.')
             return
         if self.Quad_cor.isChecked():
             self.message('Auto phase: uncheck Phase Correction to use time-domain Zero Order.')
@@ -1521,8 +1572,8 @@ class MainWindow(QMainWindow):
         if getattr(self, 'is_experiment', False):
             self.message('Auto window works only in the preview, not during an experiment.')
             return
-        if not self._live_run_alive():
-            self.message('Auto window: start the preview first.')
+        if getattr(self, 'is_testing', False) or not self._live_run_alive():
+            self.message('Auto window: start the preview and wait for preflight to finish.')
             return
         width_pts = max(1, int(round(self.win_width / self.time_per_point)))
         self.parent_conn_dig.send('AW' + str(width_pts))
@@ -1568,6 +1619,7 @@ class MainWindow(QMainWindow):
         Turn on/off FFT
         """
 
+        self.clear_track(fft_only=True)
         if self.fft_box.checkState().value == 2: # checked
             self.fft = 1
         elif self.fft_box.checkState().value == 0: # unchecked
@@ -2292,6 +2344,7 @@ class MainWindow(QMainWindow):
         """
         A function to stop digitizer
         """
+        self.button_track.setEnabled(self.button_track.isChecked())
         self.stop_requested = True
         path_to_main = os.path.abspath( os.getcwd() )
         path_file = os.path.join(path_to_main, '../atomize/control_center/digitizer_insys.param')
@@ -2519,6 +2572,7 @@ class MainWindow(QMainWindow):
         elif msg_type == 'Message':
             self.errors.appendPlainText(data)
         elif msg_type == 'Error':
+            self.button_track.setEnabled(self.button_track.isChecked())
             self.message_panel.set_experiment_running(False)
             self.last_error = True
             self.timer.stop()
@@ -2575,6 +2629,7 @@ class MainWindow(QMainWindow):
         self.message_panel.update_pulse_list(text)
 
     def check_messages(self):
+        self.button_track.setEnabled(self.button_track.isChecked() or self._track_available())
         if not hasattr(self, 'last_error'):
             self.last_error = False
 
@@ -2644,6 +2699,7 @@ class MainWindow(QMainWindow):
             return
 
         self.monitor_timer.stop()
+        self.button_track.setEnabled(self.button_track.isChecked())
         self.message_panel.set_experiment_running(False)
 
         if self.is_experiment == True:

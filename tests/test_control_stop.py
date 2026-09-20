@@ -22,10 +22,11 @@ def test_preflight_completion(monkeypatch, name, action, experiment):
         stop_requested=False, exit_clicked=0, is_testing=True, last_error=False,
         is_experiment=experiment, opened=0, rep_active=1,
         p1_length='100 ns', cur_win_left=0, cur_win_right=10, decimation=1,
-        timer=Mock(), monitor_timer=Mock(), progress_bar=Mock(), errors=Mock(),
+        timer=Mock(), monitor_timer=Mock(), progress_bar=Mock(), errors=Mock(), message_panel=Mock(),
         button_start=Mock(), button_start_exp=Mock(), button_update=Mock(),
         run_main_experiment=Mock(), run_experiment=Mock(), stop_rep_countdown=Mock(),
         start_rep_countdown=Mock(), message=Mock(), button_blue=Mock(),
+        clear_track=Mock(), _track_available=Mock(return_value=False), button_track=Mock(),
     )
     setattr(window, 'digitizer_process' if phasing else 'exp_process', process)
     setattr(window, 'parent_conn_dig' if phasing else 'parent_conn', conn)
