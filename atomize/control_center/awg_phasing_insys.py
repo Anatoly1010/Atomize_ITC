@@ -732,10 +732,10 @@ class MainWindow(QMainWindow):
             txt.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
 
         link_controls = QWidget()
-        link_controls.setFixedSize(170, 26)
+        link_controls.setFixedSize(360, 26)
         link_layout = QHBoxLayout(link_controls)
         link_layout.setContentsMargins(0, 0, 0, 0)
-        link_layout.setSpacing(4)
+        link_layout.setSpacing(0)
         self.Combo_link_pulses = QComboBox()
         for parameter in ['Off', 'Amplitude', 'Length', 'Position', 'Frequency']:
             self.Combo_link_pulses.addItem(f"Link: {parameter}", parameter)
@@ -750,6 +750,7 @@ class MainWindow(QMainWindow):
             "the whole linked group at the first limit.")
         self.Combo_link_pulses.currentIndexChanged.connect(self.link_param_changed)
         link_layout.addWidget(self.Combo_link_pulses)
+        link_layout.addSpacing(20)
         self.button_reset_links = QPushButton("×")
         self.button_reset_links.setFixedSize(26, 26)
         self.button_reset_links.setStyleSheet(
@@ -759,7 +760,8 @@ class MainWindow(QMainWindow):
             "Reset all links: set every factor to No and the parameter to Off. Pulse values stay unchanged.")
         self.button_reset_links.clicked.connect(self.reset_links)
         link_layout.addWidget(self.button_reset_links)
-        self.gridLayout.addWidget(link_controls, 18, 0)
+        link_layout.addSpacing(4)
+        self.gridLayout.addWidget(link_controls, 18, 0, 1, 2)
 
         for i in range(1, 10):
             combo = QComboBox()
@@ -769,7 +771,10 @@ class MainWindow(QMainWindow):
             combo.setStyleSheet(REFINED_STYLES['COMBO_STYLE'])
             setattr(self, f"P{i}_lk", combo)
             combo.currentTextChanged.connect(lambda _, idx = i: self.update_link_factor(idx))
-            self.gridLayout.addWidget(combo, 18, i)
+            if i == 1:
+                link_layout.addWidget(combo)
+            else:
+                self.gridLayout.addWidget(combo, 18, i)
 
         self.gridLayout.addWidget(hline(), 19, 0, 1, 10)
 
@@ -1155,8 +1160,8 @@ class MainWindow(QMainWindow):
         # ---- Boxes ----
         double_boxes = [(QSpinBox, "P_to_drop", "p_to_drop", self.p_to_drop_func, 0, 1e4, 0, 1, 0, ""),
                       (QDoubleSpinBox, "Zero_order", "zero_order", self.zero_order_func, -0.1, 360.1, 0, 0.5, 4, " deg"),
-                      (QDoubleSpinBox, "First_order", "first_order", self.first_order_func, -100, 100, 0, 0.001, 4, " deg/ns"),
-                      (QDoubleSpinBox, "Second_order", "second_order", self.second_order_func, -100, 100, 0, 0.001, 4, ' deg/ns²')
+                      (QDoubleSpinBox, "First_order", "first_order", self.first_order_func, -100, 100, 0, 0.001, 4, " deg/MHz"),
+                      (QDoubleSpinBox, "Second_order", "second_order", self.second_order_func, -100, 100, 0, 0.001, 4, ' deg/MHz²')
                         ]
 
         for widget_class, attr_name, par_name, func, v_min, v_max, cur_val, v_step, dec, suf in double_boxes:
@@ -1192,7 +1197,7 @@ class MainWindow(QMainWindow):
                 setattr(self, par_name, int(spin_box.value()))
 
 
-        self.P_to_drop.setToolTip('Time zero for the FFT calculation')
+        self.P_to_drop.setToolTip('Discard this many leading samples before the FFT in frequency-domain phase mode.')
 
         #if self.second_order != 0.0:
         #    self.second_order = self.sec_order_coef / ( float( self.Second_order.value() ) * 1000 )
@@ -1213,11 +1218,11 @@ class MainWindow(QMainWindow):
             if attr_name == 'IQ_corr':
                 check.setChecked(True)
 
-        self.fft_box.setToolTip('Show amplitude FFT of raw I/Q data.')
+        self.fft_box.setToolTip('Show the FFT; Phase Correction selects amplitude or phase-corrected I/Q.')
         
-        self.Quad_cor.setToolTip('Apply phase correction in the frequency domain: exp(i·(φ₀ + φ₁·f + φ₂·f²))')
+        self.Quad_cor.setToolTip('Unchecked: Zero Order on the time trace, with Auto phase. Checked: orders 0–2 on the FFT after Points to Drop; Auto phase is disabled.')
 
-        self.IQ_corr.setToolTip('When checked, apply time-domain zero-order phase correction: exp(i·φ₀),\nwhere φ₀ is set by the Frequency of the DETECTION pulse.In this case, only the integrated signal is plotted.\nWhen unchecked, the full 2D arrays are plotted.')
+        self.IQ_corr.setToolTip('Shift the preview by the DETECTION frequency. Phase Correction chooses the phase domain. For experiments, select integrated I/Q instead of full 2D data.')
 
         # ---- Separators ----
         def hline():
@@ -1255,7 +1260,7 @@ class MainWindow(QMainWindow):
         self.button_auto_phase.setAccessibleName("Auto phase")
         self.button_auto_phase.setToolTip(
             "Auto phase: set Zero Order so the I/Q integral over the Integration Left/Right "
-            "window falls on the I axis. Needs a running preview with Shift Offset checked.")
+            "window falls on the I axis. Needs a running preview with Phase Correction unchecked.")
         self.button_auto_phase.clicked.connect(self.auto_phase)
         zo_layout.addWidget(self.button_auto_phase)
         zo_layout.addSpacing(4)
@@ -1277,6 +1282,7 @@ class MainWindow(QMainWindow):
         self.quad = 0
         self.double_change = 0
         self.iq_cor = 1
+        self.quad_online()
 
     def design_tab_4(self):
         laser_setting_page = QWidget()
@@ -2435,13 +2441,18 @@ class MainWindow(QMainWindow):
 
     def quad_online(self):
         """
-        Turn on/off Quadrature phase correction
+        Select time-domain zero order or frequency-domain orders 0–2
         """
         if self.Quad_cor.checkState().value == 2: # checked
             self.quad = 1
         elif self.Quad_cor.checkState().value == 0: # unchecked
             self.quad = 0
         
+        self.button_auto_phase.setEnabled(self.quad == 0)
+        self.First_order.setEnabled(self.quad == 1)
+        self.Second_order.setEnabled(self.quad == 1)
+        self.P_to_drop.setEnabled(self.quad == 1)
+
         try:
             self.parent_conn_dig.send( 'QC' + str( self.quad ) )
         except AttributeError:
@@ -2507,8 +2518,8 @@ class MainWindow(QMainWindow):
         if not self._live_run_alive():
             self.message('Auto phase: start the preview first.')
             return
-        if not self.IQ_corr.isChecked():
-            self.message('Auto phase: check Shift Offset first; Zero Order has no effect without it.')
+        if self.Quad_cor.isChecked():
+            self.message('Auto phase: uncheck Phase Correction to use time-domain Zero Order.')
             return
         self.parent_conn_dig.send('AP')
 
@@ -3544,6 +3555,8 @@ class MainWindow(QMainWindow):
             self.Win_right.setValue(round(right_ns, 1))
             self.errors.appendPlainText(f'Auto window: {left_ns:.1f} to {right_ns:.1f} ns, peak at {peak_ns:.1f} ns')
         elif msg_type == 'AutoPhase':
+            if self.Quad_cor.isChecked():
+                return
             phase_deg, magnitude = data
             self.Zero_order.setValue(round(phase_deg, 4))
             self.errors.appendPlainText(f'Auto phase: Zero Order = {phase_deg:.1f} deg, |I+iQ| = {magnitude:.1f}')
@@ -4509,8 +4522,9 @@ class Worker():
                     data_x = data[0].ravel()
                     data_y = data[1].ravel()
 
-                    if iq_cor == 1:
-                        data_x, data_y = pb.digitizer_demodulate(data_x, data_y, iq_freq, zero_order, first_order, second_order)
+                    if iq_cor == 1 or quad == 0:
+                        data_x, data_y = pb.digitizer_demodulate(data_x, data_y, iq_freq if iq_cor == 1 else 0,
+                            zero_order if quad == 0 else 0, 0, 0)
                     else:
                         pass
 
@@ -4546,29 +4560,28 @@ class Worker():
                                 yscale = 'A.U.', text = 'Max ' + str(m_val)
                                 )
                         else:
-                            if p_to_drop > len( data_x ) - 0.4 * decimation:
-                                p_to_drop = len( data_x ) - 0.8 * decimation
+                            if p_to_drop > max(0, len(data_x) - 2):
+                                p_to_drop = max(0, len(data_x) - 2)
                                 general.message('Maximum length of the data achieved. A number of drop points was corrected.')
                             # fixed resolution of digitizer; 2 ns
                             freq, fft_x, fft_y = fft.fft( x_axis[p_to_drop:], data_x[p_to_drop:], data_y[p_to_drop:], t_res * 1, re = 'True' )
-                            data_fft = fft.ph_correction( freq * 1e6, fft_x, fft_y, 0, 0, 0)
-                            #, zero_order, first_order, second_order )
-                            general.plot_1d('FFT', freq, ( data_fft[0], data_fft[1] ),
+                            data_fft = fft.ph_correction( freq, fft_x, fft_y, zero_order, first_order * 1e-9, second_order * 1e-18 )
+                            general.plot_1d('FFT', freq * 1e6, ( data_fft[0], data_fft[1] ),
                                 xname = 'Offset', xscale = 'Hz',
                                 yscale = 'A.U.', label = 'FFT'
                                 )
 
                 if auto_phase_req:
                     auto_phase_req = False
-                    if iq_cor == 1 and win_right > win_left:
+                    if quad == 0 and win_right > win_left:
                         integral = np.sum(data_x[win_left:win_right] + 1j * data_y[win_left:win_right])
                         if np.isfinite(integral) and integral != 0:
-                            zero_order = (zero_order + np.angle(integral)) % (2 * np.pi)
-                            conn.send(('AutoPhase', (float(np.degrees(zero_order)), float(np.abs(integral) * t_res))))
+                            phase = (zero_order + np.angle(integral)) % (2 * np.pi)
+                            conn.send(('AutoPhase', (float(np.degrees(phase)), float(np.abs(integral) * t_res))))
                         else:
                             conn.send(('Message', 'Auto phase: no signal in the integration window.'))
                     else:
-                        conn.send(('Message', 'Auto phase needs Shift Offset and a non-empty integration window.'))
+                        conn.send(('Message', 'Auto phase needs time-domain mode and a non-empty integration window.'))
 
                 if auto_window_pts > 0:
                     width = min(auto_window_pts, WIN_ADC)

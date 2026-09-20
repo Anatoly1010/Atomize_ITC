@@ -339,7 +339,13 @@ class WorkerArgs:
         increment tail (p{i}_awg_list). The GUI defaults are l_mode=0,
         fft=0, quad=0; the engine's trace capture defaults to l_mode=1 —
         the accumulating (non-live) readout, i.e. the phase-cycled average
-        the exp methods integrate."""
+        the exp methods integrate.
+
+        quad=0 rotates the preview only by zero_order in time; quad=1 applies
+        orders 0–2 to the FFT after p_to_drop. The shared Worker implements
+        both modes. Argument scaling stays compatible with experiments;
+        its FFT path rescales first/second order by 1e-9/1e-18 to rad/MHz
+        and rad/MHz², matching the GUI's frequency-domain controls."""
         r1 = self.rect[0]
         rect1 = [r1[0], r1[1], r1[2], r1[3], r1[6]]
         rects = [[r[0], r[1]] for r in self.rect[1:]]
