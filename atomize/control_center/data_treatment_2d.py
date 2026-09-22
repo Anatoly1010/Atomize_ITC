@@ -15,8 +15,8 @@ parameter). It mirrors the phase_cor.py workflow:
   * Axis metadata is set by hand (start / step / name / unit per axis) — there
     is no .param sidecar.
   * Independent, chainable operations:
-      - Phase correction: multiply I+iQ by exp(i·(φ₀ + φ₁·x + φ₂·x²)) along the
-        X axis (φ₀ in degrees, φ₁/φ₂ in rad per X-unit / X-unit²).
+      - Phase correction: time-domain frequency shift in MHz and constant phase,
+        or spectral phase in deg, deg/MHz and deg/MHz² along X.
       - FFT (selectable axis): complex FFT of I+iQ along the within-trace (X) or
         the indirect (Y) axis, with optional apodization + zero fill; the
         transformed axis becomes frequency.
@@ -156,9 +156,10 @@ def _save_last_dir(path):
 # Per-tab explanations. These live behind the '?' chip on each tab rather than
 # on the layout, where they used to outweigh the controls they describe.
 _HELP_PHASE = (
-    'Multiply I+iQ by exp(i·(φ₀ + φ₁·x + φ₂·x²)) along the X axis. '
-    'First/second order are entered as a frequency offset: 50 → 50 MHz when x '
-    'is in ns (coeff = 2π·value/1000 per x-unit). Run before FFT.')
+    'Time domain: constant phase in degrees and frequency shift in MHz. '
+    'Frequency domain: φ(f) = φ₀ + a(f − pivot) + b(f − pivot)², with f in MHz '
+    'and φ in degrees. Use FFT → Result → input before spectral correction '
+    'of time-domain data. Each mode keeps its own settings.')
 
 _HELP_FFT = (
     'Complex FFT of I+iQ along the chosen axis (or both for a 2D transform); '
@@ -181,10 +182,11 @@ _HELP_SHEAR = (
     'Straightens a tilted dipolar ridge: V′(t_dip, t) = V(t_dip + k·(t − '
     't_ref), t), done as the exact phase ramp exp(2πi·ν_dip·k·(t − t_ref)) on '
     'the dipolar-axis spectrum — unitary, no interpolation loss. k is the '
-    'ridge slope dt_dip/dt (1/2 for SIFTER).<br><br>'
-    'Order matters, chaining each step with "Result → input": Phase tab, first '
-    'order = the nominal IF in MHz → Filter tab, X low-pass → back to the '
-    'Phase tab for Auto φ₁ (it re-runs Auto φ₀ after it) → shear. φ₁ is not '
+    'ridge slope dt_dip/dt (1/2 for SIFTER). When both axes are time, shear '
+    'coordinates and the fit window use ns, so k is dimensionless.<br><br>'
+    'Order matters, chaining each step with "Result → input": Phase tab, '
+    'mode = time domain, Frequency shift = the nominal IF in MHz → X low-pass → '
+    'Phase tab for Frequency shift Auto (including constant phase) → shear. This is not '
     'optional: the nominal IF is off by a few hundred kHz, which twists the '
     'phase across the echo and cancels part of the very modulation the shear '
     'is recovering. Measure it <b>after</b> the low-pass — on a raw IF record '
@@ -473,65 +475,93 @@ class MainWindow(QMainWindow):
 
     # ---- tabs ----
     def _build_phase_tab(self):
-        p = gf.FormPanel(field_width=gf.FIELD_W,
-                         button_width=gf.BTN_W)
+        p = gf.FormPanel(field_width=gf.FIELD_W, button_width=gf.BTN_W)
         p.add_title('Phase-correct I+iQ along X', help=_HELP_PHASE)
-
+        self.phase_mode = self._combo(['Time-domain', 'Frequency-domain'])
+        self.phase_mode.setToolTip('Follows the input X-axis units when the input changes.')
+        p.add_row('Mode', self.phase_mode)
+        self.phase_time_panel = gf.FormPanel(field_width=gf.FIELD_W,
+                                             button_width=gf.BTN_W)
+        self.phase_freq_panel = gf.FormPanel(field_width=gf.FIELD_W,
+                                             button_width=gf.BTN_W)
+        p.add_widget(self.phase_time_panel)
+        p.add_widget(self.phase_freq_panel)
         self.phase_zero = self._dspin(0.0, 360.0, 2, 0.0, step=0.5)
         self.phase_zero.setSuffix(' deg')
-        self.phase_zero.setWrapping(True)   # full cycle: 360 wraps back to 0
+        self.phase_zero.setWrapping(True)
         self.phase_zero.valueChanged.connect(self._live_update)
-        btn_autoph = QPushButton('Auto')
-        btn_autoph.setStyleSheet(BUTTON_STYLE)
-        btn_autoph.setToolTip(
-            'Zero-order auto-phase: the principal axis of the echo samples '
-            '(φ₀ = −½·angle Σ z² over the points above 25 % of the |I+iQ| '
-            'envelope peak).<br><br>'
-            'Measured on the trace itself, in the same frame the correction is '
-            'applied in — the FFT-tab skip is <b>not</b> used here, since a '
-            'skipped spectrum reports φ₀ in a shifted time origin (off by '
-            '360·f·dt per skipped point for a line at offset f).<br><br>'
-            'First/second order stay manual, and must be set <b>first</b> on '
-            'undemodulated data: a carrier leaves nothing for φ₀ to fix. The '
-            'status line reports any residual offset and the First-order value '
-            'that removes it.')
-        btn_autoph.clicked.connect(self.auto_phase_zero)
-        p.add_row('Zero order', self.phase_zero, btn_autoph, stretch=[3, 1])
-
+        btn_zero = QPushButton('Auto')
+        btn_zero.setStyleSheet(BUTTON_STYLE)
+        btn_zero.setToolTip('Estimate the constant phase after the frequency shift.')
+        btn_zero.clicked.connect(self.auto_phase_zero)
+        self.phase_time_panel.add_row('Constant phase', self.phase_zero, btn_zero,
+                                      stretch=[3, 1])
         self.phase_first = self._dspin(-1e6, 1e6, 3, 0.0, step=0.05)
         self.phase_first.setSuffix(' MHz')
         self.phase_first.valueChanged.connect(self._live_update)
-        btn_autoph1 = QPushButton('Auto')
-        btn_autoph1.setStyleSheet(BUTTON_STYLE)
-        btn_autoph1.setToolTip(
-            'First-order auto-phase: set it to the carrier the record actually '
-            'sits at, from the phase increment per sample over the echo window, '
-            'iterated to the fixed point — then re-run the zero-order Auto.<br><br>'
-            'Do this <b>before</b> φ₀ on undemodulated data. The nominal IF is '
-            'not accurate enough: an offset of a few hundred kHz twists the phase '
-            'across the echo by tens of degrees, which no φ₀ can absorb, and it '
-            'leaves a large imaginary residue.<br><br>'
-            'On input that is already a spectrum there is no carrier to measure. '
-            'A first order there is a shift of the time origin, so the button '
-            'reports how far before the echo centre the transform starts — move '
-            'the FFT tab\'s skip by that much and transform again.')
-        btn_autoph1.clicked.connect(self.auto_phase_first)
-        p.add_row('First order', self.phase_first, btn_autoph1, stretch=[3, 1],
-                  tooltip='Frequency offset per x-unit: 50 → 50 MHz for x in ns.')
-
-        self.phase_second = self._dspin(-1e6, 1e6, 4, 0.0, step=0.001)
-        self.phase_second.setSuffix(' MHz')
-        self.phase_second.valueChanged.connect(self._live_update)
-        adv = p.add_advanced()
+        btn_shift = QPushButton('Auto')
+        btn_shift.setStyleSheet(BUTTON_STYLE)
+        btn_shift.setToolTip('Estimate the shift that removes the carrier, then '
+                             'estimate the constant phase. For raw IF data, '
+                             'shift by the nominal IF and low-pass first.')
+        btn_shift.clicked.connect(self.auto_phase_first)
+        self.phase_time_panel.add_row('Frequency shift', self.phase_first, btn_shift,
+                                       stretch=[3, 1],
+                                       tooltip='Positive values shift toward higher frequency.')
+        self.phase_freq_zero = self._dspin(0.0, 360.0, 2, 0.0, step=0.5)
+        self.phase_freq_zero.setSuffix(' deg')
+        self.phase_freq_zero.setWrapping(True)
+        self.phase_freq_zero.valueChanged.connect(self._live_update)
+        btn_freq_zero = QPushButton('Auto')
+        btn_freq_zero.setStyleSheet(BUTTON_STYLE)
+        btn_freq_zero.setToolTip('Estimate zero-order phase with the entered '
+                                 'first and second orders already applied.')
+        btn_freq_zero.clicked.connect(self.auto_phase_zero)
+        self.phase_freq_panel.add_row('Zero order', self.phase_freq_zero,
+                                      btn_freq_zero, stretch=[3, 1])
+        self.phase_freq_first = self._dspin(-1e6, 1e6, 3, 0.0, step=0.05)
+        self.phase_freq_first.setSuffix(' deg/MHz')
+        self.phase_freq_first.valueChanged.connect(self._live_update)
+        self.phase_freq_panel.add_row('First order', self.phase_freq_first)
+        adv = self.phase_freq_panel.add_advanced()
         adv.field_width, adv.button_width = gf.FIELD_W, gf.BTN_W
-        adv.add_row('Second order', self.phase_second)
-
+        self.phase_freq_second = self._dspin(-1e6, 1e6, 4, 0.0, step=0.001)
+        self.phase_freq_second.setSuffix(' deg/MHz²')
+        self.phase_freq_second.valueChanged.connect(self._live_update)
+        adv.add_row('Second order', self.phase_freq_second)
+        self.phase_pivot = self._dspin(-1e9, 1e9, 6, 0.0, step=0.1)
+        self.phase_pivot.setSuffix(' MHz')
+        self.phase_pivot.valueChanged.connect(self._live_update)
+        adv.add_row('Pivot frequency', self.phase_pivot)
+        self.phase_mode.currentIndexChanged.connect(self._update_phase_mode)
+        self.phase_mode.currentIndexChanged.connect(self._live_update)
+        self._update_phase_mode()
         btn = QPushButton('Apply correction')
         btn.setStyleSheet(BUTTON_STYLE)
         btn.clicked.connect(self.do_phase)
         p.add_button_row(btn, width=gf.ACTION_W)
         p.add_stretch()
         return p
+
+    def _update_phase_mode(self, *args):
+        frequency = self.phase_mode.currentIndex() == 1
+        self.phase_time_panel.setVisible(not frequency)
+        self.phase_freq_panel.setVisible(frequency)
+
+    def _sync_phase_mode(self):
+        """Follow the input X axis without running another operation."""
+        if self.src_col is None:
+            return
+        for mode, convert in enumerate((fft_module.time_axis_ns, fft_module.frequency_axis_mhz)):
+            try:
+                convert(0, self.src_col['scale'])
+            except ValueError:
+                continue
+            blocked = self.phase_mode.blockSignals(True)
+            self.phase_mode.setCurrentIndex(mode)
+            self.phase_mode.blockSignals(blocked)
+            self._update_phase_mode()
+            return
 
     def _build_fft_tab(self):
         p = gf.FormPanel(field_width=gf.FIELD_W,
@@ -749,11 +779,11 @@ class MainWindow(QMainWindow):
         btn_auto.setToolTip(
             'Run the whole chain below in one click, from the raw record: '
             'demodulate at the IF read from the file header → X low-pass at '
-            'IF/2 → Auto φ₁ (which re-runs Auto φ₀) → Auto t_ref → Fit k → '
+            'IF/2 → Auto frequency shift and constant phase → Auto t_ref → Fit k → '
             'Apply shear.<br><br>'
             'The IF is the frequency shared by most AWG pulses in the header '
             '(a DEER pump pulse is outvoted by the three observer pulses); '
-            'without a header the Phase-tab First order is used instead. The '
+            'without a header the time-domain Frequency shift is used instead. The '
             'low-pass sits at half the IF, below both the LO leak at the IF '
             'and the mirror image at twice it.')
         btn_auto.clicked.connect(self.auto_shear)
@@ -1017,7 +1047,7 @@ class MainWindow(QMainWindow):
                 except ValueError:
                     break
                 unit = m.group(3) or None
-                if unit == 's':                 # a bare-SI step would not fit a 3-decimal box
+                if unit == 's':
                     val, unit = val * 1e9, 'ns'
                 spec[ax][field] = val
                 if unit:
@@ -1028,18 +1058,15 @@ class MainWindow(QMainWindow):
         return spec['x'], spec['y']
 
     def _axis_from_array(self, spec, arr, unit=None):
-        """Fill a spec from a stored axis vector (an .h5 file's t / sweep
-        dataset). A step the spin box cannot hold — a raw SI time axis against
-        a 3-decimal box — is left out rather than rounded to a zero step, which
-        would collapse the image; a unit attribute still labels the axis."""
+        """Read axis geometry; widget precision is set when the spec is loaded."""
         if arr is None or np.size(arr) < 2:
             return
-        if unit == 's':                     # seconds would not fit a 3-decimal box
+        if unit == 's':
             arr, unit = np.asarray(arr, float) * 1e9, 'ns'
         if unit:
             spec['unit'] = unit
         start, step = self._axis_start_step(arr)
-        if abs(step) >= 10 ** -self.dx_spin.decimals():
+        if np.isfinite(start) and np.isfinite(step) and step != 0:
             spec['start'], spec['step'] = start, step
 
     def _apply_axis_specs(self, hx, hy):
@@ -1059,7 +1086,17 @@ class MainWindow(QMainWindow):
                     w.blockSignals(True); w.setText(str(v)); w.blockSignals(False)
             for w, v in ((zspin, start), (dspin, step)):
                 if v is not None:
-                    w.blockSignals(True); w.setValue(float(v)); w.blockSignals(False)
+                    w.blockSignals(True)
+                    decimals = max(3, 6 - int(np.floor(np.log10(abs(v))))) if v else 3
+                    try:
+                        factor = float(fft_module.time_axis_ns(1, uedit.text()))
+                    except ValueError:
+                        pass
+                    else:
+                        decimals = max(decimals, 3 + int(np.log10(factor)))
+                    w.setDecimals(min(15, decimals))
+                    w.setValue(float(v))
+                    w.blockSignals(False)
             if step is not None:
                 done.append(f'{label} start={start:g} Δ={step:g} {spec["unit"] or ""}'.strip())
         return ', '.join(done)
@@ -1218,8 +1255,17 @@ class MainWindow(QMainWindow):
             return
         xn, xs = self.xname_edit.text(), self.xscale_edit.text()
         yn, ys = self.yname_edit.text(), self.yscale_edit.text()
+        for unit, boxes in ((xs, (self.x0_spin, self.dx_spin)),
+                            (ys, (self.y0_spin, self.dy_spin))):
+            try:
+                factor = float(fft_module.time_axis_ns(1, unit))
+            except ValueError:
+                continue
+            for box in boxes:
+                box.setDecimals(max(box.decimals(), 3 + int(np.log10(factor))))
         self._relabel_axis(self.src_col, xn, xs)
         self._relabel_axis(self.src_row, yn, ys)
+        self._sync_phase_mode()
         if self.has_result():
             self._relabel_axis(self.res_col, xn, xs)
             self._relabel_axis(self.res_row, yn, ys)
@@ -1268,6 +1314,7 @@ class MainWindow(QMainWindow):
         self.src_i, self.src_q = self.raw_i.copy(), self.raw_q.copy()
         self.src_col, self.src_row = self._raw_axes()
         self.res_i = self.res_q = None
+        self._sync_phase_mode()
         # newly loaded data / deliberate reset => re-fit the view even when the
         # geometry is unchanged (the dock only auto-ranges on first render or a
         # geometry change, so force it here, mirroring the 1D tool).
@@ -1286,6 +1333,7 @@ class MainWindow(QMainWindow):
         prev = self._suppress_live       # restore, not clear: auto_shear nests this
         self._suppress_live = True
         try:
+            self._sync_phase_mode()
             self._push(self.src_i, self.src_q, self.src_col, self.src_row,
                        ('Re', 'Im'))
         finally:
@@ -1438,57 +1486,58 @@ class MainWindow(QMainWindow):
         unit = str(ax.get('scale', '')).strip().lower()
         return ('freq' in name) or (unit in ('hz', 'khz', 'mhz', 'ghz', 'thz'))
 
-    def auto_phase_zero(self):
-        """Fill the zero-order phase with the principal-axis value for the
-        current source.
+    def _phase_time_axis(self):
+        if self._is_freq_axis(self.src_col):
+            raise ValueError('Use frequency-domain phase correction for spectral input.')
+        x = self.src_col['start'] + self.src_col['step']*np.arange(self.src_i.shape[1])
+        return fft_module.time_axis_ns(x, self.src_col['scale'])
 
-        `do_phase` corrects the trace in the time domain, from the *start* of the
-        window, so φ₀ has to be measured in that same frame — on the echo
-        (Fast_Fourier.auto_phase_zero_echo), with the first/second-order phase
-        already applied and with the FFT-tab skip deliberately left out of it. A
-        spectrum built from a skipped trace reports φ₀ in the shifted frame
-        instead, which for an off-centre line is wrong by 360·f·dt per skipped
-        point. Input that is already a spectrum ('Result → input') is phased on
-        that spectrum with no second FFT, but still under the first/second order
-        currently entered — those rotate a spectrum exactly as they rotate a
-        trace, and measuring φ₀ without them reports it in the wrong frame.
-        First/second order stay manual, but a leftover carrier — which no φ₀ can
-        absorb — is reported."""
+    def _phase_spectrum(self):
+        """Return the existing spectrum with its phase coordinates in MHz."""
+        z = self.src_i + 1j*self.src_q
+        x = self.src_col['start'] + self.src_col['step']*np.arange(z.shape[1])
+        try:
+            f = fft_module.frequency_axis_mhz(x, self.src_col['scale'])
+        except ValueError as exc:
+            raise ValueError('Frequency-domain mode needs a frequency axis (Hz, kHz, MHz, GHz or THz). '
+                             'For time data, use FFT → Result → input first.') from exc
+        return z, f, self.src_col
+
+    def _spectral_phase(self, f, zero=0.0):
+        df = f - self.phase_pivot.value()
+        return np.deg2rad(zero + self.phase_freq_first.value()*df
+                         + self.phase_freq_second.value()*df**2)
+
+    def auto_phase_zero(self):
+        """Estimate the constant rotation in the selected correction domain."""
         if self.src_i is None:
             self.set_status('Open an I/Q dataset first.')
-            return
-        ncols = self.src_i.shape[1]
-        axisx = self.src_col['start'] + self.src_col['step']*np.arange(ncols)
-        v1 = float(self.phase_first.value()); v2 = float(self.phase_second.value())
-        Z = (self.src_i + 1j*self.src_q)*np.exp(
-            1j*(2*np.pi*v1/1000.0*axisx + 2*np.pi*v2/1000.0*axisx*axisx))[None, :]
-        if self._is_freq_axis(self.src_col):
-            # Input is already a spectrum (FFT'd, then 'Result → input'): use it
-            # straight, with NO second FFT — transforming again is what produced
-            # a meaningless φ₀. Echo/carrier are time-domain concepts here.
-            phi = fft_module.Fast_Fourier.auto_phase_zero(Z.ravel())
+            return False
+        try:
+            if self.phase_mode.currentIndex() == 1:
+                z, f, _ = self._phase_spectrum()
+                z *= np.exp(1j*self._spectral_phase(f))[None, :]
+                phi = fft_module.Fast_Fourier.auto_phase_zero(z.ravel())
+                self.phase_freq_zero.setValue(phi)
+                self.set_status(f'Auto zero order = {phi:.2f} deg (frequency domain).')
+                return True
+            t = self._phase_time_axis()
+            v1 = self.phase_first.value()
+            z = (self.src_i + 1j*self.src_q)*np.exp(2j*np.pi*v1*t/1000.0)[None, :]
+            phi = fft_module.Fast_Fourier.auto_phase_zero_echo(z)
             self.phase_zero.setValue(phi)
-            note = ' (first/second order applied)' if (v1 or v2) else ''
-            self.set_status(f'Auto φ₀ = {phi:.2f}° — X spectrum, input already '
-                            f'frequency-domain{note}.')
-            return
-
-        phi = fft_module.Fast_Fourier.auto_phase_zero_echo(Z)
-        self.phase_zero.setValue(phi)        # fires the live preview update
-
-        note = ' (first/second order applied)' if (v1 or v2) else ''
-        step = float(self.src_col['step'])
-        f0 = self._carrier(Z, step)*1000.0
-        # a carrier that turns by more than ~45 deg across the echo cannot be
-        # absorbed into phi0 at all; report the first-order value that kills it
-        env = np.abs(Z).mean(axis=0)
-        width = abs(step)*max(1, int(np.count_nonzero(env >= 0.25*env.max())))
-        if abs(f0)*width/1000.0 > 0.125:
-            self.set_status(f'Auto φ₀ = {phi:.2f}° — echo window{note}, but the '
-                            f'signal still sits at {f0:+.2f} MHz: set First order '
-                            f'= {v1 - f0:.2f} and press Auto again.')
-        else:
-            self.set_status(f'Auto φ₀ = {phi:.2f}° — echo window{note}.')
+            dt = float(t[1] - t[0]) if len(t) > 1 else 0.0
+            f0 = self._carrier(z, dt)*1000.0 if dt else 0.0
+            env = np.abs(z).mean(axis=0)
+            width = abs(dt)*max(1, int(np.count_nonzero(env >= 0.25*env.max())))
+            message = f'Auto constant phase = {phi:.2f} deg (time domain).'
+            if abs(f0)*width/1000.0 > 0.125:
+                message += f' Residual carrier {f0:+.3f} MHz; set Frequency shift to {v1-f0:.3f} MHz.'
+            self.set_status(message)
+            return True
+        except ValueError as e:
+            self.set_status(str(e))
+            return False
 
     @staticmethod
     def _carrier(Z, dt):
@@ -1504,61 +1553,6 @@ class MainWindow(QMainWindow):
         S = np.fft.fft(Z, axis=1)
         S[:, np.abs(np.fft.fftfreq(Z.shape[1], dt)) > 10.0/width] = 0
         return fft_module.Fast_Fourier.carrier_offset(np.fft.ifft(S, axis=1), dt)
-
-    @staticmethod
-    def _spectrum_delay(S, df):
-        """(delay, index) between the start of the transformed record and the
-        echo centre, read off a spectrum.
-
-        A linear phase across frequency is nothing but a shift of the time
-        origin, so the quantity a frequency-domain first order would carry can be
-        measured directly: transform back, and find the envelope centre with the
-        same estimator the FFT tab uses for its skip. `delay` comes out in the
-        units the First-order box takes (ns for an axis in MHz, since that box is
-        2π·value/1000 per x-unit either way); `index` is its point count on the
-        transform grid, which equals the skip only when the FFT was not zero
-        filled. Indices past the half point are the negative times of the wrapped
-        record, i.e. a transform that starts *after* the echo centre."""
-        z = np.fft.ifft(np.fft.ifftshift(S, axes=1), axis=1)
-        n = z.shape[1]
-        k = int(sigproc.echo_center(np.abs(z).mean(axis=0)))
-        if k > n//2:
-            k -= n
-        return (1000.0*k/(n*df) if (n and df) else 0.0), k
-
-    def _report_spectrum_delay(self):
-        """Status line for a first-order Auto pressed on a spectrum: what the
-        transform's time origin is, and why the FFT-tab skip — not a first-order
-        phase — is the thing to move.
-
-        The value is reported rather than filled in on purpose. A ramp moves the
-        time origin but cannot remove what sits *before* the echo, and on a
-        trityl echo (line ~2 MHz wide) it lowers nothing: entering the measured
-        delay on a transform started 300 ns early takes the imaginary residue
-        over the line from 30 % to 47 %, while re-running the FFT from the echo
-        centre takes it to 5 %."""
-        df = float(self.src_col['step'])
-        if df == 0:
-            self.set_status('Frequency axis has a zero step; cannot read a delay.')
-            return
-        unit = ' ns' if str(self.src_col.get('scale', '')).strip().lower() == 'mhz' else ''
-        d, k = self._spectrum_delay(self.src_i + 1j*self.src_q, df)
-        if abs(k) < 2:
-            self.set_status('Input is a spectrum: its transform already starts at '
-                            'the echo centre (within one point), so there is no '
-                            'first order to set — φ₀ alone will phase it.')
-        elif k > 0:
-            self.set_status(f'Input is a spectrum: its transform starts {d:.1f}{unit} '
-                            f'({k} pts) before the echo centre. Set the FFT-tab skip '
-                            f'there and transform again — a first-order phase moves '
-                            f'the time origin but cannot remove the dead time and '
-                            f'ringing that sit before the echo.')
-        else:
-            self.set_status(f'Input is a spectrum: its transform starts '
-                            f'{abs(d):.1f}{unit} ({abs(k)} pts) after the echo '
-                            f'centre — the leading half of the echo was cut away '
-                            f'and no phase can bring it back. Lower the FFT-tab '
-                            f'skip and transform again.')
 
     @staticmethod
     def _imag_fraction(W):
@@ -1591,94 +1585,86 @@ class MainWindow(QMainWindow):
         return best, float(res[j])
 
     def auto_phase_first(self):
-        """Fill the first-order term with the carrier the record actually sits at,
-        and re-run the zero-order Auto on top of it.
-
-        The nominal IF is only a starting point: a residual of a few hundred kHz
-        turns the phase by tens of degrees across the echo, which φ₀ cannot absorb
-        and which shows up as a large imaginary residue. Two stages — the carrier
-        is iterated to its fixed point (it survives a badly wrong starting value),
-        then `_refine_first` takes over for the last few hundred kHz.
-
-        A carrier is a time-domain quantity, so on input that is already a
-        spectrum this measures the other thing a first order means there — the
-        time origin of the transform — and reports it as a hint instead
-        (`_report_spectrum_delay`)."""
+        """Remove the time-domain carrier and refine the constant phase."""
         if self.src_i is None:
             self.set_status('Open an I/Q dataset first.')
-            return
-        if self._is_freq_axis(self.src_col):
-            self._report_spectrum_delay()
-            return
-        step = float(self.src_col['step'])
-        if step == 0:
-            self.set_status('First-order Auto needs a time-domain X axis with a '
-                            'non-zero step.')
-            return
-        ncols = self.src_i.shape[1]
-        axisx = self.src_col['start'] + self.src_col['step']*np.arange(ncols)
+            return False
+        if self.phase_mode.currentIndex() != 0:
+            self.set_status('Frequency-domain first and second orders are manual.')
+            return False
+        try:
+            t = self._phase_time_axis()
+            dt = float(t[1] - t[0]) if len(t) > 1 else 0.0
+            if dt == 0:
+                raise ValueError('Frequency-shift Auto needs non-zero time spacing.')
+        except ValueError as e:
+            self.set_status(str(e))
+            return False
+        z0 = self.src_i + 1j*self.src_q
         v1 = v1_in = float(self.phase_first.value())
-        v2 = float(self.phase_second.value())
-        Z0 = self.src_i + 1j*self.src_q
         for _ in range(8):
-            Z = Z0*np.exp(1j*(2*np.pi*v1/1000.0*axisx
-                              + 2*np.pi*v2/1000.0*axisx*axisx))[None, :]
-            f0 = self._carrier(Z, step)*1000.0
+            z = z0*np.exp(2j*np.pi*v1*t/1000.0)[None, :]
+            f0 = self._carrier(z, dt)*1000.0
             v1 -= f0
             if abs(f0) < 1e-3:
                 break
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         try:
-            v1, res = self._refine_first(Z0, axisx, v1)
+            v1, res = self._refine_first(z0, t, v1)
         finally:
             QApplication.restoreOverrideCursor()
-        prev = self._suppress_live       # restore, not clear: auto_shear nests this
-        self._suppress_live = True                 # one preview, after φ₀ lands
+        prev = self._suppress_live
+        self._suppress_live = True
         try:
             self.phase_first.setValue(v1)
         finally:
             self._suppress_live = prev
         self.auto_phase_zero()
-        phi0_msg = self.status.text()
-        self.set_status(f'Auto φ₁ = {v1:.3f} MHz ({v1 - v1_in:+.3f} on the entered '
-                        f'value), {100*res:.1f} % imaginary left over the echo; '
-                        f'then {phi0_msg[0].lower()}{phi0_msg[1:]}')
+        self.set_status(f'Auto frequency shift = {self.phase_first.value():.3f} MHz '
+                        f'({v1-v1_in:+.3f} change), {100*res:.1f} % imaginary left; '
+                        f'constant phase = {self.phase_zero.value():.2f} deg.')
+        return True
 
     def do_phase(self):
         if self.src_i is None:
             self.set_status('Open an I/Q dataset first.')
-            return
-        ncols = self.src_i.shape[1]
-        axisx = self.src_col['start'] + self.src_col['step']*np.arange(ncols)
-        c1 = float(self.phase_zero.value())*np.pi/180.0
-        # first/second order entered as a frequency offset: value/1000 cycles per
-        # x-unit, i.e. 50 -> 50 MHz when x is in ns (coeff = 2*pi*value/1000).
-        v1 = float(self.phase_first.value()); v2 = float(self.phase_second.value())
-        c2 = 2*np.pi*v1/1000.0
-        c3 = 2*np.pi*v2/1000.0
-        ph = np.exp(1j*(c1 + c2*axisx + c3*axisx*axisx))
-        Z = (self.src_i + 1j*self.src_q)*ph[None, :]
-        meta = ['Phase correction along X',
-                f'zero = {self.phase_zero.value():.4g} deg, '
-                f'first = {v1:.4g}, second = {v2:.4g} (MHz @ x=ns; coeff = 2π·value/1000 per x)']
-        self._set_result(Z.real, Z.imag, self.src_col, self.src_row,
-                         ('Re', 'Im'), meta)
+            return False
+        try:
+            if self.phase_mode.currentIndex() == 0:
+                t = self._phase_time_axis()
+                zero, shift = self.phase_zero.value(), self.phase_first.value()
+                z = (self.src_i + 1j*self.src_q)*np.exp(
+                    1j*(np.deg2rad(zero) + 2*np.pi*shift*t/1000.0))[None, :]
+                col = self.src_col
+                meta = ['Time-domain phase correction along X',
+                        f'constant phase = {zero:.6g} deg, frequency shift = {shift:.6g} MHz']
+            else:
+                z, f, col = self._phase_spectrum()
+                z *= np.exp(1j*self._spectral_phase(f, self.phase_freq_zero.value()))[None, :]
+                meta = ['Frequency-domain phase correction along X',
+                        f'zero order = {self.phase_freq_zero.value():.6g} deg, '
+                        f'first = {self.phase_freq_first.value():.6g} deg/MHz, '
+                        f'second = {self.phase_freq_second.value():.6g} deg/MHz^2, '
+                        f'pivot = {self.phase_pivot.value():.6g} MHz']
+        except ValueError as e:
+            self.set_status(str(e))
+            return False
+        self._set_result(z.real, z.imag, col, self.src_row, ('Re', 'Im'), meta)
         self.set_status('Phase correction applied.')
+        return True
 
     def _freq_axis(self, n, step, scale):
         """Frequency axis + unit for an FFT of `n` points with the given sample
-        step/unit. ns/us → MHz (phase_cor convention); s → Hz; else 1/unit."""
+        step/unit. ps/ns/us/ms → MHz; s → Hz; else 1/unit."""
         s = scale.strip().lower()
-        if s in ('ns',):
-            d, funit = step*1e-3, 'MHz'
-        elif s in ('us', 'µs', 'μs'):
-            d, funit = step, 'MHz'
-        elif s in ('ms',):
-            d, funit = step*1e3, 'MHz'
-        elif s in ('s',):
+        if s == 's':
             d, funit = step, 'Hz'
         else:
-            d, funit = step, f'1/{scale}'
+            try:
+                d = float(fft_module.time_axis_ns(step, s))*1e-3
+                funit = 'MHz'
+            except ValueError:
+                d, funit = step, f'1/{scale}'
         if d == 0:
             d = 1.0
         fr = np.fft.fftshift(np.fft.fftfreq(int(n), d))
@@ -1862,7 +1848,17 @@ class MainWindow(QMainWindow):
         n_echo = i.shape[1 - dip]
         tvec = eax['start'] + eax['step']*np.arange(n_echo)
         step = float(dax['step']) or 1.0
-        return dip, step, tvec, (dax['name'], eax['name'], eax['scale'])
+        scale = eax['scale']
+        try:
+            time_step = float(fft_module.time_axis_ns(step, dax['scale']))
+            time_vec = fft_module.time_axis_ns(tvec, eax['scale'])
+        except ValueError:
+            pass
+        else:
+            step, tvec, scale = time_step, time_vec, 'ns'
+        self.shear_tref.setSuffix(f' {scale}')
+        self.shear_fitwin.setSuffix(f' {scale}')
+        return dip, step, tvec, (dax['name'], eax['name'], scale)
 
     @staticmethod
     def _shear_ramp(n_dip, dstep, tvec, k, tref, dip):
@@ -1893,7 +1889,7 @@ class MainWindow(QMainWindow):
         is repeated."""
         if self.src_i is None:
             self.set_status('Open an I/Q dataset first.')
-            return
+            return False
         dip, step, tvec, (dname, ename, escale) = self._shear_geometry()
         n_dip = self.src_i.shape[dip]
         tref = float(self.shear_tref.value())
@@ -1901,7 +1897,7 @@ class MainWindow(QMainWindow):
         gate = (np.abs(tvec - tref) <= half) if half > 0 else np.ones(tvec.size, bool)
         if gate.sum() < 2:
             self.set_status('Fit window too narrow — widen it (0 = whole window).')
-            return
+            return False
         Z = self.src_i + 1j*self.src_q
         sp = np.fft.fft(Z, axis=dip)
         sp = sp[:, gate] if dip == 0 else sp[gate, :]
@@ -1936,6 +1932,7 @@ class MainWindow(QMainWindow):
         win = f'±{half:.4g} {escale}' if half > 0 else 'whole window'
         self.set_status(f'Fitted slope k = {kbest:+.4f} ({dname} per {ename}), '
                         f'peak ×{gain:.2f} over k = 0; {win}, {int(gate.sum())} pts.')
+        return True
 
     @staticmethod
     def _trace_quality(trace, step):
@@ -1945,7 +1942,7 @@ class MainWindow(QMainWindow):
         the same footing."""
         tr = np.asarray(trace, dtype=float)
         tr = tr - np.median(tr)
-        nu = np.abs(np.fft.fftfreq(tr.size, step))
+        nu = np.abs(np.fft.fftfreq(tr.size))
         band = nu >= 0.6*nu.max()
         sp = np.fft.fft(tr - tr.mean())
         noise = np.sqrt((np.abs(sp[band])**2).mean()/tr.size) if band.any() else 0.0
@@ -1972,7 +1969,7 @@ class MainWindow(QMainWindow):
         pk0, _ = self._trace_quality(self.src_i.sum(axis=1 - dip), step)
         gain = pk/pk0 if pk0 else float('nan')
         meta = [f'Shear of {dname} against {ename} (FFT phase ramp, no interpolation)',
-                f'k = {k:+.4f} {dname}-units per {ename}-unit, '
+                f'k = {k:+.4f}, '
                 f't_ref = {tref:.4g} {escale}',
                 f'flat sum over {ename}: peak {pk:.6g} (x{gain:.2f} unsheared), '
                 f'S/N {sn:.0f}']
@@ -2057,7 +2054,7 @@ class MainWindow(QMainWindow):
         """Sign of the first-order term that brings the record to baseband: the
         line sits at ±IF and the ramp has to shift it the other way. Decided on
         the raw spectrum, summed over the traces, within half an IF of the line."""
-        step = float(self.src_col['step'])
+        step = float(fft_module.time_axis_ns(self.src_col['step'], self.src_col['scale']))
         fr = np.fft.fftfreq(self.src_i.shape[1], step)*1000.0        # MHz
         S = np.abs(np.fft.fft(self.src_i + 1j*self.src_q, axis=1)).sum(axis=0)
         band = np.abs(np.abs(fr) - abs(f_if)) <= 0.5*abs(f_if)
@@ -2081,40 +2078,53 @@ class MainWindow(QMainWindow):
                 self.set_status('Auto shear needs a time-domain X axis with a '
                                 'non-zero step.')
                 return
+            step_ns = float(fft_module.time_axis_ns(self.src_col['step'], self.src_col['scale']))
+            dip_step_ns = float(fft_module.time_axis_ns(self.src_row['step'], self.src_row['scale']))
+            if dip_step_ns == 0:
+                self.set_status('Auto shear needs non-zero dipolar-axis spacing.')
+                return
+            if self.shear_axis.currentIndex() != 0:
+                self.set_status('Auto shear needs Y as the dipolar axis and X as the echo axis.')
+                return
             f_if, source = self._header_if(), 'file header'
             if f_if is None:
                 f_if, source = float(self.phase_first.value()), 'Phase tab'
             if not f_if:
                 self.set_status('No AWG frequency in the file header — type the '
-                                'nominal IF into the Phase tab First order and '
+                                'nominal IF into the time-domain Frequency shift and '
                                 'press Auto shear again.')
                 return
             f_if = self._if_sign(f_if)*abs(f_if)
+            self.phase_mode.setCurrentIndex(0)
             self.phase_zero.setValue(0.0)
             self.phase_first.setValue(f_if)
-            self.phase_second.setValue(0.0)
-            self.do_phase()
+            if not self.do_phase():
+                return
             self.promote_result()
             # everything above IF/2 is the LO leak (at the IF) and the mirror
             # image (at twice it); the demodulated echo sits at 0
-            cut = abs(f_if)*abs(self.src_col['step'])/1000.0
+            cut = abs(f_if)*abs(step_ns)/1000.0
             self.filt_axis.setCurrentIndex(0)
             self.filt_x_type.setCurrentText('Low-pass')
             self.filt_x_hi.setValue(min(1.0, max(10**-self.filt_x_hi.decimals(), cut)))
             cut = self.filt_x_hi.value()        # what the cutoff box could hold
             self.do_filter()
             self.promote_result()
-            self.auto_phase_first()                 # re-runs the zero order too
-            self.do_phase()
+            self.phase_first.setValue(0.0)
+            if not self.auto_phase_first() or not self.do_phase():
+                return
             self.promote_result()
             self.auto_shear_ref()
-            self.fit_shear_slope()
+            if not self.fit_shear_slope():
+                return
             self.do_shear()
             done = self.status.text()
             self.set_status(f'Auto shear — IF {f_if:g} MHz ({source}), X low-pass '
-                            f'{cut:.4g} ×f_max, φ₁ = {self.phase_first.value():.3f} '
-                            f'MHz, φ₀ = {self.phase_zero.value():.2f}°; '
+                            f'{cut:.4g} ×f_max, residual shift = {self.phase_first.value():.3f} '
+                            f'MHz, constant phase = {self.phase_zero.value():.2f} deg; '
                             f'{done[0].lower()}{done[1:]}')
+        except ValueError as e:
+            self.set_status(f'Auto shear: {e}')
         finally:
             QApplication.restoreOverrideCursor()
             self._suppress_live = prev_live
