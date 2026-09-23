@@ -607,7 +607,7 @@ class MainWindow(QMainWindow):
         link_layout.addSpacing(20)
         self.button_reset_links = QPushButton("×")
         self.button_reset_links.setFixedSize(26, 26)
-        self.button_reset_links.setStyleSheet(
+        self._set_glyph_style(self.button_reset_links,
             REFINED_STYLES['DOCK_CLOSE_STYLE'] + "QPushButton { font-size: 17px; }")
         self.button_reset_links.setAccessibleName("Reset all links")
         self.button_reset_links.setToolTip(
@@ -665,22 +665,29 @@ class MainWindow(QMainWindow):
         rate_layout = QHBoxLayout(rate_controls)
         rate_layout.setContentsMargins(0, 0, 0, 0)
         rate_layout.setSpacing(0)
-        self.label_7.setFixedSize(140, 26)
+        self.label_7.setFixedSize(124, 26)
         rate_layout.addWidget(self.label_7)
-        rate_layout.addSpacing(20)
+        rate_layout.addSpacing(6)
         self.button_track = QPushButton("T")
         self.button_track.setFixedSize(26, 26)
-        self.button_track.setCheckable(True)
         self.button_track.setEnabled(False)
         self.button_track.setStyleSheet(
-            REFINED_STYLES['DOCK_CLOSE_STYLE']
-            + "QPushButton { font-size: 15px; } QPushButton:checked { color: #c1cae3; background: #454b63; }")
-        self.button_track.setAccessibleName("Track live curves")
+            REFINED_STYLES['DOCK_CLOSE_STYLE'] + "QPushButton { font-size: 15px; }")
+        self.button_track.setAccessibleName("Capture reference curves")
         self.button_track.setToolTip(
-            "Keep current I/Q and enabled FFT curves as faded references. Click again to clear. "
+            "Keep the current I/Q and enabled FFT curves as reference curves; click again to replace them. "
             "Works in live and accumulation previews; references survive stop/restart.")
         self.button_track.clicked.connect(self.track_curves)
         rate_layout.addWidget(self.button_track)
+        rate_layout.addSpacing(4)
+        self.button_track_clear = QPushButton("×")
+        self.button_track_clear.setFixedSize(26, 26)
+        self._set_glyph_style(self.button_track_clear,
+            REFINED_STYLES['DOCK_CLOSE_STYLE'] + "QPushButton { font-size: 17px; }")
+        self.button_track_clear.setAccessibleName("Clear reference curves")
+        self.button_track_clear.setToolTip("Clear the reference curves.")
+        self.button_track_clear.clicked.connect(lambda: self._track_command('clear'))
+        rate_layout.addWidget(self.button_track_clear)
         rate_layout.addSpacing(4)
         rate_layout.addWidget(self.Rep_rate)
         self.buttons_layout.addWidget(rate_controls, 0, 0, 1, 2)
@@ -1525,6 +1532,17 @@ class MainWindow(QMainWindow):
             except AttributeError:
                 pass
 
+    @staticmethod
+    def _set_glyph_style(button, style):
+        """Apply style and centre the button glyph by its ink rather than its line box."""
+        button.setStyleSheet(style)
+        button.ensurePolished()
+        fm = button.fontMetrics()
+        ink = fm.tightBoundingRect(button.text())
+        pad = round(2 * ink.top() + ink.height() + fm.ascent() - fm.descent())
+        side = 'bottom' if pad > 0 else 'top'
+        button.setStyleSheet(style + f"QPushButton {{ padding-{side}: {abs(pad)}px; }}")
+
     def _track_available(self):
         return (not getattr(self, 'is_testing', False)
                 and not getattr(self, 'stop_requested', False)
@@ -1532,13 +1550,9 @@ class MainWindow(QMainWindow):
 
     def track_curves(self):
         """Freeze the displayed live curves through the main window."""
-        if not self.button_track.isChecked():
-            self._track_command('clear')
-        elif self._track_available():
+        if self._track_available():
             self._track_command('capture')
-        else:
-            self.button_track.setChecked(False)
-        self.button_track.setEnabled(self.button_track.isChecked() or self._track_available())
+        self.button_track.setEnabled(self._track_available())
 
     def _track_command(self, action):
         proc = getattr(self, 'digitizer_process', None)
@@ -1548,11 +1562,7 @@ class MainWindow(QMainWindow):
         }))
 
     def clear_track(self, fft_only=False):
-        button = getattr(self, 'button_track', None)
-        if button is not None and button.isChecked():
-            self._track_command('clear_fft' if fft_only else 'clear')
-            if not fft_only:
-                button.setChecked(False)
+        self._track_command('clear_fft' if fft_only else 'clear')
 
     def auto_phase(self):
         """Ask the running preview for the zero-order phase of its integrated I/Q."""
@@ -2344,7 +2354,7 @@ class MainWindow(QMainWindow):
         """
         A function to stop digitizer
         """
-        self.button_track.setEnabled(self.button_track.isChecked())
+        self.button_track.setEnabled(False)
         self.stop_requested = True
         path_to_main = os.path.abspath( os.getcwd() )
         path_file = os.path.join(path_to_main, '../atomize/control_center/digitizer_insys.param')
@@ -2572,7 +2582,7 @@ class MainWindow(QMainWindow):
         elif msg_type == 'Message':
             self.errors.appendPlainText(data)
         elif msg_type == 'Error':
-            self.button_track.setEnabled(self.button_track.isChecked())
+            self.button_track.setEnabled(False)
             self.message_panel.set_experiment_running(False)
             self.last_error = True
             self.timer.stop()
@@ -2629,7 +2639,7 @@ class MainWindow(QMainWindow):
         self.message_panel.update_pulse_list(text)
 
     def check_messages(self):
-        self.button_track.setEnabled(self.button_track.isChecked() or self._track_available())
+        self.button_track.setEnabled(self._track_available())
         if not hasattr(self, 'last_error'):
             self.last_error = False
 
@@ -2699,7 +2709,7 @@ class MainWindow(QMainWindow):
             return
 
         self.monitor_timer.stop()
-        self.button_track.setEnabled(self.button_track.isChecked())
+        self.button_track.setEnabled(False)
         self.message_panel.set_experiment_running(False)
 
         if self.is_experiment == True:

@@ -370,21 +370,26 @@ class MainExtended(MainWindow):
             return
         if action != 'capture' or not isinstance(pid, int):
             return
-        self.clear_track(process)
         owner = (process, process.processId())
         targets = [('Dig', ('ch', 'ch_1'))]
         if request.get('fft'):
             labels = ('FFT', 'FFT_1') if request.get('quad') else ('FFT',)
             targets.append(('FFT', labels))
+        invalid = []
         for name, labels in targets:
             dock = self.namelist.plot_dict.get(name)
             if (dock is None or getattr(dock, 'live_source_pid', None) != pid
                     or getattr(dock, 'live_parent_pid', None) != owner[1]
                     or getattr(dock, 'live_labels', ()) != labels
                     or dock.live_source not in self.namelist.plot_sources.get(name, set())):
-                self.text_errors.appendPlainText(f'Track: no current {name} curves; click T off and on after data arrives.')
-                continue
-            dock.capture_track(labels, owner)
+                invalid.append(name)
+        for name in invalid:
+            self.text_errors.appendPlainText(f'Track: no current {name} curves yet; click T again once they appear.')
+        if invalid:
+            return
+        self.clear_track(process)
+        for name, labels in targets:
+            self.namelist.plot_dict[name].capture_track(labels, owner)
 
     def clear_track(self, process, fft_only=False):
         """Clear references owned by one control-center process."""

@@ -81,8 +81,6 @@ def test_track_copies_dig_and_hidden_fft_without_changing_live_data(liveplot, ff
         assert len(dock.curves) == count
         snapshots[name] = [(curve.xData.copy(), curve.yData.copy()) for curve in dock.track_curves]
         for reference, original in zip(dock.track_curves, dock.curves.values()):
-            assert reference.opacity() == pytest.approx(0.3)
-            assert reference.opts['pen'].color() == original.opts['pen'].color()
             assert reference.zValue() < original.zValue()
             assert reference.pos() == original.pos()
             assert reference.transform() == original.transform()
@@ -108,6 +106,8 @@ def test_track_rejects_stale_and_missing_data_and_clears_only_its_owner(liveplot
     request = json.dumps(dict(action='capture', pid=42, fft=False))
     controller.handle_track(controller.process_phasing, request)
     assert 'Dig' not in liveplot.namelist
+    controller.text_errors.appendPlainText.assert_called_once_with(
+        'Track: no current Dig curves yet; click T again once they appear.')
     source = QObject()
     push_iq(liveplot, source, pid=41)
     controller.handle_track(controller.process_phasing, request)
@@ -122,6 +122,88 @@ def test_track_rejects_stale_and_missing_data_and_clears_only_its_owner(liveplot
     controller.clear_track(controller.process_phasing)
     controller.handle_track(controller.process_phasing, request)
     assert not liveplot.namelist['Dig'].track_curves
+
+
+def track_legend(dock):
+    return [label.text for _, label in dock.legend.items if label.text.endswith(' ref')]
+
+
+def test_track_capture_replaces_references_in_one_click(liveplot):
+    import json
+
+    source = QObject()
+    controller = track_controller(liveplot)
+    owner = controller.process_phasing
+    request = json.dumps(dict(action='capture', pid=42, fft=False))
+    push_iq(liveplot, source)
+    controller.handle_track(owner, request)
+    dock = liveplot.namelist['Dig']
+    old = tuple(dock.track_curves)
+    push_iq(liveplot, source, offset=10)
+    controller.handle_track(owner, request)
+    assert len(dock.track_curves) == 2
+    assert not set(old) & set(dock.track_curves)
+    assert not set(old) & set(dock.plot_item.items)
+    np.testing.assert_array_equal(dock.track_curves[0].yData, np.arange(5) + 10)
+    assert track_legend(dock) == ['ch ref', 'ch_1 ref']
+    controller.text_errors.appendPlainText.assert_not_called()
+
+
+@pytest.mark.parametrize('failure', ['missing_fft', 'stale_source'])
+def test_failed_track_capture_keeps_old_references(liveplot, failure):
+    import json
+
+    source = QObject()
+    controller = track_controller(liveplot)
+    owner = controller.process_phasing
+    push_iq(liveplot, source)
+    push_iq(liveplot, source, 'FFT', pair=False)
+    controller.handle_track(owner, json.dumps(dict(action='capture', pid=42, fft=True, quad=0)))
+    saved = {name: tuple(liveplot.namelist[name].track_curves) for name in ('Dig', 'FFT')}
+    if failure == 'missing_fft':
+        push_iq(liveplot, source, offset=10)
+        request = dict(action='capture', pid=42, fft=True, quad=1)
+        invalid = ['FFT']
+    else:
+        liveplot.namelist.source_disconnected(source)
+        request = dict(action='capture', pid=42, fft=True, quad=0)
+        invalid = ['Dig', 'FFT']
+    controller.handle_track(owner, json.dumps(request))
+    for name, references in saved.items():
+        assert tuple(liveplot.namelist[name].track_curves) == references
+        np.testing.assert_array_equal(references[0].yData, np.arange(5))
+    assert [call.args[0] for call in controller.text_errors.appendPlainText.call_args_list] == [
+        f'Track: no current {name} curves yet; click T again once they appear.' for name in invalid]
+
+
+@pytest.mark.parametrize('fft_pair', [False, True])
+def test_track_colours_opacity_and_legend(liveplot, fft_pair):
+    import json
+    from atomize.main.widgets import CrosshairDock
+
+    source = QObject()
+    controller = track_controller(liveplot)
+    owner = controller.process_phasing
+    push_iq(liveplot, source)
+    push_iq(liveplot, source, 'FFT', pair=fft_pair)
+    liveplot.namelist['Dig'].curves['ch'].opts['pen'].setWidth(3)
+    controller.handle_track(owner, json.dumps(dict(action='capture', pid=42, fft=True, quad=int(fft_pair))))
+    assert CrosshairDock.TRACK_COLORS == ((50, 218, 230), (228, 56, 255))
+    for name, labels in [('Dig', ('ch', 'ch_1')), ('FFT', ('FFT', 'FFT_1') if fft_pair else ('FFT',))]:
+        dock = liveplot.namelist[name]
+        assert track_legend(dock) == [f'{label} ref' for label in labels]
+        for label, reference, color in zip(labels, dock.track_curves, CrosshairDock.TRACK_COLORS):
+            pen = reference.opts['pen']
+            assert pen.color().getRgb()[:3] == color
+            assert pen.width() == dock.curves[label].opts['pen'].width()
+            assert reference.opacity() == pytest.approx(0.7)
+            assert reference.zValue() == -10
+    assert liveplot.namelist['Dig'].track_curves[0].opts['pen'].width() == 3
+    controller.clear_track(owner)
+    for name in ('Dig', 'FFT'):
+        dock = liveplot.namelist[name]
+        assert not track_legend(dock)
+        assert len(dock.legend.items) == len(dock.curves)
 
 
 def test_track_fft_mode_change_and_new_source(liveplot):
