@@ -20,8 +20,8 @@ GRID_NS = 3.2
 AWG_GRID_NS = 0.8              # fine grid (one DAC sample), 'AWG grid' preset line
 AWG_OUTPUT_SHIFT_NS = 0        # MainWindow.awg_output_shift
 DEG_RAD = 180 / math.pi        # zero-order phase: deg -> rad
-FIRST_ORDER_COEF = 180 / math.pi * 1e-9    # first order: deg/ns -> rad/s
-SEC_ORDER_COEF = 180 / math.pi * 1e-18     # second order: deg/ns^2 -> rad/s^2
+FIRST_ORDER_COEF = 180 / math.pi * 1e-9    # first order: deg/MHz -> rad/s
+SEC_ORDER_COEF = 180 / math.pi * 1e-18     # second order: deg/MHz^2 -> rad/s^2
 
 SWEEP_TYPES = ('Linear Time', 'Log Time', 'Amplitude', 'Field', 'ESEEM Avg')
 

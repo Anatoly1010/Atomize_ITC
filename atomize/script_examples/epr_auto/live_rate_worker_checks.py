@@ -182,7 +182,7 @@ def buffer_restore_checks():
         adc, dac = libs / 'exam_adc.ini', libs / 'exam_edac.ini'
         original = (b'[Option]\r\nstreamBufSizeKb = 2048 ; retained comment\r\n'
                     b'BaseClockValue = 100.0\r\nUnrelated = retained\r\n')
-        for mode in ('complete', 'stop', 'read_error', 'open_error', 'restore_error'):
+        for mode in ('complete', 'stop', 'read_error', 'open_error', 'close_error', 'restore_error'):
             for path in (adc, dac):
                 path.write_bytes(original)
             with patch.object(insys, '__file__', str(module)):
@@ -227,6 +227,8 @@ def buffer_restore_checks():
 
                 def closed():
                     state['open'] = False
+                    if mode == 'close_error':
+                        raise OSError('injected close failure')
 
                 def read(points, phases, live_mode):
                     assert adc.read_bytes() == active_adc
@@ -277,10 +279,10 @@ def buffer_restore_checks():
                     assert errors and 'restoration failed' in errors[-1] and not ended
                 else:
                     assert adc.read_bytes() == original_adc and state['restored'], mode
-                    assert bool(errors) == (mode in ('read_error', 'open_error')), errors
+                    assert bool(errors) == (mode in ('read_error', 'open_error', 'close_error')), errors
                     assert ended == (mode in ('complete', 'stop'))
                 assert not list(libs.glob('*.tmp'))
-    print('PASS: 512 KB restored after close on completion/Stop/read/open errors; failed restore keeps INI intact and reports error')
+    print('PASS: 512 KB restored after close on completion/Stop/read/open/close errors; failed restore keeps INI intact and reports error')
 
 
 if __name__ == '__main__':

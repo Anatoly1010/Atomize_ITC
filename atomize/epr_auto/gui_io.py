@@ -6,6 +6,11 @@ import queue
 import signal
 import sys
 import threading
+import time
+
+if os.name == 'nt':
+    import _winapi
+    import msvcrt
 
 PREFIX = 'EPR_AUTO_GUI '
 
@@ -23,6 +28,8 @@ class GuiIO:
         buffer = b''
         while not self.closed.is_set():
             try:
+                if not self._input_ready():
+                    continue
                 chunk = os.read(self.input_fd, 4096)
             except OSError:
                 break
@@ -39,6 +46,18 @@ class GuiIO:
                 else:
                     self.replies.put(reply)
         self._interrupt()
+
+    def _input_ready(self):
+        """On Windows a pending pipe read stalls DLL loading in other threads, so poll the pipe first."""
+        if os.name != 'nt':
+            return True
+        try:
+            available = _winapi.PeekNamedPipe(msvcrt.get_osfhandle(self.input_fd), 0)[0]
+        except OSError:
+            return True
+        if not available:
+            time.sleep(0.05)
+        return bool(available)
 
     def _interrupt(self):
         if self.closed.is_set():

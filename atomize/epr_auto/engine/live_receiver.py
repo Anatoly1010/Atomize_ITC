@@ -84,8 +84,8 @@ def monitor_trace(worker_args, on_trace, on_message=None, poll_s=0.2):
     parent, child = Pipe()
     process = Process(target=_live_child,
                       args=(worker, child, worker_args.dig_args(l_mode=0), phases))
+    timeout = max(60.0, 10 * phases * worker_args.averages / float(worker_args.rep_rate))
     process.start()
-    timeout = max(60.0, 10 * phases * worker_args.averages / worker_args.rep_rate)
     last_frame = time.monotonic()
     stopping = False
     try:

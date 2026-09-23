@@ -85,6 +85,8 @@ def _stale_bridge_lock(session):
     if session.test:
         return False
     from atomize.control_center import bridge_param
+    if not os.path.exists(bridge_param.path()):
+        return True
     return bridge_param.is_locked() and bridge_param.lock_source() == 'epr_auto'
 
 
@@ -191,10 +193,10 @@ def _receiver_guard(wa, limit_mv=200):
     wa.receiver_guard = {'limit_mv': float(limit_mv), 'start_ns': protection_trace_start_ns(wa)}
 
 
-def _repetition_rate(session, pre, rep_rate):
+def _repetition_rate(session, pre, rep_rate, inherit=True):
     rep_rate = tune._resolve_rep_rate(session, rep_rate)
     if rep_rate is None:
-        rep_rate = session.state.get('preliminary_echo', {}).get('rep_rate', pre.rep_rate)
+        rep_rate = session.state.get('preliminary_echo', {}).get('rep_rate', pre.rep_rate) if inherit else pre.rep_rate
     if not math.isfinite(rep_rate) or not 0.1 <= rep_rate <= 10000:
         raise ValueError('preliminary repetition rate must be within 0.1–10000 Hz')
     pre.rep_rate = float(rep_rate)
@@ -595,7 +597,7 @@ def find_echo(session, preset, center, span, points=41, attenuation_db=10,
     """Full-window magnitude field search followed by resolved-echo validation."""
     try:
         pre = _echo_preset(session, preset, scans, averages, pulse_length)
-        _repetition_rate(session, pre, rep_rate)
+        _repetition_rate(session, pre, rep_rate, inherit=False)
         enabled = _video_policy(session, adjust_video)
         lo = parse_field_g(center) - parse_field_g(span) / 2
         hi = parse_field_g(center) + parse_field_g(span) / 2

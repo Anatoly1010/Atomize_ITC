@@ -325,7 +325,12 @@ def _measure(session, pre, wa, tag, scans, max_duration, target_snr, range_check
 
         def on_scan_data(k, i_arr, q_arr):
             if range_check is not None:
-                limit = range_check(k, i_arr, q_arr)
+                try:
+                    limit = range_check(k, i_arr, q_arr)
+                except Exception as error:
+                    range_check.report.update(status='failed', reason=str(error))
+                    session.log(f'      adjust_range: check failed; continue current range — {error}')
+                    limit = None
                 if limit is not None or range_check.pending:
                     return limit
             return None if snr_policy is None else snr_policy(k, i_arr, q_arr)
@@ -561,25 +566,22 @@ def _adjust_range(session, pre, wa, acq, kind, scans, target_snr, range_check):
     report = {'status': plan['action'], 'reason': plan['reason'], 'initial': initial,
               'early_check': early}
     if range_check.revised is None:
-        if early['status'] in ('skipped_budget', 'skipped_limits'):
+        if early['status'] in ('skipped_budget', 'skipped_limits', 'failed'):
             report.update(status=early['status'], reason=early['reason'])
         elif plan['action'] == 'extend':
             report.update(status='kept_unconfirmed', reason='no early extension decision; no late repeat')
         session.log(f"      adjust_range: {report['reason']}")
         return acq, pre, wa, report
     seconds = range_check.remaining()
-    if seconds is not None and seconds <= 0:
-        return acq, pre, wa, {**report, 'status': 'skipped_budget', 'reason': 'time budget exhausted'}
     revised, args = range_check.revised
     if kind == 't1':
         rate = float(args.rep_rate)
         session.log(f'      revised T1: maximum timing-compatible repetition rate {rate:g} Hz')
     actual_points = len(_log_grid(args)) if kind == 't1' else args.points
     minimum_scan_s = _scan_seconds(args, kind)
-    if seconds is not None and seconds < minimum_scan_s:
-        session.log('      adjust_range: insufficient remaining time for one revised scan')
-        return acq, pre, wa, {**report, 'status': 'skipped_budget',
-                             'reason': 'remaining budget is shorter than one revised scan'}
+    if seconds is not None:
+        # the early stop already reserved one revised scan
+        seconds = max(seconds, minimum_scan_s)
     repeat_scans = scans if seconds is None else min(scans, max(1, int(seconds / minimum_scan_s)))
     args.scans = revised.scans = repeat_scans
     repeat_duration = None if seconds is None else f'{seconds:.9g} s'

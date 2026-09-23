@@ -4717,10 +4717,12 @@ class Worker():
             # exception). The card can only be freed by this process, so this is
             # the last line of defence against leaving it in an open state.
             try:
-                if pb is not None:
-                    pb.pulser_close()
-                if live_buffer_restore is not None:
-                    pb._set_stream_buffer_kb(live_buffer_restore)
+                try:
+                    if pb is not None:
+                        pb.pulser_close()
+                finally:
+                    if live_buffer_restore is not None:
+                        pb._set_stream_buffer_kb(live_buffer_restore)
             except Exception as error:
                 if live_rates is not None:
                     conn.send(('Error', f'Live rate cleanup or ADC buffer restoration failed: {error}'))

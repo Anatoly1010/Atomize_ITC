@@ -5,6 +5,7 @@ from unittest.mock import patch
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import sys
+import threading
 
 import numpy as np
 
@@ -14,6 +15,17 @@ if len(sys.argv) < 2 or sys.argv[1] != 'test':
 from atomize.epr_auto.engine import executor, snapshot
 from atomize.epr_auto.engine.executor import EngineError
 from atomize.epr_auto.primitives.relaxation_timing import maximum_t1_rate
+
+
+class InProcessWorker(threading.Thread):
+    """Worker-process stand-in, so the recording patches reach the worker under any start method."""
+
+    def __init__(self, target, args):
+        method, *rest = args
+        super().__init__(target=method, args=rest, daemon=True)
+
+    def terminate(self):
+        pass
 
 
 def main():
@@ -75,7 +87,8 @@ def main():
                 output.write(detection['start'].split(' ')[0] + '\n')
             return original_update(self)
 
-        with patch.object(Insys_FPGA, 'pulser_update', recording_update):
+        with patch.object(Insys_FPGA, 'pulser_update', recording_update), \
+                patch.object(executor, 'Process', InProcessWorker):
             executor.run_worker(wa, 'Log Time', script_test=True)
         starts = [float(line) for line in capture.read_text().splitlines()]
 
@@ -106,7 +119,8 @@ def main():
                     output.write(rate[0] + '\n')
             return original_rate(self, *rate)
 
-        with patch.object(Insys_FPGA, 'pulser_repetition_rate', recording_rate):
+        with patch.object(Insys_FPGA, 'pulser_repetition_rate', recording_rate), \
+                patch.object(executor, 'Process', InProcessWorker):
             executor.run_worker(laser_wa, 'Log Time', script_test=True)
         assert capture.read_text().splitlines() == ['9.9 Hz']
     assert maximum_t1_rate(laser_wa) == 9.9

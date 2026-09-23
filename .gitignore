@@ -33,6 +33,9 @@ libs/spin_dynamics_lastdir.txt
 # epr_auto user preset space: user-saved presets are local (README stays tracked)
 atomize/epr_auto/presets/*.phase_awg
 atomize/epr_auto/presets/*.phase
+# epr_auto runtime output when protocols run from protocols/
+protocols/tuned/
+protocols/runs/
 # Claude Code: per-machine settings stay local; .claude/agents/ IS tracked
 .claude/settings.local.json
 /docs/INSYS_PROTECTION_REVIEW.md

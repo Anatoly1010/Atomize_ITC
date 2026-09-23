@@ -27,10 +27,10 @@ def pump(until, seconds=20):
         time.sleep(.01)
 
 
-def run(path, replies, expected):
+def run(path, replies, expected, duplicate=True):
     messages.clear()
     assert launcher.start_protocol(path)
-    assert not launcher.start_protocol(path), 'duplicate launch accepted'
+    assert not duplicate or not launcher.start_protocol(path), 'duplicate launch accepted'
     seen = []
     def done():
         dialog = launcher.dialog
@@ -67,7 +67,7 @@ with tempfile.TemporaryDirectory() as directory:
     run(path, ['Continue', 'Continue'], 'finished')
     from unittest.mock import patch
     with patch.object(sys, 'executable', str(Path(directory) / 'missing-python')):
-        run(path, [], 'crashed')
+        run(path, [], 'crashed', duplicate=False)
 
 from unittest.mock import Mock, patch
 for kind, label, reply in [('failure','Retry',b'retry\n'), ('failure','Skip',b'skip\n'),
@@ -83,7 +83,7 @@ for kind, label, reply in [('failure','Retry',b'retry\n'), ('failure','Skip',b's
 print('PASS: failure and coarse-stage dialog replies')
 
 full_protocol = Path(__file__).resolve().parents[3] / 'protocols' / 'preliminary_tuning.yaml'
-run(full_protocol, ['Continue'] * 5, 'finished')
+run(full_protocol, ['Continue'] * 7, 'finished')
 
 from unittest.mock import patch
 from atomize.main.main import MainExtended, MainWindow

@@ -155,7 +155,7 @@ def parent_handshake_checks():
         return len(callbacks) == 2
 
     worker_args = SimpleNamespace(
-        rect=[[None, None, None, ['+x', '-x']]], averages=1, rep_rate=1000,
+        rect=[[None, None, None, ['+x', '-x']]], averages=1, rep_rate='1000.0',
         dig_args=lambda l_mode: ('dig', l_mode),
     )
 
@@ -230,7 +230,7 @@ def watchdog_checks():
     parent = ParentConnection([])
     child = ParentConnection([])
     worker_args = SimpleNamespace(
-        rect=[[None, None, None, ['+x', '-x']]], averages=1, rep_rate=1000,
+        rect=[[None, None, None, ['+x', '-x']]], averages=1, rep_rate='1000.0',
         dig_args=lambda l_mode: ('dig', l_mode),
     )
     with patch.object(live, 'Pipe', return_value=(parent, child)), \

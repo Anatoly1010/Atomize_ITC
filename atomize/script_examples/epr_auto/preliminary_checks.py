@@ -180,7 +180,17 @@ def homing_checks():
             assert abs(sleep.call_args.args[0] - max(0, expected + .2 - 7)) < 1e-8
             mw.mw_bridge_rotary_vane.assert_called_with(60.0, mode='Limit')
             assert session.state['bridge']['attenuation_db'] == 60
-    print('PASS: limit homing waits full travel unless the vane is recorded at 60 dB, in-flight move allowance')
+    from atomize.control_center import bridge_param
+    live = SimpleNamespace(test=False)
+    with tempfile.TemporaryDirectory() as directory, \
+            patch.object(bridge_param, 'path', return_value=str(Path(directory) / 'bridge.param')):
+        assert p._stale_bridge_lock(live), 'missing bridge.param adopted instead of homing'
+        bridge_param.write({'Rotary Vane': '12.0'})
+        assert not p._stale_bridge_lock(live)
+        bridge_param.write({'Lock': 'On', 'Source': 'epr_auto'})
+        assert p._stale_bridge_lock(live)
+    print('PASS: limit homing waits full travel unless the vane is recorded at 60 dB, in-flight move allowance, '
+          'no vane record homes')
 
 
 def frequency_shift_checks():

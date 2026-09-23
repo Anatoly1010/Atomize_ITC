@@ -10,7 +10,7 @@ steps:
       if_mhz: 50
       pulse_length: 102.4 ns
   # Optional:
-  #   done: true
+  #     done: true
   # Optional: omit this step to keep the current synthesizer frequency.
   - tune.resonator:
       if_mhz: 50
@@ -52,7 +52,8 @@ steps:
       pulse_map: {P2: pi2, P3: pi}
   - tune.video_attenuation:
       preset: hahn_echo_4s.phase_awg
-  # Writes preset copies and fine_tuning.yaml into the run's handoff directory.
+  # Publishes preset copies + fine_tuning.yaml to publish_dir (default
+  # <protocol dir>/tuned, overwritten each run); the handoff run's own output goes to <protocol dir>/runs/.
   - tune.save_presets:
       preset: hahn_echo_4s.phase_awg
       calibration_preset: ampl_4s.phase_awg

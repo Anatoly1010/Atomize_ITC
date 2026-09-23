@@ -1,6 +1,7 @@
 """Exercise early range decisions together with SNR accumulation; no hardware."""
 import copy
 import sys
+from contextlib import nullcontext
 from unittest.mock import patch
 
 import numpy as np
@@ -16,7 +17,8 @@ from atomize.epr_auto.session import EPRSession
 from atomize.epr_auto.steps import _run_primitive
 
 
-def exercise(kind, mode, *, budget=None, rejected=False, scans=8, adjust=True, target=10):
+def exercise(kind, mode, *, budget=None, rejected=False, scans=8, adjust=True, target=10,
+             late_budget=False, fail_check=False):
     session = EPRSession('early-range', 'autonomous', False)
     session.log = lambda value: None
     session.state['temperature'] = {'setpoint': 80, 'reached': True}
@@ -53,8 +55,10 @@ def exercise(kind, mode, *, budget=None, rejected=False, scans=8, adjust=True, t
             if initial and ((mode == 'delayed' and k < 3) or (mode == 'noisy' and k <= 3)):
                 y = np.random.default_rng(k).normal(0, 100, len(x))
             callback = kwargs['on_scan_data']
-            assert wa.scan_data_flag == 1 and wa.scan_data_wait == 1
-            new_limit = callback(k, y, np.zeros(len(y)))
+            new_limit = None
+            if callback is not None:
+                assert wa.scan_data_flag == 1 and wa.scan_data_wait == 1
+                new_limit = callback(k, y, np.zeros(len(y)))
             record['limits'].append(new_limit)
             if new_limit is not None:
                 limit = min(limit, new_limit)
@@ -68,7 +72,20 @@ def exercise(kind, mode, *, budget=None, rejected=False, scans=8, adjust=True, t
 
     preflight = {'side_effect': ValueError('invalid revised pulse geometry')} if rejected else {'return_value': {'status': 'test-ok'}}
     maximum = {'side_effect': ValueError('fixed Nd:YAG rate of 9.9 Hz does not fit')} if rejected else {'return_value': 80}
+    real_plateau, plateau_calls = exp.plateau, []
+
+    def flaky_plateau(*args):
+        plateau_calls.append(args)
+        if len(plateau_calls) == 1:
+            raise KeyError('injected check failure')
+        return real_plateau(*args)
+
+    def late_remaining(check):
+        return -1.0 if check.report['status'] == 'extend' else 1e6
+
     with patch.object(exp, '_acquire', side_effect=acquire), \
+            (patch.object(exp, 'plateau', flaky_plateau) if fail_check else nullcontext()), \
+            (patch.object(exp._EarlyRangeCheck, 'remaining', late_remaining) if late_budget else nullcontext()), \
             patch.object(exp, 'echo_snr', side_effect=snr), \
             patch.object(executor, 'run_worker', **preflight) as check, \
             patch.object(relaxation_timing, 'maximum_t1_rate', **maximum) as rate:
@@ -126,10 +143,19 @@ def main():
         assert len(runs) == 1 and runs[0]['completed'] == 5
         assert result['range_adjustment']['status'] == 'skipped_budget'
 
+        result, runs = exercise(kind, 'short', budget='1000 s', late_budget=True)
+        assert [r['completed'] for r in runs] == [1, 1] and runs[1]['args'].scans == 1
+        assert result['range_adjustment']['status'] == 'repeated'
+
+        result, runs = exercise(kind, 'good', fail_check=True)
+        assert len(runs) == 1 and runs[0]['completed'] == 5
+        assert result['range_adjustment']['status'] == 'failed'
+
         result, runs = exercise(kind, 'good', adjust=False)
         assert len(runs) == 1 and runs[0]['completed'] == 5
         assert 'range_adjustment' not in result
-        print(f'PASS: {kind} early repair, retained scans, SNR, noisy window, no late/repeated repair and limits')
+        print(f'PASS: {kind} early repair, retained scans, SNR, noisy window, no late/repeated repair, limits, '
+              'committed extension and failed check')
     print('ALL PASS')
 
 
