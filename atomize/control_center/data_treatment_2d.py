@@ -67,7 +67,7 @@ import atomize.general_modules.gui_forms as gf
 
 # Parameter-header viewer shared with the 1D tool (separate non-modal window).
 from atomize.control_center.header_view import (HeaderWindow, read_header,
-                                                params_to_lines)
+                                                params_to_lines, header_frequency_shift)
 
 # solid-yellow "busy" variant for the Run-fit button while a fit is in progress
 # (explicit colour so it stays yellow even while the button is disabled).
@@ -997,6 +997,10 @@ class MainWindow(QMainWindow):
                    f'{", off-resonance reference removed" if offres else ""}).')
             if parsed:
                 msg += f' Axes from header: {parsed}.'
+            shift = header_frequency_shift(header_lines)
+            if shift:
+                msg += (f' Frequency shift {shift:g} MHz set from the file header — '
+                        f'Phase tab → Apply correction to demodulate.')
             self.set_status(msg)
         except Exception as e:
             self.set_status(f'Could not read I/Q: {e}')
@@ -1354,6 +1358,13 @@ class MainWindow(QMainWindow):
         """Store the parameter header of the dataset just loaded and refresh the
         viewer. A load never opens the window — only the 'Header…' button does."""
         self.header_name, self.header_lines = name, list(lines or [])
+        shift = header_frequency_shift(self.header_lines)
+        prev = self._suppress_live
+        self._suppress_live = True
+        try:
+            self.phase_first.setValue(0.0 if shift is None else shift)
+        finally:
+            self._suppress_live = prev
         if self.header_window is not None:
             self.header_window.set_sources([(self.header_name or 'dataset',
                                              self.header_lines)])
@@ -1547,11 +1558,15 @@ class MainWindow(QMainWindow):
         which the out-of-band noise of an undemodulated record swamps: the raw
         SIFTER map reads +0.28 MHz where the true offset is −0.46. An echo of
         width W cannot be spectrally wider than a few times 1/W, so everything
-        beyond 10/W is noise and is dropped before measuring."""
+        beyond 10/W of the echo's spectral peak is noise and is dropped before
+        measuring; centring on the peak keeps a large raw IF offset in band."""
         env = np.abs(Z).mean(axis=0)
-        width = abs(dt)*max(1, int(np.count_nonzero(env >= 0.25*env.max())))
+        echo = env >= 0.25*env.max()
+        width = abs(dt)*max(1, int(np.count_nonzero(echo)))
+        f = np.fft.fftfreq(Z.shape[1], dt)
+        fc = f[int(np.abs(np.fft.fft(Z*echo, axis=1)).sum(axis=0).argmax())]
         S = np.fft.fft(Z, axis=1)
-        S[:, np.abs(np.fft.fftfreq(Z.shape[1], dt)) > 10.0/width] = 0
+        S[:, np.abs(f - fc) > 10.0/width] = 0
         return fft_module.Fast_Fourier.carrier_offset(np.fft.ifft(S, axis=1), dt)
 
     @staticmethod
@@ -2031,7 +2046,10 @@ class MainWindow(QMainWindow):
         """Nominal IF in MHz from the loaded file's header: the frequency shared
         by most of its AWG pulses. Only the AWG pulse dicts carry a frequency;
         a DEER header also holds a pump pulse at another frequency, and the
-        three observer pulses outvote it."""
+        three observer pulses outvote it. An explicit 'Frequency Shift' line wins."""
+        shift = header_frequency_shift(self.header_lines)
+        if shift is not None:
+            return shift
         freqs = []
         for ln in self.header_lines:
             s = ln.strip()

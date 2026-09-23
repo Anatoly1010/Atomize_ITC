@@ -48,7 +48,7 @@ import atomize.math_modules.signal_processing as sigproc
 import atomize.math_modules.fft as fft_module
 # Parameter-header viewer shared with the 2D tool (separate non-modal window).
 from atomize.control_center.header_view import (HeaderWindow, read_header,
-                                                params_to_lines)
+                                                params_to_lines, header_frequency_shift)
 # Reuse the main-window plot stack so the embedded preview behaves identically
 # to the main UI (crosshair, Shift-drag ruler, FFT/log right-click toggles).
 from atomize.main.widgets import CrosshairPlotWidget, CloseableDock, CrosshairDock
@@ -904,6 +904,8 @@ class MainWindow(QMainWindow):
         # Opening/switching data resets the workflow: turn off live update so the
         # trace is shown as-is, not reprocessed by leftover tab parameters.
         self.live_check.setChecked(False)
+        shift = header_frequency_shift(self.trace_headers.get(name, []))
+        self.phase_first.setValue(0.0 if shift is None else shift)
         self.datasets = self.traces.get(name, {})
         self.active_colors = self.trace_colors.get(name, {})
         keys = list(self.datasets)
@@ -1061,6 +1063,10 @@ class MainWindow(QMainWindow):
         msg = f'Loaded {len(items)} trace(s)' if items else 'No traces loaded'
         if failed:
             msg += '. Skipped: ' + '; '.join(failed)
+        shift = header_frequency_shift(self.trace_headers.get(self.trace_combo.currentText(), []))
+        if items and shift:
+            msg += (f'. Frequency shift {shift:g} MHz set from the file header — '
+                    f'Phase tab → Apply correction to demodulate')
         self.set_status(msg + '.')
 
     def open_bruker(self):
@@ -2196,12 +2202,16 @@ class MainWindow(QMainWindow):
         which the out-of-band noise of an undemodulated record swamps: a raw
         SIFTER record reads +0.02 MHz where the true offset is −0.40. An echo of
         width W cannot be spectrally wider than a few times 1/W, so everything
-        beyond 10/W is noise and is dropped before measuring."""
+        beyond 10/W of the echo's spectral peak is noise and is dropped before
+        measuring; centring on the peak keeps a large raw IF offset in band."""
         z = np.atleast_2d(np.asarray(sig, dtype=complex))
         env = np.abs(z).mean(axis=0)
-        width = abs(dt)*max(1, int(np.count_nonzero(env >= 0.25*env.max())))
+        echo = env >= 0.25*env.max()
+        width = abs(dt)*max(1, int(np.count_nonzero(echo)))
+        f = np.fft.fftfreq(z.shape[1], dt)
+        fc = f[int(np.abs(np.fft.fft(z*echo, axis=1)).sum(axis=0).argmax())]
         S = np.fft.fft(z, axis=1)
-        S[:, np.abs(np.fft.fftfreq(z.shape[1], dt)) > 10.0/width] = 0
+        S[:, np.abs(f - fc) > 10.0/width] = 0
         return fft_module.Fast_Fourier.carrier_offset(np.fft.ifft(S, axis=1), dt)
 
     @staticmethod

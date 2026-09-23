@@ -21,6 +21,7 @@ returned by bruker_opener into the same line list, so the viewer serves them too
 """
 
 import os
+import re
 import ast
 
 from PyQt6.QtCore import Qt
@@ -84,6 +85,20 @@ def read_header(path):
     except Exception:
         return []
     return lines
+
+
+def header_frequency_shift(lines):
+    """The 'Frequency Shift: <f> MHz' value of a header (the demodulation shift
+    the stored traces still need), or None when the header has no such line."""
+    for line in lines or []:
+        m = re.match(r'\s*#?\s*frequency shift\s*:\s*([-+0-9.eE]+)\s*MHz',
+                     str(line), re.IGNORECASE)
+        if m:
+            try:
+                return float(m.group(1))
+            except ValueError:
+                return None
+    return None
 
 
 def params_to_lines(params):
