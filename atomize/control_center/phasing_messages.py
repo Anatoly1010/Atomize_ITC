@@ -69,10 +69,11 @@ class PhasingMessagePanel(QWidget):
         self.experiment_status.setVisible(running)
 
     def _pin_buffer_warning(self, text):
-        if 'TOO MANY PHASES FOR LIVE MODE' not in text:
+        if 'PHASE CYCLE EXCEEDS ADC BUFFER' not in text:
             return
         detail = ' · '.join(line.strip().strip('!') for line in text.splitlines() if line.strip())
-        detail = detail.replace('TOO MANY PHASES FOR LIVE MODE', 'Too many phases for live mode')
+        detail = detail.replace('PHASE CYCLE EXCEEDS ADC BUFFER: LIVE PREVIEW UPDATES ONCE PER FULL CYCLE',
+                                'Phase cycle exceeds ADC buffer: live preview updates once per full cycle')
         detail = detail.replace('ADC WINDOWS IN BUFFER:', 'ADC windows in buffer:')
         self.buffer_warning.setText('LIVE MODE BUFFER · ' + detail)
         self.buffer_warning.setToolTip(text)

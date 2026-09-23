@@ -3344,7 +3344,7 @@ class Worker():
                     # after pulser_open in the real preview, so the preflight copy
                     # here is redundant. Keep only the TOO-MANY-PHASES warning.
                     if PHASES >= pb.number_adc_window_in_buffer():
-                        str1 = '!!!TOO MANY PHASES FOR LIVE MODE!!!\n'
+                        str1 = 'PHASE CYCLE EXCEEDS ADC BUFFER: LIVE PREVIEW UPDATES ONCE PER FULL CYCLE\n'
                         str2 = 'ADC WINDOWS IN BUFFER: '
                         conn.send( ('test', f'{str1}{str2}{pb.number_adc_window_in_buffer()}') )
                     conn.close()

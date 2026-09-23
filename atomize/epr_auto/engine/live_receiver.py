@@ -10,27 +10,30 @@ from atomize.epr_auto.engine import executor
 
 class _PreviewPipe:
     """Keep an exit consumed by the frame handshake for dig_on's next poll."""
-    def __init__(self, conn, phases):
+    def __init__(self, conn):
         self.conn = conn
-        self.phases = phases
         self.stopping = False
         self.frame = None
+        self.skip = False
+
+    def keep(self, frame):
+        if self.skip:
+            self.skip = False
+        else:
+            self.frame = frame
 
     def send(self, value):
         self.conn.send(value)
-        if value[0] != 'Count' or self.stopping:
+        if value[0] != 'Count' or self.stopping or self.frame is None:
             return
         frame, self.frame = self.frame, None
-        counts = np.fromstring(str(value[1]).strip('[]'), sep=' ')
-        if (frame is None or counts.shape != (self.phases,)
-                or not np.isfinite(counts).all() or np.any(counts <= 0)):
-            return
         self.conn.send(('LiveTrace', frame))
         command = self.conn.recv()
         if command == 'exit':
             self.stopping = True
         elif command != 'continue':
             raise executor.EngineError(f'unexpected live receiver command: {command!r}')
+        self.skip = True
 
     def poll(self, *args):
         return self.stopping or self.conn.poll(*args)
@@ -39,29 +42,25 @@ class _PreviewPipe:
         return 'exit' if self.stopping else self.conn.recv()
 
 
-def _live_child(worker, conn, args, phases):
+def _live_child(worker, conn, args):
     signal.signal(signal.SIGINT, signal.SIG_IGN)
     executor._quiet_worker_stdout()
     import atomize.general_modules.general_functions as general
-    pipe = _PreviewPipe(conn, phases)
+    pipe = _PreviewPipe(conn)
     original = general.plot_1d
-    calls = 0
 
     def capture(name, x, y, *a, **kw):
-        nonlocal calls
         try:
             original(name, x, y, *a, **kw)
         except Exception:
             pass
-        calls += 1
-        if pipe.stopping or calls % phases:
+        if pipe.stopping:
             return
-        pipe.frame = None
         t, i, q = (np.asarray(v, dtype=float) for v in (x, y[0], y[1]))
         if (t.ndim != 1 or len(t) < 3 or i.shape != t.shape or q.shape != t.shape
                 or not np.isfinite([t, i, q]).all()):
             return
-        pipe.frame = (t.copy(), i.copy(), q.copy())
+        pipe.keep((t.copy(), i.copy(), q.copy()))
 
     general.plot_1d = capture
     worker.dig_on(pipe, *args, False)
@@ -71,7 +70,9 @@ def _live_child(worker, conn, args, phases):
 def monitor_trace(worker_args, on_trace, on_message=None, poll_s=0.2):
     """Run dig_on(l_mode=0); on_trace(t_seconds, I_mV, Q_mV) returns True to stop.
 
-    Only snapshots containing every receiver phase enter the frame handshake.
+    Every finite live snapshot holds a complete phase cycle and enters the
+    frame handshake at the end of a cycle; the first snapshot completed after
+    a handshake may span that bridge change and is discarded.
     The handshake completes bridge changes before the next phase cycle.
     Callback errors stop the worker and propagate; they cannot silently disable
     receiver control. Live snapshots never accumulate across video settings.
@@ -83,7 +84,7 @@ def monitor_trace(worker_args, on_trace, on_message=None, poll_s=0.2):
     executor._hand_attrs(worker, worker_args)
     parent, child = Pipe()
     process = Process(target=_live_child,
-                      args=(worker, child, worker_args.dig_args(l_mode=0), phases))
+                      args=(worker, child, worker_args.dig_args(l_mode=0)))
     timeout = max(60.0, 10 * phases * worker_args.averages / float(worker_args.rep_rate))
     process.start()
     last_frame = time.monotonic()

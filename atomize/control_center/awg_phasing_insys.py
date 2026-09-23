@@ -4263,8 +4263,6 @@ class Worker():
                 pb.digitizer_number_of_averages(n_averages)
             pb.pulser_open()
             if live_rates is not None:
-                if PHASES >= pb.number_adc_window_in_buffer():
-                    raise ValueError('Too many phases for live repetition-rate tuning')
                 conn.send(('LiveRate', live_rate_index))
 
             # Pristine (post-setup) stored start of every pulse, keyed by name.
@@ -4705,7 +4703,7 @@ class Worker():
                     # after pulser_open in the real preview, so the preflight copy
                     # here is redundant. Keep only the TOO-MANY-PHASES warning.
                     if PHASES >= pb.number_adc_window_in_buffer():
-                        str1 = '!!!TOO MANY PHASES FOR LIVE MODE!!!\n'
+                        str1 = 'PHASE CYCLE EXCEEDS ADC BUFFER: LIVE PREVIEW UPDATES ONCE PER FULL CYCLE\n'
                         str2 = 'ADC WINDOWS IN BUFFER: '
                         conn.send( ('test', f'{str1}{str2}{pb.number_adc_window_in_buffer()}') )
 

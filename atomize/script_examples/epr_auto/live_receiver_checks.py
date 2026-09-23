@@ -60,13 +60,13 @@ class StalePreviewWorker(PreviewWorker):
         pipe.send(('Count', '[1 1]'))
 
 
-class IncompletePreviewWorker(PreviewWorker):
+class SpanningPreviewWorker(PreviewWorker):
     def dig_on(self, pipe, *args):
         self.args = args
         time = np.array([0.0, 1.0, 2.0])
-        for _ in range(2):
+        for _ in range(3):
             general.plot_1d('live', time, (np.ones(3), np.zeros(3)))
-        pipe.send(('Count', '[1 0]'))
+            pipe.send(('Count', '[1 1]'))
 
 
 class ParentConnection:
@@ -105,7 +105,7 @@ def child_handshake_checks():
     conn = ChildConnection(['continue'])
     original = general.plot_1d
     try:
-        live._live_child(worker, conn, ('worker-args',), phases=2)
+        live._live_child(worker, conn, ('worker-args',))
     finally:
         general.plot_1d = original
     count, trace, end = conn.sent
@@ -116,27 +116,28 @@ def child_handshake_checks():
     partial_conn = ChildConnection(['continue'])
     original = general.plot_1d
     try:
-        live._live_child(partial, partial_conn, ('worker-args',), phases=2)
+        live._live_child(partial, partial_conn, ('worker-args',))
     finally:
         general.plot_1d = original
     assert [kind for kind, _ in partial_conn.sent] == ['Count', 'Count', 'LiveTrace', 'LiveEnd']
     stale = StalePreviewWorker()
-    stale_conn = ChildConnection([])
+    stale_conn = ChildConnection(['continue'])
     original = general.plot_1d
     try:
-        live._live_child(stale, stale_conn, ('worker-args',), phases=2)
+        live._live_child(stale, stale_conn, ('worker-args',))
     finally:
         general.plot_1d = original
-    assert [kind for kind, _ in stale_conn.sent] == ['Count', 'LiveEnd']
-    incomplete = IncompletePreviewWorker()
-    incomplete_conn = ChildConnection([])
+    assert [kind for kind, _ in stale_conn.sent] == ['Count', 'LiveTrace', 'LiveEnd']
+    spanning = SpanningPreviewWorker()
+    spanning_conn = ChildConnection(['continue', 'continue'])
     original = general.plot_1d
     try:
-        live._live_child(incomplete, incomplete_conn, ('worker-args',), phases=2)
+        live._live_child(spanning, spanning_conn, ('worker-args',))
     finally:
         general.plot_1d = original
-    assert [kind for kind, _ in incomplete_conn.sent] == ['Count', 'LiveEnd']
-    print('PASS: child advances only on complete Count-gated cycles and never reuses an old plot')
+    assert [kind for kind, _ in spanning_conn.sent] == [
+        'Count', 'LiveTrace', 'Count', 'Count', 'LiveTrace', 'LiveEnd']
+    print('PASS: child hands over the latest complete snapshot once per cycle and skips the one spanning a handshake')
 
 
 def parent_handshake_checks():
