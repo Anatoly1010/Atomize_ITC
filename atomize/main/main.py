@@ -470,7 +470,7 @@ class MainExtended(MainWindow):
                 button.setMinimumSize(208, 42)
                 button.setStyleSheet(REFINED_STYLES['BUTTON_STYLE'] + "QPushButton { text-align: left; padding-left: 12px; }")
                 button.setIcon(QtGui.QIcon(str(icon_dir / f'icon_{icon_name}.ico')))
-                button.setIconSize(QtCore.QSize(22, 22))
+                button.setIconSize(QtCore.QSize(25, 25))
                 button.clicked.connect(callback)
                 layout.addWidget(button)
             layout.addStretch()
