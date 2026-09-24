@@ -3,11 +3,12 @@
 
 import os
 import sys
+import math
 from atomize.general_modules.gui_style import REFINED_STYLES, style_file_dialog
 import time
 import numpy as np
 from multiprocessing import Process, Pipe
-from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QLabel, QDoubleSpinBox, QSpinBox, QComboBox, QPushButton, QTextEdit, QGridLayout, QFrame, QCheckBox, QProgressBar, QFileDialog,  QTreeView, QHeaderView, QSizeGrip, QLineEdit, QFileIconProvider
+from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QLabel, QDoubleSpinBox, QSpinBox, QComboBox, QPushButton, QTextEdit, QGridLayout, QFrame, QCheckBox, QProgressBar, QFileDialog,  QTreeView, QHeaderView, QSizeGrip, QLineEdit, QFileIconProvider, QTabWidget
 from PyQt6.QtGui import QIcon, QAction
 from PyQt6.QtCore import Qt, QTimer
 import atomize.general_modules.csv_opener_saver as openfile
@@ -56,15 +57,19 @@ class MainWindow(QMainWindow):
         self.setWindowIcon( QIcon(icon_path) )
         self.path = os.path.join(path_to_main, '..', '..', '..', '..', 'experimental_data')
 
-        centralwidget = QWidget(self)
-        self.setCentralWidget(centralwidget)
+        self.tabs = QTabWidget()
+        self.tabs.setTabShape(QTabWidget.TabShape.Rounded)
+        self.tabs.setStyleSheet(REFINED_STYLES['TAB_STYLE'])
+        self.setCentralWidget(self.tabs)
+        self.tr_tab = QWidget()
+        self.tabs.addTab(self.tr_tab, 'TR EPR')
 
         gridLayout = QGridLayout()
-        gridLayout.setContentsMargins(15, 10, 10, 10)
+        gridLayout.setContentsMargins(14, 10, 7, 10)
         gridLayout.setVerticalSpacing(4)
         gridLayout.setHorizontalSpacing(20)
 
-        centralwidget.setLayout(gridLayout)
+        self.tr_tab.setLayout(gridLayout)
 
         # ---- Labels & Inputs ----
         labels = [("Start Field", "label_1"), ("End Field", "label_2"), ("Field Step", "label_3"), ("Off-Resonance Field", "label_4"), ("Off-Resonance Acquisitions", "label_5"), ("Acquisitions", "label_6"), ("Number of Scans", "label_7"), ("Save Each Scan", "label_8"), ("Two-Side Measurement", "label_9"), ("Number of Oscilloscopes", "label_10"), ("Trigger Channel", "label_11"), ("Experiment Name", "label_12"), ("Progress", "label_13"), ("Save as HDF5", "label_14")]
@@ -251,8 +256,16 @@ class MainWindow(QMainWindow):
         gridLayout.setColumnStretch(21, 2)
         self.design_half_field()
 
+        self.scope_tabs = [ScopeTab(self, 0), ScopeTab(self, 1)]
+        for tab in self.scope_tabs:
+            self.tabs.addTab(tab, f'Scope {tab.number}')
+        self.tabs.currentChanged.connect(self.fit_tab)
+        self.fit_tab(0)
+        QTimer.singleShot(0, lambda: self.fit_tab(self.tabs.currentIndex()))
+        self.set_scopes_editable(True)
+
     def design_half_field(self):
-        grid = self.centralWidget().layout()
+        grid = self.tr_tab.layout()
         items = []
         while grid.count():
             position = grid.getItemPosition(0)
@@ -294,13 +307,30 @@ class MainWindow(QMainWindow):
     def toggle_half(self):
         for widget in self.half_boxes + self.half_labels:
             widget.setVisible(self.enable_half.isChecked())
-        self.centralWidget().layout().activate()
-        self.adjustSize()
+        self.fit_tab(self.tabs.currentIndex())
 
     def set_half_editable(self, editable):
         self.enable_half.setEnabled(editable)
         for box in self.half_boxes:
             box.setEnabled(editable)
+
+    def fit_tab(self, index):
+        """Fix the window height to the visible tab, like a single-page tool; the window manager honours a fixed size."""
+        page = self.tabs.widget(index)
+        page.layout().activate()
+        pages = [self.tabs.widget(i).sizeHint().height() for i in range(self.tabs.count())]
+        tab_bar = self.tabs.tabBar().sizeHint().height()
+        frame = self.tabs.sizeHint().height() - tab_bar - max(pages)
+        height = self.menuBar().sizeHint().height() + tab_bar + frame + page.sizeHint().height()
+        self.setFixedSize(self.sizeHint().width(), height)
+
+    def set_scopes_editable(self, editable):
+        """Scope tabs are read-only while the experiment worker owns the scopes; Scope 2 needs two scopes."""
+        self.scopes_editable = editable
+        second = self.cur_num_osc > 1
+        self.tabs.setTabEnabled(2, second)
+        self.scope_tabs[0].setEnabled(editable)
+        self.scope_tabs[1].setEnabled(editable and second)
 
     def menu(self):
         menubar = self.menuBar()
@@ -423,6 +453,13 @@ class MainWindow(QMainWindow):
             self.cur_num_osc = 3
         else:
             self.cur_num_osc = int( self.combo_num_osc.currentText() )
+        if not hasattr(self, 'scope_tabs'):
+            return
+        if self.cur_num_osc == 1:
+            self.scope_tabs[1].request_exit()
+        self.set_scopes_editable(getattr(self, 'scopes_editable', True))
+        for tab in self.scope_tabs:
+            tab.send(('SET', 'num_osc', self.cur_num_osc))
 
     def ave_offres(self):
         """
@@ -437,6 +474,9 @@ class MainWindow(QMainWindow):
         """
         self.exit_clicked = 1
         self.stop_requested = True
+        self.pending_start = False
+        for tab in self.scope_tabs:
+            tab.request_exit()
         try:
             self.parent_conn.send( 'exit' )
             self.monitor_timer.start(200)
@@ -445,11 +485,20 @@ class MainWindow(QMainWindow):
             #self.message('Experimental script is not running')
 
     def check_process_status(self):
+        if getattr(self, 'pending_start', False):
+            if any(tab.is_alive() for tab in self.scope_tabs):
+                return
+            self.pending_start = False
+            self.monitor_timer.stop()
+            self.start()
+            return
+
         if self.exp_process.is_alive():
             return
         
         self.monitor_timer.stop()
         self.set_half_editable(True)
+        self.set_scopes_editable(True)
         self.exp_process.join() 
         #self.timer.stop()
         self.progress_bar.setValue(0)
@@ -488,6 +537,14 @@ class MainWindow(QMainWindow):
         except AttributeError:
             pass
 
+        if any(tab.is_alive() for tab in self.scope_tabs):
+            for tab in self.scope_tabs:
+                tab.request_exit()
+            self.pending_start = True
+            if not self.monitor_timer.isActive():
+                self.monitor_timer.start(200)
+            return
+
         self.stop_requested = False
         self.last_error = False
         if self.cur_start_field >= self.cur_end_field:
@@ -512,6 +569,7 @@ class MainWindow(QMainWindow):
             self.pending_half_field = half
 
         worker.half_field = self.pending_half_field
+        worker.trigger_timeout_s = self.scope_tabs[0].trigger_timeout()
         test_target = worker.exp_test_two_fields if worker.half_field is not None else worker.exp_test
         self.parent_conn, self.child_conn = Pipe()
         # a process for running function script 
@@ -531,6 +589,7 @@ class MainWindow(QMainWindow):
 
         self.is_testing = True 
         self.set_half_editable(False)
+        self.set_scopes_editable(False)
         self.timer.start(300)
 
     def message(self, *text):
@@ -548,6 +607,8 @@ class MainWindow(QMainWindow):
             self.progress_bar.setToolTip(f'Completed scans: {data}')
         elif msg_type == 'Open':
             self.open_dialog()
+        elif msg_type == 'Message':
+            self.message(data)
         elif msg_type == 'Error':
             self.last_error = True
             self.timer.stop()
@@ -608,6 +669,7 @@ class MainWindow(QMainWindow):
 
         if not self.exp_process.is_alive() and not getattr(self, 'is_testing', False):
             self.set_half_editable(True)
+            self.set_scopes_editable(True)
 
     def open_dialog(self):
         file_data = self.file_handler.create_file_dialog(multiprocessing = True,
@@ -625,6 +687,7 @@ class MainWindow(QMainWindow):
 
         worker = Worker()
         worker.half_field = getattr(self, 'pending_half_field', None)
+        worker.trigger_timeout_s = self.scope_tabs[0].trigger_timeout()
 
         self.parent_conn, self.child_conn = Pipe()
 
@@ -744,6 +807,8 @@ class MainWindow(QMainWindow):
         for box, key in zip(self.half_boxes, ('Half Start Field', 'Half End Field', 'Half Field Step')):
             if key in extra:
                 box.setValue(float(extra[key]))
+        for tab in self.scope_tabs:
+            tab.load(extra)
 
     def save_file(self, filename):
         """
@@ -770,6 +835,286 @@ class MainWindow(QMainWindow):
                 file.write('Half Field Enabled:  1\n')
                 for box, key in zip(self.half_boxes, ('Half Start Field', 'Half End Field', 'Half Field Step')):
                     file.write(f'{key}:  {box.value()}\n')
+            for tab in self.scope_tabs:
+                for key, value in tab.save():
+                    file.write(f'{key}:  {value}\n')
+
+class ScopeTab(QWidget):
+    """
+    Settings and live preview of one Keysight scope. The scope is driven only by
+    a Worker.scope_on child process between Connect and Disconnect; this widget
+    never imports the device module, whose constructor exits when the scope is absent.
+    """
+    FIELDS = (('window_us', 'Window'), ('offset_us', 'Horizontal Offset'), ('ch1_scale_mv', 'CH1 Scale'),
+              ('ch1_offset_mv', 'CH1 Offset'), ('ch2_scale_mv', 'CH2 Scale'), ('ch2_offset_mv', 'CH2 Offset'),
+              ('live_averages', 'Live Acquisitions'), ('trigger_timeout_s', 'Trigger Timeout'))
+
+    def __init__(self, main, index):
+        super().__init__()
+        self.main = main
+        self.index = index
+        self.number = index + 1
+        self.process = None
+        self.conn = None
+        self.connected = False
+        self.finished = False
+        self.scope_timer = QTimer()
+        self.scope_timer.timeout.connect(self.check_session)
+
+        tb_min, tb_max, sens_min, sens_max, self.address = self.read_limits()
+
+        grid = QGridLayout()
+        grid.setContentsMargins(14, 10, 7, 10)
+        grid.setVerticalSpacing(4)
+        grid.setHorizontalSpacing(20)
+        self.setLayout(grid)
+
+        def label(text):
+            lbl = QLabel(text)
+            lbl.setFixedSize(190, 26)
+            lbl.setStyleSheet(REFINED_STYLES['LABEL_STYLE'])
+            return lbl
+
+        def hline():
+            line = QFrame()
+            line.setFrameShape(QFrame.Shape.HLine)
+            line.setFrameShadow(QFrame.Shadow.Sunken)
+            line.setLineWidth(2)
+            return line
+
+        def button(text, func):
+            btn = QPushButton(text)
+            btn.setFixedSize(140, 40)
+            btn.clicked.connect(func)
+            btn.setStyleSheet(REFINED_STYLES['BUTTON_STYLE'])
+            return btn
+
+        offset_max = 8 * sens_max * 1000
+        boxes = [(QDoubleSpinBox, 'window_us', math.ceil(tb_min * 1e7) / 10, tb_max * 1e6, 500, 10, 1, ' us'),
+                 (QDoubleSpinBox, 'offset_us', -tb_max * 1e6, tb_max * 1e6, 0, 1, 1, ' us'),
+                 (QSpinBox, 'ch1_scale_mv', max(1, math.ceil(sens_min * 1000)), sens_max * 1000, 200, 10, 0, ' mV'),
+                 (QSpinBox, 'ch1_offset_mv', -offset_max, offset_max, 0, 10, 0, ' mV'),
+                 (QSpinBox, 'ch2_scale_mv', max(1, math.ceil(sens_min * 1000)), sens_max * 1000, 200, 10, 0, ' mV'),
+                 (QSpinBox, 'ch2_offset_mv', -offset_max, offset_max, 0, 10, 0, ' mV'),
+                 (QSpinBox, 'live_averages', 2, 2000, 2, 1, 0, ''),
+                 (QDoubleSpinBox, 'trigger_timeout_s', 0.5, 60, 2.0, 0.5, 1, ' s')]
+        self.boxes = {}
+        for widget_class, name, v_min, v_max, cur_val, v_step, dec, suf in boxes:
+            spin_box = widget_class()
+            if isinstance(spin_box, QDoubleSpinBox):
+                spin_box.setDecimals(dec)
+                spin_box.setRange(v_min, v_max)
+            else:
+                spin_box.setRange(int(v_min), int(v_max))
+            spin_box.setStyleSheet(REFINED_STYLES['COMPACT_FIELD_STYLE'])
+            spin_box.setSingleStep(v_step)
+            spin_box.setValue(cur_val)
+            spin_box.setSuffix(suf)
+            spin_box.setFixedSize(130, 26)
+            spin_box.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.PlusMinus)
+            spin_box.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
+            spin_box.setKeyboardTracking(False)
+            spin_box.valueChanged.connect(lambda value, name = name: self.send(('SET', name, value)))
+            self.boxes[name] = spin_box
+
+        self.status = QLabel('Not connected')
+        self.status.setFixedSize(130, 26)
+        self.status.setStyleSheet(REFINED_STYLES['LABEL_STYLE'])
+        self.button_connect = button('Connect', self.connect_clicked)
+        self.button_read = button('Read', lambda: self.send(('READ', )))
+        self.button_run = button('Run', lambda: self.send(('RUN', )))
+        self.button_stop = button('Stop', lambda: self.send(('STOP', )))
+        self.check_live = QCheckBox('')
+        self.check_live.setFixedSize(130, 26)
+        self.check_live.setStyleSheet(CHECKBOX_STYLE)
+        self.check_live.toggled.connect(lambda checked: self.send(('LIVE', int(checked))))
+
+        grid.addWidget(label('Status'), 0, 0)
+        grid.addWidget(self.status, 0, 1)
+        grid.addWidget(hline(), 1, 0, 1, 2)
+        row = 2
+        for group in (('window_us', 'offset_us'), ('ch1_scale_mv', 'ch1_offset_mv', 'ch2_scale_mv', 'ch2_offset_mv'), ('live_averages', 'trigger_timeout_s')):
+            for name in group:
+                grid.addWidget(label(dict(self.FIELDS)[name]), row, 0)
+                grid.addWidget(self.boxes[name], row, 1)
+                row += 1
+            if name != 'trigger_timeout_s':
+                grid.addWidget(hline(), row, 0, 1, 2)
+                row += 1
+        grid.addWidget(label('Live'), row, 0)
+        grid.addWidget(self.check_live, row, 1)
+        grid.addWidget(hline(), row + 1, 0, 1, 2)
+        for offset, btn in enumerate((self.button_connect, self.button_read, self.button_run, self.button_stop), 2):
+            grid.addWidget(btn, row + offset, 0)
+        grid.setRowStretch(row + 6, 2)
+        grid.setColumnStretch(2, 2)
+        self.reset()
+
+    def read_limits(self):
+        """Box ranges and the scope address from the module config; no instrument is touched."""
+        name = 'Keysight_2000_Xseries_config.ini' if self.index == 0 else 'Keysight_2000_Xseries_2_config.ini'
+        legacy = 'Keysight_2012a_config.ini' if self.index == 0 else 'Keysight_2012a_2_config.ini'
+        address = '192.168.2.21/.22'
+        try:
+            import atomize.main.local_config as lconf
+            import atomize.device_modules.config.config_utils as cutil
+            path = cutil.config_path(lconf.load_config_device(), name, legacy = legacy)
+            specific = cutil.read_specific_parameters(path)
+            limits = [float(specific[key]) for key in ('timebase_min', 'timebase_max', 'sensitivity_min', 'sensitivity_max')]
+            address = cutil.read_conf_util(path)['ethernet_address'].split('::')[1]
+        except (OSError, KeyError, ValueError, IndexError):
+            limits = [5e-9, 50, 0.001, 5]
+        return (*limits, address)
+
+    def settings(self):
+        values = {name: box.value() for name, box in self.boxes.items()}
+        values['num_osc'] = self.main.cur_num_osc
+        return values
+
+    def trigger_timeout(self):
+        return float(self.boxes['trigger_timeout_s'].value())
+
+    def is_alive(self):
+        return self.process is not None and self.process.is_alive()
+
+    def send(self, command):
+        if self.connected and self.is_alive():
+            self.conn.send(command)
+
+    def request_exit(self):
+        if self.is_alive():
+            self.conn.send('exit')
+            self.status.setText('Disconnecting…')
+
+    def connect_clicked(self):
+        if self.is_alive():
+            self.request_exit()
+            return
+
+        worker = Worker()
+        parent_conn, child_conn = Pipe()
+        test_process = Process(target = worker.scope_on, args = (child_conn, self.index, self.settings(), True))
+        test_process.start()
+        test_process.join(30)
+        if test_process.is_alive():
+            test_process.terminate()
+            test_process.join()
+        replies = []
+        while parent_conn.poll():
+            replies.append(parent_conn.recv())
+        if not any(kind == 'test' for kind, data in replies):
+            for kind, data in replies:
+                self.main.message(data)
+            if not replies:
+                self.main.message(f'scope {self.number}: settings check did not finish')
+            return
+
+        self.conn, child_conn = Pipe()
+        self.process = Process(target = worker.scope_on, args = (child_conn, self.index, self.settings()))
+        self.finished = False
+        self.process.start()
+        self.status.setText('Connecting…')
+        self.button_connect.setText('Disconnect')
+        self.scope_timer.start(200)
+
+    def check_session(self):
+        while self.conn.poll():
+            try:
+                kind, data = self.conn.recv()
+            except (EOFError, OSError):
+                break
+            if kind == 'Settings':
+                self.write_boxes(data)
+                if not self.connected:
+                    self.connected = True
+                    self.status.setText('Connected')
+                    for widget in (self.button_read, self.button_run, self.button_stop, self.check_live):
+                        widget.setEnabled(True)
+            elif kind == 'Live':
+                self.check_live.blockSignals(True)
+                self.check_live.setChecked(bool(data))
+                self.check_live.blockSignals(False)
+            elif kind == 'Message':
+                self.main.message(data)
+            else:
+                self.finished = True
+                self.main.message(data)
+
+        if self.process.is_alive():
+            return
+        self.process.join()
+        if not self.finished:
+            self.main.message(f'scope {self.number} did not answer — check power and network of {self.address}')
+        self.reset()
+
+    def write_boxes(self, values):
+        for name, value in values.items():
+            if name in self.boxes:
+                box = self.boxes[name]
+                box.blockSignals(True)
+                box.setValue(float(value) if isinstance(box, QDoubleSpinBox) else int(round(value)))
+                box.blockSignals(False)
+
+    def reset(self):
+        self.scope_timer.stop()
+        self.connected = False
+        self.process = None
+        self.status.setText('Not connected')
+        self.button_connect.setText('Connect')
+        self.check_live.blockSignals(True)
+        self.check_live.setChecked(False)
+        self.check_live.blockSignals(False)
+        for widget in (self.button_read, self.button_run, self.button_stop, self.check_live):
+            widget.setEnabled(False)
+
+    def save(self):
+        return [(f'Scope{self.number} {label}', self.boxes[name].value()) for name, label in self.FIELDS]
+
+    def load(self, extra):
+        for name, label in self.FIELDS:
+            key = f'Scope{self.number} {label}'
+            if key in extra:
+                self.boxes[name].setValue(float(extra[key]) if isinstance(self.boxes[name], QDoubleSpinBox) else int(float(extra[key])))
+
+def _arm(scope):
+    """Clears the status registers and arms one acquisition without blocking the parser."""
+    scope.oscilloscope_command(':WAVeform:FORMat WORD')
+    scope.oscilloscope_command('*CLS;:SINGle')
+
+def _wait_armed(scopes, conn, trigger_timeout_s, poll_s = 0.05):
+    """
+    Polls the armed scopes until every one has stopped. Returns 'done', 'exit',
+    ('no_trigger', index) when a scope saw no trigger for trigger_timeout_s, or
+    ('command', value) when a pipe command other than 'exit' arrives.
+    """
+    if any(getattr(scope, 'test_flag', None) == 'test' for scope in scopes):
+        return 'done'
+
+    running = set(range(len(scopes)))
+    last_trigger = {index: time.monotonic() for index in running}
+    while True:
+        if conn.poll():
+            command = conn.recv()
+            if command == 'exit':
+                for scope in scopes:
+                    scope.oscilloscope_command(':STOP')
+                return 'exit'
+            return ('command', command)
+
+        for index in sorted(running):
+            scope = scopes[index]
+            if not int(scope.oscilloscope_query(':OPERegister:CONDition?')) & 8:
+                running.discard(index)
+                continue
+            if int(scope.oscilloscope_query(':TER?')) == 1:
+                last_trigger[index] = time.monotonic()
+            elif time.monotonic() - last_trigger[index] > trigger_timeout_s:
+                scope.oscilloscope_command(':STOP')
+                return ('no_trigger', index)
+
+        if not running:
+            return 'done'
+        time.sleep(poll_s)
 
 # The worker class that run the digitizer in a different thread
 class Worker():
@@ -780,6 +1125,7 @@ class Worker():
         self.command = 'start'
         self.half_field = None
         self.testing_two_fields = False
+        self.trigger_timeout_s = 2.0
 
     def _append_scan_h5(self, filename, matrix, scan):
         """
@@ -807,6 +1153,39 @@ class Worker():
             scans.resize(scan, axis = 0)
             scans[scan - 1] = matrix
 
+    def _acquire_point(self, scopes, conn, field, on_command = None):
+        """
+        Arms every scope and waits for the accumulation; a lost trigger is retried
+        once, then the run stops through the normal Stop path (ramp-back and save).
+        Returns False when the run is stopping.
+        """
+        for attempt in range(2):
+            for scope in scopes:
+                _arm(scope)
+            result = _wait_armed(scopes, conn, self.trigger_timeout_s)
+            while isinstance(result, tuple) and result[0] == 'command':
+                if on_command is None:
+                    self.command = result[1]
+                else:
+                    on_command(result[1])
+                result = _wait_armed(scopes, conn, self.trigger_timeout_s)
+
+            if result == 'done':
+                return True
+            if result == 'exit':
+                self.command = 'exit'
+                return False
+
+            text = f'scope {result[1] + 1}: no trigger for {self.trigger_timeout_s:g} s at field {field} G'
+            for index, scope in enumerate(scopes):
+                if index != result[1]:
+                    scope.oscilloscope_command(':STOP')
+            if attempt == 1:
+                conn.send( ('Message', text + '; second loss, stopping the measurement') )
+                self.command = 'exit'
+                return False
+            conn.send( ('Message', text + '; retrying the point') )
+
     def exp_test_two_fields(self, conn, *parameters):
         """Check the two-range acquisition through native device test modes."""
         sys.argv = ['', 'test']
@@ -814,6 +1193,150 @@ class Worker():
         general.test_flag = 'test'
         self.testing_two_fields = True
         self.exp_on(conn, *parameters)
+
+    def scope_on(self, conn, scope_index, settings, script_test = False):
+        """
+        Scope-tab session: owns one scope between Connect and Disconnect, applies
+        and reads back settings, and streams live traces. With script_test it only
+        pushes the tab values through the test-mode setters and returns.
+        """
+        import traceback
+
+        number = scope_index + 1
+        if script_test:
+            sys.argv = ['', 'test']
+        scope = None
+        closing = False
+        try:
+            import atomize.general_modules.general_functions as general
+            if script_test:
+                general.test_flag = 'test'
+            import pyqtgraph as pg
+            if scope_index == 0:
+                import atomize.device_modules.Keysight_2000_Xseries as key
+            else:
+                import atomize.device_modules.Keysight_2000_Xseries_2 as key
+
+            scope = key.Keysight_2000_Xseries()
+            scope.oscilloscope_timeout('5 s')
+            test_mode = scope.test_flag == 'test'
+            state = dict(settings)
+            setters = {
+                'window_us': lambda v: scope.oscilloscope_timebase(f'{float(v)} us'),
+                'offset_us': lambda v: scope.oscilloscope_horizontal_offset(f'{float(v)} us'),
+                'ch1_scale_mv': lambda v: scope.oscilloscope_sensitivity('CH1', f'{int(v)} mV'),
+                'ch1_offset_mv': lambda v: scope.oscilloscope_offset('CH1', f'{int(v)} mV'),
+                'ch2_scale_mv': lambda v: scope.oscilloscope_sensitivity('CH2', f'{int(v)} mV'),
+                'ch2_offset_mv': lambda v: scope.oscilloscope_offset('CH2', f'{int(v)} mV'),
+            }
+            getters = {
+                'window_us': lambda: pg.siEval(scope.oscilloscope_timebase()) * 1e6,
+                'offset_us': lambda: pg.siEval(scope.oscilloscope_horizontal_offset()) * 1e6,
+                'ch1_scale_mv': lambda: pg.siEval(scope.oscilloscope_sensitivity('CH1')) * 1e3,
+                'ch1_offset_mv': lambda: pg.siEval(scope.oscilloscope_offset('CH1')) * 1e3,
+                'ch2_scale_mv': lambda: pg.siEval(scope.oscilloscope_sensitivity('CH2')) * 1e3,
+                'ch2_offset_mv': lambda: pg.siEval(scope.oscilloscope_offset('CH2')) * 1e3,
+            }
+
+            if script_test:
+                for name, setter in setters.items():
+                    setter(settings[name])
+                scope.oscilloscope_number_of_averages(int(settings['live_averages']))
+                conn.send( ('test', f'scope {number} settings ok') )
+                return
+
+            conn.send( ('Settings', {name: getter() for name, getter in getters.items()}) )
+
+            live = False
+            averages_set = False
+            losses = 0
+
+            def handle(command):
+                nonlocal live, averages_set, losses
+                if command == 'exit':
+                    return False
+                kind = command[0]
+                if kind == 'SET':
+                    name, value = command[1], command[2]
+                    state[name] = value
+                    if name in setters:
+                        setters[name](value)
+                        conn.send( ('Settings', {name: getters[name]()}) )
+                    elif name != 'num_osc':
+                        averages_set = False
+                        conn.send( ('Settings', {name: value}) )
+                elif kind == 'READ':
+                    conn.send( ('Settings', {name: getter() for name, getter in getters.items()}) )
+                elif kind == 'LIVE':
+                    live = bool(command[1])
+                    averages_set = False
+                    losses = 0
+                elif kind == 'RUN':
+                    scope.oscilloscope_run()
+                elif kind == 'STOP':
+                    scope.oscilloscope_stop()
+                return True
+
+            while True:
+                if not live:
+                    if conn.poll(0.2) and not handle(conn.recv()):
+                        break
+                    continue
+
+                if conn.poll():
+                    if not handle(conn.recv()):
+                        break
+                    continue
+
+                if not averages_set:
+                    scope.oscilloscope_number_of_averages(int(state['live_averages']))
+                    averages_set = True
+                _arm(scope)
+                result = _wait_armed([scope], conn, float(state['trigger_timeout_s']))
+                if result == 'exit':
+                    break
+                if isinstance(result, tuple) and result[0] == 'command':
+                    scope.oscilloscope_stop()
+                    if not handle(result[1]):
+                        break
+                    continue
+                if isinstance(result, tuple):
+                    losses += 1
+                    conn.send( ('Message', f"scope {number}: no trigger for {float(state['trigger_timeout_s']):g} s") )
+                    if losses >= 3:
+                        live = False
+                        conn.send( ('Live', 0) )
+                        conn.send( ('Message', f'scope {number}: live stopped after three trigger losses') )
+                    else:
+                        conn.poll(1.0)
+                    continue
+
+                losses = 0
+                if test_mode:
+                    time.sleep(0.2)
+                channels = ['CH1', 'CH2'] if scope_index == 0 and int(state['num_osc']) == 3 else ['CH1']
+                for channel in channels:
+                    y = scope.oscilloscope_get_curve(channel)
+                    preamble = scope.oscilloscope_preamble(channel)
+                    t = preamble[5] + np.arange(len(y)) * preamble[4]
+                    general.plot_1d('TR Live', t, y, xname = 'Time', xscale = 's', yname = 'Signal', yscale = 'V', label = f'Scope {number} {channel}')
+
+            closing = True
+
+        except SystemExit:
+            pass
+        except BaseException as e:
+            exc_info = f"{type(e)} \n{str(e)} \n{traceback.format_exc()}"
+            conn.send( ('Error', exc_info) )
+        finally:
+            if scope is not None:
+                try:
+                    scope.oscilloscope_stop()
+                    scope.close_connection()
+                except Exception:
+                    pass
+            if closing:
+                conn.send( ('', f'scope {number} session closed') )
 
     def exp_on(self, conn, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11, p12):
         """
@@ -848,6 +1371,7 @@ class Worker():
             ag53131a = ag.Agilent_53131a()
             ls335 = ls.Lakeshore_335()
             a2012 = key.Keysight_2000_Xseries()
+            a2012.oscilloscope_timeout('5 s')
             #bh15 = itc.ITC_FC()
             bh15 = itc.BH_15()
             
@@ -861,6 +1385,7 @@ class Worker():
 
             else:
                 a2012_2 = key2.Keysight_2000_Xseries()
+                a2012_2.oscilloscope_timeout('5 s')
                 
                 a2012.oscilloscope_trigger_channel(p10)
                 a2012.oscilloscope_acquisition_type('Average')
@@ -869,6 +1394,8 @@ class Worker():
                 a2012_2.oscilloscope_trigger_channel('Ext')
                 a2012_2.oscilloscope_acquisition_type('Average')
                 a2012_2.oscilloscope_run_stop()
+
+            scopes = [a2012] if p9 == 1 else [a2012, a2012_2]
 
             a2012.oscilloscope_record_length( 4000 )
             try:
@@ -896,7 +1423,6 @@ class Worker():
 
             if self.half_field is not None:
                 from atomize.control_center.tr_two_fields import acquire
-                scopes = [a2012] if p9 == 1 else [a2012, a2012_2]
                 lengths = [real_length] if p9 == 1 else [real_length, real_length_2]
                 steps = [t_step] if p9 == 1 else [t_step, t_step_2]
                 resolutions = [t_res] if p9 == 1 else [t_res, t_res_2]
@@ -1123,9 +1649,8 @@ class Worker():
                     if p9 > 1:
                         a2012_2.oscilloscope_number_of_averages(p6)
                     
-                    a2012.oscilloscope_start_acquisition()
-                    if p9 > 1:
-                        a2012_2.oscilloscope_start_acquisition()
+                    if not self._acquire_point(scopes, conn, OFFRES_FIELD):
+                        break
 
                     ##ch_time = np.random.randint(250, 500, 1)
                     if p9 == 1:
@@ -1193,12 +1718,8 @@ class Worker():
 
                         general.wait('80 ms')
 
-                        a2012.oscilloscope_start_acquisition()
-                        if p9 > 1:
-                            a2012_2.oscilloscope_start_acquisition()
-                        a2012.oscilloscope_wait_acquisition()
-                        if p9 > 1:
-                            a2012_2.oscilloscope_wait_acquisition()
+                        if not self._acquire_point(scopes, conn, field):
+                            break
 
                         field_next = round( (FIELD_STEP + field), 3 )
                         bh15.magnet_field(field_next)
@@ -1285,12 +1806,8 @@ class Worker():
                             i -= 1
                             general.wait('80 ms')
 
-                            a2012.oscilloscope_start_acquisition()
-                            if p9 > 1:
-                                a2012_2.oscilloscope_start_acquisition()
-                            a2012.oscilloscope_wait_acquisition()
-                            if p9 > 1:
-                                a2012_2.oscilloscope_wait_acquisition()
+                            if not self._acquire_point(scopes, conn, field):
+                                break
 
                             if i > 0:
                                 field_next = round( (-FIELD_STEP + field), 3 )
@@ -1559,6 +2076,7 @@ class Worker():
             ag53131a = ag.Agilent_53131a()
             ls335 = ls.Lakeshore_335()
             a2012 = key.Keysight_2000_Xseries()
+            a2012.oscilloscope_timeout('5 s')
             #bh15 = itc.ITC_FC()
             bh15 = itc.BH_15()
             
@@ -1572,6 +2090,7 @@ class Worker():
 
             else:
                 a2012_2 = key2.Keysight_2000_Xseries()
+                a2012_2.oscilloscope_timeout('5 s')
                 
                 a2012.oscilloscope_trigger_channel(p10)
                 a2012.oscilloscope_acquisition_type('Average')
@@ -1580,6 +2099,8 @@ class Worker():
                 a2012_2.oscilloscope_trigger_channel('Ext')
                 a2012_2.oscilloscope_acquisition_type('Average')
                 a2012_2.oscilloscope_run_stop()
+
+            scopes = [a2012] if p9 == 1 else [a2012, a2012_2]
 
             a2012.oscilloscope_record_length( 4000 )
             try:
@@ -1811,9 +2332,8 @@ class Worker():
                     if p9 > 1:
                         a2012_2.oscilloscope_number_of_averages(p6)
                     
-                    a2012.oscilloscope_start_acquisition()
-                    if p9 > 1:
-                        a2012_2.oscilloscope_start_acquisition()
+                    if not self._acquire_point(scopes, conn, OFFRES_FIELD):
+                        break
 
                     ##ch_time = np.random.randint(250, 500, 1)
                     if p9 == 1:
@@ -1881,12 +2401,8 @@ class Worker():
 
                         general.wait('80 ms')
 
-                        a2012.oscilloscope_start_acquisition()
-                        if p9 > 1:
-                            a2012_2.oscilloscope_start_acquisition()
-                        a2012.oscilloscope_wait_acquisition()
-                        if p9 > 1:
-                            a2012_2.oscilloscope_wait_acquisition()
+                        if not self._acquire_point(scopes, conn, field):
+                            break
 
                         field_next = round( (FIELD_STEP + field), 3 )
                         bh15.magnet_field(field_next)
@@ -1973,12 +2489,8 @@ class Worker():
                             i -= 1
                             general.wait('80 ms')
 
-                            a2012.oscilloscope_start_acquisition()
-                            if p9 > 1:
-                                a2012_2.oscilloscope_start_acquisition()
-                            a2012.oscilloscope_wait_acquisition()
-                            if p9 > 1:
-                                a2012_2.oscilloscope_wait_acquisition()
+                            if not self._acquire_point(scopes, conn, field):
+                                break
 
                             if i > 0:
                                 field_next = round( (-FIELD_STEP + field), 3 )

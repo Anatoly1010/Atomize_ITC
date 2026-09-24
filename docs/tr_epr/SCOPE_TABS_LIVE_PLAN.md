@@ -1,6 +1,6 @@
 # TR-EPR — scope settings tabs, live preview and no-trigger handling (plan)
 
-Written 2026-09-24. Status: planned, not implemented. One session, one commit; update the status line and the session log at the end.
+Written 2026-09-24. Status: implemented 2026-09-24 offline (all sections); nothing has run against a real scope yet. Bench Gate 0 and the hardware checks below are open.
 
 Project: `atomize/control_center/tr_control.py` with two Keysight DSOX2012A scopes driven by `atomize/device_modules/Keysight_2000_Xseries.py` and `_2.py` (Ethernet VISA, `192.168.2.21` / `.22`). The standalone `osc_control.py` / `osc_control_2.py` windows talk raw SCPI over telnet port 5025 from `osc_config.ini` / `osc_2_config.ini`.
 
@@ -51,7 +51,7 @@ def oscilloscope_timeout(self, *timeout):   # '5 s' style argument; no argument 
 
 ### Experiment worker
 
-In `exp_on` and `exp_test`, the forward and backward loops replace `start_acquisition` + `wait_acquisition` with `_arm` on each scope, the magnet step (the existing readout overlap is kept), then `_wait_armed`. On `('no_trigger', i)`: log `scope i: no trigger for T s at field F`, re-arm and wait once more; on a second loss at the same point raise, so the existing `('Error', ...)` path ends the run with that message instead of a raw VISA traceback. On `'exit'` the loop stops the scopes and leaves through the existing stop path, so Stop is served within 50 ms instead of after the accumulation. Data assignment, magnet end state and ramp-back are unchanged; the two-field path in `tr_two_fields.acquire` gets the same helper.
+In `exp_on` and `exp_test`, the forward and backward loops replace `start_acquisition` + `wait_acquisition` with `_arm` on each scope, the magnet step (the existing readout overlap is kept), then `_wait_armed`. On `('no_trigger', i)`: stop every scope, log `scope i: no trigger for T s at field F; retrying the point` through a new `('Message', text)` pipe kind that the GUI only logs, re-arm and wait once more; on a second loss at the same point log `...; second loss, stopping the measurement` and take the normal Stop path (`self.command = 'exit'`), so the magnet ramps back and the data acquired so far are saved, unlike the `('Error', ...)` path. On `'exit'` the loop stops the scopes and leaves through the existing stop path, so Stop is served within 50 ms instead of after the accumulation. Data assignment, magnet end state and ramp-back are unchanged; the two-field path in `tr_two_fields.acquire` gets the same helper.
 
 ### Scope session worker
 
@@ -141,5 +141,21 @@ Keep `osc_control.py` / `osc_control_2.py` and their main-window buttons until t
 
 - One scope-session child process for settings and live, exclusive with the experiment worker; the GUI process never imports the scope module, and the session exists only between Connect and Disconnect.
 - Acquisition waits are `:SINGle` + 50 ms polling of the RUN bit and the trigger event register, with a per-shot trigger timeout (default 2 s) instead of a per-accumulation VISA timeout; the VISA timeout drops to 5 s.
-- Experiment timeout policy: retry the point once, then abort with the field in the message.
+- Experiment timeout policy: retry the point once, then stop the run through the normal Stop path with the field in the message.
 - The standalone `osc_control` windows stay until the tabs pass on the bench, then they are removed with their configs, `QProcess` entries and main-window buttons.
+
+## Implementation notes (2026-09-24)
+
+Where the code departs from the design above, with the reason:
+
+- One session process per scope tab, each with its own pipe and 200 ms timer, instead of one shared session; messages carry no scope index. Start still ends every session first (`pending_start`) and Exit closes them.
+- `_arm` also sends `:WAVeform:FORMat WORD`, which only `oscilloscope_start_acquisition` used to set; `*CLS` clears a stale trigger event. The magnet step stays after the wait (arm → wait → step → read), as the code already had it.
+- Second trigger loss at a point takes the normal Stop path instead of `Error`, so the magnet ramps back and the data are saved. `_wait_armed` stops the losing scope; `_acquire_point` stops the others before re-arming. Any other pipe command received during a wait is handed back to the loop (`SC<n>` still resizes).
+- Channel scale/offset boxes are whole mV because the module setters take `int`; a readback of 2.5 mV shows as 2. Window minimum is 0.1 µs (one decimal), horizontal offset ±`timebase_max`, channel offsets ±8×`sensitivity_max`.
+- Live Acquisitions is not read back at Connect (it is the preview's own setting) and is pushed to the scope only when Live turns on or the value changes. A command during a live accumulation stops the scope, drops that trace, applies the command and re-arms.
+- The live time axis comes from the waveform preamble (`x_orig + n·x_inc`), not from the horizontal-offset readback, because Keysight measures the delay to the screen centre.
+- Disconnect stops the scope and then closes the connection, so a Run pressed for the scope's own screen is undone by Disconnect. A `SystemExit` from the module constructor is reported as the did-not-answer hint, with the address from the module config.
+- The pre-flight runs synchronously (`join(30)`); in test mode it is instant. Preset files gain `Scope1 Window: …` style lines at the end; the reader already keys lines 11 onward.
+- Window height follows the visible tab (`fit_tab`): `QTabWidget` sizes itself by its tallest page whatever the size policies, and `adjustSize` is not honoured by every window manager, so the height is computed as menu bar + tab bar + frame + the visible page and pinned with `setFixedSize`, the same fit a single-page tool such as `cw_control` gets for free. The half-field toggle goes through the same path. Page margins are 14/7 px instead of `cw_control`'s 15/10 because the tab pane adds its own frame; the label and box edges then sit exactly where `cw_control` puts them. The four Scope-tab buttons are one column, like the TR EPR buttons.
+- Offline checks: `atomize/script_examples/tr_control_checks.py` (stub scope: done / trigger kept / no trigger / exit / handed-back command / retry then stop), an offscreen GUI smoke run (tabs, Scope 2 enabling, half-field panel, Connect readback, SET echo, Live on/off, Start ending the session and launching `exp_test`, Exit with Live on), the pre-flight rejecting `window_us = 1e9`, a dead session logging the hint, three live losses turning Live off, a preset round-trip, and the traced `exp_test` sweeps for 1/2/3 scopes, one- and two-sided, plus the half-field path. All pass.
+

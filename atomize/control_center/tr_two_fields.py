@@ -44,17 +44,19 @@ def acquire(worker, conn, general, saver, magnet, scopes, temperature, counter,
     class Cancelled(Exception):
         pass
 
-    def poll():
+    def handle(command):
         nonlocal scans
+        if command == 'exit':
+            worker.command = 'exit'
+            raise Cancelled()
+        if command.startswith('SC') and not test_mode:
+            scans = max(int(command[2:]), completed + 1)
+
+    def poll():
         if worker.command == 'exit':
             raise Cancelled()
         while conn.poll():
-            command = conn.recv()
-            if command == 'exit':
-                worker.command = 'exit'
-                raise Cancelled()
-            if command.startswith('SC') and not test_mode:
-                scans = max(int(command[2:]), completed + 1)
+            handle(conn.recv())
 
     def wait(milliseconds):
         while milliseconds > 0:
@@ -74,8 +76,8 @@ def acquire(worker, conn, general, saver, magnet, scopes, temperature, counter,
         magnet.magnet_field(target)
 
     def traces():
-        for scope in scopes:
-            scope.oscilloscope_start_acquisition()
+        if not worker._acquire_point(scopes, conn, field, on_command=handle):
+            raise Cancelled()
         result = [[scope.oscilloscope_get_curve('CH1')] for scope in scopes]
         if num_osc == 3:
             result[0].append(scopes[0].oscilloscope_get_curve('CH2'))
