@@ -12,7 +12,7 @@
 - [x] Phase 4 — mirror layer (snapshot.py + harness) — done 2026-07-16; gui_vs_engine ALL 17 PASS incl. 2 fine-grid synthetic presets + awg_grid_cur attribute check
 - [x] Phase 5 — verification + docs — done 2026-07-16; functional suites in session scratchpad (`test_fine_grid.py`, `test_gui_fine.py`) — re-create from ROADMAP entry 2026-07-16 (6) if needed
 - [x] Opus code-review — 15-agent workflow, 6 findings all fixed (2026-07-16); golden BIT-EXACT + all suites green after fixes
-- [ ] Bench validation (lab) — see Verification table below
+- [ ] Bench validation (lab) — echo-level part passed 2026-09-24 (below); scope and remaining items open
 
 The GUI/engine equivalence harness was rerun on 2026-09-19 after the live-rate and adaptive-relaxation changes and reports ALL PASS, including its existing fine-grid cases. This is an argument-equivalence check; no new golden waveform comparison or 0.8 ns hardware measurement was performed. Current automation evidence is recorded in [ROADMAP.md](ROADMAP.md).
 
@@ -126,6 +126,25 @@ Module constants `PULSER_GRID_NS = 3.2`, `AWG_GRID_NS = 0.8`; MainWindow helper 
 | Test-mode dry runs | `python <script> test`; GUI "Test Scripts" incl. live-edit LiveReject | valid 0.8 values pass; `0.4 ns` rejected |
 | Echo tracking (receive side) | synthetic + bench: fine Hahn τ sweep with P1 `st_inc = 1.6 ns`; check integral amplitude and IQ phase flatness across the 4-point residual cycle (dec 1 and 2); 2D full-trace mode shows a stationary echo | no period-4 modulation of amplitude/phase beyond noise |
 | Hardware (lab bench) | scope DAC vs TRIGGER_AWG TTL at offsets 0/0.8/1.6/2.4 ns; 0.8-step τ sweep echo behavior; mid-sweep buffer-size change (k wrap / gate ±1 tick) doesn't glitch GIM re-arm; amp-gate margins still cover sub-grid pulses; `deer_bench.py` with `awg_time_resolution('0.8 ns')` + `step: 0.8` | physical 0.8 ns steps, no re-arm glitches |
+
+## Bench results 2026-09-24
+
+Run on hardware with `accum_mode.phase_awg` (coal, 3443 G, 1 kHz, 4-step cycle, integration window 256–356 ns) through the engine executor, i.e. the same Worker methods as the GUI.
+
+| Check | Result |
+|---|---|
+| Hahn τ sweep, 0.8 ns steps (P3 st_inc 0.8, P1 st_inc 1.6), dec 1 | No period-4 pattern: amplitude ±6 of ~2800, phase ±0.2°, echo position ±0.2 ns |
+| Same, dec 2 | Same result |
+| 0.8 grid vs 3.2 grid at shared τ | Within ±3 % and ±2° (noise) |
+| Full traces with P1 tracking / untracked | Echo stays put (+0.02 ns per point) / moves 1.615 ns per point with no steps |
+| Length sweep, P3 len_inc 0.8 (DAC buffer grows, one-tick gate changes) | Smooth; matches 3.2 grid within run-to-run drift (±2–3 %) |
+| Log Time on the 0.8 grid | First P3 steps of 0.8 ns; smooth; echo stays put |
+| Amplitude sweep (table-driven), P3 start 288.8 | Smooth growth 19 → 3067 |
+| Live and Accumulation preview, P3 +0.8 / DETECTION +0.8 | Echo moves +1.64–1.70 / −0.81–0.84 ns; equal count_nip; board update 4.5–4.7 ms per 5 ms pack |
+
+The echo phase moves about 14° per 0.8 ns at 50 MHz, because the carrier phase starts at each pulse start (see Carrier phase above). In a tracked τ sweep the P3 and DETECTION terms cancel. Off-grid inputs are rounded up to the next grid step (DETECTION length to 3.2 ns), not rejected.
+
+Not covered: scope check of the TTL/DAC residual positions 0–3, Field sweep (would move the magnet), ESEEM Avg, decimation 4, live edit of a sub-tick start in the GUI, `deer_bench.py`.
 
 ## Risks / open questions
 - **Stale-k rebuild guard** (Phase 1.7) is the top correctness risk — must fire on every residue change and never on-grid.

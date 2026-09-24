@@ -6150,6 +6150,8 @@ class Worker():
 
             # DETECTION pulse
             iq_freq = -int( rect1[6].split(" MHz")[0] )
+            if script_test and rect1[4] != '0.0 ns':
+                raise ValueError("Please remove Start Increments for all pulses")
             if int(float(rect1[2].split(' ')[0])) != 0:
                 pb.pulser_pulse(name='P1', channel=rect1[0], start=rect1[1], length=rect1[2], phase_list=rect1[3], delta_start=rect1[4], length_increment=rect1[5])
 
@@ -6203,6 +6205,8 @@ class Worker():
 
                 if script_test and int(float(rect2[1].split(' ')[0])) == 0:
                     raise ValueError("LASER pulse has zero length")
+                if script_test and rect2[2] != '0.0 ns':
+                    raise ValueError("Please remove Start Increments for all pulses")
                 #p7 is LASER pulse
                 pb.pulser_pulse(
                     name=f'L1',
@@ -7302,7 +7306,7 @@ class Worker():
             # DETECTION pulse
             iq_freq = -int( rect1[6].split(" MHz")[0] )
             if int(float(rect1[2].split(' ')[0])) != 0:
-                pb.pulser_pulse(name='P1', channel=rect1[0], start=rect1[1], length=rect1[2], phase_list=rect1[3], delta_start=rect1[4], length_increment=rect1[5])
+                pb.pulser_pulse(name='P1', channel=rect1[0], start=rect1[1], length=rect1[2], phase_list=rect1[3], delta_start='0.0 ns', length_increment=rect1[5])
 
             #Laser flag
             if laser_flag != 1:
@@ -7350,7 +7354,7 @@ class Worker():
                                 channel='TRIGGER_AWG', 
                                 start=tp[0], 
                                 length=tp[1], 
-                                delta_start=tp[2],
+                                delta_start='0.0 ns',
                                 length_increment=tp[3]
                             )
                 pb.pulser_repetition_rate( REP_RATE )
@@ -7365,7 +7369,7 @@ class Worker():
                     channel='LASER',
                     start=rect2[0],
                     length=rect2[1],
-                    delta_start=rect2[2],
+                    delta_start='0.0 ns',
                     length_increment=rect2[3]
                 )
 
@@ -7417,7 +7421,7 @@ class Worker():
                                 channel='TRIGGER_AWG', 
                                 start=tp[0], 
                                 length=tp[1], 
-                                delta_start=tp[2],
+                                delta_start='0.0 ns',
                                 length_increment=tp[3]
                             )
 
@@ -7580,6 +7584,7 @@ class Worker():
                                 data[0], data[1] = pb.digitizer_at_exit()
                                 break
 
+                        # pulses keep their position: start increments only mark the amplitude-swept pulses
                         pb.pulser_shift()
                         pb.awg_pulse_reset()
 
@@ -7588,7 +7593,7 @@ class Worker():
                                 pb.awg_redefine_amplitude(
                                     name = name_list,
                                     amplitude = [amplitude_rows[name][j + 1] for name in name_list] )
-                        else:
+                        elif j + 1 < POINTS:
                             delta = STEP * (j + 1)
                             ampl_list_cur = [x + delta for x in ampl_list]
                             pb.awg_redefine_amplitude(name = name_list, amplitude = ampl_list_cur )
