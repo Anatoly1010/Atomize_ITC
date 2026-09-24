@@ -1016,9 +1016,9 @@ class MainWindow(QMainWindow):
             lbl.setStyleSheet(REFINED_STYLES['LABEL_STYLE'])
 
         # ---- Boxes ----
-        double_boxes = [(QSpinBox, "P_to_drop", "p_to_drop", self.p_to_drop_func, 0, 1e4, 0, 1, 0, ""),
+        double_boxes = [(QSpinBox, "P_to_drop", "p_to_drop", self.p_to_drop_func, 0, 37500, 0, 1, 0, " pts"),
                       (QDoubleSpinBox, "Zero_order", "zero_order", self.zero_order_func, -0.1, 360.1, 0, 0.1, 4, " deg"),
-                      (QDoubleSpinBox, "First_order", "first_order", self.first_order_func, -100, 100, 0, 0.001, 4, " deg/MHz"),
+                      (QDoubleSpinBox, "First_order", "first_order", self.first_order_func, -5400, 5400, 0, 0.001, 4, " deg/MHz"),
                       (QDoubleSpinBox, "Second_order", "second_order", self.second_order_func, -100, 100, 0, 0.001, 4, ' deg/MHz²')
                         ]
 
@@ -1076,7 +1076,7 @@ class MainWindow(QMainWindow):
 
         self.fft_box.setToolTip('Show the FFT; Phase Correction selects amplitude or phase-corrected I/Q.')
         
-        self.Quad_cor.setToolTip('Unchecked: Zero Order on the time trace, with Auto phase. Checked: orders 0–2 on the FFT after Points to Drop; Auto phase is disabled.')
+        self.Quad_cor.setToolTip('Unchecked: Zero Order on the time trace, with Auto phase. Checked: orders 0–2 on the FFT after Points to Drop; Auto phase is disabled. First and Second Order affect only the FFT view.')
 
         # ---- Separators ----
         def hline():
@@ -2376,11 +2376,10 @@ class MainWindow(QMainWindow):
         file_to_read.write('Window Left: ' + str( int(self.cur_win_left) ) +'\n') #/ self.time_per_point
         file_to_read.write('Window Right: ' + str( int(self.cur_win_right ) ) +'\n') #/ self.time_per_point
         file_to_read.write('Decimation: ' + str( self.decimation ) +'\n')
-        # phase corrections (worker units: rad, rad/s, rad/s^2) so acquisition
-        # scripts can pick them up via digitizer_read_settings() without a preset
+        # zero order for acquisition scripts; first/second order are FFT-view only
         file_to_read.write('Zero order: ' + str( getattr(self, 'zero_order', 0.0) ) +'\n')
-        file_to_read.write('First order: ' + str( getattr(self, 'first_order', 0.0) ) +'\n')
-        file_to_read.write('Second order: ' + str( getattr(self, 'second_order', 0.0) ) +'\n')
+        file_to_read.write('First order: 0.0\n')
+        file_to_read.write('Second order: 0.0\n')
 
         file_to_read.close()
 
@@ -3283,7 +3282,7 @@ class Worker():
                                 general.message('Maximum length of the data achieved. A number of drop points was corrected.')
                             # fixed resolution of digitizer; 0.4 ns
                             freq, fft_x, fft_y = fft.fft( x_axis[p_to_drop:] , data_x[p_to_drop:], data_y[p_to_drop:], t_res * 1, re = 'True' )
-                            data_fft = fft.ph_correction( freq, fft_x, fft_y, zero_order, first_order * 1e-9, second_order * 1e-18 )
+                            data_fft = fft.ph_correction( freq, fft_x, fft_y, -zero_order, -first_order * 1e-9, -second_order * 1e-18 )
                             general.plot_1d('FFT', freq * 1e6, ( data_fft[0], data_fft[1] ),
                                 xname = 'Offset', xscale = 'Hz',
                                 yscale = 'A.U.', label = 'FFT'

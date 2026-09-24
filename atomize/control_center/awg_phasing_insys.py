@@ -1186,9 +1186,9 @@ class MainWindow(QMainWindow):
             lbl.setStyleSheet(REFINED_STYLES['LABEL_STYLE'])
 
         # ---- Boxes ----
-        double_boxes = [(QSpinBox, "P_to_drop", "p_to_drop", self.p_to_drop_func, 0, 1e4, 0, 1, 0, ""),
+        double_boxes = [(QSpinBox, "P_to_drop", "p_to_drop", self.p_to_drop_func, 0, 37500, 0, 1, 0, " pts"),
                       (QDoubleSpinBox, "Zero_order", "zero_order", self.zero_order_func, -0.1, 360.1, 0, 0.5, 4, " deg"),
-                      (QDoubleSpinBox, "First_order", "first_order", self.first_order_func, -100, 100, 0, 0.001, 4, " deg/MHz"),
+                      (QDoubleSpinBox, "First_order", "first_order", self.first_order_func, -5400, 5400, 0, 0.001, 4, " deg/MHz"),
                       (QDoubleSpinBox, "Second_order", "second_order", self.second_order_func, -100, 100, 0, 0.001, 4, ' deg/MHz²')
                         ]
 
@@ -1248,7 +1248,7 @@ class MainWindow(QMainWindow):
 
         self.fft_box.setToolTip('Show the FFT; Phase Correction selects amplitude or phase-corrected I/Q.')
         
-        self.Quad_cor.setToolTip('Unchecked: Zero Order on the time trace, with Auto phase. Checked: orders 0–2 on the FFT after Points to Drop; Auto phase is disabled.')
+        self.Quad_cor.setToolTip('Unchecked: Zero Order on the time trace, with Auto phase. Checked: orders 0–2 on the FFT after Points to Drop; Auto phase is disabled. First and Second Order affect only the FFT view.')
 
         self.IQ_corr.setToolTip('Shift the preview by the DETECTION frequency. Phase Correction chooses the phase domain. For experiments, select integrated I/Q instead of full 2D data.')
 
@@ -3297,11 +3297,10 @@ class MainWindow(QMainWindow):
         file_to_read.write('Window Left: ' + str( int(self.cur_win_left ) ) +'\n') #/ self.time_per_point
         file_to_read.write('Window Right: ' + str( int(self.cur_win_right ) ) +'\n') #/ self.time_per_point
         file_to_read.write('Decimation: ' + str( self.decimation ) +'\n')
-        # phase corrections (worker units: rad, rad/s, rad/s^2) so acquisition
-        # scripts can pick them up via digitizer_read_settings() without a preset
+        # zero order for acquisition scripts; first/second order are FFT-view only
         file_to_read.write('Zero order: ' + str( getattr(self, 'zero_order', 0.0) ) +'\n')
-        file_to_read.write('First order: ' + str( getattr(self, 'first_order', 0.0) ) +'\n')
-        file_to_read.write('Second order: ' + str( getattr(self, 'second_order', 0.0) ) +'\n')
+        file_to_read.write('First order: 0.0\n')
+        file_to_read.write('Second order: 0.0\n')
 
         file_to_read.close()
 
@@ -4637,7 +4636,7 @@ class Worker():
                                 general.message('Maximum length of the data achieved. A number of drop points was corrected.')
                             # fixed resolution of digitizer; 2 ns
                             freq, fft_x, fft_y = fft.fft( x_axis[p_to_drop:], data_x[p_to_drop:], data_y[p_to_drop:], t_res * 1, re = 'True' )
-                            data_fft = fft.ph_correction( freq, fft_x, fft_y, zero_order, first_order * 1e-9, second_order * 1e-18 )
+                            data_fft = fft.ph_correction( freq, fft_x, fft_y, -zero_order, -first_order * 1e-9, -second_order * 1e-18 )
                             general.plot_1d('FFT', freq * 1e6, ( data_fft[0], data_fft[1] ),
                                 xname = 'Offset', xscale = 'Hz',
                                 yscale = 'A.U.', label = 'FFT'
@@ -5171,7 +5170,7 @@ class Worker():
                                         # columns: the digitizer_demodulate phase correction
                                         # depends only on the time axis, so per-column
                                         # patching is exact.
-                                        dx, dy = pb.digitizer_demodulate(a, b, iq_freq, zp, first_order, sec_order, integral = True)
+                                        dx, dy = pb.digitizer_demodulate(a, b, iq_freq, zp, 0, 0, integral = True)
                                         data_x[rng[0]:rng[1]] = dx
                                         data_y[rng[0]:rng[1]] = dy
 
@@ -5255,7 +5254,7 @@ class Worker():
                             text = f"Scan / Time: {k} / {j * STEP:.1f}"
                         )
                 elif iq_cor == 1:
-                    data_x, data_y = pb.digitizer_demodulate(data[0], data[1], iq_freq, zp, first_order, sec_order, integral = True)
+                    data_x, data_y = pb.digitizer_demodulate(data[0], data[1], iq_freq, zp, 0, 0, integral = True)
                     if step != 1:
                         general.plot_1d(EXP_NAME, x_axis_plot, ( data_x, data_y ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j*STEP, 1)))
                     else:
@@ -5807,7 +5806,7 @@ class Worker():
                                         # columns: the digitizer_demodulate phase correction
                                         # depends only on the time axis, so per-column
                                         # patching is exact.
-                                        dx, dy = pb.digitizer_demodulate(a, b, iq_freq, zp, first_order, sec_order, integral = True)
+                                        dx, dy = pb.digitizer_demodulate(a, b, iq_freq, zp, 0, 0, integral = True)
                                         data_x[rng[0]:rng[1]] = dx
                                         data_y[rng[0]:rng[1]] = dy
 
@@ -5872,7 +5871,7 @@ class Worker():
                         else:
                             general.plot_2d(EXP_NAME, data, start_step = ((0, dec_calc), (0, 1)), xname = 'Time', xscale = 's', yname = 'Point', yscale = '', zname = 'Intensity', zscale = 'mV', text = f"ESEEM average over {completed_cycles} cycle(s)")
                     elif iq_cor == 1:
-                        rdx, rdy = pb.digitizer_demodulate(data[0], data[1], iq_freq, zp, first_order, sec_order, integral = True)
+                        rdx, rdy = pb.digitizer_demodulate(data[0], data[1], iq_freq, zp, 0, 0, integral = True)
                         if step != 1:
                             general.plot_1d(EXP_NAME, x_axis_plot, ( rdx, rdy ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = f"ESEEM average over {completed_cycles} cycle(s)")
                         else:
@@ -5922,7 +5921,7 @@ class Worker():
                             text = f"ESEEM average over {completed_cycles} cycle(s)"
                         )
                 elif iq_cor == 1:
-                    data_x, data_y = pb.digitizer_demodulate(data[0], data[1], iq_freq, zp, first_order, sec_order, integral = True)
+                    data_x, data_y = pb.digitizer_demodulate(data[0], data[1], iq_freq, zp, 0, 0, integral = True)
                     if step != 1:
                         general.plot_1d(EXP_NAME, x_axis_plot, ( data_x, data_y ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = f"ESEEM average over {completed_cycles} cycle(s)")
                     else:
@@ -6061,7 +6060,7 @@ class Worker():
                                 file_handler.save_data(cpath, cdat, header = header, mode = 'w', axes = axes_2d, axes_units = axes_units_2d)
                             elif iq_cor == 1:
                                 cpath = f"{base_data}_cycle{idx}.csv"
-                                cdx, cdy = pb.digitizer_demodulate(cdat[0], cdat[1], iq_freq, zp, first_order, sec_order, integral = True)
+                                cdx, cdy = pb.digitizer_demodulate(cdat[0], cdat[1], iq_freq, zp, 0, 0, integral = True)
                                 file_handler.save_data(cpath, np.c_[x_axis_plot, cdx, cdy], header = header2, mode = 'w')
 
                     conn.send( ('', f'Experiment {EXP_NAME} finished') )
@@ -6373,7 +6372,7 @@ class Worker():
                                         # columns: the digitizer_demodulate phase correction
                                         # depends only on the time axis, so per-column
                                         # patching is exact.
-                                        dx, dy = pb.digitizer_demodulate(a, b, iq_freq, zp, first_order, sec_order, integral = True)
+                                        dx, dy = pb.digitizer_demodulate(a, b, iq_freq, zp, 0, 0, integral = True)
                                         data_x[rng[0]:rng[1]] = dx
                                         data_y[rng[0]:rng[1]] = dy
 
@@ -6464,7 +6463,7 @@ class Worker():
                         text = f"Scan / Field: {k} / {field}"
                         )
                 elif iq_cor == 1:
-                    data_x, data_y = pb.digitizer_demodulate(data[0], data[1], iq_freq, zp, first_order, sec_order, integral = True)
+                    data_x, data_y = pb.digitizer_demodulate(data[0], data[1], iq_freq, zp, 0, 0, integral = True)
                     general.plot_1d(EXP_NAME, x_axis, ( data_x, data_y ), xname = 'Field', xscale = 'G', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Field: ' + str(k) + ' / ' + str(field))
 
                 now = datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")
@@ -6953,7 +6952,7 @@ class Worker():
                                         # columns: the digitizer_demodulate phase correction
                                         # depends only on the time axis, so per-column
                                         # patching is exact.
-                                        dx, dy = pb.digitizer_demodulate(a, b, iq_freq, zp, first_order, sec_order, integral = True)
+                                        dx, dy = pb.digitizer_demodulate(a, b, iq_freq, zp, 0, 0, integral = True)
                                         data_x[rng[0]:rng[1]] = dx
                                         data_y[rng[0]:rng[1]] = dy
 
@@ -7020,7 +7019,7 @@ class Worker():
                         text = f"Scan / Point: {k} / {j}"
                     )
                 elif iq_cor == 1:
-                    data_x, data_y = pb.digitizer_demodulate(data[0], data[1], iq_freq, zp, first_order, sec_order, integral = True)
+                    data_x, data_y = pb.digitizer_demodulate(data[0], data[1], iq_freq, zp, 0, 0, integral = True)
                     general.plot_1d(EXP_NAME, x_axis_plot, ( data_x, data_y ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Point: ' + str(k) + ' / ' + str(j))
 
                 now = datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")
@@ -7561,7 +7560,7 @@ class Worker():
                                         # columns: the digitizer_demodulate phase correction
                                         # depends only on the time axis, so per-column
                                         # patching is exact.
-                                        dx, dy = pb.digitizer_demodulate(a, b, iq_freq, zp, first_order, sec_order, integral = True)
+                                        dx, dy = pb.digitizer_demodulate(a, b, iq_freq, zp, 0, 0, integral = True)
                                         data_x[rng[0]:rng[1]] = dx
                                         data_y[rng[0]:rng[1]] = dy
 
@@ -7660,7 +7659,7 @@ class Worker():
                             pr = process
                         )
                 elif iq_cor == 1:
-                    data_x, data_y = pb.digitizer_demodulate(data[0], data[1], iq_freq, zp, first_order, sec_order, integral = True)
+                    data_x, data_y = pb.digitizer_demodulate(data[0], data[1], iq_freq, zp, 0, 0, integral = True)
                     if point_flag != 1:
                         general.plot_1d(EXP_NAME, x_axis_plot, ( data_x, data_y ), xname = 'Amplitude', xscale = '%', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Amplitude: ' + str(k) + ' / ' + str(round(x_axis_plot[j], 1)))
                     else:

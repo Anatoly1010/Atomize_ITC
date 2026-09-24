@@ -6,11 +6,11 @@ changes below into every sibling that has the same files, then delete this
 file. It is separate from `SIBLING_HANDOFF_2026-09-24.md` (commit 657b905);
 either can be ported first.
 
-Section 1–2 are in commit c894e65, sections 3–4 in the commit that adds this file; one diff covers both:
+Section 1–2 are in commit c894e65, sections 3–5 in the later commits that touch this file; one diff covers all:
 
 ```powershell
 $c = git log -1 --format=%H -- docs/SIBLING_HANDOFF_2026-09-24_sweeps.md
-git diff c894e65^ $c -- atomize/control_center/awg_phasing_insys.py atomize/control_center/phasing_insys.py atomize/epr_auto/engine/executor.py atomize/epr_auto/steps.py atomize/script_examples/epr_auto/receiver_guard_checks.py > itc_2026_09_24_sweeps.patch
+git diff c894e65^ $c -- atomize/control_center/awg_phasing_insys.py atomize/control_center/phasing_insys.py atomize/epr_auto/engine/executor.py atomize/epr_auto/steps.py atomize/script_examples/epr_auto/receiver_guard_checks.py atomize/documentation/functions/digitizer.md > itc_2026_09_24_sweeps.patch
 ```
 
 In each sibling: `git apply --3way itc_2026_09_24_sweeps.patch`. The two
@@ -56,6 +56,37 @@ first amplitude.
 `Please remove Start Increments for all pulses` for AWG triggers. It now does
 the same for P1 (DETECTION) and, in the laser branch, LASER, matching
 `phasing_insys.py`.
+
+## 5. Phase correction: one Zero Order sign; First/Second Order are FFT-only
+
+Both phasing tools. Since cdc8147 the First/Second Order controls are FFT-view
+values (deg/MHz, deg/MHz²), but experiments still passed them to
+`digitizer_demodulate` as time-domain rad/s and rad/s². A 9.2 deg/MHz value
+left 2 % of the integral.
+- `dig_on` FFT branch: `fft.ph_correction(..., -zero_order, -first_order * 1e-9, -second_order * 1e-18)`,
+  so FFT mode rotates like the time trace and the Auto phase value carries over.
+- AWG `exp*` methods: every `digitizer_demodulate(..., iq_freq, zp, first_order, sec_order, integral = True)`
+  becomes `(..., iq_freq, zp, 0, 0, integral = True)` (12 sites).
+- The `digitizer_insys.param` writer stores `First order: 0.0` and `Second order: 0.0`.
+- Ranges: First Order ±5400 deg/MHz (15 µs windows); Points to Drop 0–37500 with suffix ' pts'.
+- Phase Correction tooltip adds "First and Second Order affect only the FFT view."
+- `atomize/documentation/functions/digitizer.md`: `digitizer_read_settings` and
+  `digitizer_demodulate` text says the tools store only Zero Order.
+
+**Also port by hand to the siblings' own phasing tools.** cdc8147 was checked
+on six tools, so the siblings' non-Insys tools (for Spectrum or oscilloscope
+digitizers) probably carry the same 2026-09-20 change and the same two bugs. The
+ITC patch does not cover them. In each sibling, find them with
+`Select-String -Path atomize\control_center\*.py -Pattern 'first_order \* 1e-9', ' deg/MHz'`
+(the older copies in `other_versions/` do not have it), and in each tool found:
+negate the three `ph_correction` arguments; pass `0, 0` instead of
+`first_order, sec_order` in every experiment `digitizer_demodulate` call (the
+count differs per tool); write `0.0` for First/Second order in its param-file
+writer; widen First Order to ±360 × the longest detection window in µs
+(±5400 for 15 µs); and give Points to Drop a range that covers that window
+plus the ' pts' suffix. Check on hardware: in Live FFT with Phase Correction on,
+the time-domain Auto phase value phases the FFT peak, and an experiment gives the
+same integrals with First Order 0 and non-zero.
 
 ## Checks
 
