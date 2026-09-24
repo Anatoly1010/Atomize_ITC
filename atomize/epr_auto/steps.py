@@ -137,7 +137,7 @@ def tune_auto_phase(session, preset, points, scans, apply_cal):
               'factor': Float(min=1, max=10, default=2.0,
                               help='window width as a multiple of the echo FWHM'),
               'sweeps': Int(min=1, default=3,
-                            help='full phase cycles to average for the trace'),
+                            help='minimum full phase cycles to average for the trace'),
               'search_from': TimeStr(default='200 ns',
                                      help='start the echo search at this time relative to DETECTION; '
                                           'exclude early receiver transients while retaining the echo'),

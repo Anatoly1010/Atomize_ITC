@@ -264,59 +264,66 @@ def _hand_attrs(worker, worker_args):
             setattr(worker, attr, getattr(worker_args, attr))
 
 
-def _trace_child(worker, conn, args, phases, n_sweeps, script_test):
+def _trace_child(worker, conn, args, n_sweeps, script_test):
     """Child-process target for acquire_trace: run the Worker's dig_on
     preview UNMODIFIED, capturing the trace it hands to general.plot_1d
     (dig_on never sends data over the pipe — the GUI reads it off the
     LivePlot). The capture forwards to the real plot_1d, so a GUI that is
-    open still shows the live 'Dig' preview. After each full phase cycle a
-    'Status' percentage is reported; the parent answers 100% with 'exit',
-    dig_on winds down through its normal stop path (pulser_close), and the
-    last completed cycle's trace goes back as ('Trace', (t, i, q)). With
-    l_mode=1 the digitizer accumulates across cycles, so that final trace
-    is the phase-cycled average of everything acquired."""
+    open still shows the live 'Dig' preview. The accumulating (l_mode=1)
+    readout never blocks, so a trace is plotted only when a driver buffer
+    lands; progress is the complete-cycle count min(count_nip) from dig_on's
+    per-cycle 'Count' message, reported as a 'Status' percentage. The first
+    trace plotted after n_sweeps cycles are counted reports 100%, the parent
+    answers with 'exit', dig_on winds down through its normal stop path
+    (pulser_close), and that trace goes back as ('Trace', (t, i, q)): the
+    phase-cycled average of everything acquired."""
     signal.signal(signal.SIGINT, signal.SIG_IGN)   # see _shielded
     _quiet_worker_stdout()
     import atomize.general_modules.general_functions as general
     guard = _Worker.receiver_guard_settings(getattr(worker, 'receiver_guard', None))
     if script_test:
         guard = None
-    state = {'calls': 0, 'cycles': 0, 'done': None, 'receiver_level': None}
+    state = {'cycles': 0, 'done': None, 'receiver_level': None}
     orig_plot = general.plot_1d
 
+    class CycleConn:
+        def __getattr__(self, name):
+            return getattr(conn, name)
+
+        def send(self, msg):
+            if isinstance(msg, tuple) and msg[0] == 'Count':
+                cycles = int(np.array(msg[1].strip('[]').split(), dtype=int).min())
+                if cycles != state['cycles']:
+                    state['cycles'] = cycles
+                    conn.send(('Status', min(99, int(100 * cycles / n_sweeps))))
+            conn.send(msg)
+
     def capture(strname, xd, yd, *a, **kw):
-        state['calls'] += 1
-        if state['calls'] % phases == 0:
-            state['cycles'] += 1
-            t = np.asarray(xd, dtype=float)
-            i = np.asarray(yd[0], dtype=float)
-            q = np.asarray(yd[1], dtype=float)
-            if guard is not None:
-                limit_mv, start_ns = guard
-                peak_mv = _Worker.receiver_guard_peak(t * 1e9, i, q, start_ns)
-            # A readout with no fresh driver buffer returns (None, None),
-            # which dig_on writes into its data array as NaN. The
-            # cycle-boundary readout blocks for the cycle's last pack
-            # (is_drain), so this should not happen here — but a NaN frame
-            # must never become the returned trace.
-            if np.isfinite(i).all() and np.isfinite(q).all():
-                state['done'] = (t.tolist(), i.tolist(), q.tolist())
-                if guard is not None and state['receiver_level'] is None:
-                    if peak_mv > limit_mv:
-                        state['receiver_level'] = {
-                            'limit_mv': limit_mv, 'peak_mv': peak_mv,
-                            'start_ns': start_ns, 'scan': state['cycles'],
-                            'sweep_type': 'Trace',
-                        }
-                        conn.send(('ReceiverLevel', state['receiver_level']))
-            conn.send(('Status', min(100, int(100 * state['cycles'] / n_sweeps))))
+        t = np.asarray(xd, dtype=float)
+        i = np.asarray(yd[0], dtype=float)
+        q = np.asarray(yd[1], dtype=float)
+        if guard is not None:
+            limit_mv, start_ns = guard
+            peak_mv = _Worker.receiver_guard_peak(t * 1e9, i, q, start_ns)
+        if np.isfinite(i).all() and np.isfinite(q).all():
+            state['done'] = (t.tolist(), i.tolist(), q.tolist())
+            if guard is not None and state['receiver_level'] is None:
+                if peak_mv > limit_mv:
+                    state['receiver_level'] = {
+                        'limit_mv': limit_mv, 'peak_mv': peak_mv,
+                        'start_ns': start_ns, 'scan': state['cycles'],
+                        'sweep_type': 'Trace',
+                    }
+                    conn.send(('ReceiverLevel', state['receiver_level']))
+            if state['cycles'] >= n_sweeps:
+                conn.send(('Status', 100))
         try:
             orig_plot(strname, xd, yd, *a, **kw)
         except Exception:
             pass
 
     general.plot_1d = capture
-    worker.dig_on(conn, *args, script_test)
+    worker.dig_on(CycleConn(), *args, script_test)
     if state['done'] is not None:
         conn.send(('Trace', state['done']))
     conn.send(('TraceEnd', ''))
@@ -359,7 +366,7 @@ def acquire_trace(worker_args, n_sweeps=1, script_test=False,
     _hand_attrs(worker, worker_args)
     parent_conn, child_conn = Pipe()
     process = Process(target=_trace_child,
-                      args=(worker, child_conn, args, phases,
+                      args=(worker, child_conn, args,
                             max(1, int(n_sweeps)), script_test))
     process.start()
 

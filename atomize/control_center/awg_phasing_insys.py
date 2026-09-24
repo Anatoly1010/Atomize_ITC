@@ -4580,7 +4580,11 @@ class Worker():
                             continue
                         data[0], data[1] = live_i, live_q
                     elif l_mode == 1:
-                        data[0], data[1] = pb.digitizer_get_curve(POINTS, PHASES, live_mode = 0)
+                        # current_scan = 0: never block on the last phase, the board would repeat it meanwhile
+                        acc_i, acc_q = pb.digitizer_get_curve(POINTS, PHASES, live_mode = 0, current_scan = 0)
+                        if acc_i is None:
+                            continue
+                        data[0], data[1] = acc_i, acc_q
                     ##general.wait('100 ms')
                     ##data = np.random.random( ( 2, WIN_ADC, 1 ) )
 

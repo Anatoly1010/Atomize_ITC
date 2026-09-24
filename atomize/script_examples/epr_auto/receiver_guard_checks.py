@@ -98,7 +98,7 @@ def trace_validation_checks():
         original = general.plot_1d
         try:
             with patch.object(executor.signal, 'signal'):
-                executor._trace_child(InvalidTrace(), TracePipe(), (), 2, 1, script_test)
+                executor._trace_child(InvalidTrace(), TracePipe(), (), 1, script_test)
         except ValueError as error:
             assert not script_test and 'malformed readout' in str(error)
         else:
