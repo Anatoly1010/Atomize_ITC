@@ -608,7 +608,7 @@ class MainWindow(QMainWindow):
         self.button_reset_links = QPushButton("×")
         self.button_reset_links.setFixedSize(26, 26)
         self._set_glyph_style(self.button_reset_links,
-            REFINED_STYLES['DOCK_CLOSE_STYLE'] + "QPushButton { font-size: 17px; }")
+            REFINED_STYLES['DOCK_CLOSE_STYLE'] + "QPushButton { font-size: 16px; }")
         self.button_reset_links.setAccessibleName("Reset all links")
         self.button_reset_links.setToolTip(
             "Reset all links: set every factor to No and the parameter to Off. Pulse values stay unchanged.")
@@ -671,7 +671,7 @@ class MainWindow(QMainWindow):
         self.button_track = QPushButton("T")
         self.button_track.setFixedSize(26, 26)
         self.button_track.setEnabled(False)
-        self.button_track.setStyleSheet(
+        self._set_glyph_style(self.button_track,
             REFINED_STYLES['DOCK_CLOSE_STYLE'] + "QPushButton { font-size: 15px; }")
         self.button_track.setAccessibleName("Capture reference curves")
         self.button_track.setToolTip(
@@ -683,7 +683,7 @@ class MainWindow(QMainWindow):
         self.button_track_clear = QPushButton("×")
         self.button_track_clear.setFixedSize(26, 26)
         self._set_glyph_style(self.button_track_clear,
-            REFINED_STYLES['DOCK_CLOSE_STYLE'] + "QPushButton { font-size: 17px; }")
+            REFINED_STYLES['DOCK_CLOSE_STYLE'] + "QPushButton { font-size: 16px; }")
         self.button_track_clear.setAccessibleName("Clear reference curves")
         self.button_track_clear.setToolTip("Clear the reference curves.")
         self.button_track_clear.clicked.connect(lambda: self._track_command('clear'))
@@ -942,7 +942,7 @@ class MainWindow(QMainWindow):
         aw_layout.addSpacing(20)
         self.button_auto_window = QPushButton("A")
         self.button_auto_window.setFixedSize(26, 26)
-        self.button_auto_window.setStyleSheet(
+        self._set_glyph_style(self.button_auto_window,
             REFINED_STYLES['DOCK_CLOSE_STYLE'] + "QPushButton { font-size: 15px; }")
         self.button_auto_window.setAccessibleName("Auto window")
         self.button_auto_window.setToolTip(
@@ -1107,7 +1107,7 @@ class MainWindow(QMainWindow):
         zo_layout.addSpacing(20)
         self.button_auto_phase = QPushButton("A")
         self.button_auto_phase.setFixedSize(26, 26)
-        self.button_auto_phase.setStyleSheet(
+        self._set_glyph_style(self.button_auto_phase,
             REFINED_STYLES['DOCK_CLOSE_STYLE'] + "QPushButton { font-size: 15px; }")
         self.button_auto_phase.setAccessibleName("Auto phase")
         self.button_auto_phase.setToolTip(
@@ -3002,6 +3002,7 @@ class Worker():
             WIN_ADC = int( pb.adc_window * 8 / decimation )
             auto_phase_req = False
             auto_window_pts = 0
+            last_trace = None
 
             #31/03/2026
             if DETECTION_WINDOW <= 1200:
@@ -3243,6 +3244,9 @@ class Worker():
                     else:
                         pass
 
+                    if np.isfinite(data_x).all() and np.isfinite(data_y).all():
+                        last_trace = (data_x.copy(), data_y.copy(), zero_order)
+
                     if script_test and fft_flag == 1:
                         # FFT mode in test: omit the I/Q text on the Dig plot since FFT is shown
                         general.plot_1d('Dig', x_axis / 1e9, ( data_x, data_y ),
@@ -3281,25 +3285,33 @@ class Worker():
                                 yscale = 'A.U.', label = 'FFT'
                                 )
 
-                if auto_phase_req:
+                if auto_phase_req and last_trace is not None:
                     auto_phase_req = False
+                    tr_x, tr_y, tr_zo = last_trace
                     if quad == 0 and win_right > win_left:
-                        integral = np.sum(data_x[win_left:win_right] + 1j * data_y[win_left:win_right])
+                        integral = np.sum(tr_x[win_left:win_right] + 1j * tr_y[win_left:win_right])
                         if np.isfinite(integral) and integral != 0:
-                            phase = (zero_order + np.angle(integral)) % (2 * np.pi)
+                            phase = (tr_zo + np.angle(integral)) % (2 * np.pi)
                             conn.send(('AutoPhase', (float(np.degrees(phase)), float(np.abs(integral) * t_res))))
                         else:
                             conn.send(('Message', 'Auto phase: no signal in the integration window.'))
                     else:
                         conn.send(('Message', 'Auto phase needs time-domain mode and a non-empty integration window.'))
 
-                if auto_window_pts > 0:
+                if auto_window_pts > 0 and last_trace is not None:
                     width = min(auto_window_pts, WIN_ADC)
                     auto_window_pts = 0
-                    envelope = np.abs(data_x + 1j * data_y)
+                    envelope = np.abs(last_trace[0] + 1j * last_trace[1])
                     if np.isfinite(envelope).all() and np.any(envelope > 0):
                         smooth = np.convolve(envelope, np.ones(width) / width, mode = 'same')
                         centre = int(np.argmax(smooth))
+                        # centre on the half-maximum centroid of the echo inside the window
+                        for _ in range(3):
+                            lo = min(max(centre - width // 2, 0), WIN_ADC - width)
+                            part = envelope[lo:lo + width] - np.median(envelope)
+                            part = np.clip(part - 0.5 * part.max(), 0, None)
+                            if part.sum() > 0:
+                                centre = int(round(lo + np.sum(np.arange(width) * part) / part.sum()))
                         left = min(max(centre - width // 2, 0), WIN_ADC - width)
                         right = left + width
                         conn.send(('AutoWindow', (left * t_res, right * t_res, centre * t_res)))
@@ -3346,7 +3358,8 @@ class Worker():
                     if PHASES >= pb.number_adc_window_in_buffer():
                         str1 = 'PHASE CYCLE EXCEEDS ADC BUFFER: LIVE PREVIEW UPDATES ONCE PER FULL CYCLE\n'
                         str2 = 'ADC WINDOWS IN BUFFER: '
-                        conn.send( ('test', f'{str1}{str2}{pb.number_adc_window_in_buffer()}') )
+                        str3 = '\nTraces update once all steps arrive and average any repeats, so noise can differ between traces.'
+                        conn.send( ('test', f'{str1}{str2}{pb.number_adc_window_in_buffer()}{str3}') )
                     conn.close()
 
         except BaseException as e:

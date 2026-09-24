@@ -10,16 +10,22 @@ from atomize.general_modules.gui_style import REFINED_STYLES
 class MessageLog(QPlainTextEdit):
     """Keep the existing append/clear API and preserve the reader's position."""
 
-    appended = pyqtSignal(str)
     cleared = pyqtSignal()
+    pinned = pyqtSignal(str)
 
     def appendPlainText(self, text):
+        lines = text.splitlines()
+        if lines and lines[0].startswith('PHASE CYCLE EXCEEDS ADC BUFFER'):
+            # the buffer lines go to the banner only; the rest stays in the log
+            self.pinned.emit('\n'.join(lines[:2]))
+            text = '\n'.join(lines[2:])
+            if not text:
+                return
         bar = self.verticalScrollBar()
         position = bar.value()
         following = position == bar.maximum()
         super().appendPlainText(text)
         bar.setValue(bar.maximum() if following else position)
-        self.appended.emit(text)
 
     def clear(self):
         super().clear()
@@ -39,6 +45,7 @@ class PhasingMessagePanel(QWidget):
         self.buffer_warning.setTextFormat(Qt.TextFormat.PlainText)
         self.buffer_warning.setWordWrap(True)
         self.buffer_warning.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.buffer_warning.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
         self.buffer_warning.setStyleSheet(REFINED_STYLES['BUFFER_WARNING_STYLE'])
         self.buffer_warning.hide()
         layout.addWidget(self.buffer_warning)
@@ -62,15 +69,13 @@ class PhasingMessagePanel(QWidget):
         self.tabs.addTab(self.messages, 'Messages')
         self.tabs.addTab(self.pulses, 'Pulse List')
         layout.addWidget(self.tabs)
-        self.messages.appended.connect(self._pin_buffer_warning)
+        self.messages.pinned.connect(self._pin_buffer_warning)
         self.messages.cleared.connect(self._clear_details)
 
     def set_experiment_running(self, running):
         self.experiment_status.setVisible(running)
 
     def _pin_buffer_warning(self, text):
-        if 'PHASE CYCLE EXCEEDS ADC BUFFER' not in text:
-            return
         detail = ' · '.join(line.strip().strip('!') for line in text.splitlines() if line.strip())
         detail = detail.replace('PHASE CYCLE EXCEEDS ADC BUFFER: LIVE PREVIEW UPDATES ONCE PER FULL CYCLE',
                                 'Phase cycle exceeds ADC buffer: live preview updates once per full cycle')

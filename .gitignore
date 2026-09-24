@@ -39,4 +39,6 @@ protocols/runs/
 # Claude Code: per-machine settings stay local; .claude/agents/ IS tracked
 .claude/settings.local.json
 /docs/INSYS_PROTECTION_REVIEW.md
+/docs/INSYS_LIVE_SNAPSHOT.md
+/docs/PHASING_TRACK.md
 /docs/automation/OUTPUT_PANEL.md
