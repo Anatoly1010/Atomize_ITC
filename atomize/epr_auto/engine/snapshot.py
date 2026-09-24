@@ -257,6 +257,7 @@ class WorkerArgs:
     first_order: float  # rad/s
     second_order: float # rad/s^2
     save2d: int
+    save_hdf5: int = 0
     p_to_drop: int = 0  # FFT drop points; dig_on (preview) only, exp* ignore it
     # sweep-specific extras
     log_start: float = 1.0

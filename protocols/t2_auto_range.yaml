@@ -18,3 +18,4 @@ steps:
       target_snr: 20
       max_duration: 600 s
       adjust_range: true
+      save_2d: true

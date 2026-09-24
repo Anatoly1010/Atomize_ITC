@@ -11,7 +11,7 @@ import numpy as np
 
 from atomize.epr_auto.params import parse_field_g
 from atomize.epr_auto.primitives.judges import JudgeReport, echo_snr
-from atomize.epr_auto.primitives.tune import _acquire, _build
+from atomize.epr_auto.primitives.tune import _acquire, _build, _data_files, _full_2d
 
 
 # h/mu_B in Gauss per MHz: B[G] = 0.71447704 * nu[MHz] / g
@@ -66,7 +66,7 @@ def _detection_if_mhz(preset):
 
 def edfs(session, preset, range, points, scans, pick='max', value=None,
          g=2.0023, span='250 G', offset='0 G', target_snr=None,
-         _escalated=False):
+         save_2d=False, _escalated=False):
     """Echo-detected field sweep over range=[start, end] ('<x> G/mT/T'
     strings); pick the working field ('max' = magnitude maximum of the
     sweep, 'value' = the given field) and set the magnet to it.
@@ -121,6 +121,7 @@ def edfs(session, preset, range, points, scans, pick='max', value=None,
     pre, wa = _build(session, preset, exp_name='EDFS',
                      start_field=lo, end_field=hi, step_field=step,
                      scans=scans)
+    _full_2d(wa, save_2d)
     from atomize.epr_auto.primitives.exp import _snr_policy
     snr_policy = _snr_policy(session, target_snr, scans)
     if snr_policy is not None:
@@ -157,10 +158,10 @@ def edfs(session, preset, range, points, scans, pick='max', value=None,
                             'and re-running (one escalation)')
                 return edfs(session, preset, 'auto', points, scans, pick,
                             value, g, wide, offset, target_snr,
-                            _escalated=True)
+                            save_2d=save_2d, _escalated=True)
             # the search ladder ends at the human: name the precondition to
             # check, and do NOT move the magnet to a noise maximum
-            return ({'field': None, 'pick': pick, 'data_file': path},
+            return ({'field': None, 'pick': pick, **_data_files(path)},
                     [snr_judge])
         session.log('      echo SNR below the floor — pick: value still '
                     'sets the requested field')
@@ -169,7 +170,7 @@ def edfs(session, preset, range, points, scans, pick='max', value=None,
         float(x[int(np.argmax(np.abs(sig)))])
 
     set_result, set_judges = set_field(session, f'{field_g:.2f} G')
-    result = {'field': set_result['field'], 'pick': pick, 'data_file': path}
+    result = {'field': set_result['field'], 'pick': pick, **_data_files(path)}
     if center is not None:
         # measured line-minus-predicted-center: the setup's calibration
         # shift, ready to be fed back as the offset parameter

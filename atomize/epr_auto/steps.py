@@ -329,6 +329,10 @@ def _check_edfs(params, ctx):
                                        'echo_snr score (min = the judge pass '
                                        'floor: a lower target would stop on a '
                                        'sweep the hard judge then rejects)'),
+              'save_2d': Bool(default=False,
+                              help='also save the full I/Q matrices of every sweep point '
+                                   'as a _2d.h5 file beside the CSV (datasets I, Q, t, sweep); size is '
+                                   'points x window samples x 8 bytes'),
               'apply_cal': CalMap(help='slot -> pi/pi2 map; none = do not patch; '
                                        'omitted = patch from the session '
                                        'pi_calibration when one exists '
@@ -337,13 +341,14 @@ def _check_edfs(params, ctx):
           },
           check=_check_edfs)
 def field_edfs(session, preset, range, points, scans, pick, value, g, span,
-               offset, target_snr, apply_cal):
+               offset, target_snr, apply_cal, save_2d):
     from atomize.epr_auto.primitives import field as field_primitives
     preset = _apply_cal_if_any(session, preset, apply_cal)
     return _run_primitive(session, field_primitives.edfs,
                           preset=preset, range=range, points=points,
                           scans=scans, pick=pick, value=value, g=g, span=span,
-                          offset=offset, target_snr=target_snr)
+                          offset=offset, target_snr=target_snr,
+                          save_2d=save_2d)
 
 
 @register('field.set',
@@ -475,6 +480,10 @@ def _apply_cal_if_any(session, preset, mapping):
               'adjust_max_points': Int(min=60, max=100000, default=4096,
                                        help='point ceiling when automatically resizing a sweep; '
                                             'increase the grid step if needed'),
+              'save_2d': Bool(default=False,
+                              help='also save the full I/Q matrices of every sweep point '
+                                   'as a _2d.h5 file beside the CSV (datasets I, Q, t, sweep); size is '
+                                   'points x window samples x 8 bytes'),
               'points': Int(min=2, required=True,
                             help='sweep points'),
               'scans': Int(min=1, default=1,
@@ -502,7 +511,7 @@ def _apply_cal_if_any(session, preset, mapping):
           })
 def exp_t2(session, preset, tau_start, tau_step, points, scans, window,
            apply_cal, max_duration, rep_rate, target_snr, adjust_range,
-           adjust_max_points):
+           adjust_max_points, save_2d):
     pre = _apply_cal(session, preset, apply_cal)
     from atomize.epr_auto.primitives import exp as exp_primitives
     return _run_primitive(session, exp_primitives.t2, advisory_extra=('echo_snr',),
@@ -510,7 +519,8 @@ def exp_t2(session, preset, tau_start, tau_step, points, scans, window,
                           points=points, scans=scans, window=window,
                           max_duration=max_duration, rep_rate=rep_rate,
                           target_snr=target_snr, adjust_range=adjust_range,
-                          adjust_max_points=adjust_max_points)
+                          adjust_max_points=adjust_max_points,
+                          save_2d=save_2d)
 
 
 def _check_t1(params, ctx):
@@ -538,6 +548,10 @@ def _check_t1(params, ctx):
               'adjust_max_points': Int(min=60, max=100000, default=4096,
                                        help='point ceiling when automatically resizing a sweep; '
                                             'reduce log-grid density if needed'),
+              'save_2d': Bool(default=False,
+                              help='also save the full I/Q matrices of every sweep point '
+                                   'as a _2d.h5 file beside the CSV (datasets I, Q, t, sweep); size is '
+                                   'points x window samples x 8 bytes'),
               'points': Int(min=2, required=True,
                             help='log-grid points; the worker deduplicates '
                                  'the grid-rounded axis, so the saved curve '
@@ -568,7 +582,8 @@ def _check_t1(params, ctx):
           },
           check=_check_t1)
 def exp_t1(session, preset, t_start, t_end, points, scans, window, apply_cal,
-           max_duration, rep_rate, target_snr, adjust_range, adjust_max_points):
+           max_duration, rep_rate, target_snr, adjust_range, adjust_max_points,
+           save_2d):
     pre = _apply_cal(session, preset, apply_cal)
     from atomize.epr_auto.primitives import exp as exp_primitives
     return _run_primitive(session, exp_primitives.t1, advisory_extra=('echo_snr',),
@@ -576,7 +591,8 @@ def exp_t1(session, preset, t_start, t_end, points, scans, window, apply_cal,
                           points=points, scans=scans, window=window,
                           max_duration=max_duration, rep_rate=rep_rate,
                           target_snr=target_snr, adjust_range=adjust_range,
-                          adjust_max_points=adjust_max_points)
+                          adjust_max_points=adjust_max_points,
+                          save_2d=save_2d)
 
 
 from atomize.epr_auto.preliminary_steps import register_steps

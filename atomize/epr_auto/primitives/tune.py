@@ -122,6 +122,18 @@ def _build(session, preset_path, exp_name, slot_coef=None, **overrides):
     return preset, wa
 
 
+def _full_2d(wa, enabled):
+    wa.save2d = wa.save_hdf5 = int(bool(enabled))
+
+
+def _data_files(path):
+    files = {'data_file': str(path)}
+    path_2d = Path(str(Path(path).with_suffix('')) + '_2d.h5')
+    if path_2d.exists():
+        files['data_file_2d'] = str(path_2d)
+    return files
+
+
 def _acquire(session, wa, sweep_type, tag, log=None, scan_control=None,
              on_scan_data=None):
     """Pre-flight, then acquire. Returns (x, i, q, path) or None in test mode.

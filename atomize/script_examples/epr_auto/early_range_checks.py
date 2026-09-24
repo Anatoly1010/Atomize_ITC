@@ -1,7 +1,9 @@
 """Exercise early range decisions together with SNR accumulation; no hardware."""
 import copy
 import sys
+import tempfile
 from contextlib import nullcontext
+from pathlib import Path
 from unittest.mock import patch
 
 import numpy as np
@@ -11,21 +13,23 @@ if len(sys.argv) < 2 or sys.argv[1] != 'test':
 
 from atomize.epr_auto.engine import executor, snapshot
 from atomize.epr_auto.params import PRESET_DIR
-from atomize.epr_auto.primitives import exp, relaxation_timing
+from atomize.epr_auto.primitives import exp, relaxation_series, relaxation_timing
 from atomize.epr_auto.primitives.judges import JudgeReport
+from atomize.epr_auto.primitives.tune import _data_files
 from atomize.epr_auto.session import EPRSession
 from atomize.epr_auto.steps import _run_primitive
 
 
 def exercise(kind, mode, *, budget=None, rejected=False, scans=8, adjust=True, target=10,
-             late_budget=False, fail_check=False):
+             late_budget=False, fail_check=False, save_2d=False, carry=False):
     session = EPRSession('early-range', 'autonomous', False)
     session.log = lambda value: None
     session.state['temperature'] = {'setpoint': 80, 'reached': True}
     preset = ('hahn_echo_4s.phase_awg' if kind == 't2'
               else 'inversion_recovery_echo_4s_log.phase_awg')
     options = dict(preset=PRESET_DIR / preset, points=300, scans=scans,
-                   target_snr=target, rep_rate=100, adjust_range=adjust, max_duration=budget)
+                   target_snr=target, rep_rate=100, adjust_range=adjust, max_duration=budget,
+                   save_2d=save_2d)
     if kind == 't2':
         options.update(tau_start='204.8 ns', tau_step='22.4 ns')
     else:
@@ -83,9 +87,21 @@ def exercise(kind, mode, *, budget=None, rejected=False, scans=8, adjust=True, t
     def late_remaining(check):
         return -1.0 if check.report['status'] == 'extend' else 1e6
 
+    seeds = {}
+
+    def remember_key(s, pre, k, seed, max_points):
+        seeds['range'] = seed
+        return 'carried'
+
+    def carried_range(s, key):
+        return {'range': copy.deepcopy(seeds['range']), 'source_data_file': 'previous.csv',
+                'source_temperature_k': 80.0}
+
     with patch.object(exp, '_acquire', side_effect=acquire), \
             (patch.object(exp, 'plateau', flaky_plateau) if fail_check else nullcontext()), \
             (patch.object(exp._EarlyRangeCheck, 'remaining', late_remaining) if late_budget else nullcontext()), \
+            (patch.object(relaxation_series, 'context_key', remember_key) if carry else nullcontext()), \
+            (patch.object(relaxation_series, 'choose', carried_range) if carry else nullcontext()), \
             patch.object(exp, 'echo_snr', side_effect=snr), \
             patch.object(executor, 'run_worker', **preflight) as check, \
             patch.object(relaxation_timing, 'maximum_t1_rate', **maximum) as rate:
@@ -156,7 +172,33 @@ def main():
         assert 'range_adjustment' not in result
         print(f'PASS: {kind} early repair, retained scans, SNR, noisy window, no late/repeated repair, limits, '
               'committed extension and failed check')
+    check_full_2d()
     print('ALL PASS')
+
+
+def flags(runs):
+    return {(r['args'].save2d, r['args'].save_hdf5) for r in runs}
+
+
+def check_full_2d():
+    for kind in ('t2', 't1'):
+        result, runs = exercise(kind, 'short', save_2d=True)
+        assert [r['completed'] for r in runs] == [1, 5] and flags(runs) == {(1, 1)}
+        assert 'data_file_2d' not in result
+
+        result, runs = exercise(kind, 'good', save_2d=True, carry=True)
+        assert result['range_adjustment']['carried_range']['status'] == 'used'
+        assert flags(runs) == {(1, 1)}
+
+        result, runs = exercise(kind, 'short')
+        assert len(runs) == 2 and flags(runs) == {(0, 0)}
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / 'T2_1.csv'
+        assert _data_files(path) == {'data_file': str(path)}
+        (Path(tmp) / 'T2_1_2d.h5').touch()
+        assert _data_files(path) == {'data_file': str(path),
+                                     'data_file_2d': str(Path(tmp) / 'T2_1_2d.h5')}
+    print('PASS: save_2d inherited by revised and carried ranges; data_file_2d only when present')
 
 
 if __name__ == '__main__':

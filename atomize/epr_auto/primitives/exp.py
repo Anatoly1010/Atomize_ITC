@@ -36,7 +36,8 @@ from atomize.epr_auto.engine import snapshot
 from atomize.epr_auto.primitives.judges import (
     JudgeReport, echo_snr, relaxation_fit,
 )
-from atomize.epr_auto.primitives.tune import _acquire, _build, _resolve_rep_rate, _to_real
+from atomize.epr_auto.primitives.tune import (
+    _acquire, _build, _data_files, _full_2d, _resolve_rep_rate, _to_real)
 from atomize.epr_auto.primitives.relaxation_range import decision, plateau
 from atomize.epr_auto.primitives import relaxation_series
 
@@ -300,7 +301,7 @@ def _finish(session, acq, fit_func, key, fit_name, extra):
     y = _to_real(sig)
     snr = echo_snr(sig)
     measured = {'npoints': int(len(x)), 'start_s': float(x[0]),
-                'end_s': float(x[-1]), 'data_file': path}
+                'end_s': float(x[-1]), **_data_files(path)}
     try:
         fit = fit_func(x, y)
     except (RuntimeError, ValueError) as e:   # curve_fit no-convergence
@@ -369,6 +370,7 @@ def _revised_sweep(session, pre, wa, acq, kind, plan, max_points,
                 s.start + s.length + (points - 1) * s.st_inc
                 for s in revised.slots if s.active), 'the revised tau sweep')
         revised, args = _build(session, revised, exp_name='T2_revised', points=points, **window)
+        _full_2d(args, wa.save2d)
         return revised, args
     grid = _log_grid(wa)
     if len(grid) != len(x):
@@ -395,6 +397,7 @@ def _revised_sweep(session, pre, wa, acq, kind, plan, max_points,
     points = min(max_points, max(60, int(round((log_end - wa.log_start) / spacing)) + 1))
     revised, args = _build(session, revised, exp_name='T1_revised', points=points,
                             log_start=wa.log_start, log_end=log_end, **window)
+    _full_2d(args, wa.save2d)
     if plan['action'] == 'resize' and plan['target_points'] <= len(grid) and not limited:
         wanted = min(plan['target_points'], max_points)
         for _ in range(8):
@@ -404,6 +407,7 @@ def _revised_sweep(session, pre, wa, acq, kind, plan, max_points,
             points = min(max_points, max(60, args.points + wanted - actual))
             revised, args = _build(session, revised, exp_name='T1_revised', points=points,
                                     log_start=wa.log_start, log_end=log_end, **window)
+            _full_2d(args, wa.save2d)
     return revised, args
 
 
@@ -434,6 +438,7 @@ def _reuse_range(session, pre, wa, kind, key):
         else:
             overrides.update(log_start=settings['log_start'], log_end=settings['log_end'])
         candidate, args = _build(session, candidate, exp_name=kind.upper(), **overrides)
+        _full_2d(args, wa.save2d)
         if kind == 't1':
             from atomize.epr_auto.primitives.relaxation_timing import maximum_t1_rate
             rate = maximum_t1_rate(args)
@@ -481,7 +486,7 @@ def _learn_range(session, pre, wa, acq, kind, key, max_points, result, judges):
 def _range_record(acq, wa, kind):
     x, i, q, path = acq
     measured = plateau(x, _to_real(i + 1j * q), kind)
-    return {'data_file': str(path), 'npoints': len(x),
+    return {**_data_files(path), 'npoints': len(x),
             'start_s': float(x[0]), 'end_s': float(x[-1]),
             'rep_rate_hz': float(wa.rep_rate), 'plateau': measured}
 
@@ -604,7 +609,7 @@ def _adjust_range(session, pre, wa, acq, kind, scans, target_snr, range_check):
 
 def t2(session, preset, tau_start, tau_step, points, scans, window='auto',
        max_duration=None, rep_rate=None, target_snr=None, adjust_range=False,
-       adjust_max_points=4096):
+       adjust_max_points=4096, save_2d=False):
     """Hahn echo decay: linear tau sweep re-anchored to tau_start/tau_step,
     stretched-exponential fit. `preset` may be an already-loaded (e.g.
     apply_cal-patched) Preset."""
@@ -616,6 +621,7 @@ def t2(session, preset, tau_start, tau_step, points, scans, window='auto',
     _apply_rep_rate(pre, _resolve_rep_rate(session, rep_rate))
     pre, wa = _build(session, pre, exp_name='T2', points=points, scans=scans,
                      **_window_override(pre, window))
+    _full_2d(wa, save_2d)
     pre.rep_rate = float(wa.rep_rate)
     key, carried = None, None
     if adjust_range:
@@ -654,7 +660,7 @@ def t2(session, preset, tau_start, tau_step, points, scans, window='auto',
 
 def t1(session, preset, t_start, t_end, points, scans, window='auto',
        max_duration=None, rep_rate=None, target_snr=None, adjust_range=False,
-       adjust_max_points=4096):
+       adjust_max_points=4096, save_2d=False):
     """Inversion recovery: log-time sweep (Log Start/End = log10 ns),
     a - b*exp(-t/T1) fit with the characteristic-time initial guess. The
     worker deduplicates the grid-rounded log axis, so the result's npoints
@@ -671,6 +677,7 @@ def t1(session, preset, t_start, t_end, points, scans, window='auto',
     pre, wa = _build(session, pre, exp_name='T1', points=points, scans=scans,
                      log_start=log_start, log_end=log_end,
                      **_window_override(pre, window))
+    _full_2d(wa, save_2d)
     pre.rep_rate = float(wa.rep_rate)
     key, carried = None, None
     if adjust_range:
