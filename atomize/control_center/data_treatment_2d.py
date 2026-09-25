@@ -134,6 +134,8 @@ BUFFER_2D_PATH = str(Path(__file__).resolve().parent.parent.parent / 'libs' / 't
 # window relaunch (each tool is its own short-lived QProcess). libs/ runtime IPC.
 LASTDIR_PATH = str(Path(__file__).resolve().parent.parent.parent / 'libs' / 'treatment_lastdir.txt')
 
+DATA_SAVE_FILTERS = ('CSV (*.csv)', 'HDF5 (*.h5)')
+
 
 def _load_last_dir():
     try:
@@ -934,11 +936,16 @@ class MainWindow(QMainWindow):
             self._remember_dir(path)
         return path
 
-    def _save_dialog(self, **kw):
-        path = self.opener.create_file_dialog(multiprocessing=True,
-                                              directory=self.last_dir, **kw)
-        if path and path != 'None':
-            self._remember_dir(path)
+    def _save_dialog(self, name_filters=DATA_SAVE_FILTERS):
+        path = self.opener.FileDialog(directory=self.last_dir, mode='Save',
+                                      name_filters=name_filters)
+        if not path:
+            return None
+        exts = [e for f in name_filters for e in re.findall(r'\*(\.\w+)', f)]
+        if not path.lower().endswith(tuple(exts)):
+            path += re.search(r'\*(\.\w+)', self.opener.dialog.selectedNameFilter()).group(1)
+        self.opener.save_cancelled = False
+        self._remember_dir(path)
         return path
 
     # ------------------------------------------------------------- loading
@@ -1038,6 +1045,19 @@ class MainWindow(QMainWindow):
         """
         spec = {'x': cls._axis_spec(), 'y': cls._axis_spec()}
         for ln in header_lines:
+            # 'X (Name/unit): start a step b', as save_result writes it
+            m = re.match(r'\s*#?\s*([XY])\s*\((.*)\)\s*:\s*start\s+(\S+)\s+step\s+(\S+)', ln)
+            if m:
+                name, _, unit = m.group(2).partition('/')
+                try:
+                    start, step = float(m.group(3)), float(m.group(4))
+                except ValueError:
+                    continue
+                if unit == 's':
+                    start, step, unit = start * 1e9, step * 1e9, 'ns'
+                spec[m.group(1).lower()].update(name=name or None, unit=unit or None,
+                                                start=start, step=step)
+                continue
             m = re.match(r'\s*#?\s*([a-z\- ]+?)\s*:\s*([-+0-9.eE]+)\s*([a-zA-Zµ%]*)',
                          ln, re.IGNORECASE)
             if not m:
@@ -2436,7 +2456,7 @@ class MainWindow(QMainWindow):
         if sl is None:
             return
         file_path = self._save_dialog()
-        if not file_path or file_path == 'None':
+        if not file_path:
             return
         dax, oax = sl['dax'], sl['oax']
         arr = np.column_stack([np.asarray(sl['x'], float),
@@ -2481,7 +2501,7 @@ class MainWindow(QMainWindow):
             self.set_status('Run a fit first — no map to save.')
             return
         file_path = self._save_dialog()
-        if not file_path or file_path == 'None':
+        if not file_path:
             return
         m = self.fit_map
         arr = np.column_stack([m['x'], m['param'], m['r2']])
@@ -2499,7 +2519,7 @@ class MainWindow(QMainWindow):
             self.set_status('Nothing to save — load data first.')
             return
         file_path = self._save_dialog()
-        if not file_path or file_path == 'None':
+        if not file_path:
             return
         if self.has_result():
             i, q, col, row, meta = (self.res_i, self.res_q, self.res_col,
@@ -2514,8 +2534,13 @@ class MainWindow(QMainWindow):
             f'X ({col["name"]}/{col["scale"]}): start {col["start"]:.6g} step {col["step"]:.6g}',
             f'Y ({row["name"]}/{row["scale"]}): start {row["start"]:.6g} step {row["step"]:.6g}',
             'channel 0 = real/I (this file), channel 1 = imag/Q (_1 file)'])
-        self.opener.save_data(file_path, arr, header=header, mode='w')
-        self.set_status(f'Saved I/Q to {os.path.basename(file_path)} (+ _1).')
+        axes = (col['start'] + col['step']*np.arange(i.shape[1]),
+                row['start'] + row['step']*np.arange(i.shape[0]))
+        self.opener.save_data(file_path, arr, header=header, mode='w', axes=axes,
+                              axes_units=(col['scale'], row['scale']))
+        h5 = file_path.lower().endswith('.h5')
+        self.set_status(f'Saved I/Q to {os.path.basename(file_path)}'
+                        f'{"" if h5 else " (+ _1)"}.')
 
 
 def main():

@@ -69,6 +69,8 @@ from atomize.general_modules.gui_forms import FormPanel
 # curves into (same libs/ runtime-IPC convention as the .param files).
 BUFFER_PATH = str(Path(__file__).resolve().parent.parent.parent / 'libs' / 'treatment_buffer.csv')
 
+DATA_SAVE_FILTERS = ('CSV (*.csv)', 'HDF5 (*.h5)')
+
 # remembers the folder of the last file opened/saved here so the next dialog
 # starts there — shared with the 2D tool (one working data folder), survives a
 # window relaunch (each tool is its own short-lived QProcess). libs/ runtime IPC.
@@ -441,7 +443,7 @@ class MainWindow(QMainWindow):
         btn_plot = QPushButton('Plot to GUI')
         btn_plot.setStyleSheet(BUTTON_STYLE)
         btn_plot.clicked.connect(self.plot_result)
-        btn_save = QPushButton('Save CSV…')
+        btn_save = QPushButton('Save…')
         btn_save.setStyleSheet(BUTTON_STYLE)
         btn_save.clicked.connect(self.save_result)
         btn_chain = QPushButton('Result → input')
@@ -1002,11 +1004,16 @@ class MainWindow(QMainWindow):
             self._remember_dir(result)
         return result
 
-    def _save_dialog(self, **kw):
-        path = self.opener.create_file_dialog(multiprocessing=True,
-                                              directory=self.last_dir, **kw)
-        if path and path != 'None':
-            self._remember_dir(path)
+    def _save_dialog(self, name_filters=('CSV (*.csv)',)):
+        path = self.opener.FileDialog(directory=self.last_dir, mode='Save',
+                                      name_filters=name_filters)
+        if not path:
+            return None
+        exts = [e for f in name_filters for e in re.findall(r'\*(\.\w+)', f)]
+        if not path.lower().endswith(tuple(exts)):
+            path += re.search(r'\*(\.\w+)', self.opener.dialog.selectedNameFilter()).group(1)
+        self.opener.save_cancelled = False
+        self._remember_dir(path)
         return path
 
     def _csv_to_mapping(self, file_path, header_lines):
@@ -2443,12 +2450,12 @@ class MainWindow(QMainWindow):
         if not self.has_result():
             self.set_status('Nothing to save — run an operation first.')
             return
-        file_path = self._save_dialog()
-        if not file_path or file_path == 'None':
+        file_path = self._save_dialog(DATA_SAVE_FILTERS)
+        if not file_path:
             return
         cols = [self.result_x] + [np.asarray(y, dtype=float) for _, y in self.result_channels]
         data = np.column_stack(cols)
-        col_header = 'X, ' + ', '.join(lbl for lbl, _ in self.result_channels)
+        col_header = f'{self.result_xname or "X"}, ' + ', '.join(lbl for lbl, _ in self.result_channels)
         # Prepend operation metadata (fit model + params, FFT/phase settings) as
         # comment lines, then the column header on the last line.
         header = '\n'.join(list(self.result_meta) + [col_header])

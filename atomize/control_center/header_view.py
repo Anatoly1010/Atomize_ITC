@@ -73,7 +73,7 @@ def read_header(path):
         return lines[:MAX_HEADER_LINES]
 
     try:
-        with open(path, 'r', errors='ignore') as fh:
+        with open(path, 'r', encoding='utf-8', errors='ignore') as fh:
             for line in fh:
                 if not line.strip():
                     continue                   # blank line inside the block
