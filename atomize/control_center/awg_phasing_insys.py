@@ -1601,9 +1601,16 @@ class MainWindow(QMainWindow):
         gridLayout.addWidget(hline(), 4, 0, 1, 2)
 
         # ---- Accumulation mode (preview readout) ----
+        accum_controls = QWidget()
+        accum_controls.setFixedSize(360, 26)
+        accum_layout = QHBoxLayout(accum_controls)
+        accum_layout.setContentsMargins(0, 0, 0, 0)
+        accum_layout.setSpacing(0)
         accum_label = QLabel("Accumulation Mode")
-        accum_label.setFixedSize(170, 26)
+        accum_label.setFixedSize(140, 26)
         accum_label.setStyleSheet(REFINED_STYLES['LABEL_STYLE'])
+        accum_layout.addWidget(accum_label)
+        accum_layout.addSpacing(20)
         self.accum_box = QCheckBox("")
         self.accum_box.setStyleSheet(CHECKBOX_STYLE)
         self.accum_box.setFixedSize(170, 26)
@@ -1616,8 +1623,19 @@ class MainWindow(QMainWindow):
             "cleared, so any pulse edit needs a preview restart. Requires a "
             "phase cycle (2+ steps). Applied on the next preview start.")
         self.accum_box.stateChanged.connect(self.accumulation_toggle)
-        gridLayout.addWidget(accum_label, 5, 0)
-        gridLayout.addWidget(self.accum_box, 5, 1)
+        self.button_reset_accum = QPushButton("×")
+        self.button_reset_accum.setFixedSize(26, 26)
+        self._set_glyph_style(self.button_reset_accum,
+            REFINED_STYLES['DOCK_CLOSE_STYLE'] + "QPushButton { font-size: 16px; }")
+        self.button_reset_accum.setAccessibleName("Reset accumulated data")
+        self.button_reset_accum.setToolTip(
+            "Reset the accumulated average: the running preview starts accumulating anew "
+            "without a restart. Works only in a running accumulation preview.")
+        self.button_reset_accum.clicked.connect(self.reset_accumulation)
+        accum_layout.addWidget(self.button_reset_accum)
+        accum_layout.addSpacing(4)
+        accum_layout.addWidget(self.accum_box)
+        gridLayout.addWidget(accum_controls, 5, 0, 1, 2)
         gridLayout.addWidget(hline(), 6, 0, 1, 2)
 
         # ---- Saving of the full 2D data ----
@@ -2674,6 +2692,14 @@ class MainWindow(QMainWindow):
                      + ('ON — the preview averages over its whole run; pulse '
                         'edits need a preview restart'
                         if self.l_mode == 1 else 'OFF (live snapshot)'))
+
+    def reset_accumulation(self):
+        """Clear the running preview's accumulated average in place."""
+        if self.l_mode != 1 or getattr(self, 'is_testing', False) or not self._live_run_alive():
+            self.message('Accumulation reset: start the preview in Accumulation Mode first.')
+            return
+        self.parent_conn_dig.send('AR')
+        self.errors.appendPlainText('Accumulation reset: averaging restarted.')
 
     def win_left(self):
         """
@@ -4368,6 +4394,9 @@ class Worker():
                 elif self.command[0:2] == 'LM':
                     #l_mode = int( self.command[2:] )
                     pass
+                elif self.command[0:2] == 'AR':
+                    # the next digitizer_get_curve() reallocates the accumulators
+                    pb.flag_adc_buffer = 0
                 elif self.command[0:2] == 'PU':
                     # Live Edit: re-arm amplitude / frequency / start without a
                     # restart. Amplitude & frequency rebuild the DAC waveform;
