@@ -16,7 +16,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this repo is
 
-`Atomize_ITC` is the EPR-endstation variant of [Atomize](https://github.com/Anatoly1010/Atomize) — a modular instrument-control framework for spectrometers. It extends upstream Atomize with an "EPR Endstation Control" tab in the main window (`atomize/main/main.py`), Insys FM214x3GDA FPGA support (DAC / ADC / TTL pulser via ctypes against `libs/lib*.so`), and a set of dedicated control-center subprocesses (CW EPR, TR EPR, oscilloscopes, MW bridge, magnetic field, temperature, resonator tuning, RECT/AWG phasing).
+`Atomize_ITC` is the EPR-endstation variant of [Atomize](https://github.com/Anatoly1010/Atomize) — a modular instrument-control framework for spectrometers. It extends upstream Atomize with an "EPR Endstation Control" tab in the main window (`atomize/main/main.py`), Insys FM214x3GDA FPGA support (DAC / ADC / TTL pulser via ctypes against `libs/lib*.so`), and a set of dedicated control-center subprocesses (CW EPR, TR EPR with its scope tabs, MW bridge, magnetic field, temperature, resonator tuning, RECT/AWG phasing).
 
 Python is the scripting language. Experimental scripts are ordinary Python files that import device-module classes and call `general` functions to push data to the LivePlot-based GUI.
 
@@ -47,7 +47,7 @@ There is no unit-test suite; the project's pre-flight check is **test mode** (se
 
 The GUI is **one Qt process that spawns many `QProcess` children**, not a monolithic event loop:
 
-- `atomize/main/main.py:MainExtended` — extends the upstream `MainWindow` with a third tab ("EPR Endstation Control"). Each control-center button (`start_tr_control`, `start_osc_control`, `start_cw`, `start_field_control`, `start_temp_control`, `start_mw_control`, `start_tune_preset`, `start_rect_phasing`, `start_awg_phasing`, …) launches a script under `atomize/control_center/` via a dedicated `QProcess` (`process_tr`, `process_osc`, etc.).
+- `atomize/main/main.py:MainExtended` — extends the upstream `MainWindow` with a third tab ("EPR Endstation Control"). Each control-center button (`start_tr_control`, `start_cw`, `start_field_control`, `start_temp_control`, `start_mw_control`, `start_tune_preset`, `start_rect_phasing`, `start_awg_phasing`, …) launches a script under `atomize/control_center/` via a dedicated `QProcess` (`process_tr`, `process_cw`, etc.).
 - `start_experiment` in `main.py` spawns the user's experimental script in `self.process_python`.
 - Children communicate **upward** by writing `print "..."` to stdout; the parent's `handle_output*` parses lines prefixed with `print `, `before `, `closing `, or `ret = 0` and routes them to the in-app log (`text_errors`). The `before ` / `ret = 0` sentinels exist specifically to suppress Insys FPGA driver chatter.
 - The parent communicates **downward** to the active script by writing JSON-ish responses to its stdin when the child prints `create_file_dialog` / `open_file_dialog` — this is how scripts trigger native file pickers.

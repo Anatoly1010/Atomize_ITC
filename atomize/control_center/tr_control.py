@@ -125,7 +125,7 @@ class MainWindow(QMainWindow):
                         ]),
                       ("CH2", "combo_trig_ch", "cur_trig_ch", self.trig_ch, 
                         [
-                        "CH2", "Ext"
+                        "CH1", "CH2", "Ext"
                         ])
                       ]
 
@@ -397,6 +397,8 @@ class MainWindow(QMainWindow):
         """
         self.cur_trig_ch = str( self.combo_trig_ch.currentText() )
         #print(self.cur_end_field)
+        if hasattr(self, 'scope_tabs'):
+            self.scope_tabs[0].combo_source.setCurrentText(self.cur_trig_ch)
 
     def end_field(self):
         """
@@ -570,6 +572,7 @@ class MainWindow(QMainWindow):
 
         worker.half_field = self.pending_half_field
         worker.trigger_timeout_s = self.scope_tabs[0].trigger_timeout()
+        worker.trigger_source_2 = self.scope_tabs[1].trigger_source()
         test_target = worker.exp_test_two_fields if worker.half_field is not None else worker.exp_test
         self.parent_conn, self.child_conn = Pipe()
         # a process for running function script 
@@ -688,6 +691,7 @@ class MainWindow(QMainWindow):
         worker = Worker()
         worker.half_field = getattr(self, 'pending_half_field', None)
         worker.trigger_timeout_s = self.scope_tabs[0].trigger_timeout()
+        worker.trigger_source_2 = self.scope_tabs[1].trigger_source()
 
         self.parent_conn, self.child_conn = Pipe()
 
@@ -839,13 +843,36 @@ class MainWindow(QMainWindow):
                 for key, value in tab.save():
                     file.write(f'{key}:  {value}\n')
 
+def _step_125(value, steps, v_min, v_max):
+    """The 1-2-5 value |steps| places above (steps > 0) or below value, clamped to [v_min, v_max]."""
+    for _ in range(abs(steps)):
+        decade = math.floor(math.log10(max(value, 1e-12)))
+        grid = [m * 10.0 ** e for e in range(decade - 1, decade + 2) for m in (1, 2, 5)]
+        if steps > 0:
+            value = min(v for v in grid if v > value * (1 + 1e-9))
+        else:
+            value = max(v for v in grid if v < value * (1 - 1e-9))
+        value = min(max(round(value, 12), v_min), v_max)
+    return value
+
+class _Step125:
+    def stepBy(self, steps):
+        value = _step_125(self.value(), steps, self.minimum(), self.maximum())
+        self.setValue(value if isinstance(self, QDoubleSpinBox) else int(round(value)))
+
+class DoubleSpin125(_Step125, QDoubleSpinBox):
+    pass
+
+class Spin125(_Step125, QSpinBox):
+    pass
+
 class ScopeTab(QWidget):
     """
     Settings and live preview of one Keysight scope. The scope is driven only by
     a Worker.scope_on child process between Connect and Disconnect; this widget
     never imports the device module, whose constructor exits when the scope is absent.
     """
-    FIELDS = (('window_us', 'Window'), ('offset_us', 'Horizontal Offset'), ('ch1_scale_mv', 'CH1 Scale'),
+    FIELDS = (('window_us', 'Window'), ('trigger_pos_us', 'Trigger Position'), ('trigger_source', 'Trigger Source'), ('ch1_scale_mv', 'CH1 Scale'),
               ('ch1_offset_mv', 'CH1 Offset'), ('ch2_scale_mv', 'CH2 Scale'), ('ch2_offset_mv', 'CH2 Offset'),
               ('live_averages', 'Live Acquisitions'), ('trigger_timeout_s', 'Trigger Timeout'))
 
@@ -889,15 +916,14 @@ class ScopeTab(QWidget):
             btn.setStyleSheet(REFINED_STYLES['BUTTON_STYLE'])
             return btn
 
-        offset_max = 8 * sens_max * 1000
-        boxes = [(QDoubleSpinBox, 'window_us', math.ceil(tb_min * 1e7) / 10, tb_max * 1e6, 500, 10, 1, ' us'),
-                 (QDoubleSpinBox, 'offset_us', -tb_max * 1e6, tb_max * 1e6, 0, 1, 1, ' us'),
-                 (QSpinBox, 'ch1_scale_mv', max(1, math.ceil(sens_min * 1000)), sens_max * 1000, 200, 10, 0, ' mV'),
-                 (QSpinBox, 'ch1_offset_mv', -offset_max, offset_max, 0, 10, 0, ' mV'),
-                 (QSpinBox, 'ch2_scale_mv', max(1, math.ceil(sens_min * 1000)), sens_max * 1000, 200, 10, 0, ' mV'),
-                 (QSpinBox, 'ch2_offset_mv', -offset_max, offset_max, 0, 10, 0, ' mV'),
-                 (QSpinBox, 'live_averages', 2, 2000, 2, 1, 0, ''),
-                 (QDoubleSpinBox, 'trigger_timeout_s', 0.5, 60, 2.0, 0.5, 1, ' s')]
+        boxes = [(DoubleSpin125, 'window_us', math.ceil(tb_min * 1e7) / 10, tb_max * 1e6, 500, 10, 1, ' us'),
+                 (QDoubleSpinBox, 'trigger_pos_us', -500, 500, 50, 50, 1, ' us'),
+                 (Spin125, 'ch1_scale_mv', max(1, math.ceil(sens_min * 1000)), sens_max * 1000, 200, 10, 0, ' mV'),
+                 (QSpinBox, 'ch1_offset_mv', -2000, 2000, 0, 40, 0, ' mV'),
+                 (Spin125, 'ch2_scale_mv', max(1, math.ceil(sens_min * 1000)), sens_max * 1000, 200, 10, 0, ' mV'),
+                 (QSpinBox, 'ch2_offset_mv', -2000, 2000, 0, 40, 0, ' mV'),
+                 (Spin125, 'live_averages', 2, 2000, 2, 1, 0, ''),
+                 (QDoubleSpinBox, 'trigger_timeout_s', 1.5, 60, 2.0, 0.5, 1, ' s')]
         self.boxes = {}
         for widget_class, name, v_min, v_max, cur_val, v_step, dec, suf in boxes:
             spin_box = widget_class()
@@ -914,8 +940,16 @@ class ScopeTab(QWidget):
             spin_box.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.PlusMinus)
             spin_box.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
             spin_box.setKeyboardTracking(False)
-            spin_box.valueChanged.connect(lambda value, name = name: self.send(('SET', name, value)))
+            spin_box.valueChanged.connect(lambda value, name = name: self.box_changed(name, value))
             self.boxes[name] = spin_box
+        self.fit_ranges()
+
+        self.combo_source = QComboBox()
+        self.combo_source.addItems(['CH1', 'CH2', 'Ext'])
+        self.combo_source.setCurrentText('CH2' if index == 0 else 'Ext')
+        self.combo_source.setFixedSize(130, 26)
+        self.combo_source.setStyleSheet(REFINED_STYLES['COMBO_STYLE'])
+        self.combo_source.currentTextChanged.connect(self.source_changed)
 
         self.status = QLabel('Not connected')
         self.status.setFixedSize(130, 26)
@@ -928,15 +962,17 @@ class ScopeTab(QWidget):
         self.check_live.setFixedSize(130, 26)
         self.check_live.setStyleSheet(CHECKBOX_STYLE)
         self.check_live.toggled.connect(lambda checked: self.send(('LIVE', int(checked))))
+        self.check_live.toggled.connect(self.fit_run_stop)
 
         grid.addWidget(label('Status'), 0, 0)
         grid.addWidget(self.status, 0, 1)
         grid.addWidget(hline(), 1, 0, 1, 2)
         row = 2
-        for group in (('window_us', 'offset_us'), ('ch1_scale_mv', 'ch1_offset_mv', 'ch2_scale_mv', 'ch2_offset_mv'), ('live_averages', 'trigger_timeout_s')):
+        widgets = {**self.boxes, 'trigger_source': self.combo_source}
+        for group in (('window_us', 'trigger_pos_us', 'trigger_source'), ('ch1_scale_mv', 'ch1_offset_mv', 'ch2_scale_mv', 'ch2_offset_mv'), ('live_averages', 'trigger_timeout_s')):
             for name in group:
                 grid.addWidget(label(dict(self.FIELDS)[name]), row, 0)
-                grid.addWidget(self.boxes[name], row, 1)
+                grid.addWidget(widgets[name], row, 1)
                 row += 1
             if name != 'trigger_timeout_s':
                 grid.addWidget(hline(), row, 0, 1, 2)
@@ -968,11 +1004,53 @@ class ScopeTab(QWidget):
 
     def settings(self):
         values = {name: box.value() for name, box in self.boxes.items()}
+        values['trigger_source'] = self.trigger_source()
         values['num_osc'] = self.main.cur_num_osc
         return values
 
     def trigger_timeout(self):
         return float(self.boxes['trigger_timeout_s'].value())
+
+    def fit_run_stop(self, live):
+        for widget in (self.button_run, self.button_stop):
+            widget.setEnabled(self.connected and not live)
+
+    def trigger_source(self):
+        return self.combo_source.currentText()
+
+    def fit_ranges(self):
+        """Trigger Position spans ±Window in one-division steps; an offset steps by 0.2 division of its scale."""
+        self.window_us = self.boxes['window_us'].value()
+        dependent = [('trigger_pos_us', -self.window_us, self.window_us, self.window_us / 10)]
+        for channel in ('ch1', 'ch2'):
+            scale = self.boxes[f'{channel}_scale_mv'].value()
+            limit = 2000 if scale <= 200 else 50000
+            dependent.append((f'{channel}_offset_mv', -limit, limit, max(1, round(scale / 5))))
+        for name, v_min, v_max, step in dependent:
+            box = self.boxes[name]
+            box.blockSignals(True)
+            box.setRange(v_min, v_max)
+            box.setSingleStep(step)
+            box.blockSignals(False)
+
+    def box_changed(self, name, value):
+        if name != 'window_us':
+            self.fit_ranges()
+            self.send(('SET', name, value))
+            return
+        position = self.boxes['trigger_pos_us']
+        fraction = position.value() / self.window_us
+        self.fit_ranges()
+        position.blockSignals(True)
+        position.setValue(fraction * value)
+        position.blockSignals(False)
+        self.send(('SET', 'window_us', value))
+        self.send(('SET', 'trigger_pos_us', position.value()))
+
+    def source_changed(self, text):
+        if self.index == 0:
+            self.main.combo_trig_ch.setCurrentText(text)
+        self.send(('SET', 'trigger_source', text))
 
     def is_alive(self):
         return self.process is not None and self.process.is_alive()
@@ -1034,6 +1112,7 @@ class ScopeTab(QWidget):
                 self.check_live.blockSignals(True)
                 self.check_live.setChecked(bool(data))
                 self.check_live.blockSignals(False)
+                self.fit_run_stop(bool(data))
             elif kind == 'Message':
                 self.main.message(data)
             else:
@@ -1049,11 +1128,18 @@ class ScopeTab(QWidget):
 
     def write_boxes(self, values):
         for name, value in values.items():
-            if name in self.boxes:
+            if name == 'trigger_source':
+                self.combo_source.blockSignals(True)
+                self.combo_source.setCurrentText(value)
+                self.combo_source.blockSignals(False)
+                if self.index == 0:
+                    self.main.combo_trig_ch.setCurrentText(value)
+            elif name in self.boxes:
                 box = self.boxes[name]
                 box.blockSignals(True)
                 box.setValue(float(value) if isinstance(box, QDoubleSpinBox) else int(round(value)))
                 box.blockSignals(False)
+                self.fit_ranges()
 
     def reset(self):
         self.scope_timer.stop()
@@ -1068,49 +1154,79 @@ class ScopeTab(QWidget):
             widget.setEnabled(False)
 
     def save(self):
-        return [(f'Scope{self.number} {label}', self.boxes[name].value()) for name, label in self.FIELDS]
+        return [(f'Scope{self.number} {label}', self.trigger_source() if name == 'trigger_source' else self.boxes[name].value()) for name, label in self.FIELDS]
 
     def load(self, extra):
         for name, label in self.FIELDS:
             key = f'Scope{self.number} {label}'
-            if key in extra:
+            if key not in extra:
+                continue
+            if name == 'trigger_source':
+                self.combo_source.setCurrentText(extra[key].strip())
+            else:
                 self.boxes[name].setValue(float(extra[key]) if isinstance(self.boxes[name], QDoubleSpinBox) else int(float(extra[key])))
 
 def _arm(scope):
-    """Clears the status registers and arms one acquisition without blocking the parser."""
+    """
+    Starts one :DIGitize accumulation of :ACQuire:COUNt shots and stores the
+    count and arm time on the scope; *ESE 1 makes completion set ESB in the status byte.
+    """
     scope.oscilloscope_command(':WAVeform:FORMat WORD')
-    scope.oscilloscope_command('*CLS;:SINGle')
+    if getattr(scope, 'test_flag', None) == 'test':
+        return
+    scope.tr_count = int(scope.oscilloscope_query('*CLS;*ESE 1;:ACQuire:COUNt?'))
+    scope.oscilloscope_command(':DIGitize;*OPC')
+    scope.tr_armed = time.monotonic()
+
+def _abort(scope):
+    """Ends a running :DIGitize; a device clear is needed because the parser is blocked."""
+    if getattr(scope, 'test_flag', None) != 'test':
+        scope.device.clear()
+    scope.oscilloscope_command(':STOP')
 
 def _wait_armed(scopes, conn, trigger_timeout_s, poll_s = 0.05):
     """
-    Polls the armed scopes until every one has stopped. Returns 'done', 'exit',
-    ('no_trigger', index) when a scope saw no trigger for trigger_timeout_s, or
-    ('command', value) when a pipe command other than 'exit' arrives.
+    Serial-polls the armed scopes until every accumulation is complete (ESB).
+    Returns 'done', 'exit', ('command', value) for any other pipe command, or
+    ('no_trigger', index, reason) after aborting a scope that saw no trigger
+    (TRG) for trigger_timeout_s or ran past twice its calibrated duration.
     """
     if any(getattr(scope, 'test_flag', None) == 'test' for scope in scopes):
         return 'done'
 
     running = set(range(len(scopes)))
-    last_trigger = {index: time.monotonic() for index in running}
+    triggered = set()
     while True:
         if conn.poll():
             command = conn.recv()
             if command == 'exit':
                 for scope in scopes:
-                    scope.oscilloscope_command(':STOP')
+                    _abort(scope)
                 return 'exit'
             return ('command', command)
 
         for index in sorted(running):
             scope = scopes[index]
-            if not int(scope.oscilloscope_query(':OPERegister:CONDition?')) & 8:
+            elapsed = time.monotonic() - scope.tr_armed
+            stb = scope.device.read_stb()
+            if stb & 32:
                 running.discard(index)
+                scope.tr_shot_s = elapsed / scope.tr_count
                 continue
-            if int(scope.oscilloscope_query(':TER?')) == 1:
-                last_trigger[index] = time.monotonic()
-            elif time.monotonic() - last_trigger[index] > trigger_timeout_s:
-                scope.oscilloscope_command(':STOP')
-                return ('no_trigger', index)
+            if stb & 1:
+                triggered.add(index)
+            shot_s = getattr(scope, 'tr_shot_s', None)
+            reason = None
+            if index not in triggered and elapsed > trigger_timeout_s:
+                reason = f'no trigger for {trigger_timeout_s:g} s'
+            elif shot_s is not None:
+                limit = 2 * scope.tr_count * shot_s + trigger_timeout_s
+                if elapsed > limit:
+                    reason = f'accumulation ran past {limit:.1f} s'
+            if reason is not None:
+                scope.tr_shot_s = None
+                _abort(scope)
+                return ('no_trigger', index, reason)
 
         if not running:
             return 'done'
@@ -1126,6 +1242,7 @@ class Worker():
         self.half_field = None
         self.testing_two_fields = False
         self.trigger_timeout_s = 2.0
+        self.trigger_source_2 = 'Ext'
 
     def _append_scan_h5(self, filename, matrix, scan):
         """
@@ -1176,10 +1293,10 @@ class Worker():
                 self.command = 'exit'
                 return False
 
-            text = f'scope {result[1] + 1}: no trigger for {self.trigger_timeout_s:g} s at field {field} G'
+            text = f'scope {result[1] + 1}: {result[2]} at field {field} G'
             for index, scope in enumerate(scopes):
                 if index != result[1]:
-                    scope.oscilloscope_command(':STOP')
+                    _abort(scope)
             if attempt == 1:
                 conn.send( ('Message', text + '; second loss, stopping the measurement') )
                 self.command = 'exit'
@@ -1223,15 +1340,21 @@ class Worker():
             state = dict(settings)
             setters = {
                 'window_us': lambda v: scope.oscilloscope_timebase(f'{float(v)} us'),
-                'offset_us': lambda v: scope.oscilloscope_horizontal_offset(f'{float(v)} us'),
+                'trigger_pos_us': lambda v: scope.oscilloscope_horizontal_offset(f"{float(state['window_us']) / 2 - float(v)} us"),
+                'trigger_source': lambda v: scope.oscilloscope_trigger_channel(v),
                 'ch1_scale_mv': lambda v: scope.oscilloscope_sensitivity('CH1', f'{int(v)} mV'),
                 'ch1_offset_mv': lambda v: scope.oscilloscope_offset('CH1', f'{int(v)} mV'),
                 'ch2_scale_mv': lambda v: scope.oscilloscope_sensitivity('CH2', f'{int(v)} mV'),
                 'ch2_offset_mv': lambda v: scope.oscilloscope_offset('CH2', f'{int(v)} mV'),
             }
+            def source():
+                answer = str(scope.oscilloscope_trigger_channel()).strip().upper()
+                return {'CHAN1': 'CH1', 'CHAN2': 'CH2'}.get(answer, 'Ext' if answer.startswith('EXT') else answer)
+
             getters = {
                 'window_us': lambda: pg.siEval(scope.oscilloscope_timebase()) * 1e6,
-                'offset_us': lambda: pg.siEval(scope.oscilloscope_horizontal_offset()) * 1e6,
+                'trigger_pos_us': lambda: getters['window_us']() / 2 - pg.siEval(scope.oscilloscope_horizontal_offset()) * 1e6,
+                'trigger_source': source,
                 'ch1_scale_mv': lambda: pg.siEval(scope.oscilloscope_sensitivity('CH1')) * 1e3,
                 'ch1_offset_mv': lambda: pg.siEval(scope.oscilloscope_offset('CH1')) * 1e3,
                 'ch2_scale_mv': lambda: pg.siEval(scope.oscilloscope_sensitivity('CH2')) * 1e3,
@@ -1245,7 +1368,14 @@ class Worker():
                 conn.send( ('test', f'scope {number} settings ok') )
                 return
 
-            conn.send( ('Settings', {name: getter() for name, getter in getters.items()}) )
+            linked = {'window_us': ('trigger_pos_us', ), 'ch1_scale_mv': ('ch1_offset_mv', ), 'ch2_scale_mv': ('ch2_offset_mv', )}
+
+            def read(names):
+                values = {name: getters[name]() for name in names}
+                state.update(values)
+                conn.send( ('Settings', values) )
+
+            read(getters)
 
             live = False
             averages_set = False
@@ -1261,12 +1391,12 @@ class Worker():
                     state[name] = value
                     if name in setters:
                         setters[name](value)
-                        conn.send( ('Settings', {name: getters[name]()}) )
+                        read((name, *linked.get(name, ())))
                     elif name != 'num_osc':
                         averages_set = False
                         conn.send( ('Settings', {name: value}) )
                 elif kind == 'READ':
-                    conn.send( ('Settings', {name: getter() for name, getter in getters.items()}) )
+                    read(getters)
                 elif kind == 'LIVE':
                     live = bool(command[1])
                     averages_set = False
@@ -1296,13 +1426,13 @@ class Worker():
                 if result == 'exit':
                     break
                 if isinstance(result, tuple) and result[0] == 'command':
-                    scope.oscilloscope_stop()
+                    _abort(scope)
                     if not handle(result[1]):
                         break
                     continue
                 if isinstance(result, tuple):
                     losses += 1
-                    conn.send( ('Message', f"scope {number}: no trigger for {float(state['trigger_timeout_s']):g} s") )
+                    conn.send( ('Message', f'scope {number}: {result[2]}') )
                     if losses >= 3:
                         live = False
                         conn.send( ('Live', 0) )
@@ -1391,7 +1521,7 @@ class Worker():
                 a2012.oscilloscope_acquisition_type('Average')
                 a2012.oscilloscope_run_stop()
 
-                a2012_2.oscilloscope_trigger_channel('Ext')
+                a2012_2.oscilloscope_trigger_channel(self.trigger_source_2)
                 a2012_2.oscilloscope_acquisition_type('Average')
                 a2012_2.oscilloscope_run_stop()
 
@@ -2096,7 +2226,7 @@ class Worker():
                 a2012.oscilloscope_acquisition_type('Average')
                 a2012.oscilloscope_run_stop()
 
-                a2012_2.oscilloscope_trigger_channel('Ext')
+                a2012_2.oscilloscope_trigger_channel(self.trigger_source_2)
                 a2012_2.oscilloscope_acquisition_type('Average')
                 a2012_2.oscilloscope_run_stop()
 

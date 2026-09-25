@@ -261,8 +261,6 @@ class MainExtended(MainWindow):
         self.path_to_main = os.path.join(path_to_main, '..', '..', 'libs')
 
         self.process_tr = QtCore.QProcess(self)
-        self.process_osc = QtCore.QProcess(self)
-        self.process_osc2 = QtCore.QProcess(self)
         self.process_cw = QtCore.QProcess(self)
         self.process_temp = QtCore.QProcess(self)
         self.process_field = QtCore.QProcess(self)
@@ -281,8 +279,7 @@ class MainExtended(MainWindow):
         #self.process_ed = QtCore.QProcess(self)
         #self.process_eseem = QtCore.QProcess(self)
 
-        self.all_processes = [self.process_tr, self.process_osc,
-            self.process_osc2, self.process_cw, self.process_temp,
+        self.all_processes = [self.process_tr, self.process_cw, self.process_temp,
             self.process_field, self.process_mw, self.process_tune_preset,
             self.process_phasing, self.process_awg_phasing, self.process_sequence_calc,
             self.process_excitation, self.process_spin_sim, self.process_treatment, self.process_treatment_2d,
@@ -438,8 +435,6 @@ class MainExtended(MainWindow):
             ]),
             ("Instrument controls", [
                 ("Pulsed MW Bridge", self.start_mw_control, "mw"),
-                ("2012A · x.2.21", self.start_osc_control, "osc21"),
-                ("2012A · x.2.22", self.start_osc_control_2, "osc22"),
                 ("Set Temperature", self.start_temp_control, "temp"),
                 ("Set Magnetic Field", self.start_field_control, "field"),
             ]),
@@ -499,8 +494,7 @@ class MainExtended(MainWindow):
         A function to do some actions when the main window is closing.
         """
         processes = [
-            self.process_protocol, self.process_python, self.process_tr, self.process_osc,
-            self.process_osc2, self.process_cw, self.process_temp, 
+            self.process_protocol, self.process_python, self.process_tr, self.process_cw, self.process_temp,
             self.process_field, self.process_mw, self.process_tune_preset,
             self.process_phasing, self.process_awg_phasing, self.process_sequence_calc,
             self.process_excitation, self.process_spin_sim, self.process_treatment, self.process_treatment_2d,
@@ -744,26 +738,12 @@ class MainExtended(MainWindow):
         self.process_deer.setArguments([os.path.join('..','atomize/control_center/deer_analysis.py')])
         self.process_deer.start()
 
-    def start_osc_control(self):
-        """
-        A function to run an Keysight control.
-        """
-        self.process_osc.setArguments([os.path.join('..','atomize/control_center/osc_control.py')])
-        self.process_osc.start()
-
     def start_field_control(self):
         """
         A function to run an Field control.
         """
         self.process_field.setArguments([os.path.join('..','atomize/control_center/field_control.py')])
         self.process_field.start()
-
-    def start_osc_control_2(self):
-        """
-        A function to run an Keysight control.
-        """
-        self.process_osc2.setArguments([os.path.join('..','atomize/control_center/osc_control_2.py')])
-        self.process_osc2.start()
 
     def start_cw(self):
         """
