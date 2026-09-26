@@ -1324,8 +1324,10 @@ class MainWindow(QMainWindow):
         self.tab_pulse.addTab(laser_setting_page, "Source / Laser")
         self.tab_pulse.tabBar().setTabTextColor(3, QColor(193, 202, 227))
 
+        self.synt2_rows = []
+
         # ---- Labels & Inputs ----
-        labels = [("Laser", "label_s0"), ("MW Source", "label_s1")]
+        labels = [("Laser", "label_s0"), ("MW Source", "label_s1"), ("SYNT2 Pulses", "label_s2")]
 
         for name, attr_name in labels:
             lbl = QLabel(name)
@@ -1347,6 +1349,24 @@ class MainWindow(QMainWindow):
             combo.setFixedSize(170, 26)
             combo.setStyleSheet(REFINED_STYLES['COMBO_STYLE'])
         
+        self.Synt2_count = QSpinBox()
+        self.Synt2_count.setRange(1, 8)
+        self.Synt2_count.setValue(1)
+        self.Synt2_count.setFixedSize(170, 26)
+        self.Synt2_count.setStyleSheet(REFINED_STYLES['COMPACT_FIELD_STYLE'])
+        self.Synt2_count.setButtonSymbols(QSpinBox.ButtonSymbols.PlusMinus)
+        self.Synt2_count.setKeyboardTracking( False )
+        self.Synt2_count.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
+        self.Synt2_count.valueChanged.connect(self._refresh_synt2)
+
+        self.Synt2_rows = []
+        for n in range(8):
+            combo = QComboBox()
+            combo.setFixedSize(170, 26)
+            combo.setStyleSheet(REFINED_STYLES['COMBO_STYLE'])
+            combo.currentIndexChanged.connect(self._refresh_synt2)
+            self.Synt2_rows.append(combo)
+
         self.combo_synt_fun()
         self.combo_laser_fun()
 
@@ -1361,13 +1381,19 @@ class MainWindow(QMainWindow):
         # ---- Layout placement ----
         gridLayout.addWidget(self.label_s1, 0, 0)
         gridLayout.addWidget(self.Combo_synt, 0, 1)
-        gridLayout.addWidget(self.label_s0, 1, 0)
-        gridLayout.addWidget(self.Combo_laser, 1, 1)
+        gridLayout.addWidget(self.label_s2, 1, 0)
+        gridLayout.addWidget(self.Synt2_count, 1, 1)
+        for n, combo in enumerate(self.Synt2_rows):
+            gridLayout.addWidget(combo, 2 + n, 1)
+        gridLayout.addWidget(self.label_s0, 10, 0)
+        gridLayout.addWidget(self.Combo_laser, 10, 1)
 
-        gridLayout.addWidget(hline(), 2, 0, 1, 2)
+        gridLayout.addWidget(hline(), 11, 0, 1, 2)
 
-        gridLayout.setRowStretch(3, 1)
+        gridLayout.setRowStretch(12, 1)
         gridLayout.setColumnStretch(3, 1)
+
+        self._refresh_synt2()
 
     def design_tab_5(self):
         # measured complex transfer for the 'measured' correction model (loaded
@@ -1949,6 +1975,7 @@ class MainWindow(QMainWindow):
         if index in (2, 3):
             self.laser_flag = 0 if self.p2_typ != 'LASER' else (2 if self.p3_typ == 'LASER' else 1)
             self._apply_laser_row(index)
+        self._refresh_synt2()
 
         #print(f"Pulse {index} type set to: {text}")
         # Type applies live (span-preserving; the worker sets function + freq
@@ -2065,6 +2092,7 @@ class MainWindow(QMainWindow):
 
         if attr_suffix == '_len':
             self.update_pulse_phase(1)
+            self._refresh_synt2()
         #print(f"Updated: p{index}{val1_suffix} = {val1}")
 
         # Start and Sigma apply live (Start guarded to stay non-overlapping /
@@ -2206,7 +2234,8 @@ class MainWindow(QMainWindow):
         lasers = tuple((str(getattr(self, f'p{k}_start_rect')), str(getattr(self, f'p{k}_length')))
                        for k in range(2, 2 + self.laser_flag))
         return (phases, phase_sig, self.decimation, self.laser_flag, fixed, det_len,
-                lasers, getattr(self, 'combo_laser_num', None))
+                lasers, getattr(self, 'combo_laser_num', None),
+                self.combo_synt, tuple(self.synt2_rows))
 
     def _phase_sig(self):
         """Normalized phase text of every active (non-zero-length) pulse, keyed by
@@ -2436,6 +2465,71 @@ class MainWindow(QMainWindow):
         A function to set a default synthetizer for AWG arm
         """
         self.combo_synt = int( self.Combo_synt.currentText() )
+        self._refresh_synt2()
+        self.schedule_live_apply()
+
+    def _refresh_synt2(self, *_):
+        """
+        Show the SYNT2 pulse selectors for MW Source 2 and rebuild their lists
+        from the active AWG rows; a selected row that is no longer active stays
+        selected, marked inactive, so the pre-flight reports it.
+        """
+        if not hasattr(self, 'Synt2_rows') or getattr(self, '_synt2_busy', False):
+            return
+        on = self.combo_synt == 2
+        eligible = [k for k in self._live_active_awg() if getattr(self, f'p{k}_typ', '') != 'BLANK']
+        # no more SYNT2 pulses than the combos offer (active rows plus selected inactive ones)
+        selected = { c.currentData() for n, c in enumerate(self.Synt2_rows) if n < self.Synt2_count.value() and c.currentData() is not None }
+        self.Synt2_count.blockSignals(True)
+        self.Synt2_count.setMaximum(max(1, len(set(eligible) | selected)))
+        self.Synt2_count.blockSignals(False)
+        count = self.Synt2_count.value()
+        used = []
+        self._synt2_busy = True
+        try:
+            for n, combo in enumerate(self.Synt2_rows):
+                shown = on and n < count
+                cur = combo.currentData()
+                if (cur not in eligible and not shown) or (shown and cur in used):
+                    cur = None
+                if cur is None:
+                    free = [k for k in eligible if k not in used]
+                    cur = free[0] if free else (eligible[0] if eligible else None)
+                combo.blockSignals(True)
+                combo.clear()
+                for k in eligible:
+                    combo.addItem(f'P{k}', k)
+                if cur is not None and cur not in eligible:
+                    combo.addItem(f'P{cur} (inactive)', cur)
+                combo.setCurrentIndex(combo.findData(cur) if cur is not None else -1)
+                combo.blockSignals(False)
+                combo.setVisible(shown)
+                if shown and cur is not None:
+                    used.append(cur)
+            self.label_s2.setVisible(on)
+            self.Synt2_count.setVisible(on)
+        finally:
+            self._synt2_busy = False
+        self.synt2_rows = sorted(set(used)) if on else []
+        self.schedule_live_apply()
+
+    def _load_synt2(self, source, rows):
+        """Set MW Source and the SYNT2 rows from a preset (after its pulse rows are loaded)."""
+        self._synt2_busy = True
+        try:
+            self.Combo_synt.setCurrentText(str(source))
+            self.combo_synt = source
+            self.Synt2_count.setMaximum(8)
+            self.Synt2_count.setValue(max(1, min(len(rows), 8)))
+            for n, combo in enumerate(self.Synt2_rows):
+                combo.blockSignals(True)
+                combo.clear()
+                if n < len(rows):
+                    combo.addItem(f'P{rows[n]}', rows[n])
+                combo.blockSignals(False)
+        finally:
+            self._synt2_busy = False
+        self._refresh_synt2()
 
     def combo_cor_fun(self):
         """
@@ -2993,6 +3087,18 @@ class MainWindow(QMainWindow):
         except (IndexError, ValueError):
             pass
 
+        # MW source + SYNT2 rows (trailing lines); older presets load with source 1
+        mw_source, synt2_rows = 1, []
+        for line in lines:
+            try:
+                if line.startswith('MW source:'):
+                    mw_source = 2 if int( line.split(':  ')[1] ) == 2 else 1
+                elif line.startswith('SYNT2 pulses:'):
+                    synt2_rows = sorted({ int(k) for k in line.split(':  ')[1].split(',') if k.strip() })
+            except (IndexError, ValueError):
+                pass
+        self._load_synt2(mw_source, synt2_rows)
+
         self.dig_stop()
 
         self.fft = 0
@@ -3159,6 +3265,8 @@ class MainWindow(QMainWindow):
             # AWG timing grid (appended at the end for backward compat)
             file.write( 'AWG grid:  ' + str( self.awg_grid() ) + '\n' )
             file.write( 'Auto window:  ' + str( self.Win_width.value() ) + '\n' )
+            file.write( 'MW source:  ' + str( self.combo_synt ) + '\n' )
+            file.write( 'SYNT2 pulses:  ' + ','.join( str(k) for k in self.synt2_rows ) + '\n' )
 
     def remove_ns(self, string1):
         return string1.split(' ')[0]
@@ -3416,6 +3524,7 @@ class MainWindow(QMainWindow):
     def dig_start_exp(self):
         worker = Worker()
         worker.awg_grid_cur = self.awg_grid()
+        worker.synt2_rows = list(self.synt2_rows)
         worker.save_hdf5 = self.save_hdf5
         # the primary file is the 2D array itself only when iq_cor is off
         self.cur_save_fmt = 'h5' if ( self.save_hdf5 == 1 and self.iq_cor == 0 ) else 'csv'
@@ -3585,6 +3694,7 @@ class MainWindow(QMainWindow):
         """
         worker = Worker()
         worker.awg_grid_cur = self.awg_grid()
+        worker.synt2_rows = list(self.synt2_rows)
         self._hand_correction_to_worker(worker)
 
         self.p1_list = [self.p1_typ, self.p1_start, self.p1_length, self.ph_1, self.p1_freq]
@@ -3848,6 +3958,7 @@ class MainWindow(QMainWindow):
 
         worker = Worker()
         worker.awg_grid_cur = self.awg_grid()
+        worker.synt2_rows = list(self.synt2_rows)
         self._hand_correction_to_worker(worker)
         self.parent_conn_dig, self.child_conn_dig = Pipe()
 
@@ -3875,6 +3986,7 @@ class MainWindow(QMainWindow):
 
         worker = Worker()
         worker.awg_grid_cur = self.awg_grid()
+        worker.synt2_rows = list(self.synt2_rows)
         worker.save_hdf5 = self.save_hdf5
         # the primary file is the 2D array itself only when iq_cor is off
         self.cur_save_fmt = 'h5' if ( self.save_hdf5 == 1 and self.iq_cor == 0 ) else 'csv'
@@ -4084,6 +4196,28 @@ class Worker():
         # the MainWindow before launch, default keeps the CSV behaviour
         self.save_hdf5 = 0
 
+        # GUI rows (P2..P9) whose AWG pulses use SYNT2; set by the MainWindow before launch
+        self.synt2_rows = []
+
+    def _synt2_pulses(self, synt, laser_flag, trigger_pulses, awg_params, script_test):
+        """
+        TRIGGER_AWG names of the SYNT2 rows for pb.pulser_default_synt(); GUI
+        row k is trigger P{2*(k-2-laser_flag)+3}. The pre-flight rejects an
+        empty selection and rows that are not active AWG pulses.
+        """
+        if synt != 2:
+            return []
+        rows = list(self.synt2_rows)
+        if script_test:
+            if not rows:
+                raise ValueError('MW Source 2: select at least one SYNT2 pulse in the Source / Laser tab')
+            for k in rows:
+                i = k - 2 - laser_flag
+                if not ( 0 <= i < len(trigger_pulses) ) or int(float(trigger_pulses[i][1].split(' ')[0])) == 0 \
+                        or awg_params[i][0] == 'BLANK':
+                    raise ValueError(f'SYNT2 pulse P{k} is not an active AWG pulse')
+        return [f'P{2*(k-2-laser_flag)+3}' for k in rows]
+
     def _apply_awg_correction(self, pb, mode):
         """Read correction.param and push resonator-correction settings to pb.
 
@@ -4259,7 +4393,8 @@ class Worker():
                 pb.pulser_repetition_rate( str(rep_rate) + ' Hz' )
 
 
-            pb.pulser_default_synt(combo_synt)
+            synt2_names = self._synt2_pulses(combo_synt, laser_flag, trigger_pulses, awg_params, script_test)
+            pb.pulser_default_synt(combo_synt, *synt2_names)
 
 
             POINTS = 1
@@ -4483,7 +4618,7 @@ class Worker():
                                 else:
                                     pbt.pulser_pulse(**kw)
                             pbt.pulser_repetition_rate( str(rep_rate) + ' Hz' )
-                            pbt.pulser_default_synt(combo_synt)
+                            pbt.pulser_default_synt(combo_synt, *synt2_names)
                             pbt.pulser_update()
                         except AssertionError as ae:
                             reject = str(ae) or 'pulses overlap after the edit'
@@ -5042,7 +5177,7 @@ class Worker():
                 pb.pulser_repetition_rate( REP_RATE )
 
 
-            pb.pulser_default_synt(synt)
+            pb.pulser_default_synt(synt, *self._synt2_pulses(synt, laser_flag, trigger_pulses, awg_params, script_test))
 
             pb.digitizer_decimation(DEC_COEF)
             points_window = pb.digitizer_window_points()
@@ -5602,7 +5737,7 @@ class Worker():
                 pb.pulser_repetition_rate( REP_RATE )
 
 
-            pb.pulser_default_synt(synt)
+            pb.pulser_default_synt(synt, *self._synt2_pulses(synt, laser_flag, trigger_pulses, awg_params, script_test))
 
             pb.digitizer_decimation(DEC_COEF)
             points_window = pb.digitizer_window_points()
@@ -6167,7 +6302,7 @@ class Worker():
                 pb.pulser_repetition_rate( REP_RATE )
 
 
-            pb.pulser_default_synt(synt)
+            pb.pulser_default_synt(synt, *self._synt2_pulses(synt, laser_flag, trigger_pulses, awg_params, script_test))
 
             pb.digitizer_decimation(DEC_COEF)
             points_window = pb.digitizer_window_points()
@@ -6701,7 +6836,7 @@ class Worker():
                 pb.pulser_repetition_rate( REP_RATE )
 
 
-            pb.pulser_default_synt(synt)
+            pb.pulser_default_synt(synt, *self._synt2_pulses(synt, laser_flag, trigger_pulses, awg_params, script_test))
 
             pb.digitizer_decimation(DEC_COEF)
             points_window = pb.digitizer_window_points()
@@ -7233,7 +7368,7 @@ class Worker():
                 if not script_test:
                     conn.send( ('Message', 'No pulse is indicated for amplitude increment; the time axis corresponds to the number of points in the experiment') )
 
-            pb.pulser_default_synt(synt)
+            pb.pulser_default_synt(synt, *self._synt2_pulses(synt, laser_flag, trigger_pulses, awg_params, script_test))
 
             pb.digitizer_decimation(DEC_COEF)
             points_window = pb.digitizer_window_points()

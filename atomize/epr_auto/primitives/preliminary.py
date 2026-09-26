@@ -843,7 +843,9 @@ def _write_preset(pre, destination):
                       32:'start_field',33:'end_field',34:'step_field',35:'sweep_type'}.items():
         lines[idx] = lines[idx].split(':  ')[0] + ':  ' + str(getattr(pre, attr))
     lines = lines[:39] + [f'Amplitude Step:  {pre.step_ampl}', f'Cycles:  {pre.cycles}',
-                         f'Save Each Cycle:  {2 * pre.save_each}', f'AWG grid:  {pre.awg_grid}']
+                         f'Save Each Cycle:  {2 * pre.save_each}', f'AWG grid:  {pre.awg_grid}',
+                         f'MW source:  {pre.mw_source}',
+                         'SYNT2 pulses:  ' + ','.join(map(str, pre.synt2_rows))]
     if Path(destination).exists():
         staged = Path(destination).with_suffix('.tmp')
         staged.write_text('\n'.join(lines) + '\n')

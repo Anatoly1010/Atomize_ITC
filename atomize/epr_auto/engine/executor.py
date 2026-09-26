@@ -248,6 +248,7 @@ def _hand_attrs(worker, worker_args):
     """Copy the launch-time worker attributes (grid + correction state) the
     GUI sets next to Process creation — shared by run_worker/acquire_trace."""
     worker.awg_grid_cur = getattr(worker_args, 'awg_grid', 3.2)
+    worker.synt2_rows = list(getattr(worker_args, 'synt2_rows', []))
     worker.amplitude_sweep = getattr(worker_args, 'amplitude_sweep', None)
     worker.receiver_guard = getattr(worker_args, 'receiver_guard', None)
     worker.live_rates = getattr(worker_args, 'live_rates', None)

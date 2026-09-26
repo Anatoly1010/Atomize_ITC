@@ -125,6 +125,8 @@ class Preset:
     cycles: int = 1
     save_each: int = 0
     awg_grid: float = GRID_NS   # 'AWG grid' trailing line; 3.2 when absent
+    mw_source: int = 1          # 'MW source' trailing line; 1 when absent
+    synt2_rows: list = field(default_factory=list)   # 'SYNT2 pulses' GUI rows
 
 
 def load_preset(path):
@@ -198,6 +200,16 @@ def load_preset(path):
             except (IndexError, ValueError):
                 pass
             break
+    # MW source + SYNT2 rows (trailing lines, parsed by key like open_file)
+    for line in lines:
+        try:
+            if line.startswith('MW source:'):
+                preset.mw_source = 2 if int(line.split(':  ')[1]) == 2 else 1
+            elif line.startswith('SYNT2 pulses:'):
+                preset.synt2_rows = sorted({int(k) for k in line.split(':  ')[1].split(',')
+                                            if k.strip()})
+        except (IndexError, ValueError):
+            pass
 
     if preset.sweep_type not in SWEEP_TYPES:
         raise PresetError(f'{path}: unknown sweep type {preset.sweep_type!r}')
@@ -281,6 +293,7 @@ class WorkerArgs:
     cycles: int = 1
     save_each: int = 0
     awg_grid: float = GRID_NS  # -> worker.awg_grid_cur (attribute, not an arg)
+    synt2_rows: list = field(default_factory=list)   # -> worker.synt2_rows (attribute)
     amplitude_sweep: dict | None = None
     receiver_guard: dict | None = None
     # Resonator-correction state, handed to the worker as attributes exactly
@@ -375,11 +388,12 @@ class WorkerArgs:
 
 
 def build_worker_args(preset, exp_name, curve_name='exp', combo_cor=0,
-                      combo_synt=1, save2d=0, **overrides):
+                      save2d=0, **overrides):
     """Turn a Preset into WorkerArgs, reproducing the GUI's formatting.
 
-    combo_cor / combo_synt / save2d are not stored in presets; defaults match
-    the GUI defaults ('No' correction, synthesizer 1, no 2D save). overrides
+    combo_cor / save2d are not stored in presets; defaults match the GUI
+    defaults ('No' correction, no 2D save). The MW source (combo_synt) and
+    the SYNT2 rows come from the preset. overrides
     may replace scalar Preset fields (points, scans, field, rep_rate,
     averages, decimation, ...) before formatting.
     """
@@ -446,6 +460,18 @@ def build_worker_args(preset, exp_name, curve_name='exp', combo_cor=0,
             pts = points_from_ns(round(p1_len, 1), tpp)
         return pts
 
+    # MW source + SYNT2 rows: MainWindow._load_synt2 / _refresh_synt2 (no rows
+    # -> the first active AWG row after the LASER rows)
+    combo_synt = preset.mw_source
+    synt2_rows = []
+    if combo_synt == 2:
+        synt2_rows = sorted(set(preset.synt2_rows))[:8]
+        if not synt2_rows:
+            eligible = [k for k in range(2 + laser_flag, 10)
+                        if _snap(slots[k - 1].length, slot_grid[k - 1]) != 0
+                        and slots[k - 1].typ != 'BLANK']
+            synt2_rows = eligible[:1]
+
     return WorkerArgs(
         decimation=preset.decimation, averages=preset.averages,
         scans=preset.scans, points=preset.points,
@@ -469,5 +495,5 @@ def build_worker_args(preset, exp_name, curve_name='exp', combo_cor=0,
         step_field=preset.step_field, step_ampl=preset.step_ampl,
         eseem_inc2=[_ns(_snap(s.st_inc2, sg)) for s, sg in zip(slots, slot_grid)],
         cycles=preset.cycles, save_each=preset.save_each,
-        awg_grid=g,
+        awg_grid=g, synt2_rows=synt2_rows,
     )
