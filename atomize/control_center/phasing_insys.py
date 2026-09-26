@@ -535,6 +535,8 @@ class MainWindow(QMainWindow):
         self.gridLayout.addWidget(label_widget, 8, 0)
 
         self.laser_flag = 0
+        self.mw_len_max = pulses[1][2]
+        self.laser_len_max = 15001.6
 
         for i in range(1, 10):
             combo = QComboBox()
@@ -543,9 +545,9 @@ class MainWindow(QMainWindow):
             if i == 1:
                 combo.addItems(combo_boxes[i-1][4])
                 combo.setCurrentText(combo_boxes[i][0])
-            elif i == 2:
-                combo.addItems(combo_boxes[i-1][4])
-                combo.setCurrentText(combo_boxes[i][0])
+            elif i in (2, 3):
+                combo.addItems(combo_boxes[1][4])
+                combo.setCurrentText(combo_boxes[1][0])
             else:
                 combo.addItems(combo_boxes[2][4])
                 combo.setCurrentText(combo_boxes[2][0])
@@ -1512,6 +1514,25 @@ class MainWindow(QMainWindow):
         elif txt == 'NovoFEL':
             self.combo_laser_num = 2
             self.laser_q_switch_delay = 0
+        self._raise_laser_len_ndyag()
+        self.schedule_live_apply()
+
+    def _raise_laser_len_ndyag(self):
+        """Nd:YAG needs laser trigger pulses of at least 1000 ns: lengthen shorter LASER rows to the minimum."""
+        if getattr(self, 'combo_laser_num', 0) != 1:
+            return
+        changed = False
+        self._linking = True
+        try:
+            for i in range(2, 2 + getattr(self, 'laser_flag', 0)):
+                box = getattr(self, f'P{i}_len', None)
+                if box is not None and box.value() < 1000:
+                    box.setValue(1001.6)
+                    changed = True
+        finally:
+            self._linking = False
+        if changed:
+            self._seed_link_prev()
 
     def quad_online(self):
         """
@@ -2017,7 +2038,7 @@ class MainWindow(QMainWindow):
 
                 if not hasattr(self, attr_name) or p_len != 0.0:
                     phase_text = getattr(self, f"Phase_{i}").toPlainText().strip()
-                    if p_len != 0.0:
+                    if p_len != 0.0 and not self._is_laser_row(i):
                         active_phases.append(phase_text)
                         num_pulses.append(i)
                     setattr(self, attr_name, phase_text)
@@ -2171,7 +2192,9 @@ class MainWindow(QMainWindow):
         # be re-armed live, so a detection-window change belongs in the signature
         # and forces a restart.
         det_len = tuple(str(p[2]) for p in snap if p[0] == 'DETECTION')
-        return (len(active), phases, phase_sig, self.decimation, types, det_len)
+        laser = tuple((str(p[1]), str(p[2])) for p in snap[1:1 + self.laser_flag])
+        return (len(active), phases, phase_sig, self.decimation, types, det_len,
+                self.laser_flag, getattr(self, 'combo_laser_num', 0), laser)
 
     def _phase_sig(self):
         """Normalized phase text of every active (non-zero-length) pulse, keyed by
@@ -2179,6 +2202,8 @@ class MainWindow(QMainWindow):
         (phases can only be applied by rebuilding, never via the 'PU' payload)."""
         out = []
         for i in range(1, 10):
+            if self._is_laser_row(i):
+                continue
             try:
                 if float(str(getattr(self, f'p{i}_length')).split(' ')[0]) == 0:
                     continue
@@ -2215,6 +2240,8 @@ class MainWindow(QMainWindow):
                 continue
             if receiver is None:
                 receiver = i
+            if self._is_laser_row(i):
+                continue
             raw = getattr(self, f'Phase_{i}').toPlainText().strip()
             if '[' in raw or '(' in raw:
                 pass
@@ -2293,8 +2320,8 @@ class MainWindow(QMainWindow):
             # never seen. The new preview then appends its pulse list below.
             self.update()
             self.errors.appendPlainText(
-                'Live Edit: rebuild-only parameter changed (channel/type / phase '
-                'cycle / pulse count / decimation / detection window) — full '
+                'Live Edit: rebuild-only parameter changed (channel/type / laser / '
+                'phase cycle / pulse count / decimation / detection window) — full '
                 'restart performed.')
             return
 
@@ -2310,8 +2337,26 @@ class MainWindow(QMainWindow):
         
         setattr(self, f"p{index}_typ", text)
 
-        if index == 2:
-            self.laser_flag = 1 if text == 'LASER' else 0
+        if index in (2, 3):
+            p3 = getattr(self, 'P3_type', None)
+            if index == 3 and text == 'LASER' and self.P2_type.currentText() != 'LASER':
+                if hasattr(self, 'errors'):
+                    self.errors.appendPlainText('P3 can be LASER only when P2 is LASER')
+                combo.setCurrentText('MW')
+                return
+            if index == 2 and text != 'LASER' and p3 is not None and p3.currentText() == 'LASER':
+                p3.setCurrentText('MW')
+            p2_laser = self.P2_type.currentText() == 'LASER'
+            p3_laser = p3 is not None and p3.currentText() == 'LASER'
+            self.laser_flag = (2 if p3_laser else 1) if p2_laser else 0
+
+            is_laser = text == 'LASER'
+            getattr(self, f"P{index}_len").setMaximum(self.laser_len_max if is_laser else self.mw_len_max)
+            phase_box = getattr(self, f"Phase_{index}", None)
+            if phase_box is not None:
+                phase_box.setEnabled(not is_laser)
+                self.update_pulse_phase(1)
+            self._raise_laser_len_ndyag()
 
         #print(f"Pulse {index} type set to: {text}")
         # Channel/type is not live-editable; schedule the debounced path so the
@@ -2319,20 +2364,24 @@ class MainWindow(QMainWindow):
         # Pulses.
         self.schedule_live_apply()
 
+    def _is_laser_row(self, i):
+        """Laser rows are the leading LASER rows from P2."""
+        return 2 <= i <= 1 + self.laser_flag
+
     def rep_rate(self):
         """
         A function to change a repetition rate
         """
         self.repetition_rate = str( self.Rep_rate.value() ) + ' Hz'
 
-        if self.laser_flag != 1:
+        if self.laser_flag == 0:
             pass
-        elif self.laser_flag == 1 and self.combo_laser_num == 1:
+        elif self.laser_flag >= 1 and self.combo_laser_num == 1:
             self.repetition_rate = '9.9 Hz'
             ###self.pb.pulser_repetition_rate( self.repetition_rate )
             self.Rep_rate.setValue(9.9)
             self.errors.appendPlainText( '9.9 Hz is the fixed repetition rate for Nd:YAG' )
-        elif self.laser_flag == 1 and self.combo_laser_num == 2:
+        elif self.laser_flag >= 1 and self.combo_laser_num == 2:
             pass
 
         self._update_rep_time_display()
@@ -2445,7 +2494,7 @@ class MainWindow(QMainWindow):
             ]
             setattr(self, f'p{i}_exp', data)
 
-        if self.laser_flag == 1:
+        if self.laser_flag >= 1:
             if self.combo_laser_num == 1:
                 self.Rep_rate.setValue(9.9)
             elif self.combo_laser_num == 2:
@@ -2540,7 +2589,7 @@ class MainWindow(QMainWindow):
         # can tell a re-armable change from one that needs a restart.
         self.live_sig = self._structure_sig(self._live_snapshot())
 
-        if self.laser_flag == 1:
+        if self.laser_flag >= 1:
             if self.combo_laser_num == 1:
                 self.Rep_rate.setValue(9.9)
             elif self.combo_laser_num == 2:
@@ -2965,55 +3014,37 @@ class Worker():
             #win_left window left
             #win_right window right
             
-            if laser_flag != 1:
-                pulses = [rect1, rect2, rect3, rect4, rect5, rect6, rect7, rect8, rect9]
+            pulses = [rect1, rect2, rect3, rect4, rect5, rect6, rect7, rect8, rect9]
 
-                for i, p in enumerate(pulses):
-                    length_str = p[2].split(' ')[0]
-                    if int(float(length_str)) != 0:
-                        pb.pulser_pulse(
-                            name=f'P{i}',
-                            channel=p[0],
-                            start=p[1],
-                            length=p[2],
-                            phase_list=p[3]
-                        )
-                
-                pb.pulser_repetition_rate( str(rep_rate) + ' Hz' )
+            for i, p in enumerate(pulses):
+                laser_ch = self._laser_channel(i, laser_flag)
+                if laser_flag >= 1 and laser_ch is None:
+                    start_val = float(p[1].split(' ')[0]) + laser_qsw_delay
+                    p[1] = f"{self.round_to_closest(start_val, 3.2)} ns"
 
+                length_val = int(float(p[2].split(' ')[0]))
+                if script_test and laser_ch is not None and length_val == 0:
+                    raise ValueError(f"{laser_ch} pulse has zero length")
+                if script_test and laser_ch is not None and laser_num == 1 and float(p[2].split(' ')[0]) < 1000:
+                    raise ValueError(f"{laser_ch} pulse is shorter than the Nd:YAG minimum of 1000 ns")
+
+                if length_val != 0:
+                    kwargs = {
+                        'name': f'P{i}',
+                        'channel': laser_ch or p[0],
+                        'start': p[1],
+                        'length': p[2]
+                    }
+
+                    if laser_ch is None:
+                        kwargs['phase_list'] = p[3]
+
+                    pb.pulser_pulse(**kwargs)
+
+            if laser_flag >= 1 and laser_num == 1:
+                pb.pulser_repetition_rate( '9.9 Hz' )
             else:
-
-
-                pulses = [rect1, rect2, rect3, rect4, rect5, rect6, rect7, rect8, rect9]
-
-                for i, p in enumerate(pulses):
-                    if i != 1:
-                        start_val = float(p[1].split(' ')[0]) + laser_qsw_delay
-                        p[1] = f"{self.round_to_closest(start_val, 3.2)} ns"
-
-                    length_val = int(float(p[2].split(' ')[0]))
-                    if script_test and i == 1 and length_val == 0:
-                        raise ValueError("LASER pulse has zero length")
-
-                    if length_val != 0:
-                        kwargs = {
-                            'name': f'P{i}',
-                            'channel': p[0],
-                            'start': p[1],
-                            'length': p[2]
-                        }
-
-                        if i != 1:
-                            kwargs['phase_list'] = p[3]
-
-                        pb.pulser_pulse(**kwargs)
-
-                if laser_num == 1:
-                    pb.pulser_repetition_rate( '9.9 Hz' )
-                elif laser_num == 2:
-                    pb.pulser_repetition_rate( str(rep_rate) + ' Hz' )
-                else:
-                    pb.pulser_repetition_rate( str(rep_rate) + ' Hz' )
+                pb.pulser_repetition_rate( str(rep_rate) + ' Hz' )
 
 
             POINTS = 1
@@ -3171,14 +3202,15 @@ class Worker():
                             for idx, entry in enumerate(snap):
                                 if int(float(entry[2].split(' ')[0])) == 0:
                                     continue
-                                if laser_flag == 1 and idx != 1:
+                                laser_ch = self._laser_channel(idx, laser_flag)
+                                if laser_flag >= 1 and laser_ch is None:
                                     start_val = float(entry[1].split(' ')[0]) + laser_qsw_delay
                                     st = f"{self.round_to_closest(start_val, 3.2)} ns"
                                 else:
                                     st = entry[1]
-                                kw = {'name': f'P{idx}', 'channel': entry[0],
+                                kw = {'name': f'P{idx}', 'channel': laser_ch or entry[0],
                                       'start': st, 'length': entry[2]}
-                                if not (laser_flag == 1 and idx == 1):
+                                if laser_ch is None:
                                     kw['phase_list'] = entry[3]
                                 pbt.pulser_pulse(**kw)
                             pbt.pulser_repetition_rate( str(rep_rate) + ' Hz' )
@@ -3209,10 +3241,8 @@ class Worker():
                                 if pulse is None:
                                     continue
 
-                                # Mirror the start handling used at setup: in LASER
-                                # mode every pulse except the LASER pulse (idx 1) is
-                                # shifted by the Q-switch delay and snapped to 3.2 ns.
-                                if laser_flag == 1 and idx != 1:
+                                # Mirror the setup: non-laser pulses get the Q-switch delay shift.
+                                if laser_flag >= 1 and self._laser_channel(idx, laser_flag) is None:
                                     start_val = float(entry[1].split(' ')[0]) + laser_qsw_delay
                                     new_start = f"{self.round_to_closest(start_val, 3.2)} ns"
                                 else:
@@ -3413,6 +3443,11 @@ class Worker():
         """
         return round(( y * ( ( x // y ) + (round(x % y, 2) > 0) ) ), 1)
 
+    @staticmethod
+    def _laser_channel(idx, laser_flag):
+        """Pulser channel of pulse-list index idx if it is a laser row (P2 -> LASER_1, P3 -> LASER_2), else None."""
+        return f'LASER_{idx}' if 1 <= idx <= laser_flag else None
+
     def exp(self, conn, decimation, num_ave, scans, points,
             win_left, exp_name, curve_name,
             win_right, rect1, rect2, rect3, rect4,
@@ -3501,66 +3536,43 @@ class Worker():
             bh15.magnet_field( field )
             general.wait('2000 ms')
 
-            if laser_flag != 1:
-                pulses = [
-                        rect1, rect2, rect3, rect4, 
-                        rect5, rect6, rect7, rect8, 
-                        rect9
-                        ]
+            pulses = [
+                    rect1, rect2, rect3, rect4, 
+                    rect5, rect6, rect7, rect8, 
+                    rect9
+                    ]
 
-                for i, p in enumerate(pulses):
-                    length_str = p[2].split(' ')[0]
-                    if int(float(length_str)) != 0:
-                        pb.pulser_pulse(
-                            name=f'P{i}',
-                            channel=p[0],
-                            start=p[1],
-                            length=p[2],
-                            phase_list=p[3],
-                            delta_start=p[4],
-                            length_increment=p[5]
-                        )
-                pb.pulser_repetition_rate( REP_RATE )
+            for i, p in enumerate(pulses):
+                laser_ch = self._laser_channel(i, laser_flag)
+                if laser_flag >= 1 and laser_ch is None:
+                    start_val = float(p[1].split(' ')[0]) + q_switch_delay
+                    p[1] = f"{self.round_to_closest(start_val, 3.2)} ns"
 
+                length_val = int(float(p[2].split(' ')[0]))
+                if script_test and laser_ch is not None and length_val == 0:
+                    raise ValueError(f"{laser_ch} pulse has zero length")
+                if script_test and laser_ch is not None and laser_num == 1 and float(p[2].split(' ')[0]) < 1000:
+                    raise ValueError(f"{laser_ch} pulse is shorter than the Nd:YAG minimum of 1000 ns")
+
+                if length_val != 0:
+                    kwargs = {
+                        'name': f'P{i}',
+                        'channel': laser_ch or p[0],
+                        'start': p[1],
+                        'length': p[2],
+                        'delta_start': p[4],
+                        'length_increment': p[5]
+                    }
+
+                    if laser_ch is None:
+                        kwargs['phase_list'] = p[3]
+
+                    pb.pulser_pulse(**kwargs)
+
+            if laser_flag >= 1 and laser_num == 1:
+                pb.pulser_repetition_rate( '9.9 Hz' )
             else:
-
-                pulses = [
-                        rect1, rect2, rect3, rect4, 
-                        rect5, rect6, rect7, rect8, 
-                        rect9
-                        ]
-
-                for i, p in enumerate(pulses):
-                    if i != 1:
-                        start_val = float(p[1].split(' ')[0]) + q_switch_delay
-                        p[1] = f"{self.round_to_closest(start_val, 3.2)} ns"
-
-                    length_val = int(float(p[2].split(' ')[0]))
-                    if script_test and i == 1 and length_val == 0:
-                        raise ValueError("LASER pulse has zero length")
-
-                    if length_val != 0:
-                        kwargs = {
-                            'name': f'P{i}',
-                            'channel': p[0],
-                            'start': p[1],
-                            'length': p[2],
-                            'delta_start': p[4],
-                            'length_increment': p[5]
-
-                        }
-
-                        if i != 1:
-                            kwargs['phase_list'] = p[3]
-
-                        pb.pulser_pulse(**kwargs)
-
-                if laser_num == 1:
-                    pb.pulser_repetition_rate( '9.9 Hz' )
-                elif laser_num == 2:
-                    pb.pulser_repetition_rate( REP_RATE )
-                else:
-                    pb.pulser_repetition_rate( REP_RATE )
+                pb.pulser_repetition_rate( REP_RATE )
 
             pb.digitizer_decimation(DEC_COEF)
             #points_window = pb.digitizer_window_points()
@@ -3762,72 +3774,46 @@ class Worker():
             bh15.magnet_field( start_field )
             general.wait('2000 ms')
 
-            if laser_flag != 1:
-                pulses = [
-                        rect1, rect2, rect3, rect4, 
-                        rect5, rect6, rect7, rect8, 
-                        rect9
-                        ]
+            pulses = [
+                    rect1, rect2, rect3, rect4, 
+                    rect5, rect6, rect7, rect8, 
+                    rect9
+                    ]
 
-                for i, p in enumerate(pulses):
-                    length_str = p[2].split(' ')[0]
-                    if script_test and p[4] != '0.0 ns':
-                        raise ValueError("Please remove Start Increments for all pulses")
+            for i, p in enumerate(pulses):
+                if script_test and p[4] != '0.0 ns':
+                    raise ValueError("Please remove Start Increments for all pulses")
 
-                    if int(float(length_str)) != 0:
-                        pb.pulser_pulse(
-                            name=f'P{i}',
-                            channel=p[0],
-                            start=p[1],
-                            length=p[2],
-                            phase_list=p[3],
-                            delta_start=p[4],
-                            length_increment=p[5]
-                        )
-                pb.pulser_repetition_rate( REP_RATE )
+                laser_ch = self._laser_channel(i, laser_flag)
+                if laser_flag >= 1 and laser_ch is None:
+                    start_val = float(p[1].split(' ')[0]) + q_switch_delay
+                    p[1] = f"{self.round_to_closest(start_val, 3.2)} ns"
 
+                length_val = int(float(p[2].split(' ')[0]))
+                if script_test and laser_ch is not None and length_val == 0:
+                    raise ValueError(f"{laser_ch} pulse has zero length")
+                if script_test and laser_ch is not None and laser_num == 1 and float(p[2].split(' ')[0]) < 1000:
+                    raise ValueError(f"{laser_ch} pulse is shorter than the Nd:YAG minimum of 1000 ns")
+
+                if length_val != 0:
+                    kwargs = {
+                        'name': f'P{i}',
+                        'channel': laser_ch or p[0],
+                        'start': p[1],
+                        'length': p[2],
+                        'delta_start': p[4],
+                        'length_increment': p[5]
+                    }
+
+                    if laser_ch is None:
+                        kwargs['phase_list'] = p[3]
+
+                    pb.pulser_pulse(**kwargs)
+
+            if laser_flag >= 1 and laser_num == 1:
+                pb.pulser_repetition_rate( '9.9 Hz' )
             else:
-
-                pulses = [
-                        rect1, rect2, rect3, rect4,
-                        rect5, rect6, rect7, rect8,
-                        rect9
-                        ]
-
-                for i, p in enumerate(pulses):
-                    if script_test and p[4] != '0.0 ns':
-                        raise ValueError("Please remove Start Increments for all pulses")
-
-                    if i != 1:
-                        start_val = float(p[1].split(' ')[0]) + q_switch_delay
-                        p[1] = f"{self.round_to_closest(start_val, 3.2)} ns"
-
-                    length_val = int(float(p[2].split(' ')[0]))
-                    if script_test and i == 1 and length_val == 0:
-                        raise ValueError("LASER pulse has zero length")
-
-                    if length_val != 0:
-                        kwargs = {
-                            'name': f'P{i}',
-                            'channel': p[0],
-                            'start': p[1],
-                            'length': p[2],
-                            'delta_start': p[4],
-                            'length_increment': p[5]
-
-                        }
-
-                        if i != 1:
-                            kwargs['phase_list'] = p[3]
-
-                        pb.pulser_pulse(**kwargs)
-
-                if laser_num == 1:
-                    pb.pulser_repetition_rate( '9.9 Hz' )
-                elif laser_num == 2:
-                    pb.pulser_repetition_rate( REP_RATE )
-                else:
-                    pb.pulser_repetition_rate( REP_RATE )
+                pb.pulser_repetition_rate( REP_RATE )
 
 
             pb.digitizer_decimation(DEC_COEF)
@@ -4094,62 +4080,43 @@ class Worker():
                     raise ValueError(f"Pulses do not have Start Increments")
             ####
 
-            if laser_flag != 1:
+            # rel_shift was built with one entry per non-zero pulse, so
+            # we can't index it by the pulses-list position; track the
+            # actual rel_shift slot with a counter that mirrors the
+            # build order.
+            rs_idx = 0
+            for i, p in enumerate(pulses):
+                laser_ch = self._laser_channel(i, laser_flag)
+                if laser_flag >= 1 and laser_ch is None:
+                    start_val = float(p[1].split(' ')[0]) + q_switch_delay
+                    p[1] = f"{self.round_to_closest(start_val, 3.2)} ns"
 
-                # rel_shift was built with one entry per non-zero pulse, so
-                # we can't index it by the pulses-list position; track the
-                # actual rel_shift slot with a counter that mirrors the
-                # build order.
-                rs_idx = 0
-                for i, p in enumerate(pulses):
-                    length_str = p[2].split(' ')[0]
-                    if int(float(length_str)) != 0:
-                        name_list.append(f'P{i}')
-                        pb.pulser_pulse(
-                            name=f'P{i}',
-                            channel=p[0],
-                            start=p[1],
-                            length=p[2],
-                            phase_list=p[3],
-                            delta_start=f"{self.round_to_closest( nonlinear_diff[0] * rel_shift[rs_idx], 3.2 )} ns"
-                        )
-                        rs_idx += 1
-                pb.pulser_repetition_rate( REP_RATE )
+                length_val = int(float(p[2].split(' ')[0]))
+                if script_test and laser_ch is not None and length_val == 0:
+                    raise ValueError(f"{laser_ch} pulse has zero length")
+                if script_test and laser_ch is not None and laser_num == 1 and float(p[2].split(' ')[0]) < 1000:
+                    raise ValueError(f"{laser_ch} pulse is shorter than the Nd:YAG minimum of 1000 ns")
 
+                if length_val != 0:
+                    name_list.append(f'P{i}')
+                    kwargs = {
+                        'name': f'P{i}',
+                        'channel': laser_ch or p[0],
+                        'start': p[1],
+                        'length': p[2],
+                        'delta_start': f"{self.round_to_closest( nonlinear_diff[0] * rel_shift[rs_idx], 3.2 )} ns"
+                    }
+
+                    if laser_ch is None:
+                        kwargs['phase_list'] = p[3]
+
+                    pb.pulser_pulse(**kwargs)
+                    rs_idx += 1
+
+            if laser_flag >= 1 and laser_num == 1:
+                pb.pulser_repetition_rate( '9.9 Hz' )
             else:
-
-                rs_idx = 0
-                for i, p in enumerate(pulses):
-                    if i != 1:
-                        start_val = float(p[1].split(' ')[0]) + q_switch_delay
-                        p[1] = f"{self.round_to_closest(start_val, 3.2)} ns"
-
-                    length_val = int(float(p[2].split(' ')[0]))
-                    if script_test and i == 1 and length_val == 0:
-                        raise ValueError("LASER pulse has zero length")
-
-                    if length_val != 0:
-                        name_list.append(f'P{i}')
-                        kwargs = {
-                            'name': f'P{i}',
-                            'channel': p[0],
-                            'start': p[1],
-                            'length': p[2],
-                            'delta_start': f"{self.round_to_closest( nonlinear_diff[0] * rel_shift[rs_idx], 3.2 )} ns"
-                        }
-
-                        if i != 1:
-                            kwargs['phase_list'] = p[3]
-
-                        pb.pulser_pulse(**kwargs)
-                        rs_idx += 1
-
-                if laser_num == 1:
-                    pb.pulser_repetition_rate( '9.9 Hz' )
-                elif laser_num == 2:
-                    pb.pulser_repetition_rate( REP_RATE )
-                else:
-                    pb.pulser_repetition_rate( REP_RATE )
+                pb.pulser_repetition_rate( REP_RATE )
 
 
             pb.digitizer_decimation(DEC_COEF)

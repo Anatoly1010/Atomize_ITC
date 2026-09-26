@@ -585,7 +585,7 @@ def rep_rate(session, preset, rate_min=10.0, rate_max=2000.0, steps=6,
         slot.st_inc = slot.len_inc = slot.st_inc2 = 0.0
     pre.rep_rate = rate_min
     pre, wa = _build(session, pre, exp_name='RepRate', points=1, scans=1)
-    if wa.laser_flag == 1 and wa.laser_num == 1:
+    if wa.laser_flag >= 1 and wa.laser_num == 1:
         raise ValueError('Nd:YAG repetition rate is fixed at 9.9 Hz; rate tuning is unavailable')
     sigs, history_path = _acquire_live_rates(
         session, wa, rates, int(points), int(scans), parse_time_ns(max_wait) / 1e9)

@@ -39,7 +39,7 @@ def maximum_t1_rate(wa):
     the full worker/driver test path, including every shifted sweep point.
     Unrelated preflight errors propagate unchanged.
     """
-    fixed_laser = getattr(wa, 'laser_flag', 0) == 1 and getattr(wa, 'laser_num', 0) == 1
+    fixed_laser = getattr(wa, 'laser_flag', 0) >= 1 and getattr(wa, 'laser_num', 0) == 1
     upper = _span_rate_ceiling(wa)
     candidate = deepcopy(wa)
     candidate.scans = 1

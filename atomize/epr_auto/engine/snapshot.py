@@ -164,6 +164,9 @@ def load_preset(path):
         )
     except (IndexError, ValueError) as e:
         raise PresetError(f'{path}: not a valid .phase_awg preset ({e})') from None
+    # the GUI reverts a P3 LASER to SINE unless P2 is LASER too
+    if slots[2].typ == 'LASER' and slots[1].typ != 'LASER':
+        slots[2].typ = 'SINE'
 
     # Optional tails, same fallbacks as open_file()
     try:
@@ -201,10 +204,17 @@ def load_preset(path):
     return preset
 
 
+def laser_count(slots):
+    """Number of leading LASER rows from P2 (0, 1 or 2): MainWindow.laser_flag."""
+    if slots[1].typ != 'LASER':
+        return 0
+    return 2 if slots[2].typ == 'LASER' else 1
+
+
 def _expand_phases(slots):
     """MainWindow.update_pulse_phase: expand the phase-cycle notation of the
-    ACTIVE pulses together. Returns ph[0..8]; inactive slots get a ['+x']
-    placeholder (the worker never reads them)."""
+    ACTIVE non-LASER pulses together. Returns ph[0..8]; inactive and LASER
+    slots get a ['+x'] placeholder (the worker never reads them)."""
     # Single source of truth for the notation: call the GUI's own expander
     # (an effectively-static method; it never touches self). NOTE: because
     # both sides share it, the equivalence harness cannot catch a bug INSIDE
@@ -212,7 +222,8 @@ def _expand_phases(slots):
     # active-slot selection and the ph[] index mapping done below.
     from atomize.control_center.awg_phasing_insys import MainWindow
 
-    active = [(i, s.phase_text) for i, s in enumerate(slots) if s.active]
+    active = [(i, s.phase_text) for i, s in enumerate(slots)
+              if s.active and s.typ != 'LASER']
     texts = [t for _, t in active]
     expanded = MainWindow.expand_phase_cycling(None, *texts)
 
@@ -380,19 +391,20 @@ def build_worker_args(preset, exp_name, curve_name='exp', combo_cor=0,
     slots = preset.slots
 
     # Nd:YAG fixes the repetition rate at 9.9 Hz in the GUI and worker.
-    laser_flag = 1 if slots[1].typ == 'LASER' else 0
+    laser_flag = laser_count(slots)
     laser_num = 2 if preset.laser == 'NovoFEL' else 1
     rep_rate = str(float(preset.rep_rate))
-    if laser_flag == 1 and laser_num == 1:
+    if laser_flag >= 1 and laser_num == 1:
         rep_rate = str(9.9)
 
     ph = _expand_phases(slots)
 
     # AWG timing grid: mirrors MainWindow.grid_for -- on the fine grid all
     # P2..P9 timing fields and the P1 start / start increments snap to
-    # 0.8 ns; the P1 length (ADC window) stays on the 3.2 ns tick.
+    # 0.8 ns; the P1 length (ADC window) and LASER rows stay on 3.2 ns.
     g = preset.awg_grid
     fine = g == AWG_GRID_NS
+    slot_grid = [GRID_NS if s.typ == 'LASER' else g for s in slots]
 
     # P1 / DETECTION: p1_exp = [type, start(+shift), length, receiver phases,
     # start inc, length inc, detection frequency]
@@ -405,16 +417,17 @@ def build_worker_args(preset, exp_name, curve_name='exp', combo_cor=0,
     awg = []
     for i in range(1, 9):
         s = slots[i]
+        sg = slot_grid[i]
         # p{i}_exp: TRIGGER_AWG gate = [start(+shift), length, d_start, len_inc]
-        rect.append([_ns(round(_snap(s.start, g) + AWG_OUTPUT_SHIFT_NS, 1)),
-                     _ns(_snap(s.length, g)),
-                     _ns(_snap(s.st_inc, g)), _ns(_snap(s.len_inc, g))])
+        rect.append([_ns(round(_snap(s.start, sg) + AWG_OUTPUT_SHIFT_NS, 1)),
+                     _ns(_snap(s.length, sg)),
+                     _ns(_snap(s.st_inc, sg)), _ns(_snap(s.len_inc, sg))])
         # p{i}_awg_exp: [func, freq, sweep, length, sigma, start, amplitude,
         # phases, d_start, len_inc]
         awg.append([s.typ, _mhz(s.freq), _mhz(s.sweep),
-                    _ns(_snap(s.length, g)), _ns(_snap(s.sigma, g)),
-                    _ns(_snap(s.start, g)), s.coef, ph[i],
-                    _ns(_snap(s.st_inc, g)), _ns(_snap(s.len_inc, g))])
+                    _ns(_snap(s.length, sg)), _ns(_snap(s.sigma, sg)),
+                    _ns(_snap(s.start, sg)), s.coef, ph[i],
+                    _ns(_snap(s.st_inc, sg)), _ns(_snap(s.len_inc, sg))])
 
     # Integration window: ns -> points at 0.4 ns * decimation, clamped to the
     # detection length (win_left()/win_right()). The ns -> points conversion
@@ -454,7 +467,7 @@ def build_worker_args(preset, exp_name, curve_name='exp', combo_cor=0,
         log_start=_log_snap(preset.log_start, fine), log_end=_log_snap(preset.log_end, fine),
         start_field=preset.start_field, end_field=preset.end_field,
         step_field=preset.step_field, step_ampl=preset.step_ampl,
-        eseem_inc2=[_ns(_snap(s.st_inc2, g)) for s in slots],
+        eseem_inc2=[_ns(_snap(s.st_inc2, sg)) for s, sg in zip(slots, slot_grid)],
         cycles=preset.cycles, save_each=preset.save_each,
         awg_grid=g,
     )
