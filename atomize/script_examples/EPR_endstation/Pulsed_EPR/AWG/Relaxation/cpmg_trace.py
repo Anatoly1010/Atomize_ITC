@@ -18,9 +18,8 @@ pb = pb_pro.Insys_FPGA()
 bh15 = bh.BH_15()
 
 def cleanup(*args):
-    pb.pulser_close()
-    # store whatever raw trace is available
     data[0], data[1] = pb.digitizer_at_exit()
+    pb.pulser_close()
     file_handler.save_data(file_data, data[:, :, 0], header = header, mode = 'w')
     sys.exit(0)
 
@@ -50,7 +49,6 @@ POINTS = 1                  # single indirect point (whole train in one window)
 FIELD = 3340.0
 AVERAGES = 20
 SCANS = 1
-PHASES = 2                  # 2-step phase cycle (pi/2 and detection +x/-x)
 DEC_COEF = 1                # must match 'Decimation' in digitizer_insys.param
 process = 'None'
 
@@ -102,11 +100,9 @@ ECHO_INT_HALF = 64.0
 EXP_NAME = 'CPMG trace'        # full echo-train transient
 EXP_NAME_DECAY = 'CPMG decay'  # T2 decay built from the trace afterwards
 
-# 2-step phase cycle. pi pulses fixed at +y (Meiboom-Gill); pi/2 and detection
-# cycled +x/-x and combined with the +/- acquisition sign by the digitizer.
-PH_90  = ['+x', '-x']
-PH_180 = ['+y', '+y']
-PH_DET = ['+x', '-x']
+# 2-step cycle: pi/2 (x), pi pulses fixed at +y (Meiboom-Gill), receiver -1 * pi/2
+ph = pb.digitizer_expand_phase_cycling('-1', '(x)', *['y'] * NPI)
+PHASES = len(ph['receiver'])
 
 # Setting magnetic field
 bh15.magnet_setup(FIELD, 1)
@@ -118,7 +114,7 @@ pb.pulser_pulse(name = 'P0', channel = 'TRIGGER_AWG', start = f"{P90_START} ns",
             length = PULSE_90_LENGTH)
 pb.awg_pulse(name = 'A0', channel = 'CH0', func = SHAPE, frequency = FREQ, phase = 0,
             length = PULSE_90_LENGTH, sigma = PULSE_90_LENGTH, start = f"{P90_START} ns",
-            phase_list = PH_90, amplitude = AMPL_90)
+            phase_list = ph['pulses'][0], amplitude = AMPL_90)
 
 # NPI refocusing pi pulses at (2n-1)*tau, n = 1 .. NPI
 for n in range(1, NPI + 1):
@@ -127,11 +123,11 @@ for n in range(1, NPI + 1):
                 length = PULSE_180_LENGTH)
     pb.awg_pulse(name = f'A{n}', channel = 'CH0', func = SHAPE, frequency = FREQ, phase = 0,
                 length = PULSE_180_LENGTH, sigma = PULSE_180_LENGTH, start = f"{pos} ns",
-                phase_list = PH_180, amplitude = AMPL_180)
+                phase_list = ph['pulses'][n], amplitude = AMPL_180)
 
 # single large detection window spanning the whole train (fixed, never moved)
 pb.pulser_pulse(name = 'PDET', channel = 'DETECTION', start = f"{DET_START} ns",
-            length = PULSE_DETECTION_LENGTH, phase_list = PH_DET)
+            length = PULSE_DETECTION_LENGTH, phase_list = ph['receiver'])
 
 pb.digitizer_decimation(DEC_COEF)
 
@@ -207,14 +203,15 @@ for k in general.scans(SCANS):
         pb.awg_next_phase()
         pb.pulser_update()
 
-        a, b = pb.digitizer_get_curve( POINTS, PHASES, current_scan = k, total_scan = SCANS )
+        a, b, rng = pb.digitizer_get_curve( POINTS, PHASES, current_scan = k, total_scan = SCANS, partial = True )
 
         if a is not None:
-            data[0], data[1] = a, b
-            # demodulate the WHOLE trace for display only (integral = False, i.e.
-            # no integration) - echoes show up as a decaying train of peaks.
+            i0, i1 = rng
+            data[0][:, i0:i1] = a
+            data[1][:, i0:i1] = b
+            # demodulated trace for display only, no integration
             di, dq = pb.digitizer_demodulate(
-                data[0], data[1], IQ_FREQ,
+                a, b, IQ_FREQ,
                 zero_order, first_order, second_order, integral = False )
             disp[0], disp[1] = di[:, 0], dq[:, 0]
 
@@ -235,6 +232,7 @@ for k in general.scans(SCANS):
     pb.pulser_pulse_reset()
     pb.awg_pulse_reset()
 
+data[0], data[1] = pb.digitizer_at_exit()
 pb.pulser_close()
 
 # Save the raw, un-integrated echo-train transient (I, Q) over the whole window

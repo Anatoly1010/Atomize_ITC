@@ -24,6 +24,7 @@ FIRST_ORDER_COEF = 180 / math.pi * 1e-9    # first order: deg/MHz -> rad/s
 SEC_ORDER_COEF = 180 / math.pi * 1e-18     # second order: deg/MHz^2 -> rad/s^2
 
 SWEEP_TYPES = ('Linear Time', 'Log Time', 'Amplitude', 'Field', 'ESEEM Avg')
+CPMG_MODES = ('Decay', 'Sum of Echoes')
 
 # Worker attributes the GUI copies onto a fresh Worker before launching it
 # (_hand_correction_to_worker, called next to the awg_grid_cur assignment in
@@ -127,6 +128,13 @@ class Preset:
     awg_grid: float = GRID_NS   # 'AWG grid' trailing line; 3.2 when absent
     mw_source: int = 1          # 'MW source' trailing line; 1 when absent
     synt2_rows: list = field(default_factory=list)   # 'SYNT2 pulses' GUI rows
+    cpmg_on: int = 0            # 'CPMG' trailing line; Off when absent
+    cpmg_mode: str = 'Decay'
+    cpmg_parent: int = 2
+    cpmg_n: int = 8
+    cpmg_tau: float = 320.0
+    cpmg_ec: float | None = None   # echo centre; None -> the detection start
+    cpmg_phases: str = 'y'      # 'CPMG phases' trailing line
 
 
 def load_preset(path):
@@ -210,6 +218,29 @@ def load_preset(path):
                                             if k.strip()})
         except (IndexError, ValueError):
             pass
+    # CPMG (trailing lines by prefix, like open_file); a malformed line -> Off
+    cpmg_vals = None
+    for line in lines:
+        try:
+            if line.startswith('CPMG:'):
+                cpmg_vals = line.split(':  ', 1)[1].split(',  ')
+            elif line.startswith('CPMG phases:'):
+                preset.cpmg_phases = line.split(':', 1)[1].strip()
+        except IndexError:
+            pass
+    if cpmg_vals is not None:
+        try:
+            preset.cpmg_mode = cpmg_vals[1].strip()
+            preset.cpmg_parent = int(cpmg_vals[2])
+            preset.cpmg_n = min(max(int(cpmg_vals[3]), 1), 100)
+            preset.cpmg_tau = min(max(round(float(cpmg_vals[4]), 1), 3.2), 6400.0)
+            if len(cpmg_vals) > 5:
+                preset.cpmg_ec = min(max(round(float(cpmg_vals[5]), 1), 0.0), 100e6)
+            preset.cpmg_on = int(int(cpmg_vals[0]) == 1)
+        except (IndexError, ValueError):
+            preset.cpmg_on = 0
+        if preset.cpmg_on and (preset.cpmg_mode not in CPMG_MODES or not 2 <= preset.cpmg_parent <= 9):
+            raise PresetError(f'{path}: invalid CPMG line')
 
     if preset.sweep_type not in SWEEP_TYPES:
         raise PresetError(f'{path}: unknown sweep type {preset.sweep_type!r}')
@@ -223,10 +254,33 @@ def laser_count(slots):
     return 2 if slots[2].typ == 'LASER' else 1
 
 
-def _expand_phases(slots):
+def _cpmg_texts(preset):
+    """MainWindow._cpmg_texts: ';'-separated notations, the last entry repeats."""
+    entries = [e.strip() for e in preset.cpmg_phases.split(';') if e.strip()] or ['x']
+    return [entries[min(k, len(entries) - 1)] for k in range(preset.cpmg_n)]
+
+
+def _cpmg_error(texts, cpmg_ph):
+    """MainWindow._cpmg_error without the sweep check (run_worker does that)."""
+    if cpmg_ph is None:
+        return 'CPMG phase cycle is too long; use fewer bracketed entries.'
+    valid = {'+x', '-x', '+y', '-y', 'x', 'y', 'i', '-i', '+', '-', '0'}
+    for text in set(texts):
+        if '[' in text or '(' in text:
+            continue
+        for t in text.split(','):
+            t = t.strip().lower().replace(' ', '')
+            if t and t not in valid:
+                return f'unrecognized CPMG phase "{t}".'
+    return None
+
+
+def _expand_phases(slots, cpmg_texts=()):
     """MainWindow.update_pulse_phase: expand the phase-cycle notation of the
-    ACTIVE non-LASER pulses together. Returns ph[0..8]; inactive and LASER
-    slots get a ['+x'] placeholder (the worker never reads them)."""
+    ACTIVE non-LASER pulses together, with the CPMG notations appended after
+    them. Returns (ph[0..8], cpmg_ph); inactive and LASER slots get a ['+x']
+    placeholder (the worker never reads them); cpmg_ph is None when the CPMG
+    brackets alone exceed 256 steps (the GUI then skips them)."""
     # Single source of truth for the notation: call the GUI's own expander
     # (an effectively-static method; it never touches self). NOTE: because
     # both sides share it, the equivalence harness cannot catch a bug INSIDE
@@ -237,13 +291,23 @@ def _expand_phases(slots):
     active = [(i, s.phase_text) for i, s in enumerate(slots)
               if s.active and s.typ != 'LASER']
     texts = [t for _, t in active]
+    cpmg_ph = []
+    if cpmg_texts:
+        if math.prod(4 ** t.count('[') * 2 ** t.count('(') for t in cpmg_texts) > 256:
+            cpmg_ph, cpmg_texts = None, ()
+        else:
+            texts += list(cpmg_texts)
     expanded = MainWindow.expand_phase_cycling(None, *texts)
 
+    pulses = expanded['pulses']
+    if cpmg_texts:
+        cpmg_ph = pulses[-len(cpmg_texts):]
+        pulses = pulses[:-len(cpmg_texts)]
     ph = [['+x'] for _ in range(9)]
     ph[0] = expanded['receiver']
-    for k, pulse_phases in enumerate(expanded['pulses']):
+    for k, pulse_phases in enumerate(pulses):
         ph[active[k + 1][0]] = pulse_phases
-    return ph
+    return ph, cpmg_ph
 
 
 @dataclass
@@ -296,6 +360,7 @@ class WorkerArgs:
     synt2_rows: list = field(default_factory=list)   # -> worker.synt2_rows (attribute)
     amplitude_sweep: dict | None = None
     receiver_guard: dict | None = None
+    cpmg: dict | None = None    # Worker cpmg dict (MainWindow._cpmg_settings); None when Off
     # Resonator-correction state, handed to the worker as attributes exactly
     # like awg_grid (the GUI's _hand_correction_to_worker). Not stored in
     # presets; defaults = Worker.__init__ = GUI defaults. Set these on the
@@ -306,6 +371,10 @@ class WorkerArgs:
     phase_cor_cur: str = 'False'
     meas_freq_cur: object = None   # np.ndarray (MHz) when a measured H(f) is loaded
     meas_H_cur: object = None      # matching complex np.ndarray
+
+    def cpmg_tail(self):
+        """Worker args after script_test: the cpmg dict when CPMG is On (MainWindow._worker_tail)."""
+        return () if self.cpmg is None else (self.cpmg,)
 
     def _common_tail(self):
         return (self.b_sech, self.combo_cor, self.combo_synt,
@@ -411,7 +480,8 @@ def build_worker_args(preset, exp_name, curve_name='exp', combo_cor=0,
     if laser_flag >= 1 and laser_num == 1:
         rep_rate = str(9.9)
 
-    ph = _expand_phases(slots)
+    cpmg_texts = _cpmg_texts(preset) if preset.cpmg_on else ()
+    ph, cpmg_ph = _expand_phases(slots, cpmg_texts)
 
     # AWG timing grid: mirrors MainWindow.grid_for -- on the fine grid all
     # P2..P9 timing fields and the P1 start / start increments snap to
@@ -460,6 +530,16 @@ def build_worker_args(preset, exp_name, curve_name='exp', combo_cor=0,
             pts = points_from_ns(round(p1_len, 1), tpp)
         return pts
 
+    cpmg = None
+    if preset.cpmg_on:
+        err = _cpmg_error(cpmg_texts, cpmg_ph)
+        if err is not None:
+            raise PresetError(f'{preset.path}: {err}')
+        cpmg = {'mode': preset.cpmg_mode, 'parent': preset.cpmg_parent,
+                'n': preset.cpmg_n, 'tau': _snap(preset.cpmg_tau, g),
+                'ec': preset.cpmg_ec if preset.cpmg_ec is not None else _snap(p1.start, g),
+                'phases': [list(p) for p in cpmg_ph]}
+
     # MW source + SYNT2 rows: MainWindow._load_synt2 / _refresh_synt2 (no rows
     # -> the first active AWG row after the LASER rows)
     combo_synt = preset.mw_source
@@ -495,5 +575,5 @@ def build_worker_args(preset, exp_name, curve_name='exp', combo_cor=0,
         step_field=preset.step_field, step_ampl=preset.step_ampl,
         eseem_inc2=[_ns(_snap(s.st_inc2, sg)) for s, sg in zip(slots, slot_grid)],
         cycles=preset.cycles, save_each=preset.save_each,
-        awg_grid=g, synt2_rows=synt2_rows,
+        awg_grid=g, synt2_rows=synt2_rows, cpmg=cpmg,
     )

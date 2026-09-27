@@ -42,7 +42,7 @@ class _PreviewPipe:
         return 'exit' if self.stopping else self.conn.recv()
 
 
-def _live_child(worker, conn, args):
+def _live_child(worker, conn, args, tail=()):
     signal.signal(signal.SIGINT, signal.SIG_IGN)
     executor._quiet_worker_stdout()
     import atomize.general_modules.general_functions as general
@@ -63,7 +63,7 @@ def _live_child(worker, conn, args):
         pipe.keep((t.copy(), i.copy(), q.copy()))
 
     general.plot_1d = capture
-    worker.dig_on(pipe, *args, False)
+    worker.dig_on(pipe, *args, False, *tail)
     conn.send(('LiveEnd', ''))
 
 
@@ -84,7 +84,7 @@ def monitor_trace(worker_args, on_trace, on_message=None, poll_s=0.2):
     executor._hand_attrs(worker, worker_args)
     parent, child = Pipe()
     process = Process(target=_live_child,
-                      args=(worker, child, worker_args.dig_args(l_mode=0)))
+                      args=(worker, child, worker_args.dig_args(l_mode=0), worker_args.cpmg_tail()))
     timeout = max(60.0, 10 * phases * worker_args.averages / float(worker_args.rep_rate))
     process.start()
     last_frame = time.monotonic()

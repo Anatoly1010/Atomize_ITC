@@ -1,0 +1,48 @@
+P1:  DETECTION,  576.0,  512.0,  0.0,  50,  350,  100.0,  [-1,2],  0.0,  0.0,  0.0
+P2:  SINE,  0.0,  22.4,  0.0,  50,  350,  100.0,  [(x)],  0.0,  0.0,  0.0
+P3:  SINE,  288.0,  44.8,  0.0,  50,  350,  100.0,  [y],  0.0,  0.0,  0.0
+P4:  SINE,  0.0,  0.0,  0.0,  50,  350,  100.0,  [+x,+x],  0.0,  0.0,  0.0
+P5:  SINE,  0.0,  0.0,  0.0,  50,  350,  100.0,  [+x,+x],  0.0,  0.0,  0.0
+P6:  SINE,  0.0,  0.0,  0.0,  50,  350,  100.0,  [+x,+x],  0.0,  0.0,  0.0
+P7:  SINE,  0.0,  0.0,  0.0,  50,  350,  100.0,  [+x,+x],  0.0,  0.0,  0.0
+P8:  SINE,  0.0,  0.0,  0.0,  50,  350,  100.0,  [+x,+x],  0.0,  0.0,  0.0
+P9:  SINE,  0.0,  0.0,  0.0,  50,  350,  100.0,  [+x,+x],  0.0,  0.0,  0.0
+Rep rate:  500.0
+Field:  3493.0
+Delay:  0
+Ampl 1:  260
+Ampl 2:  260
+Phase:  90.0
+N WURST; SECH/TANH:  10
+B SECH/TANH:  0.02
+Points:  2016
+Horizontal offset:  1024
+Window left:  0.0
+Window right:  320.0
+Acquisitions:  1
+Points to Drop:  0
+Zero order:  0.0
+First order:  0.0
+Second order:  0.0
+Laser:  Nd:YaG
+Decimation:  1
+Points:  1
+Scans:  1
+Log Start:  1.0
+Log End:  7.0
+Start Field:  3000.0
+End Field:  4000.0
+Field Step:  0.5
+Sweep Type:  Linear Time
+IQ Correction:  2
+X0:  0.0
+dX:  0.0
+Amplitude Step:  1.0
+Cycles:  8
+Save Each Cycle:  0
+AWG grid:  3.2
+Auto window:  100.0
+MW source:  1
+SYNT2 pulses:  
+CPMG:  1,  Decay,  3,  16,  288.0,  608.0
+CPMG phases:  y

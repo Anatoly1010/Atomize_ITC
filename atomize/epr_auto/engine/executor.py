@@ -174,6 +174,11 @@ def run_worker(worker_args, sweep_type, save_path=None, script_test=False,
                           f'(supported: {", ".join(SWEEP_METHOD)})')
     if not script_test and save_path is None:
         raise EngineError('save_path is required for a real run')
+    cpmg = getattr(worker_args, 'cpmg', None)
+    if cpmg is not None and cpmg['mode'] == 'Decay' and sweep_type != 'Linear Time':
+        raise EngineError('CPMG Decay requires the Linear Time sweep')
+    if cpmg is not None and sweep_type not in ('Linear Time', 'ESEEM Avg'):
+        raise EngineError('CPMG requires the Linear Time or ESEEM Avg sweep')
 
     method_name, args_builder = SWEEP_METHOD[sweep_type]
     args = getattr(worker_args, args_builder)()
@@ -188,7 +193,7 @@ def run_worker(worker_args, sweep_type, save_path=None, script_test=False,
     parent_conn, child_conn = Pipe()
     process = Process(target=_shielded,
                       args=(getattr(worker, method_name),
-                            child_conn, *args, script_test))
+                            child_conn, *args, script_test, *worker_args.cpmg_tail()))
     process.start()
 
     t_start = time.monotonic()
@@ -265,7 +270,7 @@ def _hand_attrs(worker, worker_args):
             setattr(worker, attr, getattr(worker_args, attr))
 
 
-def _trace_child(worker, conn, args, n_sweeps, script_test):
+def _trace_child(worker, conn, args, n_sweeps, script_test, tail=()):
     """Child-process target for acquire_trace: run the Worker's dig_on
     preview UNMODIFIED, capturing the trace it hands to general.plot_1d
     (dig_on never sends data over the pipe — the GUI reads it off the
@@ -324,7 +329,7 @@ def _trace_child(worker, conn, args, n_sweeps, script_test):
             pass
 
     general.plot_1d = capture
-    worker.dig_on(CycleConn(), *args, script_test)
+    worker.dig_on(CycleConn(), *args, script_test, *tail)
     if state['done'] is not None:
         conn.send(('Trace', state['done']))
     conn.send(('TraceEnd', ''))
@@ -368,7 +373,7 @@ def acquire_trace(worker_args, n_sweeps=1, script_test=False,
     parent_conn, child_conn = Pipe()
     process = Process(target=_trace_child,
                       args=(worker, child_conn, args,
-                            max(1, int(n_sweeps)), script_test))
+                            max(1, int(n_sweeps)), script_test, worker_args.cpmg_tail()))
     process.start()
 
     trace = None
@@ -449,7 +454,8 @@ def acquire_live_rates(worker_args, rates, points=3, scans=1, max_wait=120.0,
     worker.live_rates = rates
     args = worker_args.dig_args(l_mode=0)
     parent_conn, child_conn = Pipe()
-    process = Process(target=_shielded, args=(worker.dig_on, child_conn, *args, script_test))
+    process = Process(target=_shielded, args=(worker.dig_on, child_conn, *args, script_test,
+                                              *worker_args.cpmg_tail()))
     process.start()
     index, waiting, last_buffer = 0, True, -1
     started = time.monotonic()

@@ -126,6 +126,7 @@ class MainWindow(QMainWindow):
 
         self.design_tab_1()
         self.design_tab_2()
+        self.design_tab_7()
         self.design_tab_3()
         self.design_tab_4()
         self.design_tab_5()
@@ -275,7 +276,8 @@ class MainWindow(QMainWindow):
 
         t2_sequences = {
             'Hahn Echo; 2S': 'hahn_echo_2s.phase_awg',
-            'Hahn Echo; 4S': 'hahn_echo_4s.phase_awg'
+            'Hahn Echo; 4S': 'hahn_echo_4s.phase_awg',
+            'CPMG; 2S': 'cpmg_2s.phase_awg'
         }
 
         t2_exp_menu = self.exp_menu.addMenu('T₂')
@@ -341,6 +343,7 @@ class MainWindow(QMainWindow):
         pds_sequences = {
             '4pDEER; 8S': '4pdeer_8s.phase_awg',
             'SIFTER; 16S': 'sifter_16s.phase_awg',
+            '4pDEER CPMG; 8S': '4pdeer_cpmg_8s.phase_awg',
         }
 
         for label, file_name in pds_sequences.items():
@@ -1173,7 +1176,7 @@ class MainWindow(QMainWindow):
         fft_setting_page.setLayout(gridLayout)
 
         self.tab_pulse.addTab(fft_setting_page, "FFT")
-        self.tab_pulse.tabBar().setTabTextColor(2, QColor(193, 202, 227))
+        self.tab_pulse.tabBar().setTabTextColor(3, QColor(193, 202, 227))
 
         # ---- Labels & Inputs ----
         labels = [("Points to Drop", "label_11"), ("Zero Order", "label_12"), ("First Order", "label_13"), ("Second Order", "label_14"), ("Live FFT", "label_15"), ("Phase Correction", "label_16"), ("Shift Offset", "label_fft1")]
@@ -1322,7 +1325,7 @@ class MainWindow(QMainWindow):
         laser_setting_page.setLayout(gridLayout)
 
         self.tab_pulse.addTab(laser_setting_page, "Source / Laser")
-        self.tab_pulse.tabBar().setTabTextColor(3, QColor(193, 202, 227))
+        self.tab_pulse.tabBar().setTabTextColor(4, QColor(193, 202, 227))
 
         self.synt2_rows = []
 
@@ -1412,7 +1415,7 @@ class MainWindow(QMainWindow):
         dig_setting_page.setLayout(gridLayout)
 
         self.tab_pulse.addTab(dig_setting_page, "AWG")
-        self.tab_pulse.tabBar().setTabTextColor(4, QColor(193, 202, 227))
+        self.tab_pulse.tabBar().setTabTextColor(5, QColor(193, 202, 227))
 
         # ---- Labels & Inputs ----
         labels = [("Amplitude I", "label_a1"), ("Amplitude Q", "label_a2"), ("Phase", "label_a3"), ("N [wurst; sech/tanh]", "label_a4"), ("b [sech/tanh]", "label_a5"), ("Resonator Profile", "label_a6"), ("Correction Model", "label_a7"), ('Resonator f<sub style="font-size: 12pt;">0</sub>', "label_a8"), ("Resonator Q", "label_a9"), ("Measured H(f)", "label_a10"), ("Load H(f)", "label_a11")]
@@ -1560,7 +1563,7 @@ class MainWindow(QMainWindow):
         settings_page.setLayout(gridLayout)
 
         self.tab_pulse.addTab(settings_page, "Settings")
-        self.tab_pulse.tabBar().setTabTextColor(5, QColor(193, 202, 227))
+        self.tab_pulse.tabBar().setTabTextColor(6, QColor(193, 202, 227))
 
         # ---- Separator ----
         def hline():
@@ -1701,6 +1704,204 @@ class MainWindow(QMainWindow):
         # All pulse spin-boxes now exist; snapshot their values so the first
         # linked edit computes the correct delta.
         self._seed_link_prev()
+
+    def design_tab_7(self):
+        cpmg_page = QWidget()
+        gridLayout = QGridLayout()
+        gridLayout.setContentsMargins(15, 15, 10, 10)
+        gridLayout.setVerticalSpacing(4)
+        gridLayout.setHorizontalSpacing(20)
+
+        cpmg_page.setLayout(gridLayout)
+
+        self.tab_pulse.addTab(cpmg_page, "CPMG")
+        self.tab_pulse.tabBar().setTabTextColor(2, QColor(193, 202, 227))
+
+        def hline():
+            line = QFrame()
+            line.setFrameShape(QFrame.Shape.HLine)
+            line.setFrameShadow(QFrame.Shadow.Sunken)
+            line.setLineWidth(2)
+            return line
+
+        labels = []
+        for name in ("CPMG", "Mode", "Parent Pulse", "Number of Pulses", "τ", "Echo Center", "Phase Cycle"):
+            lbl = QLabel(name)
+            lbl.setFixedSize(170, 26)
+            lbl.setStyleSheet(REFINED_STYLES['LABEL_STYLE'])
+            labels.append(lbl)
+
+        self.Cpmg_box = QCheckBox("")
+        self.Cpmg_box.setStyleSheet(CHECKBOX_STYLE)
+        self.Cpmg_box.setFixedSize(170, 26)
+        self.Cpmg_box.setToolTip(
+            "Add a CPMG train of refocusing pulses after the echo; the detection window "
+            "is lengthened by 2·N·τ to record every echo. Experiments need the Linear Time "
+            "sweep (Decay) or the Linear Time or ESEEM Avg sweep (Sum of Echoes).")
+
+        self.Cpmg_mode = QComboBox()
+        self.Cpmg_mode.addItems(["Decay", "Sum of Echoes"])
+        self.Cpmg_mode.setToolTip(
+            "Decay: one point; the integrated echoes are plotted and saved against the echo time.\n"
+            "Sum of Echoes: the normal sweep; each point is the sum of all integrated echoes.")
+
+        self.Cpmg_parent = QComboBox()
+        self.Cpmg_parent.addItems([f"P{i}" for i in range(2, 10)])
+        self.Cpmg_parent.setToolTip(
+            "The CPMG pulses copy the type, length, sigma, frequency, sweep and amplitude of this pulse.")
+
+        for combo in (self.Cpmg_mode, self.Cpmg_parent):
+            combo.setFixedSize(170, 26)
+            combo.setStyleSheet(REFINED_STYLES['COMBO_STYLE'])
+
+        self.Cpmg_n = QSpinBox()
+        self.Cpmg_n.setRange(1, 100)
+        self.Cpmg_n.setValue(8)
+        self.Cpmg_n.setToolTip("Number of CPMG refocusing pulses (N).")
+
+        self.Cpmg_tau = QDoubleSpinBox()
+        self.Cpmg_tau.setRange(3.2, 6400)
+        self.Cpmg_tau.setValue(320)
+        self.Cpmg_tau.setToolTip(
+            "Pulse k is centred at Echo Center + (2k - 1)·τ; echo k is integrated "
+            "with the Integration Left/Right window shifted by 2k·τ.")
+
+        self.Cpmg_ec = QDoubleSpinBox()
+        self.Cpmg_ec.setRange(0, 100e6)
+        self.Cpmg_ec.setValue(576)
+        self.Cpmg_ec.setToolTip(
+            "Echo position in sequence time, measured like pulse starts. CPMG π pulse k is centred at "
+            "Echo Center + (2k−1)·τ; echo k is at Echo Center + 2k·τ.\n"
+            "A: take the echo peak from the running preview (detection start + peak time).\n"
+            "Decay x-axis: echo time from the centre of the first pulse, (Echo Center − first-pulse "
+            "centre) + 2k·τ; e.g. cpmg_2s gives 596.8, 1172.8, 1748.8 … ns.")
+
+        for box in (self.Cpmg_n, self.Cpmg_tau, self.Cpmg_ec):
+            box.setFixedSize(170, 26)
+            box.setStyleSheet(REFINED_STYLES['COMPACT_FIELD_STYLE'])
+            box.setButtonSymbols(QSpinBox.ButtonSymbols.PlusMinus)
+            box.setKeyboardTracking(False)
+            box.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
+        for box in (self.Cpmg_tau, self.Cpmg_ec):
+            box.setDecimals(1)
+            box.setSingleStep(self.awg_grid())
+            box.setSuffix(" ns")
+
+        ec_controls = QWidget()
+        ec_controls.setFixedSize(360, 26)
+        ec_layout = QHBoxLayout(ec_controls)
+        ec_layout.setContentsMargins(0, 0, 0, 0)
+        ec_layout.setSpacing(0)
+        labels[5].setFixedSize(140, 26)
+        ec_layout.addWidget(labels[5])
+        ec_layout.addSpacing(20)
+        self.button_echo_center = QPushButton("A")
+        self.button_echo_center.setFixedSize(26, 26)
+        self._set_glyph_style(self.button_echo_center,
+            REFINED_STYLES['DOCK_CLOSE_STYLE'] + "QPushButton { font-size: 15px; }")
+        self.button_echo_center.setAccessibleName("Auto echo center")
+        self.button_echo_center.setToolTip(
+            "Auto echo center: find the echo maximum in the running preview, as Auto window "
+            "does, and set Echo Center. Needs a running preview.")
+        self.button_echo_center.clicked.connect(self.auto_echo_center)
+        ec_layout.addWidget(self.button_echo_center)
+        ec_layout.addSpacing(4)
+        ec_layout.addWidget(self.Cpmg_ec)
+
+        self.Cpmg_phase = QTextEdit("y")
+        self.Cpmg_phase.setFixedSize(170, 60)
+        self.Cpmg_phase.setAcceptRichText(False)
+        self.Cpmg_phase.setStyleSheet(REFINED_STYLES['COMPACT_TEXT_STYLE'])
+        self.Cpmg_phase.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
+        self.Cpmg_phase.setToolTip(
+            "Phase of each CPMG pulse, separated by semicolons; the last entry repeats for the remaining pulses.\n"
+            "Brackets add phase steps to the whole sequence: (y) is a 2-step cycle (+y, −y) and doubles the "
+            "total number of steps; [y] is a 4-step cycle (+y, −x, −y, +x) and multiplies it by 4.\n"
+            "Example: Hahn echo base (π/2 phase (x), π phase y, detection coefficients −1,2), 4 CPMG pulses, "
+            "phase (y); y. CPMG pulse 1 is cycled +y, −y, pulses 2–4 stay at +y; the sequence goes from 2 to "
+            "4 steps. A 180° step on a π pulse does not change the receiver phase, so the detection "
+            "coefficients stay −1,2.\n"
+            "With [y]; y instead, pulse 1 moves in 90° steps (8 steps in total) and needs a receiver "
+            "coefficient: append it after the base pulses, detection coefficients −1,2,2.")
+
+        self.cpmg_on = 0
+        self.cpmg_ph = []
+        self.Cpmg_box.stateChanged.connect(self.cpmg_changed)
+        self.Cpmg_mode.currentIndexChanged.connect(self.cpmg_changed)
+        self.Cpmg_parent.currentIndexChanged.connect(self.cpmg_changed)
+        self.Cpmg_n.valueChanged.connect(self.cpmg_changed)
+        self.Cpmg_tau.valueChanged.connect(self.cpmg_changed)
+        self.Cpmg_ec.valueChanged.connect(self.cpmg_changed)
+        self.Cpmg_phase.textChanged.connect(self.cpmg_changed)
+
+        widgets = (self.Cpmg_box, self.Cpmg_mode, self.Cpmg_parent, self.Cpmg_n, self.Cpmg_tau)
+        for row, (lbl, widget) in enumerate(zip(labels, widgets)):
+            gridLayout.addWidget(lbl, row, 0)
+            gridLayout.addWidget(widget, row, 1)
+        gridLayout.addWidget(ec_controls, 5, 0, 1, 2)
+        gridLayout.addWidget(labels[6], 6, 0, Qt.AlignmentFlag.AlignTop)
+        gridLayout.addWidget(self.Cpmg_phase, 6, 1)
+        gridLayout.addWidget(hline(), 7, 0, 1, 2)
+
+        gridLayout.setColumnStretch(2, 1)
+        gridLayout.setRowStretch(8, 1)
+
+    def cpmg_changed(self):
+        """Read the CPMG tab and refresh the phase cycle; a running preview restarts via the live path."""
+        self.cpmg_on = int(self.Cpmg_box.isChecked())
+        snapped = self.round_to_closest(self.Cpmg_tau.value(), self.awg_grid())
+        if snapped != self.Cpmg_tau.value():
+            self.Cpmg_tau.setValue(snapped)
+            return
+        self.update_pulse_phase(1)
+
+    def _cpmg_texts(self):
+        """Per-pulse CPMG phase notations: ';'-separated, the last entry repeats."""
+        entries = [e.strip() for e in self.Cpmg_phase.toPlainText().split(';') if e.strip()] or ['x']
+        return [entries[min(k, len(entries) - 1)] for k in range(self.Cpmg_n.value())]
+
+    def _cpmg_settings(self):
+        """The worker's cpmg dict, or None when CPMG is Off."""
+        if not self.cpmg_on:
+            return None
+        return {'mode': self.Cpmg_mode.currentText(),
+                'parent': int(self.Cpmg_parent.currentText()[1:]),
+                'n': int(self.Cpmg_n.value()),
+                'tau': float(self.Cpmg_tau.value()),
+                'ec': float(self.Cpmg_ec.value()),
+                'phases': [list(p) for p in (self.cpmg_ph or [])]}
+
+    def _cpmg_error(self, sweep = None):
+        """GUI-side CPMG pre-check before a start; returns an error text or None."""
+        if not self.cpmg_on:
+            return None
+        if sweep is not None:
+            if self.Cpmg_mode.currentText() == 'Decay' and sweep != 'Linear Time':
+                return 'CPMG Decay requires the Linear Time sweep'
+            if sweep not in ('Linear Time', 'ESEEM Avg'):
+                return 'CPMG requires the Linear Time or ESEEM Avg sweep'
+        if self.cpmg_ph is None:
+            return 'CPMG phase cycle is too long; use fewer bracketed entries.'
+        valid = {'+x', '-x', '+y', '-y', 'x', 'y', 'i', '-i', '+', '-', '0'}
+        for text in set(self._cpmg_texts()):
+            if '[' in text or '(' in text:
+                continue
+            for t in text.split(','):
+                t = t.strip().lower().replace(' ', '')
+                if t and t not in valid:
+                    return f'unrecognized CPMG phase "{t}".'
+        return None
+
+    def auto_echo_center(self):
+        """Ask the running preview for the echo centre and set Echo Center."""
+        if getattr(self, 'is_experiment', False):
+            self.message('Auto echo center works only in the preview, not during an experiment.')
+            return
+        if getattr(self, 'is_testing', False) or not self._live_run_alive():
+            self.message('Auto echo center: start the preview and wait for preflight to finish.')
+            return
+        width_pts = max(1, int(round(self.win_width / self.time_per_point)))
+        self.parent_conn_dig.send('EC' + str(width_pts))
 
     # ---- Link mode helpers ----
     def _link_suffix(self):
@@ -2030,9 +2231,22 @@ class MainWindow(QMainWindow):
                         num_pulses.append(i)
                     setattr(self, attr_name, phase_text)
 
+            n_cpmg = 0
+            if getattr(self, 'cpmg_on', 0):
+                cpmg_texts = self._cpmg_texts()
+                if math.prod(4 ** t.count('[') * 2 ** t.count('(') for t in cpmg_texts) > 256:
+                    self.cpmg_ph = None
+                else:
+                    active_phases += cpmg_texts
+                    n_cpmg = len(cpmg_texts)
+
             a = self.expand_phase_cycling(*active_phases)
             setattr(self, "ph_1", a['receiver'])
-            
+
+            if n_cpmg:
+                self.cpmg_ph = a['pulses'][-n_cpmg:]
+                a['pulses'] = a['pulses'][:-n_cpmg]
+
             for i, pulse_phase in enumerate(a['pulses']):
                 setattr(self, f"ph_{num_pulses[i+1]}", pulse_phase)
             
@@ -2142,6 +2356,10 @@ class MainWindow(QMainWindow):
         finally:
             self._linking = False
         self._seed_link_prev()
+        if hasattr(self, 'Cpmg_tau'):
+            self.Cpmg_tau.setSingleStep(self.awg_grid())
+            self.Cpmg_ec.setSingleStep(self.awg_grid())
+            self.cpmg_changed()
         if hasattr(self.Log_start, 'set_fine_grid'):
             self.Log_start.set_fine_grid(self.awg_fine_grid)
             self.Log_end.set_fine_grid(self.awg_fine_grid)
@@ -2233,9 +2451,17 @@ class MainWindow(QMainWindow):
         det_len = str(getattr(self, 'p1_length', ''))
         lasers = tuple((str(getattr(self, f'p{k}_start_rect')), str(getattr(self, f'p{k}_length')))
                        for k in range(2, 2 + self.laser_flag))
+        cpmg_sig = None
+        if getattr(self, 'cpmg_on', 0):
+            p = int(self.Cpmg_parent.currentText()[1:])
+            cpmg_sig = (self.Cpmg_mode.currentText(), p, self.Cpmg_n.value(), self.Cpmg_tau.value(), self.Cpmg_ec.value(),
+                        self.Cpmg_phase.toPlainText().strip(), str(self.p1_start),
+                        tuple(str(getattr(self, a, '')) for a in (f'p{p}_typ', f'p{p}_freq', f'wurst_sweep_cur_{p}',
+                              f'p{p}_length', f'p{p}_sigma', f'p{p}_coef')),
+                        self.n_wurst_cur, self.b_sech_cur)
         return (phases, phase_sig, self.decimation, self.laser_flag, fixed, det_len,
                 lasers, getattr(self, 'combo_laser_num', None),
-                self.combo_synt, tuple(self.synt2_rows))
+                self.combo_synt, tuple(self.synt2_rows), cpmg_sig)
 
     def _phase_sig(self):
         """Normalized phase text of every active (non-zero-length) pulse, keyed by
@@ -2338,7 +2564,7 @@ class MainWindow(QMainWindow):
                     return (f'phase-cycle length mismatch: P{i} has {L} steps but '
                             f'P{i0} has {L0} (receiver and every cycled pulse must '
                             f'share one length).')
-        return None
+        return self._cpmg_error()
 
     def schedule_live_apply(self):
         """(Re)start the debounce timer when live edit is armed and a preview runs.
@@ -3099,6 +3325,27 @@ class MainWindow(QMainWindow):
                 pass
         self._load_synt2(mw_source, synt2_rows)
 
+        cpmg_vals, cpmg_phases = None, 'y'
+        for line in lines:
+            try:
+                if line.startswith('CPMG:'):
+                    cpmg_vals = line.split(':  ', 1)[1].split(',  ')
+                elif line.startswith('CPMG phases:'):
+                    cpmg_phases = line.split(':', 1)[1].strip()
+            except IndexError:
+                pass
+        try:
+            if cpmg_vals is not None:
+                self.Cpmg_mode.setCurrentText(cpmg_vals[1].strip())
+                self.Cpmg_parent.setCurrentText('P' + str(int(cpmg_vals[2])))
+                self.Cpmg_n.setValue(int(cpmg_vals[3]))
+                self.Cpmg_tau.setValue(float(cpmg_vals[4]))
+                self.Cpmg_ec.setValue(float(cpmg_vals[5]) if len(cpmg_vals) > 5 else self.P1_st.value())
+                self.Cpmg_phase.setPlainText(cpmg_phases)
+            self.Cpmg_box.setChecked(cpmg_vals is not None and int(cpmg_vals[0]) == 1)
+        except (IndexError, ValueError):
+            self.Cpmg_box.setChecked(False)
+
         self.dig_stop()
 
         self.fft = 0
@@ -3267,6 +3514,10 @@ class MainWindow(QMainWindow):
             file.write( 'Auto window:  ' + str( self.Win_width.value() ) + '\n' )
             file.write( 'MW source:  ' + str( self.combo_synt ) + '\n' )
             file.write( 'SYNT2 pulses:  ' + ','.join( str(k) for k in self.synt2_rows ) + '\n' )
+            file.write( 'CPMG:  ' + ',  '.join( str(v) for v in ( self.cpmg_on, self.Cpmg_mode.currentText(),
+                        self.Cpmg_parent.currentText()[1:], self.Cpmg_n.value(), self.Cpmg_tau.value(),
+                        self.Cpmg_ec.value() ) ) + '\n' )
+            file.write( 'CPMG phases:  ' + ' '.join( self.Cpmg_phase.toPlainText().split() ) + '\n' )
 
     def remove_ns(self, string1):
         return string1.split(' ')[0]
@@ -3521,7 +3772,18 @@ class MainWindow(QMainWindow):
                 if self.exit_clicked == 1:
                     sys.exit()
 
+    def _worker_tail(self, script_test, cpmg):
+        """Trailing worker args: script_test when True, plus it and cpmg when CPMG is On, so a CPMG-Off call is unchanged."""
+        if cpmg is not None:
+            return (script_test, cpmg)
+        return (True,) if script_test else ()
+
     def dig_start_exp(self):
+        err = self._cpmg_error(self.cur_sweep)
+        if err is not None:
+            self.errors.appendPlainText(err)
+            return
+        self.cpmg_exp = self._cpmg_settings()
         worker = Worker()
         worker.awg_grid_cur = self.awg_grid()
         worker.synt2_rows = list(self.synt2_rows)
@@ -3596,7 +3858,7 @@ class MainWindow(QMainWindow):
                 self.laser_flag, self.combo_laser_num, self.laser_q_switch_delay, self.cur_phase,
                 self.iq_cor, self.cur_win_left, self.cur_win_right, self.zero_order,
                 self.cur_x0, self.cur_xdelta, self.first_order, self.second_order,
-                self.save2d, True ) )
+                self.save2d ) + self._worker_tail(True, self.cpmg_exp) )
         elif self.cur_sweep == 'Field':
             self.digitizer_process = Process( target = worker.exp_field, args = (
                 self.child_conn_dig,
@@ -3669,7 +3931,7 @@ class MainWindow(QMainWindow):
                 self.laser_flag, self.combo_laser_num, self.laser_q_switch_delay, self.cur_phase,
                 self.iq_cor, self.cur_win_left, self.cur_win_right, self.zero_order,
                 self.cur_x0, self.cur_xdelta, self.first_order, self.second_order,
-                self.save2d, self.eseem_inc2, self.cur_cycles, self.save_each_cycle, True ) )
+                self.save2d, self.eseem_inc2, self.cur_cycles, self.save_each_cycle ) + self._worker_tail(True, self.cpmg_exp) )
 
         self.button_start_exp.setStyleSheet(REFINED_STYLES['ACTIVE_BUTTON_STYLE'])
 
@@ -3692,6 +3954,11 @@ class MainWindow(QMainWindow):
         Create a Pipe for interaction with this thread
         self.param_i are used as parameters for script function
         """
+        err = self._cpmg_error()
+        if err is not None:
+            self.errors.appendPlainText(err)
+            return
+        self.cpmg_list = self._cpmg_settings()
         worker = Worker()
         worker.awg_grid_cur = self.awg_grid()
         worker.synt2_rows = list(self.synt2_rows)
@@ -3754,7 +4021,7 @@ class MainWindow(QMainWindow):
             self.combo_cor, self.combo_synt, 0, self.p8_list, self.p9_list, self.p8_awg_list,
             self.p9_awg_list,
             self.laser_flag, self.combo_laser_num, self.laser_q_switch_delay,
-            self.iq_cor, True ) )
+            self.iq_cor ) + self._worker_tail(True, self.cpmg_list) )
 
         self.button_update.setStyleSheet(REFINED_STYLES['ACTIVE_BUTTON_STYLE'])
                
@@ -3815,6 +4082,9 @@ class MainWindow(QMainWindow):
             self.Win_left.setValue(round(left_ns, 1))
             self.Win_right.setValue(round(right_ns, 1))
             self.errors.appendPlainText(f'Auto window: {left_ns:.1f} to {right_ns:.1f} ns, peak at {peak_ns:.1f} ns')
+        elif msg_type == 'EchoCenter':
+            self.Cpmg_ec.setValue(round(self.P1_st.value() + data, 1))
+            self.errors.appendPlainText(f'Auto echo center: {self.Cpmg_ec.value():.1f} ns')
         elif msg_type == 'AutoPhase':
             if self.Quad_cor.isChecked():
                 return
@@ -3974,7 +4244,7 @@ class MainWindow(QMainWindow):
             self.combo_cor, self.combo_synt, 0, self.p8_list, self.p9_list, self.p8_awg_list, 
             self.p9_awg_list, 
             self.laser_flag, self.combo_laser_num, self.laser_q_switch_delay,
-            self.iq_cor ) )
+            self.iq_cor ) + self._worker_tail(False, self.cpmg_list) )
 
         self.button_update.setStyleSheet(REFINED_STYLES['PRIMARY_BUTTON_STYLE'])
 
@@ -4010,7 +4280,7 @@ class MainWindow(QMainWindow):
                 self.laser_flag, self.combo_laser_num, self.laser_q_switch_delay, self.cur_phase,
                 self.iq_cor, self.cur_win_left, self.cur_win_right, self.zero_order,
                 self.cur_x0, self.cur_xdelta, self.first_order, self.second_order,
-                self.save2d ) )
+                self.save2d ) + self._worker_tail(False, self.cpmg_exp) )
         elif self.cur_sweep == 'Field':
             self.digitizer_process = Process( target = worker.exp_field, args = ( 
                 self.child_conn_dig, 
@@ -4083,7 +4353,7 @@ class MainWindow(QMainWindow):
                 self.laser_flag, self.combo_laser_num, self.laser_q_switch_delay, self.cur_phase,
                 self.iq_cor, self.cur_win_left, self.cur_win_right, self.zero_order,
                 self.cur_x0, self.cur_xdelta, self.first_order, self.second_order,
-                self.save2d, self.eseem_inc2, self.cur_cycles, self.save_each_cycle ) )
+                self.save2d, self.eseem_inc2, self.cur_cycles, self.save_each_cycle ) + self._worker_tail(False, self.cpmg_exp) )
 
         self.button_start_exp.setStyleSheet(REFINED_STYLES['PRIMARY_BUTTON_STYLE'])
 
@@ -4218,6 +4488,121 @@ class Worker():
                     raise ValueError(f'SYNT2 pulse P{k} is not an active AWG pulse')
         return [f'P{2*(k-2-laser_flag)+3}' for k in rows]
 
+    @staticmethod
+    def _echo_peak(trace, width, win_adc):
+        """Echo centre in points: smoothed-envelope maximum refined by the half-maximum centroid; None without signal."""
+        envelope = np.abs(trace[0] + 1j * trace[1])
+        if not (np.isfinite(envelope).all() and np.any(envelope > 0)):
+            return None
+        smooth = np.convolve(envelope, np.ones(width) / width, mode = 'same')
+        centre = int(np.argmax(smooth))
+        for _ in range(3):
+            lo = min(max(centre - width // 2, 0), win_adc - width)
+            part = envelope[lo:lo + width] - np.median(envelope)
+            part = np.clip(part - 0.5 * part.max(), 0, None)
+            if part.sum() > 0:
+                centre = int(round(lo + np.sum(np.arange(width) * part) / part.sum()))
+        return centre
+
+    def _cpmg_gate(self, cpmg, length):
+        """DETECTION length stretched over the CPMG echo train: L + 2*N*tau on the 3.2 ns tick."""
+        if cpmg is None:
+            return length
+        gate = self.round_to_closest(float(length.split(' ')[0]) + 2 * cpmg['n'] * cpmg['tau'], 3.2)
+        if gate > 12800:
+            raise ValueError(f"CPMG: the detection window of {gate} ns (length + 2·N·τ) exceeds "
+                             f"the 12800 ns maximum; reduce Number of Pulses or τ")
+        return f'{gate} ns'
+
+    def _cpmg_pulses(self, pb, cpmg, laser_flag, trigger_pulses, awg_params, n_wurst, b_sech, delta_start = None):
+        """
+        Define the CPMG refocusing pulses after the base pulses: pulse k (1..N) is centred at
+        Ec + (2k-1)*tau (the first start snapped up to the AWG grid, then spaced by 2*tau), with
+        the parent's AWG parameters and trigger length. Names continue the base P{2i+2}/P{2i+3}
+        scheme past the last GUI row, so they never collide. Returns the setup calls for the
+        live-edit replay.
+        """
+        if cpmg is None:
+            return []
+        i = cpmg['parent'] - 2 - laser_flag
+        if not ( 0 <= i < len(trigger_pulses) ) or float(trigger_pulses[i][1].split(' ')[0]) == 0 \
+                or awg_params[i][0] == 'BLANK':
+            raise ValueError(f"CPMG: parent pulse P{cpmg['parent']} is not an active AWG pulse")
+        if len(cpmg['phases']) != cpmg['n']:
+            raise ValueError('CPMG: the phase cycle does not match the number of pulses')
+        ap, tp = awg_params[i], trigger_pulses[i]
+        is_complex = ap[0] in ['WURST', 'SECH/TANH']
+        first = self.round_to_closest(cpmg['ec'] + cpmg['tau'] - float(ap[3].split(' ')[0]) / 2, self.awg_grid_cur)
+        calls = []
+        for k in range(1, cpmg['n'] + 1):
+            start = f"{round(first + 2 * (k - 1) * cpmg['tau'], 1)} ns"
+            idx = len(trigger_pulses) + k - 1
+            awg_kwargs = {
+                'name': f'P{2*idx + 2}',
+                'channel': 'CH0',
+                'func': ap[0],
+                'frequency': (ap[1], ap[2]) if is_complex else ap[1],
+                'length': ap[3],
+                'sigma': ap[4],
+                'start': start,
+                'amplitude': ap[6],
+                'phase_list': cpmg['phases'][k - 1]
+            }
+            if is_complex:
+                awg_kwargs.update({'n': n_wurst, 'b': b_sech})
+            trg_kwargs = {'name': f'P{2*idx + 3}', 'channel': 'TRIGGER_AWG', 'start': start, 'length': tp[1]}
+            if delta_start is not None:
+                trg_kwargs['delta_start'] = delta_start
+            pb.awg_pulse(**awg_kwargs)
+            pb.pulser_pulse(**trg_kwargs)
+            calls += [{'kind': 'awg', 'kwargs': dict(awg_kwargs)},
+                      {'kind': 'pulser', 'kwargs': dict(trg_kwargs)}]
+        return calls
+
+    @staticmethod
+    def _cpmg_header(cpmg, w):
+        """CPMG lines for the data file header; empty without CPMG."""
+        if cpmg is None:
+            return ''
+        return (f"{'CPMG Mode:':<{w}} {cpmg['mode']}\n"
+                f"{'CPMG Pulses:':<{w}} {cpmg['n']}\n"
+                f"{'CPMG τ:':<{w}} {cpmg['tau']} ns\n"
+                f"{'CPMG Echo Center:':<{w}} {cpmg['ec']} ns\n"
+                f"{'CPMG Parent:':<{w}} P{cpmg['parent']}\n")
+
+    def _cpmg_echo_times(self, cpmg, trigger_pulses, awg_params):
+        """Decay axis in ns: (Ec - c_exc) + 2k*tau, c_exc = centre of the earliest active AWG pulse."""
+        active = [(float(ap[5].split(' ')[0]), float(ap[3].split(' ')[0]))
+                  for tp, ap in zip(trigger_pulses, awg_params)
+                  if float(tp[1].split(' ')[0]) != 0 and ap[0] != 'BLANK']
+        start, length = min(active) if active else (0.0, 0.0)
+        return cpmg['ec'] - (start + length / 2) + 2 * cpmg['tau'] * np.arange(cpmg['n'] + 1)
+
+    def _integrals(self, pb, arr_i, arr_q, iq_freq, zp, cpmg, dec):
+        """Integrated I/Q per column (the echo sum with CPMG) plus the per-echo integrals (None without CPMG)."""
+        if cpmg is None:
+            dx, dy = pb.digitizer_demodulate(arr_i, arr_q, iq_freq, zp, 0, 0, integral = True)
+            return dx, dy, None, None
+        ex, ey = self._cpmg_echoes(pb, arr_i, arr_q, iq_freq, zp, cpmg, dec)
+        return ex.sum(axis = 0), ey.sum(axis = 0), ex, ey
+
+    def _cpmg_echoes(self, pb, arr_i, arr_q, iq_freq, zp, cpmg, dec):
+        """
+        Per-echo integrals, shape (N+1, columns): demodulate like digitizer_demodulate(integral=True),
+        then sum the Integration Left/Right window shifted by round(2k*tau / (0.4*dec)) samples.
+        """
+        di, dq = pb.digitizer_demodulate(arr_i, arr_q, iq_freq, zp, 0, 0)
+        scale = 0.4 * dec
+        rows = di.shape[0]
+        res_i = np.zeros((cpmg['n'] + 1,) + di.shape[1:])
+        res_q = np.zeros_like(res_i)
+        for k in range(cpmg['n'] + 1):
+            s = int(round(2 * k * cpmg['tau'] / scale))
+            left, right = min(pb.win_left + s, rows), min(pb.win_right + s, rows)
+            res_i[k] = np.sum(di[left:right], axis = 0) * scale
+            res_q[k] = np.sum(dq[left:right], axis = 0) * scale
+        return res_i, res_q
+
     def _apply_awg_correction(self, pb, mode):
         """Read correction.param and push resonator-correction settings to pb.
 
@@ -4247,7 +4632,7 @@ class Worker():
             phase_correction = self.phase_cor_cur,
             meas_freq = self.meas_freq_cur, meas_H = self.meas_H_cur )
 
-    def dig_on(self, conn, decimation, l_mode, n_averages, win_left, win_right, rect1, rect2, rect3, rect4, rect5, rect6, rect7, n_wurst, rep_rate, mag_field, fft_flag, cur_phase, ch0_ampl, ch1_ampl, trig_delay, awg2, awg3, awg4, awg5, awg6, awg7, quad, zero_order, first_order, second_order, p_to_drop, b_sech, combo_cor, combo_synt, _reserved, rect8, rect9, awg8, awg9, laser_flag, laser_num, laser_qsw_delay, iq_corr, script_test=False ):
+    def dig_on(self, conn, decimation, l_mode, n_averages, win_left, win_right, rect1, rect2, rect3, rect4, rect5, rect6, rect7, n_wurst, rep_rate, mag_field, fft_flag, cur_phase, ch0_ampl, ch1_ampl, trig_delay, awg2, awg3, awg4, awg5, awg6, awg7, quad, zero_order, first_order, second_order, p_to_drop, b_sech, combo_cor, combo_synt, _reserved, rect8, rect9, awg8, awg9, laser_flag, laser_num, laser_qsw_delay, iq_corr, script_test=False, cpmg=None ):
         """
         function that contains updating of the digitizer.
 
@@ -4320,6 +4705,7 @@ class Worker():
 
             # DETECTION pulse
             iq_freq = -int( rect1[4].split(" MHz")[0] )
+            rect1[2] = self._cpmg_gate(cpmg, rect1[2])
             if int(float(rect1[2].split(' ')[0])) != 0:
                 pb.pulser_pulse(name='P1', channel=rect1[0], start=rect1[1], length=rect1[2], phase_list=rect1[3])
                 pulser_setup_calls.append({'kind': 'pulser', 'kwargs': {
@@ -4387,6 +4773,8 @@ class Worker():
                             'name': f'P{2*i + 3}', 'channel': 'TRIGGER_AWG',
                             'start': tp[0], 'length': tp[1]}})
 
+            pulser_setup_calls += self._cpmg_pulses(pb, cpmg, laser_flag, trigger_pulses, awg_params, n_wurst, b_sech)
+
             if laser_flag >= 1 and laser_num == 1:
                 pb.pulser_repetition_rate( '9.9 Hz' )
             else:
@@ -4431,6 +4819,7 @@ class Worker():
 
             auto_phase_req = False
             auto_window_pts = 0
+            echo_center_pts = 0
             last_trace = None
             live_rate_index = 0
             if live_rates is not None:
@@ -4538,6 +4927,8 @@ class Worker():
                     auto_phase_req = True
                 elif self.command[0:2] == 'AW':
                     auto_window_pts = int( self.command[2:] )
+                elif self.command[0:2] == 'EC':
+                    echo_center_pts = int( self.command[2:] )
                 elif self.command[0:2] == 'FO':
                     first_order = float( self.command[2:] )
                 elif self.command[0:2] == 'SO':
@@ -4832,22 +5223,21 @@ class Worker():
                 if auto_window_pts > 0 and last_trace is not None:
                     width = min(auto_window_pts, WIN_ADC)
                     auto_window_pts = 0
-                    envelope = np.abs(last_trace[0] + 1j * last_trace[1])
-                    if np.isfinite(envelope).all() and np.any(envelope > 0):
-                        smooth = np.convolve(envelope, np.ones(width) / width, mode = 'same')
-                        centre = int(np.argmax(smooth))
-                        # centre on the half-maximum centroid of the echo inside the window
-                        for _ in range(3):
-                            lo = min(max(centre - width // 2, 0), WIN_ADC - width)
-                            part = envelope[lo:lo + width] - np.median(envelope)
-                            part = np.clip(part - 0.5 * part.max(), 0, None)
-                            if part.sum() > 0:
-                                centre = int(round(lo + np.sum(np.arange(width) * part) / part.sum()))
+                    centre = self._echo_peak(last_trace, width, WIN_ADC)
+                    if centre is not None:
                         left = min(max(centre - width // 2, 0), WIN_ADC - width)
                         right = left + width
                         conn.send(('AutoWindow', (left * t_res, right * t_res, centre * t_res)))
                     else:
                         conn.send(('Message', 'Auto window: no signal in the detection window.'))
+
+                if echo_center_pts > 0 and last_trace is not None:
+                    centre = self._echo_peak(last_trace, min(echo_center_pts, WIN_ADC), WIN_ADC)
+                    echo_center_pts = 0
+                    if centre is not None:
+                        conn.send(('EchoCenter', centre * t_res))
+                    else:
+                        conn.send(('Message', 'Auto echo center: no signal in the detection window.'))
 
                 if not script_test:
                     self.command = 'start'
@@ -5003,7 +5393,7 @@ class Worker():
             awg5, awg6, awg7, awg8, awg9,
             b_sech_cur, correction, synt, laser_flag, laser_num,
             q_switch_delay, iq_phase, iq_corr, win_left, win_right, zero_phase,
-            x0, xd, first_order, sec_order, save2d, script_test=False):
+            x0, xd, first_order, sec_order, save2d, script_test=False, cpmg=None):
 
         import traceback
 
@@ -5040,6 +5430,7 @@ class Worker():
 
             #rect1 DETECTION
             iq_freq = -int( rect1[6].split(" MHz")[0] )
+            decay_mode = cpmg is not None and cpmg['mode'] == 'Decay'
             
             if xd == 0.0:
 
@@ -5073,7 +5464,7 @@ class Worker():
                 step = round( xd, 1 )
                 f_delay =  self.round_to_closest( x0, 3.2 )
             
-            if step == 1 and not script_test:
+            if step == 1 and not script_test and not decay_mode:
                 conn.send( ('Message', 'No START or LENGTH increment; the time axis corresponds to the number of points in the experiment') )
                 general.plot_remove(exp_name)
 
@@ -5084,7 +5475,7 @@ class Worker():
             
             pb.awg_amplitude('CH0', str(ch0_ampl), 'CH1', str(ch1_ampl) )
             
-            POINTS = points
+            POINTS = 1 if decay_mode else points
             STEP = step
             FIELD = field
             AVERAGES = num_ave
@@ -5106,6 +5497,7 @@ class Worker():
             general.wait('2000 ms')
 
             # DETECTION pulse
+            rect1[2] = self._cpmg_gate(cpmg, rect1[2])
             if int(float(rect1[2].split(' ')[0])) != 0:
                 pb.pulser_pulse(name='P1', channel=rect1[0], start=rect1[1], length=rect1[2], phase_list=rect1[3], delta_start=rect1[4], length_increment=rect1[5])
 
@@ -5171,6 +5563,8 @@ class Worker():
                             length_increment=tp[3]
                         )
 
+            self._cpmg_pulses(pb, cpmg, laser_flag, trigger_pulses, awg_params, n_wurst, b_sech_cur, rect1[4])
+
             if laser_flag >= 1 and laser_num == 1:
                 pb.pulser_repetition_rate( '9.9 Hz' )
             else:
@@ -5198,6 +5592,11 @@ class Worker():
             rng = None
             data_x = np.zeros( POINTS )
             data_y = np.zeros( POINTS )
+            if cpmg is not None:
+                echoes = np.zeros( ( 2, cpmg['n'] + 1, POINTS ) )
+                echo_offsets = 2 * cpmg['tau'] * np.arange( cpmg['n'] + 1 ) / 1e9
+                echo_t = self._cpmg_echo_times(cpmg, trigger_pulses, awg_params) / 1e9
+                trace_t = np.arange( points_window ) * dec_calc
 
             # general.scans() yields only 1 when test_flag == 'test'; production
             # mode uses a closure-based generator so the 'SC' command can
@@ -5270,7 +5669,11 @@ class Worker():
                                     elif iq_cor == 1:
                                         # data_x / data_y are patched per touched column
                                         # at the readout below -- no full-array recompute
-                                        if step != 1:
+                                        if decay_mode:
+                                            tr_x, tr_y = pb.digitizer_demodulate(data[0], data[1], iq_freq, zp, 0, 0)
+                                            general.plot_1d(f'{exp_name} Trace', trace_t, ( tr_x.ravel(), tr_y.ravel() ), xname = 'Time', xscale = 's', yname = 'Intensity', yscale = 'mV', label = curve_name)
+                                            general.plot_1d(EXP_NAME, echo_t, ( echoes[0][:, 0], echoes[1][:, 0] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan: ' + str(k))
+                                        elif step != 1:
                                             general.plot_1d(EXP_NAME, x_axis_plot, ( data_x, data_y ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j*STEP, 1)))
                                         else:
                                             general.plot_1d(EXP_NAME, x_axis, ( data_x, data_y ), xname = 'Point', xscale = '', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j, 1)))
@@ -5297,7 +5700,13 @@ class Worker():
                                         # columns: the digitizer_demodulate phase correction
                                         # depends only on the time axis, so per-column
                                         # patching is exact.
-                                        dx, dy = pb.digitizer_demodulate(a, b, iq_freq, zp, 0, 0, integral = True)
+                                        if cpmg is None:
+                                            dx, dy = pb.digitizer_demodulate(a, b, iq_freq, zp, 0, 0, integral = True)
+                                        else:
+                                            ex, ey = self._cpmg_echoes(pb, a, b, iq_freq, zp, cpmg, DEC_COEF)
+                                            echoes[0][:, rng[0]:rng[1]] = ex
+                                            echoes[1][:, rng[0]:rng[1]] = ey
+                                            dx, dy = ex.sum(axis = 0), ey.sum(axis = 0)
                                         data_x[rng[0]:rng[1]] = dx
                                         data_y[rng[0]:rng[1]] = dy
 
@@ -5381,8 +5790,16 @@ class Worker():
                             text = f"Scan / Time: {k} / {j * STEP:.1f}"
                         )
                 elif iq_cor == 1:
-                    data_x, data_y = pb.digitizer_demodulate(data[0], data[1], iq_freq, zp, 0, 0, integral = True)
-                    if step != 1:
+                    if cpmg is None:
+                        data_x, data_y = pb.digitizer_demodulate(data[0], data[1], iq_freq, zp, 0, 0, integral = True)
+                    else:
+                        echoes[0], echoes[1] = self._cpmg_echoes(pb, data[0], data[1], iq_freq, zp, cpmg, DEC_COEF)
+                        data_x, data_y = echoes[0].sum(axis = 0), echoes[1].sum(axis = 0)
+                    if decay_mode:
+                        tr_x, tr_y = pb.digitizer_demodulate(data[0], data[1], iq_freq, zp, 0, 0)
+                        general.plot_1d(f'{exp_name} Trace', trace_t, ( tr_x.ravel(), tr_y.ravel() ), xname = 'Time', xscale = 's', yname = 'Intensity', yscale = 'mV', label = curve_name)
+                        general.plot_1d(EXP_NAME, echo_t, ( echoes[0][:, 0], echoes[1][:, 0] ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan: ' + str(k))
+                    elif step != 1:
                         general.plot_1d(EXP_NAME, x_axis_plot, ( data_x, data_y ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j*STEP, 1)))
                     else:
                         general.plot_1d(EXP_NAME, x_axis, ( data_x, data_y ), xname = 'Point', xscale = '', yname = 'Area', yscale = 'A.U.', label = curve_name, text = 'Scan / Time: ' + str(k) + ' / ' + str(round(j, 1)))
@@ -5390,6 +5807,7 @@ class Worker():
 
                 now = datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")
                 w = 30
+                cpmg_hdr = self._cpmg_header(cpmg, w)
 
                 # Data saving
                 header = (
@@ -5411,6 +5829,7 @@ class Worker():
                     f"{'Vertical Resolution:':<{w}} {STEP} ns\n"
                     f"{'Temperature:':<{w}} {ls335.tc_temperature('A')} K\n"
                     f"{'Temperature Cernox:':<{w}} {ls335.tc_temperature('B')} K\n"
+                    f"{cpmg_hdr}"
                     f"{'-'*50}\n"
                     f"Pulse List:\n{pb.pulser_pulse_list()}"
                     f"{'-'*50}\n"
@@ -5437,12 +5856,13 @@ class Worker():
                         f"{'Horizontal Resolution:':<{w}} {STEP} ns\n"
                         f"{'Temperature:':<{w}} {ls335.tc_temperature('A')} K\n"
                         f"{'Temperature Cernox:':<{w}} {ls335.tc_temperature('B')} K\n"
+                        f"{cpmg_hdr}"
                         f"{'-'*50}\n"
                         f"Pulse List:\n{pb.pulser_pulse_list()}"
                         f"{'-'*50}\n"
                         f"AWG Pulse List:\n{pb.awg_pulse_list()}"
                         f"{'-'*50}\n"
-                        f"Time (s), I (A.U.), Q (A.U.)"
+                        f"{'Echo Time' if decay_mode else 'Time'} (s), I (A.U.), Q (A.U.)"
                     )
 
                 if script_test:
@@ -5475,9 +5895,17 @@ class Worker():
 
                         file_handler.save_data(
                             file_data,
-                            np.c_[x_axis_plot, data_x, data_y],
+                            np.c_[echo_t, echoes[0][:, 0], echoes[1][:, 0]] if decay_mode else np.c_[x_axis_plot, data_x, data_y],
                             header = header2,
                             mode = 'w'
+                            )
+                        if cpmg is not None and not decay_mode:
+                            file_handler.save_data(
+                                f"{base_data}_echoes.h5" if self.save_hdf5 == 1 else f"{base_data}_echoes.csv",
+                                echoes,
+                                header = header,
+                                mode = 'w',
+                                axes = ( echo_offsets, x_axis_plot ), axes_units = ( 's', 's' )
                             )
                         if save2d == 1:
                             file_data2 = f"{base_data}_2d.h5" if self.save_hdf5 == 1 else f"{base_data}_2d.csv"
@@ -5513,7 +5941,7 @@ class Worker():
             b_sech_cur, correction, synt, laser_flag, laser_num,
             q_switch_delay, iq_phase, iq_corr, win_left, win_right, zero_phase,
             x0, xd, first_order, sec_order, save2d,
-            eseem_inc2, cycles, save_each, script_test=False):
+            eseem_inc2, cycles, save_each, script_test=False, cpmg=None):
         """
         ESEEM tau-averaging variant of exp().
 
@@ -5663,6 +6091,9 @@ class Worker():
                 eseem_all_inc2.append(eseem_inc2[gui_idx])
 
             # DETECTION pulse
+            if cpmg is not None and cpmg['mode'] == 'Decay':
+                raise ValueError('CPMG Decay requires the Linear Time sweep')
+            rect1[2] = self._cpmg_gate(cpmg, rect1[2])
             if int(float(rect1[2].split(' ')[0])) != 0:
                 pb.pulser_pulse(name='P1', channel=rect1[0], start=rect1[1], length=rect1[2], phase_list=rect1[3], delta_start=rect1[4], length_increment=rect1[5])
                 _eseem_add('P1', 0, rect1[4])
@@ -5731,6 +6162,10 @@ class Worker():
                         )
                         _eseem_add(f'P{2*i + 3}', i + 1 + laser_flag, tp[2])
 
+            for c in self._cpmg_pulses(pb, cpmg, laser_flag, trigger_pulses, awg_params, n_wurst, b_sech_cur, rect1[4]):
+                if c['kind'] == 'pulser':
+                    _eseem_add(c['kwargs']['name'], 0, rect1[4])
+
             if laser_flag >= 1 and laser_num == 1:
                 pb.pulser_repetition_rate( '9.9 Hz' )
             else:
@@ -5757,6 +6192,9 @@ class Worker():
             rng = None
             data_x = np.zeros( POINTS )
             data_y = np.zeros( POINTS )
+            if cpmg is not None:
+                echoes = np.zeros( ( 2, cpmg['n'] + 1, POINTS ) )
+                echo_offsets = 2 * cpmg['tau'] * np.arange( cpmg['n'] + 1 ) / 1e9
 
             # Whether any pulse actually carries a non-zero Start Increment 2.
             has_eseem = any( float( v.split(' ')[0] ) != 0 for v in eseem_all_inc2 )
@@ -5885,7 +6323,10 @@ class Worker():
                                         # columns: the digitizer_demodulate phase correction
                                         # depends only on the time axis, so per-column
                                         # patching is exact.
-                                        dx, dy = pb.digitizer_demodulate(a, b, iq_freq, zp, 0, 0, integral = True)
+                                        dx, dy, ex, ey = self._integrals(pb, a, b, iq_freq, zp, cpmg, DEC_COEF)
+                                        if ex is not None:
+                                            echoes[0][:, rng[0]:rng[1]] = ex
+                                            echoes[1][:, rng[0]:rng[1]] = ey
                                         data_x[rng[0]:rng[1]] = dx
                                         data_y[rng[0]:rng[1]] = dy
 
@@ -5950,7 +6391,7 @@ class Worker():
                         else:
                             general.plot_2d(EXP_NAME, data, start_step = ((0, dec_calc), (0, 1)), xname = 'Time', xscale = 's', yname = 'Point', yscale = '', zname = 'Intensity', zscale = 'mV', text = f"ESEEM average over {completed_cycles} cycle(s)")
                     elif iq_cor == 1:
-                        rdx, rdy = pb.digitizer_demodulate(data[0], data[1], iq_freq, zp, 0, 0, integral = True)
+                        rdx, rdy, _, _ = self._integrals(pb, data[0], data[1], iq_freq, zp, cpmg, DEC_COEF)
                         if step != 1:
                             general.plot_1d(EXP_NAME, x_axis_plot, ( rdx, rdy ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = f"ESEEM average over {completed_cycles} cycle(s)")
                         else:
@@ -6000,7 +6441,9 @@ class Worker():
                             text = f"ESEEM average over {completed_cycles} cycle(s)"
                         )
                 elif iq_cor == 1:
-                    data_x, data_y = pb.digitizer_demodulate(data[0], data[1], iq_freq, zp, 0, 0, integral = True)
+                    data_x, data_y, ex, ey = self._integrals(pb, data[0], data[1], iq_freq, zp, cpmg, DEC_COEF)
+                    if ex is not None:
+                        echoes[0], echoes[1] = ex, ey
                     if step != 1:
                         general.plot_1d(EXP_NAME, x_axis_plot, ( data_x, data_y ), xname = 'Time', xscale = 's', yname = 'Area', yscale = 'A.U.', label = curve_name, text = f"ESEEM average over {completed_cycles} cycle(s)")
                     else:
@@ -6015,6 +6458,7 @@ class Worker():
                     f"P{idx + 1}={val}" for idx, val in enumerate(eseem_inc2)
                     if float(val.split(' ')[0]) != 0
                 ) or 'none'
+                cpmg_hdr = self._cpmg_header(cpmg, w)
 
                 # Data saving
                 header = (
@@ -6038,6 +6482,7 @@ class Worker():
                     f"{'Vertical Resolution:':<{w}} {STEP} ns\n"
                     f"{'Temperature:':<{w}} {ls335.tc_temperature('A')} K\n"
                     f"{'Temperature Cernox:':<{w}} {ls335.tc_temperature('B')} K\n"
+                    f"{cpmg_hdr}"
                     f"{'-'*50}\n"
                     f"Pulse List:\n{pb.pulser_pulse_list()}"
                     f"{'-'*50}\n"
@@ -6066,6 +6511,7 @@ class Worker():
                         f"{'Horizontal Resolution:':<{w}} {STEP} ns\n"
                         f"{'Temperature:':<{w}} {ls335.tc_temperature('A')} K\n"
                         f"{'Temperature Cernox:':<{w}} {ls335.tc_temperature('B')} K\n"
+                        f"{cpmg_hdr}"
                         f"{'-'*50}\n"
                         f"Pulse List:\n{pb.pulser_pulse_list()}"
                         f"{'-'*50}\n"
@@ -6108,6 +6554,14 @@ class Worker():
                             header = header2,
                             mode = 'w'
                             )
+                        if cpmg is not None:
+                            file_handler.save_data(
+                                f"{base_data}_echoes.h5" if self.save_hdf5 == 1 else f"{base_data}_echoes.csv",
+                                echoes,
+                                header = header,
+                                mode = 'w',
+                                axes = ( echo_offsets, x_axis_plot ), axes_units = ( 's', 's' )
+                            )
                         if save2d == 1:
                             file_data2 = f"{base_data}_2d.h5" if self.save_hdf5 == 1 else f"{base_data}_2d.csv"
 
@@ -6139,7 +6593,7 @@ class Worker():
                                 file_handler.save_data(cpath, cdat, header = header, mode = 'w', axes = axes_2d, axes_units = axes_units_2d)
                             elif iq_cor == 1:
                                 cpath = f"{base_data}_cycle{idx}.csv"
-                                cdx, cdy = pb.digitizer_demodulate(cdat[0], cdat[1], iq_freq, zp, 0, 0, integral = True)
+                                cdx, cdy, _, _ = self._integrals(pb, cdat[0], cdat[1], iq_freq, zp, cpmg, DEC_COEF)
                                 file_handler.save_data(cpath, np.c_[x_axis_plot, cdx, cdy], header = header2, mode = 'w')
 
                     conn.send( ('', f'Experiment {EXP_NAME} finished') )

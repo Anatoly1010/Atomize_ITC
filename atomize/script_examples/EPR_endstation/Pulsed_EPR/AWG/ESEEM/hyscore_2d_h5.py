@@ -1,3 +1,4 @@
+# Raw HDF5 file is ~2 * N1 * N2 * points_window * 4 bytes (about 170 MB for 128 x 128 and a 512 ns window)
 import sys
 import time
 import signal
@@ -24,11 +25,17 @@ def full_map():
     hyscore[0] = mi.reshape( N2, N1 ).T
     hyscore[1] = mq.reshape( N2, N1 ).T
 
+def save_all():
+    file_handler.save_data(file_data, data, header = header, mode = 'w',
+                           axes = (time_axis, None), dtype = 'float32', axes_units = ('s', None))
+    if file_data not in ('None', '', None):
+        file_handler.save_data(file_data.rsplit('.', 1)[0] + '_map.h5', hyscore, header = header_map, mode = 'w')
+
 def cleanup(*args):
     data[0], data[1] = pb.digitizer_at_exit()
     pb.pulser_close()
     full_map()
-    file_handler.save_data(file_data, hyscore, header = header, mode = 'w')
+    save_all()
     sys.exit(0)
 
 signal.signal(signal.SIGTERM, cleanup)
@@ -157,12 +164,13 @@ second_order = pb.second_order if SECOND_ORDER is None else SECOND_ORDER
 # raw (ADC time x flattened delays) array and the integrated (t1 x t2) map
 data = np.zeros( ( 2, points_window, POINTS ) )
 hyscore = np.zeros( ( 2, N1, N2 ) )
+time_axis = np.arange( points_window ) * 0.4 * DEC_COEF / 1e9
 
 # Data saving
 now = datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")
 w = 30
 
-header = (
+header_head = (
     f"{'Date:':<{w}} {now}\n"
     f"{'Experiment:':<{w}} HYSCORE\n"
     f"{'Field:':<{w}} {FIELD} G\n"
@@ -181,19 +189,36 @@ header = (
     f"{'IQ Frequency:':<{w}} {IQ_FREQ} MHz\n"
     f"{'Phase (0 / 1 / 2):':<{w}} {zero_order:.4g} rad / {first_order:.4g} rad/s / {second_order:.4g} rad/s2\n"
     f"{'Tau:':<{w}} {TAU} ns\n"
-    f"X (t1/ns): start {T1_START} step {STEP}\n"
-    f"Y (t2/ns): start {T2_START} step {STEP}\n"
+)
+header_tail = (
     f"{'t1 / t2 Step:':<{w}} {STEP} ns\n"
+    f"{'N1:':<{w}} {N1}\n"
+    f"{'N2:':<{w}} {N2}\n"
+    f"{'t1 Start:':<{w}} {T1_START} ns\n"
+    f"{'t2 Start:':<{w}} {T2_START} ns\n"
+    f"{'Flat Index:':<{w}} idx = i2*N1 + i1, t1 fastest; raw I, Q stored as (N1*N2, window points)\n"
     f"{'Temperature:':<{w}} {ls335.tc_temperature('A')} K\n"
     f"{'-'*50}\n"
     f"Pulse List:\n{pb.pulser_pulse_list()}"
     f"{'-'*50}\n"
     f"AWG Pulse List:\n{pb.awg_pulse_list()}"
     f"{'-'*50}\n"
-    f"2D HYSCORE Data (t1 x t2)"
+    f"Raw I/Q (flat index x window) in this file; 2D HYSCORE map (t1 x t2) in *_map.h5"
+)
+header = (
+    f"{header_head}"
+    f"{'Horizontal Resolution:':<{w}} {0.4 * DEC_COEF:.1g} ns\n"
+    f"Y (Point/): start 0 step 1\n"
+    f"{header_tail}"
+)
+header_map = (
+    f"{header_head}"
+    f"X (t1/ns): start {T1_START} step {STEP}\n"
+    f"Y (t2/ns): start {T2_START} step {STEP}\n"
+    f"{header_tail}"
 )
 
-file_data = file_handler.create_file_dialog()
+file_data = file_handler.create_file_dialog(fmt = 'h5')
 
 # Data acquisition
 for k in general.scans(SCANS):
@@ -266,5 +291,5 @@ general.plot_2d(
     pr = 'None'
 )
 
-# Save the real 2D HYSCORE array (t1 x t2)
-file_handler.save_data(file_data, hyscore, header = header, mode = 'w')
+# Save the raw I/Q and the 2D HYSCORE map (t1 x t2)
+save_all()
