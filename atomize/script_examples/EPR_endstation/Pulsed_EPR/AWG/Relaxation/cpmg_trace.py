@@ -160,7 +160,7 @@ time_axis = ( np.arange( points_window ) * res ) / 1e9   # seconds
 now = datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S")
 w = 30
 
-header = (
+header_head = (
     f"{'Date:':<{w}} {now}\n"
     f"{'Experiment:':<{w}} CPMG (full trace)\n"
     f"{'Field:':<{w}} {FIELD} G\n"
@@ -180,7 +180,8 @@ header = (
     f"{'Detection Window:':<{w}} {PULSE_DETECTION_LENGTH}\n"
     f"{'Captured Window:':<{w}} {points_window * res:.1f} ns ({points_window} pts)\n"
     f"{'Window Start (rel. seq.):':<{w}} {DET_START} ns\n"
-    f"{'IQ Frequency:':<{w}} {IQ_FREQ} MHz\n"
+)
+header_tail = (
     f"{'Phase (0 / 1 / 2):':<{w}} {zero_order:.4g} rad / {first_order:.4g} rad/s / {second_order:.4g} rad/s2\n"
     f"{'Horizontal Resolution:':<{w}} {res:.1g} ns\n"
     f"{'Temperature:':<{w}} {ls335.tc_temperature('A')} K\n"
@@ -189,7 +190,19 @@ header = (
     f"{'-'*50}\n"
     f"AWG Pulse List:\n{pb.awg_pulse_list()}"
     f"{'-'*50}\n"
+)
+# the raw trace is still at the IF, so it carries the Frequency Shift the treatment tools read
+header = (
+    f"{header_head}"
+    f"{'Frequency Shift:':<{w}} {-IQ_FREQ} MHz\n"
+    f"{header_tail}"
     f"Raw CPMG echo-train transient (I, Q); no integration applied"
+)
+header_decay = (
+    f"{header_head}"
+    f"{'IQ Frequency:':<{w}} {IQ_FREQ} MHz\n"
+    f"{header_tail}"
+    f"CPMG decay: demodulated, integrated echoes (I, Q)"
 )
 
 file_data = file_handler.create_file_dialog()
@@ -271,4 +284,4 @@ general.plot_1d(
 # save the post-integrated decay next to the raw trace (…_decay.csv)
 if file_data not in ('None', '', None):
     decay_path = file_data.rsplit('.', 1)[0] + '_decay.csv'
-    file_handler.save_data(decay_path, decay, header = header, mode = 'w')
+    file_handler.save_data(decay_path, decay, header = header_decay, mode = 'w')

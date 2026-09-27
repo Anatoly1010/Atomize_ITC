@@ -232,7 +232,7 @@ _HELP_RESHAPE = (
     'Zero fill ×2, Magnitude on → Compute FFT.<br>'
     '4. Read the cross peaks with the cursor.<br><br>'
     'Raw file (hyscore_2d_h5.py): after step 1, Phase tab: Time-domain, '
-    'Frequency shift = −IQ Frequency of the header (+100 MHz for −100 MHz) → '
+    'Frequency shift (pre-filled from the header\'s Frequency Shift line) → '
     'Apply correction → Result → input; then this tab (window pre-filled from '
     'the header) → Integrate & reshape → Result → input; then steps 2–4.')
 

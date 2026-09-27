@@ -186,7 +186,6 @@ header_head = (
     f"{'Points t1 / t2:':<{w}} {N1} / {N2}\n"
     f"{'Window:':<{w}} {PULSE_DETECTION_LENGTH}\n"
     f"{'Integration Window:':<{w}} {pb.win_left * 0.4 * DEC_COEF:.1f} - {pb.win_right * 0.4 * DEC_COEF:.1f} ns\n"
-    f"{'IQ Frequency:':<{w}} {IQ_FREQ} MHz\n"
     f"{'Phase (0 / 1 / 2):':<{w}} {zero_order:.4g} rad / {first_order:.4g} rad/s / {second_order:.4g} rad/s2\n"
     f"{'Tau:':<{w}} {TAU} ns\n"
 )
@@ -205,14 +204,17 @@ header_tail = (
     f"{'-'*50}\n"
     f"Raw I/Q (flat index x window) in this file; 2D HYSCORE map (t1 x t2) in *_map.h5"
 )
+# the raw traces are still at the IF, so they carry the Frequency Shift the treatment tools read
 header = (
     f"{header_head}"
+    f"{'Frequency Shift:':<{w}} {-IQ_FREQ} MHz\n"
     f"{'Horizontal Resolution:':<{w}} {0.4 * DEC_COEF:.1g} ns\n"
     f"Y (Point/): start 0 step 1\n"
     f"{header_tail}"
 )
 header_map = (
     f"{header_head}"
+    f"{'IQ Frequency:':<{w}} {IQ_FREQ} MHz\n"
     f"X (t1/ns): start {T1_START} step {STEP}\n"
     f"Y (t2/ns): start {T2_START} step {STEP}\n"
     f"{header_tail}"
