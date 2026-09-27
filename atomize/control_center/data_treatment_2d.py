@@ -219,10 +219,10 @@ _HELP_SLICE = (
 
 _HELP_RESHAPE = (
     'Folds a flattened 2D delay grid into a map, e.g. raw HYSCORE with one echo '
-    'trace per (t1, t2) point and trace index i2·N1 + i1 (t1 fastest). Each '
+    'trace per (t1, t2) point and trace index i₂·N₁ + i₁ (t1 fastest). Each '
     'trace is integrated as I+iQ over the X window [from, to) — the sum times '
     'the X step, as in the acquisition; From = To takes the whole trace — and '
-    'the integrals become an N2 × N1 map with t1 along the new X and t2 along '
+    'the integrals become an N₂ × N₁ map with t1 along the new X and t2 along '
     'the new Y.<br><br>'
     'Raw traces sit at the IF: demodulate first (Phase tab, time domain, '
     'Frequency shift) and press "Result → input". After reshaping, "Result → '
@@ -919,7 +919,7 @@ class MainWindow(QMainWindow):
     def _build_reshape_tab(self):
         p = gf.FormPanel(field_width=gf.FIELD_W,
                          button_width=gf.BTN_W)
-        p.add_title('Integrate traces into a 2D delay map', help=_HELP_RESHAPE)
+        p.add_title('Integrate traces and reshape into a 2D map', help=_HELP_RESHAPE)
         self.reshape_from = self._dspin(-1e12, 1e12, 3, 0.0)
         self.reshape_to = self._dspin(-1e12, 1e12, 3, 0.0)
         p.add_row('X window from / to', self.reshape_from, self.reshape_to,
@@ -927,8 +927,8 @@ class MainWindow(QMainWindow):
         self.reshape_n1 = QSpinBox(); self.reshape_n1.setStyleSheet(SPIN_STYLE)
         self.reshape_n1.setRange(2, 1000000)
         self.reshape_n1.setValue(64)
-        p.add_row('Fast points N1', self.reshape_n1,
-                  tooltip='Traces per row of the map (the fast delay).')
+        p.add_row('Fast points N₁', self.reshape_n1,
+                  tooltip='Traces per row of the map (the fast delay); N₂ = traces / N₁.')
         for w in (self.reshape_from, self.reshape_to, self.reshape_n1):
             w.valueChanged.connect(self._live_update)
         self.reshape_axes = []
@@ -1769,7 +1769,7 @@ class MainWindow(QMainWindow):
             return False
         if ny % n1 or ny // n1 < 2:
             self.set_status(f'Reshape: {ny} traces do not split into at least two '
-                            f'rows of N1 = {n1}.')
+                            f'rows of N₁ = {n1}.')
             return False
         v = (self.src_i[:, win] + 1j*self.src_q[:, win]).sum(axis=1)*abs(dx)
         z = v.reshape(ny // n1, n1)
@@ -1778,10 +1778,10 @@ class MainWindow(QMainWindow):
         meta = ['Integrate along X and reshape the trace index',
                 f'X window {x[win][0]:g} – {x[win][-1]:g} ({int(win.sum())} pts), '
                 f'sum × step {abs(dx):g}',
-                f'map {ny // n1} × {n1} (N2 × N1), trace = i2*N1 + i1']
+                f'map {ny // n1} × {n1} (N₂ × N₁), trace = i₂·N₁ + i₁']
         self._set_result(z.real, z.imag, col, row, ('Re', 'Im'), meta)
         self.set_status(f'Integrated {int(win.sum())} X points; {ny} traces → '
-                        f'{ny // n1} × {n1} map.')
+                        f'{ny // n1} × {n1} map (N₂ × N₁).')
         return True
 
     def _freq_axis(self, n, step, scale):
