@@ -217,6 +217,17 @@ _HELP_SLICE = (
     'a sheared map over its echo window instead, use "Sum echo → 1D" on the '
     'Shear tab, which already knows t_ref and the window.')
 
+_HELP_RESHAPE = (
+    'Folds a flattened 2D delay grid into a map, e.g. raw HYSCORE with one echo '
+    'trace per (t1, t2) point and trace index i2·N1 + i1 (t1 fastest). Each '
+    'trace is integrated as I+iQ over the X window [from, to) — the sum times '
+    'the X step, as in the acquisition; From = To takes the whole trace — and '
+    'the integrals become an N2 × N1 map with t1 along the new X and t2 along '
+    'the new Y.<br><br>'
+    'Raw traces sit at the IF: demodulate first (Phase tab, time domain, '
+    'Frequency shift) and press "Result → input". After reshaping, "Result → '
+    'input" again and FFT along X, then Y.')
+
 # parametric windows: name -> (label, min, max, decimals, default, step)
 WINDOW_PARAM = {
     'Kaiser':   ('Kaiser β', 0.0, 100.0, 2, 8.6, 0.5),
@@ -410,6 +421,7 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self._build_shear_tab(), 'Shear')
         self.tabs.addTab(self._build_fit_tab(), 'Fit')
         self.tabs.addTab(self._build_slice_tab(), 'Slice')
+        self.tabs.addTab(self._build_reshape_tab(), 'Reshape')
         # Tab changes deliberately do NOT trigger _live_update: re-running the
         # new tab's op on switch is redundant and, after a "Result → input"
         # chain, would re-transform an already-transformed input (e.g. FFT of an
@@ -904,6 +916,56 @@ class MainWindow(QMainWindow):
         p.add_stretch()
         return p
 
+    def _build_reshape_tab(self):
+        p = gf.FormPanel(field_width=gf.FIELD_W,
+                         button_width=gf.BTN_W)
+        p.add_title('Integrate traces into a 2D delay map', help=_HELP_RESHAPE)
+        self.reshape_from = self._dspin(-1e12, 1e12, 3, 0.0)
+        self.reshape_to = self._dspin(-1e12, 1e12, 3, 0.0)
+        p.add_row('X window from / to', self.reshape_from, self.reshape_to,
+                  tooltip='In X-axis units; From = To integrates the whole trace.')
+        self.reshape_n1 = QSpinBox(); self.reshape_n1.setStyleSheet(SPIN_STYLE)
+        self.reshape_n1.setRange(2, 1000000)
+        self.reshape_n1.setValue(64)
+        p.add_row('Fast points N1', self.reshape_n1,
+                  tooltip='Traces per row of the map (the fast delay).')
+        for w in (self.reshape_from, self.reshape_to, self.reshape_n1):
+            w.valueChanged.connect(self._live_update)
+        self.reshape_axes = []
+        for tag, name in (('X', 't1'), ('Y', 't2')):
+            nedit = QLineEdit(name); nedit.setStyleSheet(LINEEDIT_STYLE)
+            uedit = QLineEdit('ns'); uedit.setStyleSheet(LINEEDIT_STYLE)
+            p.add_row(f'New {tag}', nedit, uedit, stretch=[2, 1])
+            start, step = self._dspin(-1e12, 1e12, 3, 0.0), self._dspin(-1e12, 1e12, 3, 1.0)
+            p.add_row(f'New {tag} start / step', start, step)
+            self.reshape_axes.append((nedit, uedit, start, step))
+        btn = QPushButton('Integrate && reshape')
+        btn.setStyleSheet(BUTTON_STYLE)
+        btn.clicked.connect(self.do_reshape)
+        p.add_button_row(btn, width=gf.ACTION_W)
+        p.add_stretch()
+        return p
+
+    def _prefill_reshape(self, lines):
+        """Fill the Reshape fields from a hyscore_2d_h5.py-style header; without
+        its N1 / t1 / t2 lines the fields keep their values."""
+        vals = {}
+        for ln in lines:
+            key, sep, val = str(ln).lstrip('# ').partition(':')
+            nums = re.findall(r'[-+]?\d+(?:\.\d*)?(?:[eE][-+]?\d+)?', val)
+            if sep and nums:
+                vals[key.strip().lower()] = [float(v) for v in nums]
+        if not all(k in vals for k in ('n1', 't1 start', 't2 start', 't1 / t2 step')):
+            return
+        self.reshape_n1.setValue(int(vals['n1'][0]))
+        for (nedit, uedit, start, step), name in zip(self.reshape_axes, ('t1', 't2')):
+            nedit.setText(name); uedit.setText('ns')
+            start.setValue(vals[f'{name} start'][0])
+            step.setValue(vals['t1 / t2 step'][0])
+        win = vals.get('integration window', [])
+        if len(win) == 2:
+            self.reshape_from.setValue(win[0]); self.reshape_to.setValue(win[1])
+
     def _update_fit_params(self, *args):
         """Repopulate the map-parameter combo from the current model, honouring
         the fix-offset checkbox (which drops the b/c baseline term)."""
@@ -1306,7 +1368,7 @@ class MainWindow(QMainWindow):
         # Fit (index 4) is excluded — per-trace fitting is too heavy to run on
         # every parameter tweak; it is explicit ("Run fit") only.
         op = {0: self.do_phase, 1: self.do_fft, 2: self.do_filter,
-              3: self.do_shear}.get(self.tabs.currentIndex())
+              3: self.do_shear, 6: self.do_reshape}.get(self.tabs.currentIndex())
         if op is not None:
             op()
 
@@ -1315,7 +1377,8 @@ class MainWindow(QMainWindow):
             self.set_status('Open an I/Q dataset first.')
             return
         op = {0: self.do_phase, 1: self.do_fft, 2: self.do_filter,
-              3: self.do_shear, 4: self.do_fit_2d}.get(self.tabs.currentIndex())
+              3: self.do_shear, 4: self.do_fit_2d,
+              6: self.do_reshape}.get(self.tabs.currentIndex())
         if op is not None:
             op()
         else:
@@ -1383,6 +1446,7 @@ class MainWindow(QMainWindow):
         self._suppress_live = True
         try:
             self.phase_first.setValue(0.0 if shift is None else shift)
+            self._prefill_reshape(self.header_lines)
         finally:
             self._suppress_live = prev
         if self.header_window is not None:
@@ -1686,6 +1750,38 @@ class MainWindow(QMainWindow):
             return False
         self._set_result(z.real, z.imag, col, self.src_row, ('Re', 'Im'), meta)
         self.set_status('Phase correction applied.')
+        return True
+
+    def do_reshape(self):
+        """Integrate every trace over the X window and fold the flat trace index
+        i2*N1 + i1 into an N2 x N1 map (i1 along the new X)."""
+        if self.src_i is None:
+            self.set_status('Open an I/Q dataset first.')
+            return False
+        ny, nx = self.src_i.shape
+        n1, dx = self.reshape_n1.value(), self.src_col['step']
+        lo, hi = sorted((self.reshape_from.value(), self.reshape_to.value()))
+        x = self.src_col['start'] + dx*np.arange(nx)
+        tol = 1e-6*abs(dx)
+        win = np.ones(nx, bool) if lo == hi else (x >= lo - tol) & (x < hi - tol)
+        if not win.any():
+            self.set_status(f'Reshape: no X points in the window {lo:g} – {hi:g}.')
+            return False
+        if ny % n1 or ny // n1 < 2:
+            self.set_status(f'Reshape: {ny} traces do not split into at least two '
+                            f'rows of N1 = {n1}.')
+            return False
+        v = (self.src_i[:, win] + 1j*self.src_q[:, win]).sum(axis=1)*abs(dx)
+        z = v.reshape(ny // n1, n1)
+        col, row = (self._axis(s.value(), d.value(), n.text(), u.text(), auto=True)
+                    for n, u, s, d in self.reshape_axes)
+        meta = ['Integrate along X and reshape the trace index',
+                f'X window {x[win][0]:g} – {x[win][-1]:g} ({int(win.sum())} pts), '
+                f'sum × step {abs(dx):g}',
+                f'map {ny // n1} × {n1} (N2 × N1), trace = i2*N1 + i1']
+        self._set_result(z.real, z.imag, col, row, ('Re', 'Im'), meta)
+        self.set_status(f'Integrated {int(win.sum())} X points; {ny} traces → '
+                        f'{ny // n1} × {n1} map.')
         return True
 
     def _freq_axis(self, n, step, scale):
