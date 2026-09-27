@@ -223,10 +223,25 @@ _HELP_RESHAPE = (
     'trace is integrated as I+iQ over the X window [from, to) — the sum times '
     'the X step, as in the acquisition; From = To takes the whole trace — and '
     'the integrals become an N₂ × N₁ map with t1 along the new X and t2 along '
-    'the new Y.<br><br>'
-    'Raw traces sit at the IF: demodulate first (Phase tab, time domain, '
-    'Frequency shift) and press "Result → input". After reshaping, "Result → '
-    'input" again and FFT along X, then Y.')
+    'the new Y. Raw traces sit at the IF, so demodulate them first.<br><br>'
+    '<b>HYSCORE</b>, map file (*_map.h5 or its CSV):<br>'
+    '1. Open I/Q (CSV / HDF5)….<br>'
+    '2. Background tab: Axis Both, Model Polynomial, Order 3 (or Exponential) → '
+    'Subtract background → Result → input.<br>'
+    '3. FFT tab: Transform axis Both (2D), Window Hann, Echo center 0 pts, '
+    'Zero fill ×2, Magnitude on → Compute FFT.<br>'
+    '4. Read the cross peaks with the cursor.<br><br>'
+    'Raw file (hyscore_2d_h5.py): after step 1, Phase tab: Time-domain, '
+    'Frequency shift = −IQ Frequency of the header (+100 MHz for −100 MHz) → '
+    'Apply correction → Result → input; then this tab (window pre-filled from '
+    'the header) → Integrate & reshape → Result → input; then steps 2–4.')
+
+_HELP_BACKGROUND = (
+    'Fits a smooth background to every trace and subtracts it, I and Q '
+    'separately; the axes are unchanged. It removes the unmodulated decay that '
+    'otherwise dominates the spectrum near 0 MHz. Exponential is a + b·exp(−t/T) '
+    'per trace, with T taken from a grid. Typical use: HYSCORE, Axis Both, '
+    'Polynomial 3 or Exponential, before the FFT.')
 
 # parametric windows: name -> (label, min, max, decimals, default, step)
 WINDOW_PARAM = {
@@ -422,6 +437,7 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self._build_fit_tab(), 'Fit')
         self.tabs.addTab(self._build_slice_tab(), 'Slice')
         self.tabs.addTab(self._build_reshape_tab(), 'Reshape')
+        self.tabs.addTab(self._build_background_tab(), 'Background')
         # Tab changes deliberately do NOT trigger _live_update: re-running the
         # new tab's op on switch is redundant and, after a "Result → input"
         # chain, would re-transform an already-transformed input (e.g. FFT of an
@@ -619,6 +635,9 @@ class MainWindow(QMainWindow):
         self.fft_zerofill.setCurrentText('×2')
         self.fft_zerofill.currentIndexChanged.connect(self._live_update)
         p.add_row('Zero fill', self.fft_zerofill)
+
+        self.fft_mag = p.add_check('Magnitude', tooltip='Show |S| instead of Re / Im.')
+        self.fft_mag.toggled.connect(self._live_update)
 
         adv = p.add_advanced()
         adv.field_width, adv.button_width = gf.FIELD_W, gf.BTN_W
@@ -945,6 +964,35 @@ class MainWindow(QMainWindow):
         p.add_button_row(btn, width=gf.ACTION_W)
         p.add_stretch()
         return p
+
+    def _build_background_tab(self):
+        p = gf.FormPanel(field_width=gf.FIELD_W,
+                         button_width=gf.BTN_W)
+        p.add_title('Subtract a fitted background from each trace', help=_HELP_BACKGROUND)
+        self.bg_axis = self._combo(['X (within trace)', 'Y (indirect)', 'Both (X then Y)'])
+        p.add_row('Axis', self.bg_axis)
+        self.bg_model = self._combo(['Polynomial', 'Exponential'])
+        p.add_row('Model', self.bg_model)
+        self.bg_order_label = self._label('Order')
+        self.bg_order = QSpinBox(); self.bg_order.setStyleSheet(SPIN_STYLE)
+        self.bg_order.setRange(0, 5)
+        self.bg_order.setValue(3)
+        p.add_row(self.bg_order_label, self.bg_order)
+        self.bg_model.currentIndexChanged.connect(self._update_bg_model)
+        for w in (self.bg_axis, self.bg_model):
+            w.currentIndexChanged.connect(self._live_update)
+        self.bg_order.valueChanged.connect(self._live_update)
+        btn = QPushButton('Subtract background')
+        btn.setStyleSheet(BUTTON_STYLE)
+        btn.clicked.connect(self.do_background)
+        p.add_button_row(btn, width=gf.ACTION_W)
+        p.add_stretch()
+        return p
+
+    def _update_bg_model(self, *args):
+        poly = self.bg_model.currentIndex() == 0
+        self.bg_order_label.setVisible(poly)
+        self.bg_order.setVisible(poly)
 
     def _prefill_reshape(self, lines):
         """Fill the Reshape fields from a hyscore_2d_h5.py-style header; without
@@ -1368,7 +1416,8 @@ class MainWindow(QMainWindow):
         # Fit (index 4) is excluded — per-trace fitting is too heavy to run on
         # every parameter tweak; it is explicit ("Run fit") only.
         op = {0: self.do_phase, 1: self.do_fft, 2: self.do_filter,
-              3: self.do_shear, 6: self.do_reshape}.get(self.tabs.currentIndex())
+              3: self.do_shear, 6: self.do_reshape,
+              7: self.do_background}.get(self.tabs.currentIndex())
         if op is not None:
             op()
 
@@ -1378,7 +1427,7 @@ class MainWindow(QMainWindow):
             return
         op = {0: self.do_phase, 1: self.do_fft, 2: self.do_filter,
               3: self.do_shear, 4: self.do_fit_2d,
-              6: self.do_reshape}.get(self.tabs.currentIndex())
+              6: self.do_reshape, 7: self.do_background}.get(self.tabs.currentIndex())
         if op is not None:
             op()
         else:
@@ -1784,6 +1833,49 @@ class MainWindow(QMainWindow):
                         f'{ny // n1} × {n1} map (N₂ × N₁).')
         return True
 
+    def _bg_fit(self, M, x):
+        """Least-squares background of every column of the real matrix M, whose
+        rows are the samples at x; numpy only."""
+        u = np.abs(x - x[0])
+        u = u/(u.max() or 1.0)
+        if self.bg_model.currentIndex() == 0:
+            A = np.polynomial.polynomial.polyvander(2*u - 1, self.bg_order.value())
+            return A @ np.linalg.lstsq(A, M, rcond=None)[0]
+        mm, err = (M**2).sum(axis=0), np.full(M.shape[1], np.inf)
+        tb, cb = np.ones(M.shape[1]), np.zeros((2, M.shape[1]))
+        for T in np.geomspace(0.01, 100.0, 121):
+            A = np.column_stack((np.ones_like(u), np.exp(-u/T)))
+            B = A.T @ M
+            c = np.linalg.lstsq(A.T @ A, B, rcond=None)[0]
+            e = mm - (c*B).sum(axis=0)
+            better = e < err
+            err[better], tb[better], cb[:, better] = e[better], T, c[:, better]
+        return cb[0] + cb[1]*np.exp(-u[:, None]/tb[None, :])
+
+    def do_background(self):
+        if self.src_i is None:
+            self.set_status('Open an I/Q dataset first.')
+            return False
+        i, q = self.src_i, self.src_q
+        mode = self.bg_axis.currentIndex()
+        for axis in ((1,), (0,), (1, 0))[mode]:
+            ax = self.src_col if axis == 1 else self.src_row
+            if axis == 1:
+                i, q = i.T, q.T
+            k = i.shape[1]
+            fit = self._bg_fit(np.hstack((i, q)), ax['start'] + ax['step']*np.arange(i.shape[0]))
+            i, q = i - fit[:, :k], q - fit[:, k:]
+            if axis == 1:
+                i, q = i.T, q.T
+        where = ('X', 'Y', 'X then Y')[mode]
+        model = (f'polynomial order {self.bg_order.value()}'
+                 if self.bg_model.currentIndex() == 0 else 'exponential a + b·exp(−t/T)')
+        meta = [f'Background subtraction along {where}',
+                f'model: {model}, I and Q fitted separately per trace']
+        self._set_result(i, q, self.src_col, self.src_row, ('Re', 'Im'), meta)
+        self.set_status(f'Background subtracted ({model}, along {where}).')
+        return True
+
     def _freq_axis(self, n, step, scale):
         """Frequency axis + unit for an FFT of `n` points with the given sample
         step/unit. ps/ns/us/ms → MHz; s → Hz; else 1/unit."""
@@ -1860,7 +1952,7 @@ class MainWindow(QMainWindow):
                     f'frequency in {funx} (X), {funy} (Y)']
             meta += [f'passband {n}: {t}' for n, t in (('X', tx), ('Y', ty)) if t]
             bands = '; '.join(f'{n} {t}' for n, t in (('X', tx), ('Y', ty)) if t)
-            self._set_result(sp.real, sp.imag, res_col, res_row, ('Re', 'Im'), meta)
+            self._set_result(*self._fft_out(sp, res_col, res_row), meta)
             self.set_status(f'2D FFT; skip {skip}; X {ncols}→{nx}, Y {nrows}→{ny}'
                             + (f'; passband {bands}.' if bands else '.'))
             return
@@ -1898,9 +1990,14 @@ class MainWindow(QMainWindow):
                 f'frequency in {funit}']
         if tag:
             meta.append(f'passband: {tag}')
-        self._set_result(sp.real, sp.imag, res_col, res_row, ('Re', 'Im'), meta)
+        self._set_result(*self._fft_out(sp, res_col, res_row), meta)
         self.set_status(f'FFT along {"X" if along_x else "Y"}; skip {skip}; '
                         f'{n0}→{n} pts' + (f'; passband {tag}.' if tag else '.'))
+
+    def _fft_out(self, sp, col, row):
+        if self.fft_mag.isChecked():
+            return np.abs(sp), np.zeros(sp.shape), col, row, ('|S|', '—')
+        return sp.real, sp.imag, col, row, ('Re', 'Im')
 
     @staticmethod
     def _passband_mask(freq, ftype, lo, hi):
