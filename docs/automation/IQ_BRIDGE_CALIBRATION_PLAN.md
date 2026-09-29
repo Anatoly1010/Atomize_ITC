@@ -1,9 +1,14 @@
 # I/Q calibration of the whole bridge (transmit and receive paths): plan
 
-Status: plan only (2026-09-29), not started. The module mechanism (CH1 gain and phase table, receive
-matrix) is described in `IQ_BALANCE_CORRECTION_PLAN.md`, step 1. This file covers how to measure
-the calibration on the complete spectrometer: card, bridge up-converter, MW path, bridge receiver
-and card ADC.
+Status: plan only (2026-09-29), not started. It covers the correction mechanism in the module and
+how to measure the calibration on the complete spectrometer: card, bridge up-converter, MW path,
+bridge receiver and card ADC.
+
+What exists today:
+- **CH1 phase:** `phase_shift_ch1_seq_mode_awg`, set from the GUI "Phase" box.
+- **Channel amplitudes:** `awg_amplitude`, integer mV only.
+- **"IQ Correction" in the GUI** is only digital demodulation plus phase orders. It does not correct
+  the I/Q imbalance.
 
 ## Model
 
@@ -39,8 +44,20 @@ Useful facts from the 2026-09-29 tests:
 
 ## Steps
 
-### 0. Preparation
-- Implement the module mechanism (`IQ_BALANCE_CORRECTION_PLAN.md`, step 1), default off.
+### 0. Module mechanism and preparation
+- **Transmit correction in `Insys_FPGA`:** a CH1 gain factor and a CH1 phase offset as functions of
+  the carrier frequency.
+  - The table lives in `PB_Insys_DAC_config.ini`, for example `iq_cal_freq_MHz`,
+    `iq_cal_gain_ch1`, `iq_cal_phase_ch1_deg`, with linear interpolation.
+  - It is applied per pulse at the pulse frequency (centre frequency for WURST and SECH/TANH):
+    it multiplies the CH1 samples and adds to `phase_shift_ch1_seq_mode_awg`.
+  - Runtime API: `awg_iq_correction(on/off | table)`. Default off, so the current behaviour is
+    unchanged.
+  - Allow fractional mV in `awg_amplitude`.
+- **Receive correction:** a 2 × 2 matrix on (I, Q) as a function of f, applied before
+  `digitizer_demodulate`. It is stored in `digitizer_insys.param`, default off.
+- **Tests:** test mode, plus the DAC → ADC loopback (`SI_loopback.py spectrum`), where the image
+  must drop.
 - Test script with the same single-sequence-per-point and warm-up procedure as
   `insys_paper/submission_ieee_tim/supplementary/SI_loopback.py`.
 - Record: bridge settings (attenuators, phase shifters, LO), IF list, date.
