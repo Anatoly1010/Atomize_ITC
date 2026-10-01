@@ -38,7 +38,7 @@ from PyQt6.QtCore import Qt, QProcess, QUrl, QFileSystemWatcher, QTimer
 from PyQt6.QtGui import QIcon, QDesktopServices
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QLabel, QPushButton,
     QComboBox, QVBoxLayout, QHBoxLayout, QTabWidget, QDoubleSpinBox,
-    QSpinBox, QLineEdit, QFrame, QSizePolicy, QScrollArea)
+    QSpinBox, QLineEdit, QFrame, QSizePolicy, QScrollArea, QCheckBox)
 
 import atomize.general_modules.general_functions as general
 import atomize.general_modules.csv_opener_saver as openfile
@@ -58,7 +58,7 @@ from atomize.main.widgets import CrosshairPlotWidget, CloseableDock, CrosshairDo
 # so QComboBox / QSpinBox / QLineEdit render identically on Linux and Windows.
 from atomize.general_modules.gui_style import (apply_app_style,
     BG, FG, ACCENT, BUTTON_STYLE, LABEL_STYLE, DSPIN_STYLE, SPIN_STYLE,
-    COMBO_STYLE, LINEEDIT_STYLE, SCROLL_STYLE, ANALYSIS_TAB_STYLE)
+    CHECKBOX_STYLE, COMBO_STYLE, LINEEDIT_STYLE, SCROLL_STYLE, ANALYSIS_TAB_STYLE)
 
 # Shared form primitives: one label column per panel, long explanations behind
 # '?' chips, collapsible blocks for the secondary knobs.
@@ -512,9 +512,21 @@ class MainWindow(QMainWindow):
         self.fit_formula.setTextFormat(Qt.TextFormat.RichText)
         self.model_combo.currentTextChanged.connect(self._update_fit_formula)
         p.add_widget(self.fit_formula)
-        self._update_fit_formula(self.model_combo.currentText())
         self.fit_no_offset = p.add_check(
             'Fix offset = 0', tooltip='Drop the b / c baseline term of the model.')
+        self.fit_fix_beta = QCheckBox('Fix β =')
+        self.fit_fix_beta.setStyleSheet(CHECKBOX_STYLE)
+        self.fit_fix_beta.setToolTip('Hold the stretch exponent β at this value '
+                                     '(models with β only).')
+        self.fit_fix_beta.setFixedWidth(gui_forms.LABEL_COL_W - 6 + 8)
+        self.fit_beta = QDoubleSpinBox()
+        self.fit_beta.setStyleSheet(DSPIN_STYLE)
+        self.fit_beta.setRange(0.05, 5.0)
+        self.fit_beta.setDecimals(3)
+        self.fit_beta.setSingleStep(0.05)
+        self.fit_beta.setValue(1.0)
+        p.add_row(self.fit_fix_beta, self.fit_beta)
+        self._update_fit_formula(self.model_combo.currentText())
         adv = p.add_advanced()
         adv.field_width, adv.button_width = gui_forms.FIELD_W, gui_forms.BTN_W
         self.fit_drop_start = QSpinBox()
@@ -1657,6 +1669,16 @@ class MainWindow(QMainWindow):
         self.fit_formula.setText(
             f'<span style="color: rgb(160, 160, 190);">{formula}</span>'
             if formula else '')
+        has_beta = 'beta' in self.fitter.param_names(model)
+        self.fit_fix_beta.setEnabled(has_beta)
+        self.fit_beta.setEnabled(has_beta)
+
+    def _fit_fixed(self, model):
+        """{'beta': value} when Fix β is on and the model has β, else None."""
+        if (self.fit_fix_beta.isChecked()
+                and 'beta' in self.fitter.param_names(model)):
+            return {'beta': self.fit_beta.value()}
+        return None
 
     def _fit_xy(self, x, y, drop_start, drop_end):
         """Select the retained samples without shifting X or changing the source."""
@@ -1673,16 +1695,18 @@ class MainWindow(QMainWindow):
             return
         model = self.model_combo.currentText()
         no_offset = self.fit_no_offset.isChecked()
+        fixed = self._fit_fixed(model)
         drop_start = self.fit_drop_start.value()
         drop_end = self.fit_drop_end.value()
         try:
             x, y = self._fit_xy(x, y, drop_start, drop_end)
-            res = self.fitter.fit(model, x, y, no_offset=no_offset)
+            res = self.fitter.fit(model, x, y, no_offset=no_offset, fixed=fixed)
         except Exception as e:
             self.set_status(f'Fit failed: {e}')
             return
         st = res.get('stats', {})
-        meta = ['Fit model: ' + model + (' (offset fixed = 0)' if no_offset else '')]
+        meta = ['Fit model: ' + model + (' (offset fixed = 0)' if no_offset else '')
+                + (f' (beta fixed = {fixed["beta"]:g})' if fixed else '')]
         meta.append(f'Dropped points: start={drop_start}, end={drop_end}')
         meta += [f'{n} = {v:.6g} +/- {e:.3g}'
                  for n, v, e in zip(res['param_names'], res['popt'], res['perr'])]
@@ -1695,7 +1719,8 @@ class MainWindow(QMainWindow):
         trows = [(f'<b>{n}</b>', f'{v:.5g}', f'{e:.3g}')
                  for n, v, e in zip(res['param_names'], res['popt'], res['perr'])]
         table = _html_table(['param', 'value', '± err'], trows)
-        off = ' (offset = 0)' if no_offset else ''
+        off = (' (offset = 0)' if no_offset else '') + (
+            f' (β = {fixed["beta"]:g})' if fixed else '')
         formula = self.fitter.model_formula(model)
         formula_row = (f'<span style="color: rgb(160, 160, 190);">{formula}</span><br>'
                        if formula else '')
@@ -1780,6 +1805,7 @@ class MainWindow(QMainWindow):
             return
         model = self.model_combo.currentText()
         no_offset = self.fit_no_offset.isChecked()
+        fixed = self._fit_fixed(model)
         drop_start = self.fit_drop_start.value()
         drop_end = self.fit_drop_end.value()
         names = [self.trace_combo.itemText(i) for i in range(n)]
@@ -1795,7 +1821,8 @@ class MainWindow(QMainWindow):
                     continue
                 try:
                     fit_x, fit_y = self._fit_xy(x, y, drop_start, drop_end)
-                    res = self.fitter.fit(model, fit_x, fit_y, no_offset=no_offset)
+                    res = self.fitter.fit(model, fit_x, fit_y, no_offset=no_offset,
+                                          fixed=fixed)
                 except Exception as e:
                     failed.append(f'{name} ({e})')
                     continue
@@ -1859,7 +1886,8 @@ class MainWindow(QMainWindow):
                 'model shape. Lower AICc ⇒ better model (compare across fits); '
                 '</span>')
         self.fit_result.setText('<div style="line-height: 150%;">'
-                                f'<b style="color: rgb(211, 194, 78);">{model}</b> — '
+                                f'<b style="color: rgb(211, 194, 78);">{model}</b>'
+                                + (f' (β = {fixed["beta"]:g})' if fixed else '') + ' — '
                                 f'{len(rows)} trace(s)<br>{formula_row}{table}'
                                 f'<br>{note}</div>')
         self.fit_save_table_btn.setEnabled(True)

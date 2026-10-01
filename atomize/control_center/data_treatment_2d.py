@@ -865,6 +865,15 @@ class MainWindow(QMainWindow):
             tooltip='Drop the b baseline term from the model.')
         self.fit_no_offset.stateChanged.connect(self._update_fit_params)
 
+        self.fit_fix_beta = QCheckBox('Fix β =')
+        self.fit_fix_beta.setStyleSheet(CHECKBOX_STYLE)
+        self.fit_fix_beta.setToolTip('Hold the stretch exponent β at this value '
+                                     '(Stretched exponential only).')
+        self.fit_fix_beta.setFixedWidth(gf.LABEL_COL_W - 6 + 8)
+        self.fit_fix_beta.stateChanged.connect(self._update_fit_params)
+        self.fit_beta = self._dspin(0.05, 5.0, 3, 1.0, step=0.05)
+        p.add_row(self.fit_fix_beta, self.fit_beta)
+
         self.fit_param = self._combo([])
         p.add_row('Map parameter', self.fit_param)
 
@@ -1014,6 +1023,13 @@ class MainWindow(QMainWindow):
         if len(win) == 2:
             self.reshape_from.setValue(win[0]); self.reshape_to.setValue(win[1])
 
+    def _fit_fixed(self, model):
+        """{'beta': value} when Fix β is on and the model has β, else None."""
+        if (self.fit_fix_beta.isChecked()
+                and 'beta' in self.fitter.param_names(model)):
+            return {'beta': self.fit_beta.value()}
+        return None
+
     def _update_fit_params(self, *args):
         """Repopulate the map-parameter combo from the current model, honouring
         the fix-offset checkbox (which drops the b/c baseline term)."""
@@ -1023,8 +1039,13 @@ class MainWindow(QMainWindow):
             f'<span style="color: rgb(160, 160, 190);">{formula}</span>'
             if formula else '')
         names = list(self.fitter.param_names(model))
+        has_beta = 'beta' in names
+        self.fit_fix_beta.setEnabled(has_beta)
+        self.fit_beta.setEnabled(has_beta)
         if self.fit_no_offset.isChecked():
             names = [n for n in names if n not in ('b', 'c')]
+        if self._fit_fixed(model):
+            names.remove('beta')
         cur = self.fit_param.currentText()
         self.fit_param.blockSignals(True)
         self.fit_param.clear(); self.fit_param.addItems(names)
@@ -2430,6 +2451,7 @@ class MainWindow(QMainWindow):
         model = self.fit_model.currentText()
         pname = self.fit_param.currentText()
         no_offset = self.fit_no_offset.isChecked()
+        fixed = self._fit_fixed(model)
         minr2 = float(self.fit_minr2.value())
         traces, xaxis, other, other_ax, decay_ax = self._fit_geometry()
         n = traces.shape[0]
@@ -2455,7 +2477,8 @@ class MainWindow(QMainWindow):
             for k in range(n):
                 y = np.asarray(traces[k], float)
                 try:
-                    res = self.fitter.fit(model, xaxis, y, no_offset=no_offset)
+                    res = self.fitter.fit(model, xaxis, y, no_offset=no_offset,
+                                          fixed=fixed)
                     names = list(res['param_names'])
                     if pname in names:
                         params[k] = res['popt'][names.index(pname)]
@@ -2483,7 +2506,8 @@ class MainWindow(QMainWindow):
         ngood = int(valid.sum())
         self.fit_map = {'x': other, 'param': params, 'r2': r2, 'pname': pname,
                         'model': model, 'channel': self.fit_channel.currentText(),
-                        'no_offset': no_offset, 'other_name': other_ax['name'],
+                        'no_offset': no_offset, 'fixed': fixed,
+                        'other_name': other_ax['name'],
                         'other_scale': other_ax['scale'], 'decay_scale': decay_ax['scale']}
         tag = ' (cancelled)' if cancelled else ''
         if ngood == 0:
@@ -2520,7 +2544,8 @@ class MainWindow(QMainWindow):
         table = _html_table(['', 'min', 'median', 'max'], rows)
         self.fit_info.setText(
             f'<div style="line-height: 150%;"><b style="color: rgb(211, 194, 78);">'
-            f'{model}</b>{tag} · {self.fit_channel.currentText()} · '
+            f'{model}</b>' + (f' (β = {fixed["beta"]:g})' if fixed else '')
+            + f'{tag} · {self.fit_channel.currentText()} · '
             f'{ngood} valid of {scope}'
             + (f', {fails} failed' if fails else '')
             + f'<br>{table}</div>')
@@ -2701,7 +2726,8 @@ class MainWindow(QMainWindow):
         punit = self._param_unit(m['pname'], m['decay_scale'])
         header = '\n'.join([
             '2D per-trace fit map',
-            f'model = {m["model"]}, channel = {m["channel"]}, fix_offset = {m["no_offset"]}',
+            f'model = {m["model"]}, channel = {m["channel"]}, fix_offset = {m["no_offset"]}'
+            + (f', fix_beta = {m["fixed"]["beta"]:g}' if m['fixed'] else ''),
             f'columns: {m["other_name"]} ({m["other_scale"]}), '
             f'{m["pname"]} ({punit}), R^2'])
         self.opener.save_data(file_path, arr, header=header, mode='w')
