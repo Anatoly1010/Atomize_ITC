@@ -627,14 +627,14 @@ class Worker():
 
         self.command = 'start'
                    
-    def scope_defaults(self, a2012):
+    def scope_defaults(self, a2012, h_offset = '90 ns'):
         """
         Apply the scope settings used for resonator tuning (recorded from the
         DSO-X 2012A on 2026-09-18), so a scope left in another experiment's
         state does not change the diode scan.
         """
         a2012.oscilloscope_timebase('200 ns')
-        a2012.oscilloscope_horizontal_offset('160 ns')
+        a2012.oscilloscope_horizontal_offset(h_offset)
         for ch, sens, offset in (('CH1', '50 mV', '50 mV'), ('CH2', '1000 mV', '0 mV')):
             a2012.oscilloscope_coupling(ch, 'DC')
             a2012.oscilloscope_impedance(ch, '1 M')
@@ -1086,7 +1086,7 @@ class Worker():
                 general.wait('200 ms')
 
             a2012.oscilloscope_acquisition_type('Average')
-            self.scope_defaults(a2012)
+            self.scope_defaults(a2012, '160 ns')
             a2012.oscilloscope_number_of_averages(AVERAGES)
             a2012.oscilloscope_run_stop()
 
