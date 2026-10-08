@@ -2515,7 +2515,9 @@ class Insys_FPGA:
             # worker's teardown can release the card.
             try:
                 _per_point_s = max(1e-3, self.gimSum_brd * self._rep_time_ns() / 1e9)
-                _stall_timeout_s = max(60.0, 10.0 * _per_point_s)
+                # the drain waits for the last stream buffer to fill; allow 2x the estimated fill time
+                _fill_s = self.number_adc_window_in_buffer() * _per_point_s
+                _stall_timeout_s = max(60.0, 10.0 * _per_point_s, 2.0 * _fill_s + 10.0)
             except Exception:
                 _stall_timeout_s = 60.0
             _last_progress_t = time.monotonic()

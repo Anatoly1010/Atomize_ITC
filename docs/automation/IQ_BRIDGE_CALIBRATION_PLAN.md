@@ -75,7 +75,13 @@ and card ADC.
     longer than about 1–1.5 s:
     - 1 kHz × 2000 shots and 10 kHz × 16000 shots stalled;
     - 5 kHz × 4000 and 10 kHz × 4000 ran fine;
-    - the cause is under investigation.
+    - **Cause:** the card hands data over only in whole stream buffers (1 MB here; 81 packs at a
+      640 ns window, 163 at 320 ns). The last call of a run waits for the final, partly filled
+      buffer, so with long packs (shots × rep time) that wait exceeded the fixed 60 s watchdog.
+    - **Fixed:** the watchdog now allows max(60 s, 10 × pack time, 2 × buffer fill time + 10 s).
+    - **Bench check:** a 10 kHz × 8000-shot, 640 ns run that used to stall completed, with a
+      ~62 s final wait, as estimated ((81 − 2) × 0.8 s).
+    - **Still open:** sizing the buffer to the pack time, which would shorten that wait.
   - **Open:** b may depend on the video attenuation (VA1/VA2); spot-check at another VA setting.
   - At 1 kHz a long run stopped with a digitizer timeout; 5 kHz was fine.
 - **Spin checks (coal, RV 0 dB, `iq_spin_check.py`):**
