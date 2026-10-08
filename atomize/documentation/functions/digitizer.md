@@ -594,13 +594,16 @@ digitizer_iq_correction()         # -> str; 'On' or 'Off'
 digitizer_iq_correction('On')     # enable receive I/Q correction
 ```
 
-This function (Insys FM214x3GDA) enables, disables or queries the receive I/Q correction. The recorded signal is modelled as `z = s + b*conj(s)`, where `b` is the per-IF mirror coefficient of the receiver read from the `[SPECIFIC]` section of `PB_Insys_DAC_config.ini` (keys `rx_cal_enable`, `rx_cal_freq_MHz`, `rx_cal_b_re`, `rx_cal_b_im`; the table is keyed by the AWG IF, i.e. minus the demodulation frequency) and linearly interpolated, with the edge values used outside the table. The correction `z_c = (z - b*conj(z)) / (1 - |b|**2)` is applied inside [`digitizer_demodulate()`](#digitizer_demodulate) at its demodulation frequency `freq`; `b` is multiplied by the mean of `+1` for each `±x` and `-1` for each `±y` step of the [`DETECTION`](pulse_programmer.md#pulser_pulse) phase list, because a cycle with as many `±y` as `±x` receiver steps already cancels the mirror. The raw I/Q data returned by [`digitizer_get_curve()`](#digitizer_get_curve-points) stays uncorrected. At `freq = 0` (no down-conversion) no correction is applied. If the keys are absent, the correction is off.
+This function enables, disables or queries the receive I/Q correction. The recorded signal is modelled as `z = s + b*conj(s)`, where `b` is the per-IF mirror coefficient of the receiver. It is read from the `[SPECIFIC]` section of `PB_Insys_DAC_config.ini` (keys `rx_cal_enable`, `rx_cal_freq_MHz`, `rx_cal_b_re`, `rx_cal_b_im`) and linearly interpolated, with the edge values used outside the table. The table is keyed by the AWG IF, i.e. minus the demodulation frequency. The correction `z_c = (z - b*conj(z)) / (1 - |b|**2)` is applied inside [`digitizer_demodulate()`](#digitizer_demodulate) at its demodulation frequency `freq`. Here `b` is multiplied by the mean of `+1` for each `±x` and `-1` for each `±y` step of the [`DETECTION`](pulse_programmer.md#pulser_pulse) phase list, because a cycle with as many `±y` as `±x` receiver steps already cancels the mirror. The raw I/Q data returned by [`digitizer_get_curve()`](#digitizer_get_curve-points) stays uncorrected. At `freq = 0` (no down-conversion) no correction is applied. If the keys are absent, the correction is off.
 
 **Allowed:** `'On'`, `'Off'`
 {: .enum }
 
 **Default:** `rx_cal_enable` from the configuration file
 {: .enum }
+
+!!! note
+    This function is available only for Insys FM214x3GDA.
 
 ---
 
