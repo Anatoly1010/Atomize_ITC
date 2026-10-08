@@ -59,6 +59,23 @@ and card ADC.
   - `digitizer_iq_correction('On'|'Off')` switches it, on by default.
   - Checked on fresh data: the mirror drops from −26…−32 to a median of −51.6 dBc (worst −40.7 at
     +75 MHz), at the single-run noise floor.
+  - **±10 MHz added:** measured with 160 ns pulses at 10.1/18.5 %, which give a ~200 ns echo that
+    separates from its mirror.
+    - The ±20 MHz overlap check agrees with the short-pulse table within 0.003–0.005.
+    - b = 0.0244 − 0.0013j at +10 MHz and 0.0395 − 0.0093j at −10 MHz, so the mirror changes near
+      zero as on the transmit side.
+    - ±5 MHz was not usable: at +5 the echo and its mirror still overlap, and at −5 the echo is
+      halved by the AC coupling. Below ±10 MHz the table interpolates; 0 MHz is skipped.
+  - **Offline correction of raw 2D data** (Shift Offset Off saves raw data):
+    - Normally, demodulating at the IF and low-pass filtering (or integrating) removes the mirror
+      exactly, as long as the echo spectrum is narrower than 2·|IF|.
+    - At low IF or for broadband signals, apply z → (z − κb·conj(z))/(1 − |κb|²) with b from the
+      table at the AWG IF before demodulating.
+  - **Digitizer stall:** the acquisition stopped ("no new data for 60 s") whenever one point took
+    longer than about 1–1.5 s:
+    - 1 kHz × 2000 shots and 10 kHz × 16000 shots stalled;
+    - 5 kHz × 4000 and 10 kHz × 4000 ran fine;
+    - the cause is under investigation.
   - **Open:** b may depend on the video attenuation (VA1/VA2); spot-check at another VA setting.
   - At 1 kHz a long run stopped with a digitizer timeout; 5 kHz was fine.
 - **Spin checks (coal, RV 0 dB, `iq_spin_check.py`):**
