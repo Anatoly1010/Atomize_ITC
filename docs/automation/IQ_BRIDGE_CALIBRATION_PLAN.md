@@ -46,6 +46,21 @@ and card ADC.
   - Checked with `iq_chirp.py`, a WURST −200 → +200 MHz, 1000 ns on the monitor, analysed in 50 ns
     segments with a joint fit of the line and its mirror plus the `fv_ctrl` separation.
   - Image over |f| ≥ 40 MHz: median −32.7 → −53.0 dBc, worst segment −30.4 → −45.2 dBc.
+- **Receive path (step 1, done):**
+  - Measured with `iq_rx.py`: coal echo, two-step ±x cycle, 3441 G, RV 0 dB, 5 kHz, 2000 shots per
+    step, 3 repeats.
+  - The synthesizer was retuned with the IF (LO = 9670 + f) so the RF and field stay fixed.
+    IFs ±20 … ±300 MHz.
+  - The receive mirror b is −26…−32 dBc and varies only slowly with IF, so the bridge demodulator
+    dominates (card alone −48 dBc).
+  - The `rx_cal_*` table is in `PB_Insys_DAC_config.ini`. `digitizer_demodulate` applies
+    z → (z − κ·b·conj(z))/(1 − |κb|²), where κ is the mean squared receiver phase factor (1 for ±x
+    cycles, 0 for x/y cycles, which already cancel the mirror). It is skipped at 0 MHz.
+  - `digitizer_iq_correction('On'|'Off')` switches it, on by default.
+  - Checked on fresh data: the mirror drops from −26…−32 to a median of −51.6 dBc (worst −40.7 at
+    +75 MHz), at the single-run noise floor.
+  - **Open:** b may depend on the video attenuation (VA1/VA2); spot-check at another VA setting.
+  - At 1 kHz a long run stopped with a digitizer timeout; 5 kHz was fine.
 - **Spin checks (coal, RV 0 dB, `iq_spin_check.py`):**
   - *Normal echo* (3441 G, +50 MHz, 38.4 ns at 42/77 %): with the correction On vs Off the echo is
     101.5 ± 1.3 % and −0.25 ± 0.47°. The correction does not change ordinary experiments.
@@ -60,7 +75,6 @@ and card ADC.
       5000 pulses, even at 300 Hz.
     - The calibration therefore rests on the monitor measurement.
 - **Open:**
-  - the receive path (step 1);
   - stability (step 4).
 - **Data and scripts:** `~/experimental_data/Melnikov/2026_10_08_iq_monitor/` on the Linux box.
 

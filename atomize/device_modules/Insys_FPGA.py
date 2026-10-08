@@ -264,6 +264,19 @@ class Insys_FPGA:
         else:
             self.iq_cal_freq_awg = self.iq_cal_dphase_awg = self.iq_cal_ratio_awg = np.array([])
             self.iq_cal_on_awg = False
+        # per-IF receive I/Q mirror coefficient b, keyed by AWG IF = -demodulation frequency
+        rx_keys = ('rx_cal_freq_mhz', 'rx_cal_b_re', 'rx_cal_b_im')
+        if all(k in self.specific_parameters_awg for k in rx_keys):
+            rx_cols = [np.array([float(v) for v in self.specific_parameters_awg[k].split(',')]) for k in rx_keys]
+            assert(len(rx_cols[0]) >= 1 and len(rx_cols[0]) == len(rx_cols[1]) == len(rx_cols[2])), \
+                'Incorrect receive I/Q table in PB_Insys_DAC_config.ini; rx_cal_* lists must have equal nonzero length'
+            assert(np.all(np.diff(rx_cols[0]) > 0)), \
+                'Incorrect receive I/Q table in PB_Insys_DAC_config.ini; rx_cal_freq_MHz must be strictly increasing'
+            self.rx_cal_freq_adc, self.rx_cal_b_re_adc, self.rx_cal_b_im_adc = rx_cols
+            self.rx_cal_on_adc = bool(int(float(self.specific_parameters_awg.get('rx_cal_enable', '0'))))
+        else:
+            self.rx_cal_freq_adc = self.rx_cal_b_re_adc = self.rx_cal_b_im_adc = np.array([])
+            self.rx_cal_on_adc = False
 
         ###self.phase_x = np.pi/2
         self.maxCAD_awg = 32767 # MaxCADValue of the AWG card - 1
@@ -2796,6 +2809,42 @@ class Insys_FPGA:
                 self.dec_coef = int(dec[0])
             elif len(dec) == 0:
                 return self.dec_coef
+
+    def digitizer_iq_correction(self, *state):
+        """
+        Enable, disable or query the receive I/Q correction;
+        Removes the mirror term b*conj(s) of the receiver from the I/Q data inside
+        digitizer_demodulate, with b taken from the per-IF rx_cal_* table of
+        PB_Insys_DAC_config.ini at the AWG IF = -demodulation frequency;
+        b is scaled by the mean square of the detection phase factors (+-x: 1, +-y: -1),
+        since a cycle with as many +-y as +-x receiver steps already cancels the mirror.
+        Input: digitizer_iq_correction('On'); digitizer_iq_correction('Off')
+        Default: rx_cal_enable from the config file;
+        Output: 'On'
+        """
+        if self.test_flag != 'test':
+            if len(state) == 1:
+                self.rx_cal_on_adc = ( str(state[0]) == 'On' )
+            elif len(state) == 0:
+                return 'On' if self.rx_cal_on_adc else 'Off'
+
+        elif self.test_flag == 'test':
+            if len(state) == 1:
+                assert( str(state[0]) == 'On' or str(state[0]) == 'Off' ), "Incorrect state; Should be 'On' or 'Off'"
+                self.rx_cal_on_adc = ( str(state[0]) == 'On' )
+            elif len(state) == 0:
+                return 'On' if self.rx_cal_on_adc else 'Off'
+            else:
+                assert( 1 == 2 ), 'Incorrect arguments'
+
+    def _rx_cal_b(self, iq_freq_mhz):
+        """Return the complex receive mirror coefficient b at demodulation frequency iq_freq_mhz (scalar or array); 0 when off or at 0 MHz."""
+        f = -np.asarray(iq_freq_mhz, dtype = float)
+        if not self.rx_cal_on_adc or len(self.rx_cal_freq_adc) == 0:
+            return np.zeros_like(f, dtype = complex)
+        b = np.interp(f, self.rx_cal_freq_adc, self.rx_cal_b_re_adc) + 1j * np.interp(f, self.rx_cal_freq_adc, self.rx_cal_b_im_adc)
+        # 0 MHz means no demodulation (RECT, raw preview); the table has no data there
+        return np.where(f == 0, 0j, b)
 
     def digitizer_read_settings(self):
         """
@@ -6986,6 +7035,11 @@ class Insys_FPGA:
         #phi_rad = np.radians(ph)
 
         signal = arr_i + 1j * arr_q
+        b = complex(self._rx_cal_b(freq))
+        if b != 0 and self.detection_phase_list:
+            b *= np.mean([-1.0 if str(l)[-1] in 'yi' else 1.0 for l in self.detection_phase_list])
+        if b != 0:
+            signal = (signal - b * np.conj(signal)) / (1.0 - abs(b) ** 2)
         timeaxis = signal.shape[0]
         
         fs = 2.5e9 / self.dec_coef

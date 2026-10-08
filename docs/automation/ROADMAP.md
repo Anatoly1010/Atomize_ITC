@@ -30,7 +30,8 @@ RV means rotary-vane attenuation of microwave excitation. VA means receiver vide
   - A normal echo is unchanged; the spin-level pump-probe check is non-essential.
   - Negative IFs added: −53.7…−71.9 dBc down to −250 MHz.
   - ±5/±10 MHz points added; chirps are corrected per sample (WURST −200 → +200 MHz: median image −32.7 → −53.0 dBc).
-  - **Open:** the receive path.
+  - Receive correction (2026-10-08): `rx_cal_*` table, applied in `digitizer_demodulate` (κ-scaled by the detection cycle), switched by `digitizer_iq_correction`, on by default. On coal the receive mirror drops from −26…−32 to a median of −51.6 dBc.
+  - **Open:** spot-check b at another video attenuation (VA1/VA2); stability over days.
   - Details: [IQ_BRIDGE_CALIBRATION_PLAN.md](IQ_BRIDGE_CALIBRATION_PLAN.md).
 - The public reference is maintained in `atomize_docs`. The 2026-09-19 update covers live-rate tuning and adaptive relaxation ranges, with a regenerated step reference and a passing strict MkDocs build.
 
