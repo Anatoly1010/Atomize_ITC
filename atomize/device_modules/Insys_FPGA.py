@@ -4115,7 +4115,8 @@ class Insys_FPGA:
         """
         Enable, disable or query the transmit I/Q correction;
         Applies the per-IF CH1 phase / CH1-CH0 ratio table from PB_Insys_DAC_config.ini
-        at each pulse's (centre) frequency, never raising a channel above its set amplitude;
+        at each tone pulse's frequency and, sample by sample, at the instantaneous frequency
+        of WURST and SECH/TANH chirps, never raising a channel above its set amplitude;
         the table covers both signs of the frequency (-400 ... 400 MHz).
         Input: awg_iq_correction('On'); awg_iq_correction('Off')
         Default: iq_cal_enable from the config file;
@@ -4141,14 +4142,16 @@ class Insys_FPGA:
                 assert( 1 == 2 ), 'Incorrect arguments'
 
     def _iq_cal_awg(self, freq_mhz):
-        """Return (dphase_rad, s0, s1) of the transmit I/Q correction at freq_mhz; s0, s1 <= 1."""
+        """Return (dphase_rad, s0, s1) of the transmit I/Q correction at freq_mhz (scalar or array); s0, s1 <= 1."""
+        f = np.asarray(freq_mhz, dtype = float)
         if not self.iq_cal_on_awg or len(self.iq_cal_freq_awg) == 0:
-            return 0.0, 1.0, 1.0
-        if freq_mhz < 0 and self.iq_cal_freq_awg[0] > 0:
-            return 0.0, 1.0, 1.0
-        dphase = float(np.interp(freq_mhz, self.iq_cal_freq_awg, self.iq_cal_dphase_awg))
-        r = float(np.interp(freq_mhz, self.iq_cal_freq_awg, self.iq_cal_ratio_awg))
-        return dphase, min(1.0, 1.0 / r), min(1.0, r)
+            return np.zeros_like(f), np.ones_like(f), np.ones_like(f)
+        dphase = np.interp(f, self.iq_cal_freq_awg, self.iq_cal_dphase_awg)
+        r = np.interp(f, self.iq_cal_freq_awg, self.iq_cal_ratio_awg)
+        if self.iq_cal_freq_awg[0] > 0:
+            dphase = np.where(f < 0, 0.0, dphase)
+            r = np.where(f < 0, 1.0, r)
+        return dphase, np.minimum(1.0, 1.0 / r), np.minimum(1.0, r)
 
     def awg_test_flag(self, flag):
         """
@@ -6697,7 +6700,8 @@ class Insys_FPGA:
                 phase_chirp = 2 * np.pi * (f_start * t + 0.5 * (f_end - f_start) / T_p * t**2)
 
                 common_phase = phase_chirp + pulse_phase_np[index] + ph_cor
-                dph, s0, s1 = self._iq_cal_awg((f_start + f_end) / 2)
+                # instantaneous frequency of phase_chirp (ph_cor not included)
+                dph, s0, s1 = self._iq_cal_awg(f_start + (f_end - f_start) * n / length)
 
                 y1 = (norm_c * self.amplitude_0_awg * s0 / pulse_amp[index] *
                       envelope * np.sin(common_phase))
@@ -6736,7 +6740,8 @@ class Insys_FPGA:
                 phase_carrier = 2 * np.pi * center_freq / self.sample_rate_awg * xs
                 total_phase = 2 * np.pi * phase_arg + phase_carrier + pulse_phase_np[index] + ph_cor
 
-                dph, s0, s1 = self._iq_cal_awg(center_freq)
+                # instantaneous frequency of the chirp (ph_cor not included)
+                dph, s0, s1 = self._iq_cal_awg(center_freq + (f_end - f_start) * np.tanh(b * dx) / norm_factor)
                 y1 = (norm_c * self.amplitude_0_awg * s0 / pulse_amp[index]) * envelope * np.sin(total_phase)
                 y2 = (norm_c * self.amplitude_1_awg * s1 / pulse_amp[index]) * envelope * np.sin(total_phase + self.phase_shift_ch1_seq_mode_awg + dph)
 

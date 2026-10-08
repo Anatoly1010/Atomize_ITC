@@ -36,6 +36,16 @@ and card ADC.
 - **LO leakage:** 14.2 mV at the monitor, about −22 dBc of a 50 % pulse at AWG attenuator 16 dB.
   It cannot be nulled from the AWG, because the DAC → modulator I/Q path does not pass DC: an
   injected DC decays within about 0.5 µs.
+- **±5 and ±10 MHz added** (28-point table):
+  - Near zero the phase bends away (+0.6° at +5/+10 MHz, −0.3° at −5/−10 MHz). A 1/f phase like
+    this fits slightly different AC-coupling in the I and Q paths.
+  - With the module correction: −64.7…−81.7 dBc from −20 to +20 MHz.
+  - Below ±5 MHz the table interpolates linearly across zero.
+- **Chirps (step 3, done):**
+  - WURST and SECH/TANH are corrected sample by sample at their instantaneous frequency.
+  - Checked with `iq_chirp.py`, a WURST −200 → +200 MHz, 1000 ns on the monitor, analysed in 50 ns
+    segments with a joint fit of the line and its mirror plus the `fv_ctrl` separation.
+  - Image over |f| ≥ 40 MHz: median −32.7 → −53.0 dBc, worst segment −30.4 → −45.2 dBc.
 - **Spin checks (coal, RV 0 dB, `iq_spin_check.py`):**
   - *Normal echo* (3441 G, +50 MHz, 38.4 ns at 42/77 %): with the correction On vs Off the echo is
     101.5 ± 1.3 % and −0.25 ± 0.47°. The correction does not change ordinary experiments.
@@ -51,7 +61,6 @@ and card ADC.
     - The calibration therefore rests on the monitor measurement.
 - **Open:**
   - the receive path (step 1);
-  - a per-sample correction along chirps (step 3): WURST and SECH/TANH still use the centre value;
   - stability (step 4).
 - **Data and scripts:** `~/experimental_data/Melnikov/2026_10_08_iq_monitor/` on the Linux box.
 
