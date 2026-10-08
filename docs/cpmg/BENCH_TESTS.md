@@ -1,6 +1,6 @@
 # CPMG detection and HYSCORE scripts: bench tests
 
-Created 2026-09-27. Everything below passed offline (test mode, offscreen GUI, `~/epr_auto_dev/gui_vs_engine.py` ALL PASS for 21 presets) but has **not** run on the Insys spectrometer. After these tests pass, port the CPMG tab to `Atomize_NIOCH` and `Atomize_NIOCH_Q` (`awg_phasing.py`; their time-per-point map differs from ITC, see the sync notes).
+Created 2026-09-27. Everything below passed offline (test mode, offscreen GUI, `~/epr_auto_dev/gui_vs_engine.py` ALL PASS for 21 presets) but had **not** run on the Insys spectrometer; hardware results are recorded in section 7. After these tests pass, port the CPMG tab to `Atomize_NIOCH` and `Atomize_NIOCH_Q` (`awg_phasing.py`; their time-per-point map differs from ITC, see the sync notes).
 
 Record for each test: date, sample, preset or script, field, rep rate, result, and the saved file names.
 
@@ -59,3 +59,12 @@ Record for each test: date, sample, preset or script, field, rep rate, result, a
 | --- | --- | --- |
 | 6.1 | `HYSCORE; 16S` in the AWG tool and `hyscore_16s.phase` in the RECT tool | 16 steps; echo identical to the old preset. |
 | 6.2 | Save and reload both CPMG presets from the GUI. | CPMG settings, Echo Center and phase text survive the round trip. |
+
+## 7. Hardware results
+
+| Date | Test | Sample, setup | Result | Files |
+| --- | --- | --- | --- | --- |
+| 2026-10-08 | 5.3, first run | Coal, 3441 G, 9720 MHz + 50 MHz AWG, 2 kHz, 64×64, 16 ns step, τ 288 ns, 44.8 ns 17/34 % | **Fail**: no signal. `pulser_redefine_start` wrote the user start into the TRIGGER_AWG entry without the 160 ns `trigger_awg_shift`, so the moved π and last π/2 played outside their amplifier gate. Fixed in `Insys_FPGA.py`. | overwritten |
+| 2026-10-08 | 5.5 | Same, stopped after 587 of 4096 points | Pass: partial raw and map saved; next run opened the board normally. | overwritten |
+| 2026-10-08 | 5.3, after fix | Same, 44.8 ns 17/34 %, RV 5 dB | Echo present but under-rotated pulses; window integral cancels (lobed echo), map unusable. Amplitude nutation showed a 44.8 ns π needs > 100 % at RV 5 dB; π/π2 amplitude ratio 1.82–1.91, not 2. 64×64 took 10 min 57 s (≈ shot time). | overwritten |
+| 2026-10-08 | 5.3 | Same, 38.4 ns 42/77 %, RV 0 dB, re-phased on the 2p echo | **Pass** (real run): window and echo-shape integration agree, phase stable to 2°, SNR ≈ 29 at the first point; 1H peak at (14.6, 14.6) MHz, 12× noise; no 13C. Opening in the 2D tool and Reshape re-integration not yet checked. | `Melnikov/2026_10_08_coal_features/hyscore_coal_64x64{,_map}.h5` |

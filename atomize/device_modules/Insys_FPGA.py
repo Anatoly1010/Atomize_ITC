@@ -951,7 +951,10 @@ class Insys_FPGA:
 
                 for i, pulse in enumerate(self.pulse_array_pulser):
                     if pulse['name'] == name:
-                        new_val = f"{p_start} ns"
+                        if pulse['channel'] == 'TRIGGER_AWG':
+                            new_val = f"{self.round_to_closest(p_start - self.trigger_awg_shift, time_grid)} ns"
+                        else:
+                            new_val = f"{p_start} ns"
                         if pulse['channel'] == 'TRIGGER_AWG' and \
                            self._sub_tick_residue(new_val) != self._sub_tick_residue(pulse['start']):
                             # sub-tick padding in the DAC buffer changed ->
@@ -961,7 +964,7 @@ class Insys_FPGA:
                         self.shift_count_pulser = 1
 
                         if pulse['channel'] == 'TRIGGER_AWG' and i > 0:
-                            self.pulse_array_pulser[i-1]['start'] = new_val
+                            self.pulse_array_pulser[i-1]['start'] = f"{p_start} ns"
 
         elif self.test_flag == 'test':
             
@@ -988,7 +991,10 @@ class Insys_FPGA:
 
                 for i, pulse in enumerate(self.pulse_array_pulser):
                     if pulse['name'] == name:
-                        new_val = f"{p_start} ns"
+                        if pulse['channel'] == 'TRIGGER_AWG':
+                            new_val = f"{self.round_to_closest(p_start - self.trigger_awg_shift, time_grid)} ns"
+                        else:
+                            new_val = f"{p_start} ns"
                         if pulse['channel'] == 'TRIGGER_AWG' and \
                            self._sub_tick_residue(new_val) != self._sub_tick_residue(pulse['start']):
                             # sub-tick padding in the DAC buffer changed ->
@@ -998,7 +1004,7 @@ class Insys_FPGA:
                         self.shift_count_pulser = 1
 
                         if pulse['channel'] == 'TRIGGER_AWG' and i > 0:
-                            self.pulse_array_pulser[i-1]['start'] = new_val
+                            self.pulse_array_pulser[i-1]['start'] = f"{p_start} ns"
 
     def pulser_redefine_delta_start(self, *, name, delta_start):
         """
