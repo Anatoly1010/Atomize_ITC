@@ -1418,7 +1418,7 @@ class MainWindow(QMainWindow):
         self.tab_pulse.tabBar().setTabTextColor(5, QColor(193, 202, 227))
 
         # ---- Labels & Inputs ----
-        labels = [("Amplitude I", "label_a1"), ("Amplitude Q", "label_a2"), ("Phase", "label_a3"), ("N [wurst; sech/tanh]", "label_a4"), ("b [sech/tanh]", "label_a5"), ("Resonator Profile", "label_a6"), ("Correction Model", "label_a7"), ('Resonator f<sub style="font-size: 12pt;">0</sub>', "label_a8"), ("Resonator Q", "label_a9"), ("Measured H(f)", "label_a10"), ("Load H(f)", "label_a11")]
+        labels = [("N [wurst; sech/tanh]", "label_a4"), ("b [sech/tanh]", "label_a5"), ("Resonator Profile", "label_a6"), ("Correction Model", "label_a7"), ('Resonator f<sub style="font-size: 12pt;">0</sub>', "label_a8"), ("Resonator Q", "label_a9"), ("Measured H(f)", "label_a10"), ("Load H(f)", "label_a11")]
 
         for name, attr_name in labels:
             lbl = QLabel(name)
@@ -1427,10 +1427,12 @@ class MainWindow(QMainWindow):
             lbl.setStyleSheet(REFINED_STYLES['LABEL_STYLE'])
 
         # ---- Boxes ----
-        double_boxes = [(QSpinBox, "Ampl_1", "ch0_ampl", self.ch0_amp, 1, 260, 260, 1, 0, ""),
-                        (QSpinBox, "Ampl_2", "ch1_ampl", self.ch1_amp, 1, 260, 260, 1, 0, ""),
-                        (QDoubleSpinBox, "Phase", "cur_phase", self.awg_phase, 0, 360, 90, 0.1, 2, " deg"),
-                        (QSpinBox, "N_wurst", "n_wurst_cur", self.n_wurst, 1, 100, 10, 1, 0, ""),
+        # Fixed I/Q values; Insys_FPGA applies the per-IF correction itself
+        self.ch0_ampl = 260
+        self.ch1_ampl = 260
+        self.cur_phase = float( 90 * np.pi * 2 / 360 )
+
+        double_boxes = [(QSpinBox, "N_wurst", "n_wurst_cur", self.n_wurst, 1, 100, 10, 1, 0, ""),
                         (QDoubleSpinBox, "B_sech", "b_sech_cur", self.b_sech_func, 0.005, 10, 0.02, 0.001, 3, " 1/ns"),
                         (QDoubleSpinBox, "F0_res", "f0_cur", self.f0_func, 1000, 100000, 9700, 10, 1, " MHz"),
                         (QDoubleSpinBox, "Q_res", "q_cur", self.q_func, 1, 100000, 88, 1, 1, "")
@@ -1460,10 +1462,7 @@ class MainWindow(QMainWindow):
             if isinstance(spin_box, QSpinBox):
                     setattr(self, par_name, int(spin_box.value()))
             else:
-                if attr_name == 'Phase':
-                    setattr(self, par_name, float( spin_box.value() * np.pi * 2 / 360 ) )
-                else:
-                    setattr(self, par_name, float(spin_box.value()))
+                setattr(self, par_name, float(spin_box.value()))
 
         # ---- Combo box----
         combo_laser = [("No", "Combo_cor", "", self.combo_cor_fun, ["No", "Only Pi/2", "All"]),
@@ -1518,29 +1517,22 @@ class MainWindow(QMainWindow):
         right_grid = QGridLayout()
         right_grid.setVerticalSpacing(4)
         right_grid.setHorizontalSpacing(20)
-        right_grid.addWidget(self.label_a1, 0, 0)
-        right_grid.addWidget(self.Ampl_1, 0, 1)
-        right_grid.addWidget(self.label_a2, 1, 0)
-        right_grid.addWidget(self.Ampl_2, 1, 1)
-        right_grid.addWidget(self.label_a3, 2, 0)
-        right_grid.addWidget(self.Phase, 2, 1)
-        right_grid.addWidget(hline(), 3, 0, 1, 2)
-        right_grid.addWidget(self.label_a6, 4, 0)
-        right_grid.addWidget(self.Combo_cor, 4, 1)
-        right_grid.addWidget(self.label_a7, 5, 0)
-        right_grid.addWidget(self.Combo_model, 5, 1)
-        right_grid.addWidget(self.label_a8, 6, 0)
-        right_grid.addWidget(self.F0_res, 6, 1)
-        right_grid.addWidget(self.label_a9, 7, 0)
-        right_grid.addWidget(self.Q_res, 7, 1)
-        right_grid.addWidget(self.label_a10, 8, 0)
-        right_grid.addWidget(self.Combo_resfmt, 8, 1)
-        right_grid.addWidget(self.label_a11, 9, 0)
-        right_grid.addWidget(self.Btn_resH, 9, 1)
-        right_grid.addWidget(self.reson_file_lbl, 10, 0, 1, 2)
-        right_grid.addWidget(hline(), 11, 0, 1, 2)
+        right_grid.addWidget(self.label_a6, 0, 0)
+        right_grid.addWidget(self.Combo_cor, 0, 1)
+        right_grid.addWidget(self.label_a7, 1, 0)
+        right_grid.addWidget(self.Combo_model, 1, 1)
+        right_grid.addWidget(self.label_a8, 2, 0)
+        right_grid.addWidget(self.F0_res, 2, 1)
+        right_grid.addWidget(self.label_a9, 3, 0)
+        right_grid.addWidget(self.Q_res, 3, 1)
+        right_grid.addWidget(self.label_a10, 4, 0)
+        right_grid.addWidget(self.Combo_resfmt, 4, 1)
+        right_grid.addWidget(self.label_a11, 5, 0)
+        right_grid.addWidget(self.Btn_resH, 5, 1)
+        right_grid.addWidget(self.reson_file_lbl, 6, 0, 1, 2)
+        right_grid.addWidget(hline(), 7, 0, 1, 2)
 
-        right_grid.setRowStretch(12, 1)
+        right_grid.setRowStretch(8, 1)
         right_grid.setColumnStretch(9, 1)
         
         container_layout.addLayout(left_grid)
@@ -3257,9 +3249,6 @@ class MainWindow(QMainWindow):
 
         self.Field.setValue( float( lines[10].split(':  ')[1] ) )
         #self.Delay.setValue( float( lines[9].split(':  ')[1] ) )
-        self.Ampl_1.setValue( int( lines[12].split(':  ')[1] ) )
-        self.Ampl_2.setValue( int( lines[13].split(':  ')[1] ) )
-        self.Phase.setValue( float( lines[14].split(':  ')[1] ) )
         self.N_wurst.setValue( int( lines[15].split(':  ')[1] ) )
         self.B_sech.setValue( float( lines[16].split(':  ')[1] ) )
 
@@ -3473,9 +3462,9 @@ class MainWindow(QMainWindow):
             file.write( 'Rep rate:  ' + str(self.Rep_rate.value()) + '\n' )
             file.write( 'Field:  ' + str(self.Field.value()) + '\n' )
             file.write( 'Delay:  ' + str(0) + '\n' )
-            file.write( 'Ampl 1:  ' + str(self.Ampl_1.value()) + '\n' )
-            file.write( 'Ampl 2:  ' + str(self.Ampl_2.value()) + '\n' )
-            file.write( 'Phase:  ' + str(self.Phase.value()) + '\n' )
+            file.write( 'Ampl 1:  ' + str(260) + '\n' )
+            file.write( 'Ampl 2:  ' + str(260) + '\n' )
+            file.write( 'Phase:  ' + str(90.0) + '\n' )
             file.write( 'N WURST; SECH/TANH:  ' + str(self.N_wurst.value()) + '\n' )
             file.write( 'B SECH/TANH:  ' + str(self.B_sech.value()) + '\n' )
             file.write( 'Points:  ' + str( 2016 ) + '\n' )
@@ -3624,30 +3613,6 @@ class MainWindow(QMainWindow):
         self.n_wurst_cur = int( self.N_wurst.value() )
         # See b_sech_func: N re-arms the DAC waveform live via the 'PU' payload.
         self.schedule_live_apply()
-
-    def ch0_amp(self):
-        """
-        A function to set AWG CH0 amplitude
-        """
-        self.ch0_ampl = self.Ampl_1.value()
-
-    def ch1_amp(self):
-        """
-        A function to set AWG CH1 amplitude
-        """
-        self.ch1_ampl = self.Ampl_2.value()
-    
-    def awg_phase(self):
-        """
-        A function to set AWG CH1 phase shift
-        """
-        self.cur_phase = self.Phase.value() * np.pi * 2 / 360
-        ####
-        ###try:
-        ###    self.errors.appendPlainText( str( self.cur_phase ) )
-        ###    self.parent_conn_dig.send( 'PH' + str( self.cur_phase ) )
-        ###except AttributeError:
-        ###    pass
 
     def phase_converted(self, ph_str):
         if ph_str == '+x':
@@ -4687,15 +4652,9 @@ class Worker():
             num_ave = n_averages
             iq_cor = iq_corr
 
-            ###
-            pb.phase_shift_ch1_seq_mode_awg = cur_phase
-            ###
-
             # correction from file (measured profile from correction.param;
             # model / f0 / Q / phase from the AWG-tab controls)
             self._apply_awg_correction(pb, combo_cor)
-
-            pb.awg_amplitude('CH0', str(ch0_ampl), 'CH1', str(ch1_ampl) )
 
             # Ordered record of the exact awg_pulse / pulser_pulse setup calls
             # (user-space kwargs). A live edit is validated by replaying these
@@ -4997,7 +4956,6 @@ class Worker():
                             general.test_flag = 'test'
                             pbt = pb_pro.Insys_FPGA()
                             pbt.awg_time_resolution(f'{self.awg_grid_cur} ns')
-                            pbt.awg_amplitude('CH0', str(ch0_ampl), 'CH1', str(ch1_ampl))
                             for c in pulser_setup_calls:
                                 kw = dict(c['kwargs'])
                                 g = self.awg_grid_cur if (c['kind'] == 'awg' or
@@ -5468,12 +5426,8 @@ class Worker():
                 conn.send( ('Message', 'No START or LENGTH increment; the time axis corresponds to the number of points in the experiment') )
                 general.plot_remove(exp_name)
 
-            pb.phase_shift_ch1_seq_mode_awg = iq_phase
-
             # correction from file
             self._apply_awg_correction(pb, correction)
-            
-            pb.awg_amplitude('CH0', str(ch0_ampl), 'CH1', str(ch1_ampl) )
             
             POINTS = 1 if decay_mode else points
             STEP = step
@@ -6044,12 +5998,8 @@ class Worker():
                 conn.send( ('Message', 'No START or LENGTH increment; the time axis corresponds to the number of points in the experiment') )
                 general.plot_remove(exp_name)
 
-            pb.phase_shift_ch1_seq_mode_awg = iq_phase
-
             # correction from file
             self._apply_awg_correction(pb, correction)
-
-            pb.awg_amplitude('CH0', str(ch0_ampl), 'CH1', str(ch1_ampl) )
 
             POINTS = points
             STEP = step
@@ -6654,12 +6604,8 @@ class Worker():
             pb.win_right = win_right
             zp = zero_phase
 
-            pb.phase_shift_ch1_seq_mode_awg = iq_phase
-
             # correction from file
             self._apply_awg_correction(pb, correction)
-            
-            pb.awg_amplitude('CH0', str(ch0_ampl), 'CH1', str(ch1_ampl) )
             
             START_FIELD = start_field
             END_FIELD = end_field
@@ -7130,12 +7076,8 @@ class Worker():
             pb.win_right = win_right
             zp = zero_phase
 
-            pb.phase_shift_ch1_seq_mode_awg = iq_phase
-
             # correction from file
             self._apply_awg_correction(pb, correction)
-            
-            pb.awg_amplitude('CH0', str(ch0_ampl), 'CH1', str(ch1_ampl) )
             
             FIELD = field
             AVERAGES = num_ave
@@ -7633,13 +7575,9 @@ class Worker():
 
             #rect1 DETECTION
             iq_freq = -int( rect1[6].split(" MHz")[0] )
-            
-            pb.phase_shift_ch1_seq_mode_awg = iq_phase
 
             # correction from file
             self._apply_awg_correction(pb, correction)
-            
-            pb.awg_amplitude('CH0', str(ch0_ampl), 'CH1', str(ch1_ampl) )
             
             POINTS = points
             STEP = step_ampl

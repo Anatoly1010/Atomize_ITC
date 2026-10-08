@@ -1,6 +1,6 @@
 # EPR automation — roadmap
 
-Updated 2026-09-24. Keep this file focused on current status, open work and dated evidence. Current preliminary-tuning decisions live in [PRELIMINARY_TUNING_PLAN.md](PRELIMINARY_TUNING_PLAN.md); bench acceptance checks live in [HARDWARE_CHECKLIST.md](HARDWARE_CHECKLIST.md). General design and the GUI/engine contract remain in [ARCHITECTURE.md](ARCHITECTURE.md).
+Updated 2026-10-08. Keep this file focused on current status, open work and dated evidence. Current preliminary-tuning decisions live in [PRELIMINARY_TUNING_PLAN.md](PRELIMINARY_TUNING_PLAN.md); bench acceptance checks live in [HARDWARE_CHECKLIST.md](HARDWARE_CHECKLIST.md). General design and the GUI/engine contract remain in [ARCHITECTURE.md](ARCHITECTURE.md).
 
 The hardware work comprises **two sessions**: **11 September — fine tuning only**; **18 September — implementation and trials of the complete workflow**. The final independent preliminary and fine-tuning runs worked without issues. The logic was improved on 18 September, and the final combined preliminary → fine-tuning → T2 run passed that evening.
 
@@ -18,6 +18,18 @@ RV means rotary-vane attenuation of microwave excitation. VA means receiver vide
 - Connected plot dots become grey after 10 s idle; the change is now carried to Atomize, NIOCH, NIOCH_Q and Cryomech. It is no longer backlog.
 - Optional `save_2d: true` on `exp.t1`, `exp.t2` and `field.edfs`: the worker also writes the full I/Q matrices as `<file>_2d.h5`, recorded as `data_file_2d` in the manifest; revised, reused and escalated sweeps inherit the flag. Adaptive decisions stay on the per-point integrals. Plan: [FULL_2D_SAVE_PLAN.md](FULL_2D_SAVE_PLAN.md); hardware check open.
 - CPMG detection mirrored from the AWG phasing tool (2026-09-27): trailing `CPMG:` (6th field = echo centre) / `CPMG phases:` preset lines, CPMG notations appended to the phase expansion, and a `cpmg` dict appended after `script_test` in the Linear Time `exp`, `exp_eseem` and `dig_on` args (unchanged when Off). Decay needs Linear Time; Sum of Echoes also runs in ESEEM Avg. `gui_vs_engine.py` compares the tail and reports ALL PASS for 21 presets, including `cpmg_2s`, `4pdeer_cpmg_8s` and a synthetic ESEEM Avg case; hardware check open.
+- **Transmit I/Q correction (2026-10-08):**
+  - `Insys_FPGA` applies a per-IF CH1 phase and CH1/CH0 ratio table from `PB_Insys_DAC_config.ini`
+    to every AWG pulse. It never raises a channel, so 260 mV stays the full scale.
+  - It is switched by `awg_iq_correction`, on by default.
+  - The AWG phasing GUI lost its Amplitude I/Q and Phase boxes. Their preset lines are kept and
+    ignored, and the Worker arguments are unchanged. `primitives/preliminary.py` no longer sets the
+    amplitudes.
+  - Image measured on the bridge monitor: from −34…−29 dBc to −53.6…−68.8 dBc up to 350 MHz, except
+    250 MHz at −49.1; 400 MHz −42.8 dBc.
+  - A normal echo is unchanged; the spin-level pump-probe check is non-essential.
+  - **Open:** the receive path; negative IFs.
+  - Details: [IQ_BRIDGE_CALIBRATION_PLAN.md](IQ_BRIDGE_CALIBRATION_PLAN.md).
 - The public reference is maintained in `atomize_docs`. The 2026-09-19 update covers live-rate tuning and adaptive relaxation ranges, with a regenerated step reference and a passing strict MkDocs build.
 
 ## Hardware validation status

@@ -1,14 +1,14 @@
-P1:  DETECTION,  384.0,  128.0,  0.0,  100,  350,  100,  [-1,1,0,1],  16.0,  0.0,  16.0
-P2:  SINE,  0.0,  16.0,  0.0,  100,  350,  50,  [x],  0.0,  0.0,  0.0
-P3:  SINE,  128.0,  16.0,  0.0,  100,  350,  50,  [[x]],  0.0,  0.0,  0.0
-P4:  SINE,  224.0,  16.0,  0.0,  100,  350,  100,  [(x)],  16.0,  0.0,  0.0
-P5:  SINE,  320.0,  16.0,  0.0,  100,  350,  50,  [(x)],  16.0,  0.0,  16.0
-P6:  SINE,  0.0,  0.0,  0.0,  100,  350,  50,  [+x,+x],  0.0,  0.0,  0.0
-P7:  SINE,  0.0,  0.0,  0.0,  100,  350,  50,  [+x,+x],  0.0,  0.0,  0.0
-P8:  SINE,  0.0,  0.0,  0.0,  100,  350,  50,  [+x,+x],  0.0,  0.0,  0.0
-P9:  SINE,  0.0,  0.0,  0.0,  100,  350,  50,  [+x,+x],  0.0,  0.0,  0.0
-Rep rate:  1000.0
-Field:  3478.0
+P1:  DETECTION,  768.0,  512.0,  0.0,  50,  350,  100.0,  [-1,1,0,1],  16.0,  0.0,  16.0
+P2:  SINE,  0.0,  44.8,  0.0,  50,  350,  27.0,  [x],  0.0,  0.0,  0.0
+P3:  SINE,  288.0,  44.8,  0.0,  50,  350,  27.0,  [[x]],  0.0,  0.0,  0.0
+P4:  SINE,  384.0,  44.8,  0.0,  50,  350,  60.0,  [(x)],  16.0,  0.0,  0.0
+P5:  SINE,  480.0,  44.8,  0.0,  50,  350,  27.0,  [(x)],  16.0,  0.0,  16.0
+P6:  SINE,  0.0,  0.0,  0.0,  100,  350,  50.0,  [+x,+x],  0.0,  0.0,  0.0
+P7:  SINE,  0.0,  0.0,  0.0,  100,  350,  50.0,  [+x,+x],  0.0,  0.0,  0.0
+P8:  SINE,  0.0,  0.0,  0.0,  100,  350,  50.0,  [+x,+x],  0.0,  0.0,  0.0
+P9:  SINE,  0.0,  0.0,  0.0,  100,  350,  50.0,  [+x,+x],  0.0,  0.0,  0.0
+Rep rate:  5000.0
+Field:  3443.5
 Delay:  0
 Ampl 1:  260
 Ampl 2:  260
@@ -17,18 +17,18 @@ N WURST; SECH/TANH:  10
 B SECH/TANH:  0.02
 Points:  2016
 Horizontal offset:  1024
-Window left:  120.0
-Window right:  200.0
-Acquisitions:  1
+Window left:  226.4
+Window right:  366.4
+Acquisitions:  20
 Points to Drop:  0
-Zero order:  0.0
+Zero order:  131.0227
 First order:  0.0
 Second order:  0.0
 Laser:  Nd:YaG
 Decimation:  1
 Points:  128
 Scans:  1
-Log Start:  1.0
+Log Start:  0.982
 Log End:  7.0
 Start Field:  2400.0
 End Field:  4400.0
@@ -37,3 +37,12 @@ Sweep Type:  Linear Time
 IQ Correction:  2
 X0:  0.0
 dX:  0.0
+Amplitude Step:  1.0
+Cycles:  8
+Save Each Cycle:  0
+AWG grid:  3.2
+Auto window:  140.0
+MW source:  1
+SYNT2 pulses:  
+CPMG:  0,  Decay,  2,  8,  320.0,  576.0
+CPMG phases:  y

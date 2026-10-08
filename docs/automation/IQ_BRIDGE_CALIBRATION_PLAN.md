@@ -1,11 +1,59 @@
 # I/Q calibration of the whole bridge (transmit and receive paths): plan
 
-Status: plan only (2026-09-29), not started. It covers the correction mechanism in the module and
-how to measure the calibration on the complete spectrometer: card, bridge up-converter, MW path,
-bridge receiver and card ADC.
+Status: plan written 2026-09-29. It covers the correction mechanism in the module and how to measure
+the calibration on the complete spectrometer: card, bridge up-converter, MW path, bridge receiver
+and card ADC.
+
+**Done 2026-10-08 (transmit path):**
+- Step 2 was measured on the bridge Amp-I/Q monitor output after the MW amplifier, not through a
+  loopback. That output uses the same LO, and `fv_ctrl` lies in its path. The DSO-X 3034T recorded
+  the monitor: CH1 I, CH2 Q, CH3 LASER_1 trigger.
+- Stepping `fv_ctrl` separates the transmit image from the monitor's own image, as in the model below.
+- **Result (transmit image vs IF):**
+
+  | IF (MHz) | 20 | 30 | 50 | 75 | 100 | 125 | 150 | 200 | 250 | 300 | 350 | 400 |
+  |---|---|---|---|---|---|---|---|---|---|---|---|---|
+  | Uncorrected (dBc) | −33.5 | −33.8 | −33.9 | −32.9 | −32.4 | −31.1 | −30.8 | −29.8 | −29.2 | −28.5 | −28.6 | −29.2 |
+  | Module correction (dBc) | −68.8 | −66.9 | −66.3 | −65.8 | −58.0 | −60.3 | −57.0 | −60.3 | −49.1 | −55.0 | −53.6 | −42.8 |
+
+- **Correction found:**
+  - CH1 phase: +0.3° at 20 MHz to +2.4° at 400 MHz. This is about 21 ps of CH1 delay plus a ripple
+    of ±0.6°, so it needs a table per IF.
+  - CH1/CH0 ratio: 1.04–1.07.
+- **Step 0 (transmit) is implemented:**
+  - The `iq_cal_*` table is in `PB_Insys_DAC_config.ini`.
+  - `Insys_FPGA` applies it to every pulse at the pulse frequency, or at the centre frequency for
+    WURST and SECH/TANH.
+  - The gain only ever lowers a channel, so 260 mV (the DAC full scale) is never exceeded.
+  - Negative IFs are not corrected yet.
+  - `awg_iq_correction('On'|'Off')` switches it; it is on by default from `iq_cal_enable`.
+  - The GUI amplitude and phase boxes were removed.
+- **High-IF limit:** step-to-step fluctuation of the measured image. It averages down only slowly
+  with the number of shots.
+- **LO leakage:** 14.2 mV at the monitor, about −22 dBc of a 50 % pulse at AWG attenuator 16 dB.
+  It cannot be nulled from the AWG, because the DAC → modulator I/Q path does not pass DC: an
+  injected DC decays within about 0.5 µs.
+- **Spin checks (coal, RV 0 dB, `iq_spin_check.py`):**
+  - *Normal echo* (3441 G, +50 MHz, 38.4 ns at 42/77 %): with the correction On vs Off the echo is
+    101.5 ± 1.3 % and −0.25 ± 0.47°. The correction does not change ordinary experiments.
+  - *Image side:* the AWG −50 MHz probe is on resonance at 3477.9 G, i.e. on the high-field side.
+    So the image of a +f pulse lies 2f above the main RF line.
+  - *Pump-probe at the image field (step 4 spin check):* **non-essential and not pursued.**
+    - The +50 MHz pump image lowered the probe echo by about 2.9 ± 0.8 % more with the correction
+      Off than with it On.
+    - But the pump also causes a 7 % dip that does not depend on the correction (main tone 100 MHz
+      away), which hides any residual image.
+    - Long full-power pumps (1500–1600 ns, RV 0 dB) made the bridge stop the pulses after about
+      5000 pulses, even at 300 Hz.
+    - The calibration therefore rests on the monitor measurement.
+- **Open:**
+  - the receive path (step 1);
+  - negative IFs;
+  - stability (step 4).
+- **Data and scripts:** `~/experimental_data/Melnikov/2026_10_08_iq_monitor/` on the Linux box.
 
 What exists today:
-- **CH1 phase:** `phase_shift_ch1_seq_mode_awg`, set from the GUI "Phase" box.
+- **CH1 phase:** `phase_shift_ch1_seq_mode_awg`, module base value from config `ch1_phase_shift`; the GUI "Phase" box was removed.
 - **Channel amplitudes:** `awg_amplitude`, integer mV only.
 - **"IQ Correction" in the GUI** is only digital demodulation plus phase orders. It does not correct
   the I/Q imbalance.

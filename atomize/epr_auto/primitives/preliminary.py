@@ -221,7 +221,6 @@ def protection_end_ns(wa):
     finally:
         sys.argv = original
     pb.awg_time_resolution(f'{wa.awg_grid} ns')
-    pb.awg_amplitude('CH0', str(wa.ch0_ampl), 'CH1', str(wa.ch1_ampl))
     det = wa.rect[0]
     pb.pulser_pulse(name='P1', channel=det[0], start=det[1], length=det[2], phase_list=det[3])
     for i, (tp, ap) in enumerate(zip(wa.rect[1:], wa.awg)):
