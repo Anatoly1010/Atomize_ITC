@@ -25,7 +25,10 @@ and card ADC.
   - `Insys_FPGA` applies it to every pulse at the pulse frequency, or at the centre frequency for
     WURST and SECH/TANH.
   - The gain only ever lowers a channel, so 260 mV (the DAC full scale) is never exceeded.
-  - Negative IFs are not corrected yet.
+  - Negative IFs were added the same day, measured with 1000 ns pulses at −20 … −400 MHz. Uncorrected
+    −28…−34 dBc; with the module correction −53.7…−71.9 dBc down to −250 MHz, −46.6 / −49.8 /
+    −58.2 dBc at −300 / −350 / −400 MHz. One sweep taken right after the bridge restart was too noisy
+    and was discarded.
   - `awg_iq_correction('On'|'Off')` switches it; it is on by default from `iq_cal_enable`.
   - The GUI amplitude and phase boxes were removed.
 - **High-IF limit:** step-to-step fluctuation of the measured image. It averages down only slowly
@@ -48,7 +51,7 @@ and card ADC.
     - The calibration therefore rests on the monitor measurement.
 - **Open:**
   - the receive path (step 1);
-  - negative IFs;
+  - a per-sample correction along chirps (step 3): WURST and SECH/TANH still use the centre value;
   - stability (step 4).
 - **Data and scripts:** `~/experimental_data/Melnikov/2026_10_08_iq_monitor/` on the Linux box.
 

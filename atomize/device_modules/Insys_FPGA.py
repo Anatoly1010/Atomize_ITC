@@ -4116,7 +4116,7 @@ class Insys_FPGA:
         Enable, disable or query the transmit I/Q correction;
         Applies the per-IF CH1 phase / CH1-CH0 ratio table from PB_Insys_DAC_config.ini
         at each pulse's (centre) frequency, never raising a channel above its set amplitude;
-        negative frequencies are not corrected.
+        the table covers both signs of the frequency (-400 ... 400 MHz).
         Input: awg_iq_correction('On'); awg_iq_correction('Off')
         Default: iq_cal_enable from the config file;
         Output: 'On'

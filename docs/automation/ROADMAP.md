@@ -28,7 +28,8 @@ RV means rotary-vane attenuation of microwave excitation. VA means receiver vide
   - Image measured on the bridge monitor: from −34…−29 dBc to −53.6…−68.8 dBc up to 350 MHz, except
     250 MHz at −49.1; 400 MHz −42.8 dBc.
   - A normal echo is unchanged; the spin-level pump-probe check is non-essential.
-  - **Open:** the receive path; negative IFs.
+  - Negative IFs added: −53.7…−71.9 dBc down to −250 MHz.
+  - **Open:** the receive path; per-sample correction along chirps.
   - Details: [IQ_BRIDGE_CALIBRATION_PLAN.md](IQ_BRIDGE_CALIBRATION_PLAN.md).
 - The public reference is maintained in `atomize_docs`. The 2026-09-19 update covers live-rate tuning and adaptive relaxation ranges, with a regenerated step reference and a passing strict MkDocs build.
 
