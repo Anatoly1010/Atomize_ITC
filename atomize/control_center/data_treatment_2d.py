@@ -205,7 +205,8 @@ _HELP_FIT = (
     'Fit every trace along the decay axis with a relaxation model. The chosen '
     'parameter is plotted vs the other axis as a 1D map (e.g. T<sub>m</sub> vs '
     'field). For k / k1 / k2 the value is the time constant in the decay-axis '
-    'units.')
+    'units. Nonuniform delay grids, including logarithmic T1, are fitted at '
+    'their exact saved times; the heatmap shows these grids by point index.')
 
 _HELP_SLICE = (
     'Send one trace to the standalone 1D Data Treatment window for fitting / '
@@ -224,6 +225,13 @@ _HELP_RESHAPE = (
     'the X step, as in the acquisition; From = To takes the whole trace — and '
     'the integrals become an N₂ × N₁ map with t1 along the new X and t2 along '
     'the new Y. Raw traces sit at the IF, so demodulate them first.<br><br>'
+    '<b>Delay/length vs field:</b> N₁, the integration window and both map axes '
+    'are read from the experimental header. Logarithmic T1 delays are retained '
+    'exactly for Fit, Slice and saving; the preview uses point indices. '
+    'Open *_map.h5 directly for an already integrated map.<br><br>'
+    '<b>3pESEEM (T, tau):</b> T is the fast X axis and tau the slow Y axis; '
+    'N₁, both starts and independent steps are read from the header. '
+    'Demodulate the raw file before Reshape, or open *_map.h5 directly.<br><br>'
     '<b>HYSCORE</b>, map file (*_map.h5 or its CSV):<br>'
     '1. Open I/Q (CSV / HDF5)….<br>'
     '2. Background tab: Axis Both, Model Polynomial, Order 3 (or Exponential) → '
@@ -275,6 +283,8 @@ class MainWindow(QMainWindow):
         self._src_file = None      # as-read matrices + axis specs, before the Source options
         self.src_i = self.src_q = None
         self.src_col = self.src_row = None     # axis dicts (see _axis)
+        self._raw_axis_values = (None, None)
+        self._reshape_axis_values = (None, None)
         self.res_i = self.res_q = None
         self.res_col = self.res_row = None
         self.res_frames = ('I', 'Q')
@@ -497,11 +507,27 @@ class MainWindow(QMainWindow):
         return c
 
     @staticmethod
-    def _axis(start, step, name, scale, auto=False):
+    def _axis(start, step, name, scale, auto=False, values=None):
         # auto=True marks an axis whose label is owned by an operation (e.g. the
         # FFT frequency axis), so manual title/unit edits leave it untouched.
         return {'start': float(start), 'step': float(step),
-                'name': str(name), 'scale': str(scale), 'auto': bool(auto)}
+                'name': str(name), 'scale': str(scale), 'auto': bool(auto),
+                'values': values}
+
+    @staticmethod
+    def _axis_values(ax, size):
+        """Physical coordinates, including an explicit nonuniform grid."""
+        values = ax.get('values')
+        return np.asarray(values) if values is not None else ax['start'] + ax['step']*np.arange(size)
+
+    def _require_uniform(self, *axes):
+        """Reject operations that require equally spaced samples."""
+        for ax in axes:
+            if ax.get('values') is not None:
+                self.set_status(f'{ax["name"]} has nonuniform spacing; this operation requires '
+                                'a uniform grid. Fit, Slice and phase correction use the exact coordinates.')
+                return False
+        return True
 
     # ---- tabs ----
     def _build_phase_tab(self):
@@ -1004,24 +1030,51 @@ class MainWindow(QMainWindow):
         self.bg_order.setVisible(poly)
 
     def _prefill_reshape(self, lines):
-        """Fill the Reshape fields from a hyscore_2d_h5.py-style header; without
-        its N1 / t1 / t2 lines the fields keep their values."""
+        """Restore map geometry and integration window from experiment headers."""
+        self._reshape_axis_values = (None, None)
+        for _, _, start, step in self.reshape_axes:
+            start.setEnabled(True); step.setEnabled(True)
         vals = {}
         for ln in lines:
             key, sep, val = str(ln).lstrip('# ').partition(':')
             nums = re.findall(r'[-+]?\d+(?:\.\d*)?(?:[eE][-+]?\d+)?', val)
             if sep and nums:
                 vals[key.strip().lower()] = [float(v) for v in nums]
-        if not all(k in vals for k in ('n1', 't1 start', 't2 start', 't1 / t2 step')):
+        if all(k in vals for k in ('delay / field points', 'sweep axis (ns)', 'start field', 'field step')):
+            n1 = int(vals['delay / field points'][0])
+            delays = vals['sweep axis (ns)']
+            if len(delays) != n1:
+                return
+            hx = self._axis_spec('Delay / length', unit='ns')
+            self._axis_from_array(hx, delays, 'ns')
+            hy = self._axis_spec('Field', vals['start field'][0], vals['field step'][0], 'G')
+        elif all(k in vals for k in ('n1', 't start', 'tau start', 't step', 'tau step')):
+            n1 = int(vals['n1'][0])
+            hx, hy = (self._axis_spec(name, vals[f'{name.lower()} start'][0],
+                                     vals[f'{name.lower()} step'][0], 'ns')
+                      for name in ('T', 'tau'))
+        elif all(k in vals for k in ('n1', 't1 start', 't2 start', 't1 / t2 step')):
+            n1 = int(vals['n1'][0])
+            hx, hy = (self._axis_spec(name, vals[f'{name} start'][0], vals['t1 / t2 step'][0], 'ns')
+                      for name in ('t1', 't2'))
+        else:
             return
-        self.reshape_n1.setValue(int(vals['n1'][0]))
-        for (nedit, uedit, start, step), name in zip(self.reshape_axes, ('t1', 't2')):
-            nedit.setText(name); uedit.setText('ns')
-            start.setValue(vals[f'{name} start'][0])
-            step.setValue(vals['t1 / t2 step'][0])
+        self.reshape_n1.setValue(n1)
+        self._reshape_axis_values = (hx.get('values'), hy.get('values'))
+        for (nedit, uedit, start, step), ax in zip(self.reshape_axes, (hx, hy)):
+            nedit.setText(ax['name']); uedit.setText(ax['unit'])
+            start.setValue(ax['start']); step.setValue(ax['step'])
+            uniform = ax.get('values') is None
+            start.setEnabled(uniform); step.setEnabled(uniform)
+            tip = '' if uniform else 'Exact nonuniform delays from the file; displayed by point index.'
+            start.setToolTip(tip); step.setToolTip(tip)
         win = vals.get('integration window', [])
         if len(win) == 2:
-            self.reshape_from.setValue(win[0]); self.reshape_to.setValue(win[1])
+            try:
+                factor = float(fft_module.time_axis_ns(1, self.src_col['scale']))
+            except (ValueError, TypeError):
+                return
+            self.reshape_from.setValue(win[0]/factor); self.reshape_to.setValue(win[1]/factor)
 
     def _fit_fixed(self, model):
         """{'beta': value} when Fix β is on and the model has β, else None."""
@@ -1114,11 +1167,12 @@ class MainWindow(QMainWindow):
                     qmsg = 'no _1 file (Q = 0)'
             header_lines = read_header(path)    # one read: axis steps + viewer
             hx, hy = self._parse_axis_header(header_lines)
-            # an .h5 axis dataset fills only what the header could not give
-            if hx['step'] is None:
-                self._axis_from_array(hx, xarr, xaunit)
-            if hy['step'] is None:
-                self._axis_from_array(hy, yarr, yaunit)
+            for spec, arr, unit, size in ((hx, xarr, xaunit, i.shape[1]),
+                                         (hy, yarr, yaunit, i.shape[0])):
+                if unit is not None or spec['step'] is None:
+                    self._axis_from_array(spec, arr, unit)
+                if spec.get('values') is not None and len(spec['values']) != size:
+                    raise ValueError('Axis length does not match the data matrix.')
             for spec, default in ((hx, 'Time'), (hy, 'Delay')):
                 if spec['step'] is not None and spec['name'] is None:
                     spec['name'] = default
@@ -1134,7 +1188,7 @@ class MainWindow(QMainWindow):
                    f'(matrix {self.raw_i.shape[0]}×{self.raw_i.shape[1]} [traces × points]'
                    f'{", off-resonance reference removed" if offres else ""}).')
             if parsed:
-                msg += f' Axes from header: {parsed}.'
+                msg += f' Axes from file: {parsed}.'
             shift = header_frequency_shift(header_lines)
             if shift:
                 msg += (f' Frequency shift {shift:g} MHz set from the file header — '
@@ -1176,18 +1230,29 @@ class MainWindow(QMainWindow):
         """
         spec = {'x': cls._axis_spec(), 'y': cls._axis_spec()}
         for ln in header_lines:
+            m = re.match(r'\s*#?\s*([XY])\s*\((.*)\)\s*:\s*values\s+(\[.*\])\s*$', ln)
+            if m:
+                name, sep, unit = m.group(2).rpartition('/')
+                if not sep:
+                    name, unit = unit, ''
+                ax = spec[m.group(1).lower()]
+                ax.update(name=name, unit=unit)
+                cls._axis_from_array(ax, ast.literal_eval(m.group(3)), unit)
+                continue
             # 'X (Name/unit): start a step b', as save_result writes it
             m = re.match(r'\s*#?\s*([XY])\s*\((.*)\)\s*:\s*start\s+(\S+)\s+step\s+(\S+)', ln)
             if m:
-                name, _, unit = m.group(2).partition('/')
+                name, sep, unit = m.group(2).rpartition('/')
+                if not sep:
+                    name, unit = unit, ''
                 try:
                     start, step = float(m.group(3)), float(m.group(4))
                 except ValueError:
                     continue
                 if unit == 's':
                     start, step, unit = start * 1e9, step * 1e9, 'ns'
-                spec[m.group(1).lower()].update(name=name or None, unit=unit or None,
-                                                start=start, step=step)
+                spec[m.group(1).lower()].update(name=name, unit=unit,
+                                                start=start, step=step, values=None)
                 continue
             m = re.match(r'\s*#?\s*([a-z\- ]+?)\s*:\s*([-+0-9.eE]+)\s*([a-zA-Zµ%]*)',
                          ln, re.IGNORECASE)
@@ -1212,17 +1277,25 @@ class MainWindow(QMainWindow):
                 break
         return spec['x'], spec['y']
 
-    def _axis_from_array(self, spec, arr, unit=None):
-        """Read axis geometry; widget precision is set when the spec is loaded."""
-        if arr is None or np.size(arr) < 2:
+    @staticmethod
+    def _axis_from_array(spec, arr, unit=None):
+        """Keep nonuniform coordinates intact; uniform axes retain start/step."""
+        if arr is None:
             return
+        arr = np.asarray(arr, float)
+        if arr.ndim != 1 or not arr.size or not np.isfinite(arr).all():
+            raise ValueError('Axis must be a finite, nonempty coordinate vector.')
         if unit == 's':
-            arr, unit = np.asarray(arr, float) * 1e9, 'ns'
-        if unit:
+            arr, unit = arr * 1e9, 'ns'
+        if unit is not None:
             spec['unit'] = unit
-        start, step = self._axis_start_step(arr)
-        if np.isfinite(start) and np.isfinite(step) and step != 0:
-            spec['start'], spec['step'] = start, step
+        start, step = MainWindow._axis_start_step(arr)
+        diff = np.diff(arr)
+        if diff.size and not (np.all(diff > 0) or np.all(diff < 0)):
+            raise ValueError('Axis coordinates must be strictly increasing or decreasing.')
+        uniform = np.allclose(diff, step, rtol=1e-7, atol=abs(step)*1e-9)
+        spec.update(start=start, step=step if uniform else 0.0,
+                    values=None if uniform else arr.copy())
 
     def _apply_axis_specs(self, hx, hy):
         """Push two axis specs into the Axes widgets without firing the
@@ -1234,6 +1307,10 @@ class MainWindow(QMainWindow):
                  ('Y', hy, self.yname_edit, self.yscale_edit, self.y0_spin, self.dy_spin)]
         for label, spec, nedit, uedit, zspin, dspin in pairs:
             start, step = spec['start'], spec['step']
+            uniform = spec.get('values') is None
+            zspin.setEnabled(uniform); dspin.setEnabled(uniform)
+            tip = '' if uniform else 'Exact nonuniform coordinates from the file; displayed by point index.'
+            zspin.setToolTip(tip); dspin.setToolTip(tip)
             if step is not None and start is None:
                 start = 0.0
             for w, v in ((nedit, spec['name']), (uedit, spec['unit'])):
@@ -1252,7 +1329,9 @@ class MainWindow(QMainWindow):
                     w.setDecimals(min(15, decimals))
                     w.setValue(float(v))
                     w.blockSignals(False)
-            if step is not None:
+            if not uniform:
+                done.append(f'{label}: {len(spec["values"])} nonuniform points ({spec["unit"] or ""}); preview by index')
+            elif step is not None:
                 done.append(f'{label} start={start:g} Δ={step:g} {spec["unit"] or ""}'.strip())
         return ', '.join(done)
 
@@ -1267,10 +1346,14 @@ class MainWindow(QMainWindow):
             # same two-step subtraction as tr_control / Open TR Data: reference row, then time-zero column
             i, q = (i - i[0])[1:], (q - q[0])[1:]
             i, q = i - i[:, [0]], q - q[:, [0]]
+            if hy.get('values') is not None:
+                hy['values'] = hy['values'][1:]
+                hy['start'] = float(hy['values'][0])
         if self.transpose_check.isChecked():
             i, q = i.T, q.T
             hx, hy = hy, hx                     # axes swap with the matrix
         self.raw_i, self.raw_q = i, q
+        self._raw_axis_values = (hx.get('values'), hy.get('values'))
         parsed = self._apply_axis_specs(hx, hy)
         self.reset_to_raw()
         return offres, parsed
@@ -1385,9 +1468,9 @@ class MainWindow(QMainWindow):
 
     def _raw_axes(self):
         return (self._axis(self.x0_spin.value(), self.dx_spin.value(),
-                           self.xname_edit.text(), self.xscale_edit.text()),
+                           self.xname_edit.text(), self.xscale_edit.text(), values=self._raw_axis_values[0]),
                 self._axis(self.y0_spin.value(), self.dy_spin.value(),
-                           self.yname_edit.text(), self.yscale_edit.text()))
+                           self.yname_edit.text(), self.yscale_edit.text(), values=self._raw_axis_values[1]))
 
     def on_axes_changed(self, *args):
         if self.raw_i is None:
@@ -1464,6 +1547,7 @@ class MainWindow(QMainWindow):
         self.res_frames = frames
         self.res_meta = list(meta)
         self._push(self.res_i, self.res_q, col, row, frames)
+        self._update_slice_label()
 
     def reset_to_raw(self):
         if self.raw_i is None:
@@ -1500,6 +1584,7 @@ class MainWindow(QMainWindow):
     def clear_all(self):
         self.raw_i = self.raw_q = self.src_i = self.src_q = None
         self._src_file = None
+        self._raw_axis_values = (None, None)
         self.res_i = self.res_q = None
         self._clear_preview()
         self._set_loaded_file(None)
@@ -1612,6 +1697,8 @@ class MainWindow(QMainWindow):
         re_, im_ = np.transpose(np.asarray(i, float)), np.transpose(np.asarray(q, float))
         # a real-only dataset (Q ≡ 0) is one frame: no empty Q frame, no frame strip
         arr = np.array([re_, im_]) if np.any(im_) else re_
+        col, row = (self._axis(0, 1, ax['name'] + ' point', '') if ax.get('values') is not None else ax
+                    for ax in (col, row))
         # a 0 step collapses the image scale and renders nothing; never let that
         # reach setImage (axis geometry may carry a 0 from a source without steps).
         sx = col['step'] if col['step'] else 1.0
@@ -1654,13 +1741,13 @@ class MainWindow(QMainWindow):
     def _phase_time_axis(self):
         if self._is_freq_axis(self.src_col):
             raise ValueError('Use frequency-domain phase correction for spectral input.')
-        x = self.src_col['start'] + self.src_col['step']*np.arange(self.src_i.shape[1])
+        x = self._axis_values(self.src_col, self.src_i.shape[1])
         return fft_module.time_axis_ns(x, self.src_col['scale'])
 
     def _phase_spectrum(self):
         """Return the existing spectrum with its phase coordinates in MHz."""
         z = self.src_i + 1j*self.src_q
-        x = self.src_col['start'] + self.src_col['step']*np.arange(z.shape[1])
+        x = self._axis_values(self.src_col, z.shape[1])
         try:
             f = fft_module.frequency_axis_mhz(x, self.src_col['scale'])
         except ValueError as exc:
@@ -1691,7 +1778,7 @@ class MainWindow(QMainWindow):
             z = (self.src_i + 1j*self.src_q)*np.exp(2j*np.pi*v1*t/1000.0)[None, :]
             phi = fft_module.Fast_Fourier.auto_phase_zero_echo(z)
             self.phase_zero.setValue(phi)
-            dt = float(t[1] - t[0]) if len(t) > 1 else 0.0
+            dt = float(t[1] - t[0]) if len(t) > 1 and self.src_col.get('values') is None else 0.0
             f0 = self._carrier(z, dt)*1000.0 if dt else 0.0
             env = np.abs(z).mean(axis=0)
             width = abs(dt)*max(1, int(np.count_nonzero(env >= 0.25*env.max())))
@@ -1757,6 +1844,8 @@ class MainWindow(QMainWindow):
         """Remove the time-domain carrier and refine the constant phase."""
         if self.src_i is None:
             self.set_status('Open an I/Q dataset first.')
+            return False
+        if not self._require_uniform(self.src_col):
             return False
         if self.phase_mode.currentIndex() != 0:
             self.set_status('Frequency-domain first and second orders are manual.')
@@ -1828,10 +1917,16 @@ class MainWindow(QMainWindow):
         if self.src_i is None:
             self.set_status('Open an I/Q dataset first.')
             return False
+        if not self._require_uniform(self.src_col):
+            return False
         ny, nx = self.src_i.shape
         n1, dx = self.reshape_n1.value(), self.src_col['step']
+        values = self._reshape_axis_values[0]
+        if values is not None and n1 != len(values):
+            self.set_status(f'Reshape: N₁ must match the {len(values)} saved delay coordinates.')
+            return False
         lo, hi = sorted((self.reshape_from.value(), self.reshape_to.value()))
-        x = self.src_col['start'] + dx*np.arange(nx)
+        x = self._axis_values(self.src_col, nx)
         tol = 1e-6*abs(dx)
         win = np.ones(nx, bool) if lo == hi else (x >= lo - tol) & (x < hi - tol)
         if not win.any():
@@ -1843,8 +1938,8 @@ class MainWindow(QMainWindow):
             return False
         v = (self.src_i[:, win] + 1j*self.src_q[:, win]).sum(axis=1)*abs(dx)
         z = v.reshape(ny // n1, n1)
-        col, row = (self._axis(s.value(), d.value(), n.text(), u.text(), auto=True)
-                    for n, u, s, d in self.reshape_axes)
+        col, row = (self._axis(s.value(), d.value(), n.text(), u.text(), auto=True, values=values)
+                    for (n, u, s, d), values in zip(self.reshape_axes, self._reshape_axis_values))
         meta = ['Integrate along X and reshape the trace index',
                 f'X window {x[win][0]:g} – {x[win][-1]:g} ({int(win.sum())} pts), '
                 f'sum × step {abs(dx):g}',
@@ -1884,7 +1979,7 @@ class MainWindow(QMainWindow):
             if axis == 1:
                 i, q = i.T, q.T
             k = i.shape[1]
-            fit = self._bg_fit(np.hstack((i, q)), ax['start'] + ax['step']*np.arange(i.shape[0]))
+            fit = self._bg_fit(np.hstack((i, q)), self._axis_values(ax, i.shape[0]))
             i, q = i - fit[:, :k], q - fit[:, k:]
             if axis == 1:
                 i, q = i.T, q.T
@@ -1937,6 +2032,9 @@ class MainWindow(QMainWindow):
             self.set_status('Open an I/Q dataset first.')
             return
         mode = self.fft_axis.currentIndex()   # 0 = X, 1 = Y, 2 = both (2D)
+        axes = (self.src_col, self.src_row) if mode == 2 else ((self.src_col,) if mode == 0 else (self.src_row,))
+        if not self._require_uniform(*axes):
+            return
         win_name = self.fft_window.currentText()
         wparam = (self.fft_winparam.value()
                   if win_name in WINDOW_PARAM else 8.6)
@@ -2053,6 +2151,9 @@ class MainWindow(QMainWindow):
             self.set_status('Open an I/Q dataset first.')
             return
         mode = self.filt_axis.currentIndex()   # 0 = X, 1 = Y, 2 = both
+        axes = (self.src_col, self.src_row) if mode == 2 else ((self.src_col,) if mode == 0 else (self.src_row,))
+        if not self._require_uniform(*axes):
+            return
         Z = self.src_i + 1j*self.src_q
         specs = []
         if mode != 1:
@@ -2095,7 +2196,7 @@ class MainWindow(QMainWindow):
         dax = row if dip == 0 else col
         eax = col if dip == 0 else row
         n_echo = i.shape[1 - dip]
-        tvec = eax['start'] + eax['step']*np.arange(n_echo)
+        tvec = self._axis_values(eax, n_echo)
         step = float(dax['step']) or 1.0
         scale = eax['scale']
         try:
@@ -2122,6 +2223,8 @@ class MainWindow(QMainWindow):
         if self.src_i is None:
             self.set_status('Open an I/Q dataset first.')
             return
+        if not self._require_uniform(self.src_col, self.src_row):
+            return False
         dip, _step, tvec, (_dn, ename, escale) = self._shear_geometry()
         profile = np.sqrt(self.src_i**2 + self.src_q**2).mean(axis=dip)
         idx = int(sigproc.echo_center(profile))
@@ -2138,6 +2241,8 @@ class MainWindow(QMainWindow):
         is repeated."""
         if self.src_i is None:
             self.set_status('Open an I/Q dataset first.')
+            return False
+        if not self._require_uniform(self.src_col, self.src_row):
             return False
         dip, step, tvec, (dname, ename, escale) = self._shear_geometry()
         n_dip = self.src_i.shape[dip]
@@ -2204,6 +2309,8 @@ class MainWindow(QMainWindow):
         if self.src_i is None:
             self.set_status('Open an I/Q dataset first.')
             return
+        if not self._require_uniform(self.src_col, self.src_row):
+            return False
         dip, step, tvec, (dname, ename, escale) = self._shear_geometry()
         n_dip = self.src_i.shape[dip]
         if n_dip < 2:
@@ -2237,6 +2344,8 @@ class MainWindow(QMainWindow):
             self.set_status('Open an I/Q dataset first.')
             return
         i, q, col, row = self._current_iq()
+        if not self._require_uniform(col, row):
+            return False
         dip, step, tvec, (dname, ename, escale) = self._shear_geometry(i, col, row)
         dax = row if dip == 0 else col
         tref = float(self.shear_tref.value())
@@ -2248,7 +2357,7 @@ class MainWindow(QMainWindow):
             return
         re = (i[:, gate] if dip == 0 else i[gate, :]).sum(axis=1 - dip)
         im = (q[:, gate] if dip == 0 else q[gate, :]).sum(axis=1 - dip)
-        x = dax['start'] + dax['step']*np.arange(re.size)
+        x = self._axis_values(dax, re.size)
         pk, sn = self._trace_quality(re, step)
         xname = f"{dax['name']} ({dax['scale']})" if dax['scale'] else dax['name']
         # the buffer is written with the platform's default codec: keep the
@@ -2326,6 +2435,8 @@ class MainWindow(QMainWindow):
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         try:
             self.reset_to_raw()
+            if not self._require_uniform(self.src_col, self.src_row):
+                return
             if self._is_freq_axis(self.src_col) or not self.src_col['step']:
                 self.set_status('Auto shear needs a time-domain X axis with a '
                                 'non-zero step.')
@@ -2413,14 +2524,14 @@ class MainWindow(QMainWindow):
         i, q, col, row = self._current_iq()
         chan = self._channel(i, q, self.fit_channel.currentText())
         if self.fit_axis.currentIndex() == 0:            # X = decay (rows are decays)
-            xaxis = col['start'] + col['step']*np.arange(chan.shape[1])
+            xaxis = self._axis_values(col, chan.shape[1])
             traces = chan
-            other = row['start'] + row['step']*np.arange(chan.shape[0])
+            other = self._axis_values(row, chan.shape[0])
             return traces, xaxis, other, row, col
         # Y = decay (columns are decays)
-        xaxis = row['start'] + row['step']*np.arange(chan.shape[0])
+        xaxis = self._axis_values(row, chan.shape[0])
         traces = chan.T
-        other = col['start'] + col['step']*np.arange(chan.shape[1])
+        other = self._axis_values(col, chan.shape[1])
         return traces, xaxis, other, col, row
 
     _FIT_STATS_TOOLTIP = (
@@ -2592,14 +2703,14 @@ class MainWindow(QMainWindow):
         self.slice_spin.setRange(1, max(1, ntr))       # 1-based: traces 1…ntr
         self.slice_spin.blockSignals(False)
         idx = int(self.slice_spin.value()) - 1         # 0-based for the coordinate
-        coord = axis['start'] + axis['step']*idx
+        coord = self._axis_values(axis, ntr)[idx]
         if getattr(self, 'slice_avg', None) is not None and self.slice_avg.isChecked():
             self.slice_spin2.blockSignals(True)
             self.slice_spin2.setRange(1, max(1, ntr))
             self.slice_spin2.blockSignals(False)
             idx2 = int(self.slice_spin2.value()) - 1
             lo, hi = sorted((idx, idx2))
-            c2 = axis['start'] + axis['step']*idx2
+            c2 = self._axis_values(axis, ntr)[idx2]
             self.slice_label.setText(f"{axis['name']} = {coord:.4g}…{c2:.4g} "
                                      f"{axis['scale']} (avg {hi - lo + 1} of {ntr})")
         else:
@@ -2636,11 +2747,11 @@ class MainWindow(QMainWindow):
         along_x = self.slice_axis.currentIndex() == 0
         if along_x:                                      # X = slice; row(s)
             ntr = i.shape[0]
-            x = col['start'] + col['step']*np.arange(i.shape[1])
+            x = self._axis_values(col, i.shape[1])
             dax, oax = col, row
         else:                                            # Y = slice; column(s)
             ntr = i.shape[1]
-            x = row['start'] + row['step']*np.arange(i.shape[0])
+            x = self._axis_values(row, i.shape[0])
             dax, oax = row, col
         # Trace # is 1-based in the UI (matches the cursor label); -1 here for the
         # 0-based array index. lo/hi/tag are reported 1-based to the user.
@@ -2655,7 +2766,7 @@ class MainWindow(QMainWindow):
             else:
                 re = i[:, lo:hi + 1].mean(axis=1); im = q[:, lo:hi + 1].mean(axis=1)
             tag = f'{lo + 1}-{hi + 1}'
-            coord = oax['start'] + oax['step']*0.5*(lo + hi)
+            coord = float(self._axis_values(oax, ntr)[lo:hi + 1].mean())
         else:
             # Not averaging: use the selected Trace # directly. lo = min(idx, idx2)
             # would snap to the (default-0) "average up to #" spin and always send
@@ -2664,7 +2775,7 @@ class MainWindow(QMainWindow):
             im = q[idx] if along_x else q[:, idx]
             lo = hi = idx                  # report the actual trace, not the spin2 default
             tag = str(idx + 1)
-            coord = oax['start'] + oax['step']*idx
+            coord = self._axis_values(oax, ntr)[idx]
         return {'x': x, 're': re, 'im': im, 'dax': dax, 'oax': oax,
                 'tag': tag, 'coord': coord, 'mean': mean, 'lo': lo, 'hi': hi}
 
@@ -2749,12 +2860,15 @@ class MainWindow(QMainWindow):
         # save_data writes a (2, nX, nY) array as name.csv (real) + name_1.csv
         # (imag), each transposed back to [trace, point] — the load format.
         arr = np.array([np.transpose(i), np.transpose(q)])
-        header = '\n'.join(meta + [
-            f'X ({col["name"]}/{col["scale"]}): start {col["start"]:.6g} step {col["step"]:.6g}',
-            f'Y ({row["name"]}/{row["scale"]}): start {row["start"]:.6g} step {row["step"]:.6g}',
+        axis_lines = []
+        for label, ax in (('X', col), ('Y', row)):
+            coordinates = (f'values {np.asarray(ax["values"]).tolist()}' if ax.get('values') is not None
+                           else f'start {ax["start"]:.17g} step {ax["step"]:.17g}')
+            axis_lines.append(f'{label} ({ax["name"]}/{ax["scale"]}): {coordinates}')
+        header = '\n'.join(meta + axis_lines + [
             'channel 0 = real/I (this file), channel 1 = imag/Q (_1 file)'])
-        axes = (col['start'] + col['step']*np.arange(i.shape[1]),
-                row['start'] + row['step']*np.arange(i.shape[0]))
+        axes = (self._axis_values(col, i.shape[1]),
+                self._axis_values(row, i.shape[0]))
         self.opener.save_data(file_path, arr, header=header, mode='w', axes=axes,
                               axes_units=(col['scale'], row['scale']))
         h5 = file_path.lower().endswith('.h5')
