@@ -365,7 +365,7 @@ class MainWindow(QMainWindow):
         trace_cell.addWidget(gui_forms.label('Trace'))
         trace_cell.addWidget(self.trace_combo, 1)
         src_grid.addLayout(trace_cell, 1, 0, 1, 3)
-        src_grid.addWidget(self.trace_remove_btn, 1, 3)
+        src_grid.addWidget(gui_forms.row_button(self.trace_remove_btn), 1, 3)
 
         # Name of the dataset currently loaded (file basename, or 'Loaded from
         # plot' for the in-memory buffer). Kept on its own line so a long path
@@ -458,6 +458,7 @@ class MainWindow(QMainWindow):
         btn_clear_res = QPushButton('Clear result')
         btn_clear_res.setStyleSheet(BUTTON_STYLE)
         btn_clear_res.clicked.connect(self.clear_result)
+        btn_chain.setFixedHeight(btn_undo.sizeHint().height())
         for i, b in enumerate((btn_plot, btn_save, btn_chain, btn_undo, btn_clear_res)):
             out_grid.addWidget(b, 1, i)
 
@@ -477,7 +478,7 @@ class MainWindow(QMainWindow):
         self.makie_btn.clicked.connect(self.make_makie_figure)
         # Makie spans the last two of the five Output buttons above it
         out_grid.addWidget(self.makie_mode, 2, 0, 1, 3)
-        out_grid.addWidget(self.makie_btn, 2, 3, 1, 2)
+        out_grid.addWidget(gui_forms.row_button(self.makie_btn), 2, 3, 1, 2)
 
         self.status = QLabel('Load a dataset to begin.')
         self.status.setStyleSheet(LABEL_STYLE)

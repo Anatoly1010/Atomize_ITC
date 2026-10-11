@@ -52,7 +52,7 @@ from atomize.general_modules.gui_style import (apply_app_style,
 # Panel width. Fields stretch to fill their column rather than taking a
 # fixed width, so they end level with the button grids with or without
 # the scroll bar.
-PANEL_W = 370
+PANEL_W = 380
 
 # Point size for HTML <sub> subscripts. The Qt rich-text default (~0.7 em)
 # renders subscripts tiny; bump them so they read clearly. The plot axis/legend

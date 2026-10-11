@@ -121,6 +121,7 @@ def _si_base(unit):
 # relaxation models exposed in the per-trace Fit tab (a curated subset of the
 # shared fitter; for T1/T2 decays k / k1 / k2 are the time constants).
 RELAX_MODELS = ['Exponential', 'Bi-exponential', 'Stretched exponential']
+RELAX_LABELS = ['Exponential', 'Bi-exponential', 'Stretched exp.']
 
 # one-shot mailbox the 1D Data Treatment window reads on "Load from plot";
 # same path the main window writes on right-click → "Send to Data Treatment".
@@ -235,14 +236,14 @@ _HELP_RESHAPE = (
     '<b>HYSCORE</b>, map file (*_map.h5 or its CSV):<br>'
     '1. Open I/Q (CSV / HDF5)….<br>'
     '2. Background tab: Axis Both, Model Polynomial, Order 3 (or Exponential) → '
-    'Subtract background → Result → input.<br>'
+    'Subtract → Result → input.<br>'
     '3. FFT tab: Transform axis Both (2D), Window Hann, Echo center 0 pts, '
     'Zero fill ×2, Magnitude on → Compute FFT.<br>'
     '4. Read the cross peaks with the cursor.<br><br>'
     'Raw file (hyscore_2d_h5.py): after step 1, Phase tab: Time-domain, '
     'Frequency shift (pre-filled from the header\'s Frequency Shift line) → '
     'Apply correction → Result → input; then this tab (window pre-filled from '
-    'the header) → Integrate & reshape → Result → input; then steps 2–4.')
+    'the header) → Reshape → Result → input; then steps 2–4.')
 
 _HELP_BACKGROUND = (
     'Fits a smooth background to every trace and subtracts it, I and Q '
@@ -326,8 +327,6 @@ class MainWindow(QMainWindow):
         icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                  'gui', 'icon_treat2d.ico')
         self.setWindowIcon(QIcon(icon_path))
-        self.setMinimumHeight(560)
-        self.setMinimumWidth(900)
         self.resize(1040, 720)
         # background on the QMainWindow (as in awg_phasing_insys.py) rather than
         # the central widget, so spinboxes keep their full native frame.
@@ -440,6 +439,7 @@ class MainWindow(QMainWindow):
         # ---- Operation tabs ----
         self.tabs = QTabWidget()
         self.tabs.setStyleSheet(ANALYSIS_TAB_STYLE)
+        self.tabs.tabBar().setUsesScrollButtons(False)
         self.tabs.addTab(self._build_phase_tab(), 'Phase')
         self.tabs.addTab(self._build_fft_tab(), 'FFT')
         self.tabs.addTab(self._build_filter_tab(), 'Filter')
@@ -475,6 +475,7 @@ class MainWindow(QMainWindow):
         btn_save = QPushButton('Save I/Q…')
         btn_save.setStyleSheet(BUTTON_STYLE)
         btn_save.clicked.connect(self.save_result)
+        btn_chain.setFixedHeight(btn_save.sizeHint().height())
         out_row.addWidget(btn_apply); out_row.addWidget(btn_chain)
         out_row.addWidget(btn_reset); out_row.addWidget(btn_save)
         panel.addLayout(out_row)
@@ -862,6 +863,7 @@ class MainWindow(QMainWindow):
             'plain map, another direction, an arbitrary index range, averaged '
             'rather than summed — use the Slice tab.')
         btn_sum.clicked.connect(self.collapse_shear)
+        btn_sum.setFixedHeight(btn.sizeHint().height())
         p.add_button_row(btn_sum, width=gf.ACTION_W)
         p.add_stretch()
         return p
@@ -877,8 +879,8 @@ class MainWindow(QMainWindow):
         self.fit_channel = self._combo(['Real (I)', 'Magnitude', 'Imag (Q)'])
         p.add_row('Channel', self.fit_channel)
 
-        self.fit_model = self._combo(RELAX_MODELS)
-        self.fit_model.setCurrentText('Stretched exponential')
+        self.fit_model = self._combo(RELAX_LABELS)
+        self.fit_model.setCurrentIndex(2)
         self.fit_model.currentIndexChanged.connect(self._update_fit_params)
         p.add_row('Model', self.fit_model)
 
@@ -966,6 +968,7 @@ class MainWindow(QMainWindow):
         btn_save = QPushButton('Save slice…')
         btn_save.setStyleSheet(BUTTON_STYLE)
         btn_save.clicked.connect(self.save_slice)
+        btn_send.setFixedHeight(btn_save.sizeHint().height())
         p.add_button_row(btn_send, btn_save, width=gf.ACTION_W)
         p.add_stretch()
         return p
@@ -993,7 +996,7 @@ class MainWindow(QMainWindow):
             start, step = self._dspin(-1e12, 1e12, 3, 0.0), self._dspin(-1e12, 1e12, 3, 1.0)
             p.add_row(f'New {tag} start / step', start, step)
             self.reshape_axes.append((nedit, uedit, start, step))
-        btn = QPushButton('Integrate && reshape')
+        btn = QPushButton('Reshape')
         btn.setStyleSheet(BUTTON_STYLE)
         btn.clicked.connect(self.do_reshape)
         p.add_button_row(btn, width=gf.ACTION_W)
@@ -1017,7 +1020,7 @@ class MainWindow(QMainWindow):
         for w in (self.bg_axis, self.bg_model):
             w.currentIndexChanged.connect(self._live_update)
         self.bg_order.valueChanged.connect(self._live_update)
-        btn = QPushButton('Subtract background')
+        btn = QPushButton('Subtract')
         btn.setStyleSheet(BUTTON_STYLE)
         btn.clicked.connect(self.do_background)
         p.add_button_row(btn, width=gf.ACTION_W)
@@ -1086,7 +1089,7 @@ class MainWindow(QMainWindow):
     def _update_fit_params(self, *args):
         """Repopulate the map-parameter combo from the current model, honouring
         the fix-offset checkbox (which drops the b/c baseline term)."""
-        model = self.fit_model.currentText()
+        model = RELAX_MODELS[self.fit_model.currentIndex()]
         formula = self.fitter.model_formula(model)
         self.fit_formula.setText(
             f'<span style="color: rgb(160, 160, 190);">{formula}</span>'
@@ -2559,7 +2562,7 @@ class MainWindow(QMainWindow):
         if self.src_i is None:
             self.set_status('Open an I/Q dataset first.')
             return
-        model = self.fit_model.currentText()
+        model = RELAX_MODELS[self.fit_model.currentIndex()]
         pname = self.fit_param.currentText()
         no_offset = self.fit_no_offset.isChecked()
         fixed = self._fit_fixed(model)

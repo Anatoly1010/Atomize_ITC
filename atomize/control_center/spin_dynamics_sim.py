@@ -58,6 +58,8 @@ from atomize.general_modules.gui_style import (apply_app_style,
     BG, FG, ACCENT, BUTTON_STYLE, DSPIN_STYLE, SPIN_STYLE,
     COMBO_STYLE, CHECKBOX_STYLE, SCROLL_STYLE)
 
+_trapz = getattr(np, 'trapezoid', None) or np.trapz
+
 # Panel width. Fields stretch to fill their column rather than taking a
 # fixed width, so they end level with the button grids with or without
 # the scroll bar.
@@ -756,7 +758,7 @@ class MainWindow(QMainWindow):
         if integ == 'Peak |V|':
             return v[int(np.argmax(np.abs(v)))]
         if integ == 'Window integral':
-            return np.trapz(v, win['t'])
+            return _trapz(v, win['t'])
         return v[v.size // 2]                            # center point
 
     def _build_events(self, step):

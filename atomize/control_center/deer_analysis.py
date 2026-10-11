@@ -385,7 +385,7 @@ class MainWindow(QMainWindow):
         g.addWidget(gui_forms.label('Distance min/max'), 0, 0)
         g.addWidget(self.deer_rmin, 0, 1)
         g.addWidget(self.deer_rmax, 0, 2)
-        g.addWidget(btn_autorange, 0, 3)
+        g.addWidget(gui_forms.row_button(btn_autorange), 0, 3)
 
         self.deer_rn = QSpinBox()
         self.deer_rn.setStyleSheet(SPIN_STYLE)
@@ -495,8 +495,8 @@ class MainWindow(QMainWindow):
         g.addWidget(gui_forms.hline(), 6, 0, 1, 4)
         g.addWidget(gui_forms.label('Process all'), 7, 0)
         g.addWidget(self.batch_engine, 7, 1)
-        g.addWidget(self.process_all_btn, 7, 2)
-        g.addWidget(self.batch_save_btn, 7, 3)
+        g.addWidget(gui_forms.row_button(self.process_all_btn), 7, 2)
+        g.addWidget(gui_forms.row_button(self.batch_save_btn), 7, 3)
         return p
 
     def _ci_toggled(self, *args):
@@ -561,7 +561,7 @@ class MainWindow(QMainWindow):
         trace_cell.addWidget(gui_forms.label('Trace'))
         trace_cell.addWidget(self.trace_combo, 1)
         src_grid.addLayout(trace_cell, 1, 0, 1, 3)
-        src_grid.addWidget(self.trace_remove_btn, 1, 3)
+        src_grid.addWidget(gui_forms.row_button(self.trace_remove_btn), 1, 3)
 
         self.loaded_label = QLabel('File: —')
         self.loaded_label.setStyleSheet(HINT_STYLE)
@@ -1107,7 +1107,7 @@ class MainWindow(QMainWindow):
         self.gauss_live = gui_forms.live_update_checkbox()
         p.add_widget(self.gauss_live)
 
-        self.gauss_run_btn = QPushButton('Run Multi-Gaussian')
+        self.gauss_run_btn = QPushButton('Run Gaussians')
         self.gauss_run_btn.setStyleSheet(BUTTON_STYLE)
         self.gauss_run_btn.clicked.connect(self.do_gauss)
         btn_exp = QPushButton('Export all…')
