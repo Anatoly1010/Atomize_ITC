@@ -24,7 +24,8 @@ parameter). It mirrors the phase_cor.py workflow:
         both axes, each with its own type and cutoffs; the axes stay unchanged.
       - Shear: V′(t_dip, t) = V(t_dip + k·(t − t_ref), t) as an exact phase ramp on
         the dipolar-axis spectrum, straightening a dipolar ridge tilted across the
-        echo (k = 1/2 for SIFTER), with a shear-scan estimator of k.
+        echo (k = 1/2 for SIFTER), with a shear-scan or cross-correlation
+        estimator of k.
 
 The window embeds the same CrossSectionDock the main GUI uses (heatmap + X/Y
 cross-section sub-docks), fed in-process — no LivePlot IPC. Real and imaginary
@@ -198,6 +199,13 @@ _HELP_SHEAR = (
     'window and hands the dipolar trace to the 1D (or DEER) window. The ramp '
     'is circular, so rows wrap at the '
     'ends of the dipolar axis; keep the edges out of the analysis.<br><br>'
+    '"Slope estimator" picks how "Fit k" measures k. The shear search maximises '
+    'the summed peak, which changes only quadratically with the error in k, so '
+    'it is flat when the echo is short compared with the dipolar period '
+    '(typical DEER). The cross-correlation tracks where the dipolar ridge sits '
+    'in each echo column and fits a line, which is linear in the error and '
+    'resolves k there; it reads the real part, so phase the record first '
+    '(Auto shear already has).<br><br>'
     '"Auto shear" walks that whole chain from the raw record on its own, '
     'taking the IF from the file header and the low-pass cutoff from it; the '
     'Phase / Filter tabs are left showing what it ran.')
@@ -808,9 +816,11 @@ class MainWindow(QMainWindow):
         self.shear_k.valueChanged.connect(self._live_update)
         btn_fit = QPushButton('Fit k')
         btn_fit.setStyleSheet(BUTTON_STYLE)
-        btn_fit.setToolTip('Scan k, shear, sum over the echo axis and take the k that '
+        btn_fit.setToolTip('Estimate k with the "Slope estimator" below. Shear search: '
+                           'scan k, shear, sum over the echo axis and take the k that '
                            'maximises the recovered peak (parabolic refine around the '
-                           'grid maximum). Uses the fit window below.')
+                           'grid maximum). Cross-correlation: fit a line to the ridge '
+                           'shift of each echo column. Uses the fit window below.')
         btn_fit.clicked.connect(self.fit_shear_slope)
         p.add_row('Slope k', self.shear_k, btn_fit, stretch=[3, 1],
                   tooltip='Ridge slope dt_dip/dt (1/2 for SIFTER).')
@@ -833,6 +843,11 @@ class MainWindow(QMainWindow):
         adv = p.add_advanced()
         adv.field_width, adv.button_width = gf.FIELD_W, gf.BTN_W
         adv.add_row('Fit window ±', self.shear_fitwin)
+        self.shear_estimator = self._combo(['Shear search', 'Cross-correlation'])
+        adv.add_row('Slope estimator', self.shear_estimator,
+                    tooltip='How "Fit k" measures k: maximise the summed peak over '
+                            'a k grid, or track the ridge across the echo columns '
+                            'and fit its slope (better for short echoes, e.g. DEER).')
 
         btn_auto = QPushButton('Auto shear')
         btn_auto.setStyleSheet(BUTTON_STYLE)
@@ -2241,7 +2256,8 @@ class MainWindow(QMainWindow):
         echo axis, and take the k maximising the peak of the recovered dipolar
         trace; parabolic refine on the grid maximum. The dipolar-axis transform
         does not depend on k, so it is done once and only the ramp-weighted sum
-        is repeated."""
+        is repeated. "Slope estimator" = Cross-correlation hands over to
+        _fit_slope_xcorr instead."""
         if self.src_i is None:
             self.set_status('Open an I/Q dataset first.')
             return False
@@ -2256,6 +2272,9 @@ class MainWindow(QMainWindow):
             self.set_status('Fit window too narrow — widen it (0 = whole window).')
             return False
         Z = self.src_i + 1j*self.src_q
+        if self.shear_estimator.currentIndex() == 1:
+            return self._fit_slope_xcorr(Z if dip == 0 else Z.T, step, tvec, tref,
+                                         half, gate, escale)
         sp = np.fft.fft(Z, axis=dip)
         sp = sp[:, gate] if dip == 0 else sp[gate, :]
         if dip == 1:
@@ -2289,6 +2308,47 @@ class MainWindow(QMainWindow):
         win = f'±{half:.4g} {escale}' if half > 0 else 'whole window'
         self.set_status(f'Fitted slope k = {kbest:+.4f} ({dname} per {ename}), '
                         f'peak ×{gain:.2f} over k = 0; {win}, {int(gate.sum())} pts.')
+        return True
+
+    def _fit_slope_xcorr(self, Z, step, tvec, tref, half, gate, escale):
+        """Cross-correlation estimator of k on Z oriented (dipolar, echo): each
+        echo column inside the fit window where the envelope exceeds 15 % of its
+        maximum is cubic-detrended along the dipolar axis and cross-correlated
+        with the summed columns within 6 of t_ref; the lag of the maximum (±25
+        rows, parabolic refine) is fitted linearly against t − t_ref."""
+        idx = np.arange(Z.shape[0])
+
+        def detrend(y):
+            y = y - np.polyval(np.polyfit(idx, y, 3), idx)
+            return y - y.mean()
+
+        R = Z.real
+        env = np.abs(Z).mean(axis=0)
+        cols = np.where(gate & (env > 0.15*env[gate].max()))[0]
+        if cols.size < 4:
+            self.set_status('Too few echo columns above 15 % of the envelope — '
+                            'widen the fit window (0 = whole window).')
+            return False
+        near = np.abs(tvec - tref) <= 6
+        if not near.any():
+            near = [np.abs(tvec - tref).argmin()]
+        ref = detrend(R[:, near].sum(axis=1))
+        mid, w = Z.shape[0] - 1, min(25, Z.shape[0] - 1)
+        lag = np.empty(cols.size)
+        for j, c in enumerate(cols):
+            seg = np.correlate(detrend(R[:, c]), ref, 'full')[mid - w:mid + w + 1]
+            i = int(seg.argmax())
+            d = 0.0
+            if 0 < i < seg.size - 1:
+                den = seg[i-1] - 2*seg[i] + seg[i+1]
+                d = 0.5*(seg[i-1] - seg[i+1])/den if den else 0.0
+            lag[j] = i - w + d
+        A, cov = np.polyfit(tvec[cols] - tref, lag, 1, cov=True)
+        k, err = float(A[0]*step), float(np.sqrt(cov[0, 0])*abs(step))
+        self.shear_k.setValue(k)
+        win = f'window ±{half:.4g} {escale}' if half > 0 else 'whole window'
+        self.set_status(f'Fitted slope k = {k:+.4f} ± {err:.4f} (cross-correlation '
+                        f'over {cols.size} columns, {win}).')
         return True
 
     @staticmethod
