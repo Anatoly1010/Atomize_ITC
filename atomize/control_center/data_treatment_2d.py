@@ -2311,12 +2311,20 @@ class MainWindow(QMainWindow):
         return True
 
     def _fit_slope_xcorr(self, Z, step, tvec, tref, half, gate, escale):
-        """Cross-correlation estimator of k on Z oriented (dipolar, echo): each
-        echo column inside the fit window where the envelope exceeds 15 % of its
-        maximum is cubic-detrended along the dipolar axis and cross-correlated
-        with the summed columns within 6 of t_ref; the lag of the maximum (±25
-        rows, parabolic refine) is fitted linearly against t − t_ref."""
+        """Ridge-shift estimator of k on Z oriented (dipolar, echo): each echo
+        column inside the fit window where the envelope exceeds 15 % of its
+        maximum is matched to the summed columns within 6 of t_ref by a sub-row
+        shift, a scale, an offset and a straight line, least-squares over a fixed
+        band of rows clear of the record ends; the shift, started from the
+        cross-correlation lag, is fitted linearly against t − t_ref."""
+        try:
+            from scipy.interpolate import CubicSpline
+            from scipy.optimize import minimize_scalar
+        except ImportError:
+            self.set_status('Cross-correlation needs scipy: pip install -e .[math]')
+            return False
         idx = np.arange(Z.shape[0])
+        n = idx.astype(float)
 
         def detrend(y):
             y = y - np.polyval(np.polyfit(idx, y, 3), idx)
@@ -2332,17 +2340,35 @@ class MainWindow(QMainWindow):
         near = np.abs(tvec - tref) <= 6
         if not near.any():
             near = [np.abs(tvec - tref).argmin()]
-        ref = detrend(R[:, near].sum(axis=1))
+        r = R[:, near].sum(axis=1)
+        M = int(np.ceil(0.65*np.abs(tvec[cols] - tref).max()/abs(step))) + 1
+        m = (n >= M) & (n <= n.size - 1 - M)
+        if m.sum() < 10:
+            self.set_status('Fit window too wide for the dipolar record — narrow it.')
+            return False
+        nm = n[m]
+        u = (nm - n.mean())/n.mean()
+        Q = np.linalg.qr(np.column_stack([r[m], np.ones(nm.size), u]))[0]
+        ref = detrend(r)
         mid, w = Z.shape[0] - 1, min(25, Z.shape[0] - 1)
         lag = np.empty(cols.size)
-        for j, c in enumerate(cols):
-            seg = np.correlate(detrend(R[:, c]), ref, 'full')[mid - w:mid + w + 1]
-            i = int(seg.argmax())
-            d = 0.0
-            if 0 < i < seg.size - 1:
-                den = seg[i-1] - 2*seg[i] + seg[i+1]
-                d = 0.5*(seg[i-1] - seg[i+1])/den if den else 0.0
-            lag[j] = i - w + d
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            for j, c in enumerate(cols):
+                seg = np.correlate(detrend(R[:, c]), ref, 'full')[mid - w:mid + w + 1]
+                l0 = float(np.clip(int(seg.argmax()) - w, -M + 1, M - 1))
+                S = CubicSpline(n, R[:, c])
+
+                def cost(s):
+                    y = S(nm + s)
+                    return float(np.sum((y - Q @ (Q.T @ y))**2))
+
+                grid = np.arange(max(-M + 1, l0 - 4), min(M - 1, l0 + 4) + 1e-9, 0.25)
+                s0 = grid[int(np.argmin([cost(s) for s in grid]))]
+                lag[j] = minimize_scalar(cost, bounds=(s0 - 0.3, s0 + 0.3),
+                                         method='bounded').x
+        finally:
+            QApplication.restoreOverrideCursor()
         A, cov = np.polyfit(tvec[cols] - tref, lag, 1, cov=True)
         k, err = float(A[0]*step), float(np.sqrt(cov[0, 0])*abs(step))
         self.shear_k.setValue(k)
