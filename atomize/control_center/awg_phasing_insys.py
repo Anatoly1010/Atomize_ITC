@@ -20,6 +20,7 @@ import atomize.general_modules.csv_opener_saver as openfile
 import atomize.general_modules.last_dir as ldir
 import atomize.control_center.field_param as field_param
 import atomize.control_center.temp_param as temp_param
+import atomize.control_center.bridge_param as bridge_param
 from atomize.control_center.time_log_spinbox import TimeLogSpinBox
 # Shared dark-theme styling; apply_app_style() pins this process to the Fusion
 # style so QComboBox / QSpinBox / QLineEdit render identically on Linux/Windows.
@@ -4595,7 +4596,8 @@ class Worker():
             limit = float( text_from_file[11].split(' ')[1] ),
             model = self.cor_model_cur, f0 = self.f0_cur, q_factor = self.q_cur,
             phase_correction = self.phase_cor_cur,
-            meas_freq = self.meas_freq_cur, meas_H = self.meas_H_cur )
+            meas_freq = self.meas_freq_cur, meas_H = self.meas_H_cur,
+            lo = float( bridge_param.read()['Frequency'] ) )
 
     def dig_on(self, conn, decimation, l_mode, n_averages, win_left, win_right, rect1, rect2, rect3, rect4, rect5, rect6, rect7, n_wurst, rep_rate, mag_field, fft_flag, cur_phase, ch0_ampl, ch1_ampl, trig_delay, awg2, awg3, awg4, awg5, awg6, awg7, quad, zero_order, first_order, second_order, p_to_drop, b_sech, combo_cor, combo_synt, _reserved, rect8, rect9, awg8, awg9, laser_flag, laser_num, laser_qsw_delay, iq_corr, script_test=False, cpmg=None ):
         """
