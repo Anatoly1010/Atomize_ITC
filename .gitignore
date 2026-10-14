@@ -28,6 +28,7 @@ libs/phase_lastdir.txt
 libs/phase_awg_lastdir.txt
 libs/phase_cor_lastdir.txt
 libs/spin_dynamics_lastdir.txt
+libs/liveplot_layout.txt
 *.param
 
 # epr_auto user preset space: user-saved presets are local (README stays tracked)
