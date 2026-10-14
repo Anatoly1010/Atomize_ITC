@@ -31,7 +31,7 @@ CPMG_MODES = ('Decay', 'Sum of Echoes')
 # dig_start_exp). The executor must hand over the same set from WorkerArgs,
 # and the equivalence harness compares them alongside awg_grid_cur.
 CORRECTION_ATTRS = ('cor_model_cur', 'f0_cur', 'q_cur', 'phase_cor_cur',
-                    'meas_freq_cur', 'meas_H_cur')
+                    'meas_freq_cur', 'meas_H_cur', 'det_cor_cur')
 
 
 class PresetError(ValueError):
@@ -371,6 +371,7 @@ class WorkerArgs:
     phase_cor_cur: str = 'False'
     meas_freq_cur: object = None   # np.ndarray (MHz) when a measured H(f) is loaded
     meas_H_cur: object = None      # matching complex np.ndarray
+    det_cor_cur: int = 0           # detection-side correction of the echo spectrum (FFT tab)
 
     def cpmg_tail(self):
         """Worker args after script_test: the cpmg dict when CPMG is On (MainWindow._worker_tail)."""
