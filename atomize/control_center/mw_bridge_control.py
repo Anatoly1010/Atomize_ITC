@@ -50,6 +50,10 @@ class MainWindow(QMainWindow):
 
         self.design()
 
+        self.label_timer = QTimer(self)
+        self.label_timer.setSingleShot(True)
+        self.label_timer.timeout.connect(lambda: self.label_1.setStyleSheet(REFINED_STYLES['LABEL_STYLE']))
+
         self.curr_dB = 60
         self.prev_dB = 60
         self.p1 = 'None'
@@ -680,10 +684,11 @@ class MainWindow(QMainWindow):
 
         #self.telemetry_text.appendPlainText( 'Frequency: ' + freq )
 
-    def pause_and_label(self, time):
+    def show_vane_moving(self, ms):
+        # painted here because the window is busy waiting for the bridge reply while the vane turns
         self.label_1.setStyleSheet("QLabel { color : rgb(255, 0, 0); font-weight: bold; }")
-        general.wait( time )
-        self.label_1.setStyleSheet(REFINED_STYLES['LABEL_STYLE'])
+        self.label_1.repaint()
+        self.label_timer.start(int(ms))
     
     def pause_and_label_exit(self, time):
         general.wait( time )
@@ -715,7 +720,8 @@ class MainWindow(QMainWindow):
         # 36 is a manual calibration
         time_to_wait = abs( 36 * step )
 
-        self.p1 = Thread(target = self.pause_and_label, args = (str(time_to_wait) + ' ms', ) )
+        self.show_vane_moving(time_to_wait)
+        self.p1 = Thread(target = self.pause_and_label_exit, args = (str(time_to_wait) + ' ms', ) )
         self.p1.start()
         
         data_raw = self._recv(6)
@@ -791,7 +797,8 @@ class MainWindow(QMainWindow):
         MESSAGE = b'\x0e' + b'\x04' + b'\x01' + b'\x01' + (3).to_bytes( 2, byteorder = 'big', signed = False )
         self.sock.sendto( MESSAGE, (self.UDP_IP, self.UDP_PORT) )
 
-        self.p1 = Thread(target = self.pause_and_label, args = ( '5 s', ) )
+        self.show_vane_moving(5000)
+        self.p1 = Thread(target = self.pause_and_label_exit, args = ( '5 s', ) )
         self.p1.start()
         
         data_raw = self._recv(6)
