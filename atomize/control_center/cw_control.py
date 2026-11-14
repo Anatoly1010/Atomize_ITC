@@ -880,7 +880,7 @@ class Worker():
 
             points = int( (END_FIELD - START_FIELD) / FIELD_STEP ) + 1
             data = np.zeros(points)
-            x_axis = np.linspace(START_FIELD, END_FIELD, num = points) 
+            x_axis = np.round( START_FIELD + FIELD_STEP * np.arange(points), 3 )
 
             sr860.lock_in_time_constant( p8 )
             sr860.lock_in_sensitivity( '1 V' )
@@ -1040,6 +1040,8 @@ class Worker():
                     header = (
                         header +
                         f"{'Vertical Resolution:':<{w}} {v_res} s\n"
+                        f"X (Field/G): start {START_FIELD} step {FIELD_STEP}\n"
+                        f"Y (Time/s): start 0 step {v_res}\n"
                         f"{'-'*50}\n"
                         f"Rows: repetitions, Columns: field (G)"
                     )
@@ -1137,7 +1139,7 @@ class Worker():
 
             points = int( (END_FIELD - START_FIELD) / FIELD_STEP ) + 1
             data = np.zeros(points)
-            x_axis = np.linspace(START_FIELD, END_FIELD, num = points) 
+            x_axis = np.round( START_FIELD + FIELD_STEP * np.arange(points), 3 )
 
             sr860.lock_in_time_constant( p8 )
             sr860.lock_in_sensitivity( '1 V' )
