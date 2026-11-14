@@ -7,7 +7,8 @@ Data Treatment control-center window.
 Standalone QProcess launched from the "EPR Endstation Control" tab. It loads a
 1D dataset either from a CSV file (Saver_Opener.open_1d) or from the curves
 currently shown in the main GUI (via the libs/treatment_buffer.csv bridge that
-the plot sidebar writes), lets the user fit / FFT / phase-correct / smooth it,
+the plot sidebar writes), lets the user fit / FFT / phase-correct / smooth /
+integrate it,
 then push the result to LivePlot (general.plot_1d) and/or save it to CSV.
 
 The window has its own embedded pyqtgraph preview for live, in-process display:
@@ -160,6 +161,35 @@ _HELP_PHASE = (
 _HELP_SMOOTH = (
     'I/Q pair → applied to both channels. "Baseline from" '
     'fits the baseline using only the chosen end points.')
+
+_HELP_INTEGRATE = (
+    'Running integral by the trapezoid rule over the real X values. For a CW EPR '
+    'first-derivative spectrum: subtract its baseline on Smooth / Baseline '
+    '(First & last N), press Result → input, then integrate here. The first '
+    'integral is the absorption line; the double integral is proportional to the '
+    'number of spins.'
+    '<br><br>'
+    'Absorption baseline: a straight line through the first and last N points of '
+    'the first integral is subtracted before the second integration, so a small '
+    'offset left in the derivative does not grow into a quadratic drift.'
+    '<br><br>'
+    '∫ y dx is the first integral at the end of the window before that correction; '
+    'it is close to 0 when the derivative baseline is good. From = To integrates '
+    'the whole trace. I/Q pair → both channels.')
+
+
+def _cumtrapz(x, y):
+    """Running trapezoid integral of y over x, starting at 0."""
+    out = np.zeros(len(y))
+    if len(y) > 1:
+        out[1:] = np.cumsum(0.5*(y[1:] + y[:-1])*np.diff(x))
+    return out
+
+
+def _unit_product(yunit, xunit, power):
+    """Unit of the power-fold integral of y dx, e.g. ('V', 'G', 2) -> 'V·G²'."""
+    xpart = (xunit + ('²' if power == 2 else '')) if xunit else ''
+    return '·'.join(u for u in (yunit, xpart) if u)
 
 
 def _html_table(headers, rows):
@@ -418,14 +448,15 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self._build_phase_tab(), 'Phase')
         self.tabs.addTab(self._build_smooth_tab(), 'Smooth / Baseline')
         self.tabs.addTab(self._build_filter_tab(), 'Filter')
+        self.tabs.addTab(self._build_integrate_tab(), 'Integrate')
         # Note: tab changes deliberately do NOT trigger _live_update. Re-running
         # the new tab's op on switch is redundant and, after a "Result → input"
         # chain, would re-transform an already-transformed input (e.g. FFT of an
         # FFT). The preview recomputes only on a parameter change or Apply.
         self.tabs.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
         # Floor the tab strip at its full width so all tabs stay visible without
-        # the scroll arrows (the 5 tabs need ~365 px); the graph takes the rest.
-        self.tabs.setMinimumWidth(380)
+        # the scroll arrows (the 6 tabs need ~441 px); the graph takes the rest.
+        self.tabs.setMinimumWidth(450)
         panel.addWidget(self.tabs, stretch=1)
 
         panel.addWidget(self._hline())
@@ -862,6 +893,55 @@ class MainWindow(QMainWindow):
         p.add_stretch()
         return gui_forms.scroll_wrap(p)
 
+    def _build_integrate_tab(self):
+        p = FormPanel(field_width=gui_forms.FIELD_W,
+                      button_width=gui_forms.BTN_W)
+        p.add_title('Integrate a spectrum, e.g. a CW EPR derivative', help=_HELP_INTEGRATE)
+
+        self.int_output = QComboBox()
+        self.int_output.setStyleSheet(COMBO_STYLE)
+        self.int_output.addItems(['First integral', 'Double integral'])
+        self.int_output.currentIndexChanged.connect(self._live_update)
+        p.add_row('Output', self.int_output)
+
+        self.int_base_check = p.add_check(
+            'Absorption baseline from ends', checked=True,
+            tooltip='Subtract a straight line through the first and last N points '
+                    'of the first integral before the second integration.')
+        self.int_base_check.stateChanged.connect(self._live_update)
+
+        self.int_npts = QSpinBox()
+        self.int_npts.setStyleSheet(SPIN_STYLE)
+        self.int_npts.setRange(1, 99999)
+        self.int_npts.setValue(20)
+        self.int_npts.setSuffix(' pts')
+        self.int_npts.valueChanged.connect(self._live_update)
+        p.add_row('N points', self.int_npts,
+                  tooltip='Points at each end of the window taken as line-free.')
+
+        self.int_from, self.int_to = QDoubleSpinBox(), QDoubleSpinBox()
+        for spin in (self.int_from, self.int_to):
+            spin.setStyleSheet(DSPIN_STYLE)
+            spin.setRange(-1e12, 1e12)
+            spin.setDecimals(4)
+            spin.setValue(0.0)
+            spin.valueChanged.connect(self._live_update)
+        p.add_row('X window from / to', self.int_from, self.int_to,
+                  tooltip='In X-axis units; From = To integrates the whole trace.')
+
+        btn = QPushButton('Apply')
+        btn.setStyleSheet(BUTTON_STYLE)
+        btn.clicked.connect(self.do_integrate)
+        p.add_button_row(btn, width=gui_forms.ACTION_W)
+
+        self.int_result = QLabel('')
+        self.int_result.setStyleSheet(LABEL_STYLE)
+        self.int_result.setWordWrap(True)
+        self.int_result.setTextFormat(Qt.TextFormat.RichText)
+        p.add_widget(self.int_result)
+        p.add_stretch()
+        return gui_forms.scroll_wrap(p)
+
     # ------------------------------------------------------------- loading
     def _unique_trace_name(self, name):
         """A trace name not already in use (append (2), (3), … on collision)."""
@@ -1252,7 +1332,8 @@ class MainWindow(QMainWindow):
         The Fit tab (index 0) is intentionally excluded — fitting is an explicit
         button action, not something to recompute on every keystroke.
         """
-        ops = {1: self.do_fft, 2: self.do_phase, 3: self.do_smooth, 4: self.do_filter}
+        ops = {1: self.do_fft, 2: self.do_phase, 3: self.do_smooth, 4: self.do_filter,
+               5: self.do_integrate}
         fn = ops.get(self.tabs.currentIndex())
         if fn is not None:
             fn()
@@ -1261,7 +1342,7 @@ class MainWindow(QMainWindow):
         """Run the current tab's operation NOW (Fit included), so the result
         reflects the current tab and parameters regardless of live-update."""
         ops = {0: self.do_fit, 1: self.do_fft, 2: self.do_phase, 3: self.do_smooth,
-               4: self.do_filter}
+               4: self.do_filter, 5: self.do_integrate}
         ops[self.tabs.currentIndex()]()
 
     def _live_update(self, *args):
@@ -1330,6 +1411,21 @@ class MainWindow(QMainWindow):
     def is_pair(self):
         return self.pair_check.isChecked()
 
+    def _distinct_pair(self):
+        """I/Q pair mode with a Q channel that is not the I channel itself (a
+        single-channel file leaves both selectors on the same channel)."""
+        return self.is_pair() and self.q_combo.currentText() != self.i_combo.currentText()
+
+    def _y_unit(self, label):
+        """Unit of a 'Name (unit)' channel label. Promoted step channels lose it,
+        so they take the unit of the trace's loaded channels when that is unique."""
+        unit = _split_unit(label)[1]
+        if unit or not re.match(r'step\d+_', label):
+            return unit
+        units = {_split_unit(k)[1] for k in self.datasets
+                 if not re.match(r'step\d+_', k)} - {''}
+        return units.pop() if len(units) == 1 else ''
+
     # ------------------------------------------------------------- result
     def _reset_result(self):
         self.result_x = None
@@ -1340,6 +1436,8 @@ class MainWindow(QMainWindow):
         self.result_residuals = None
         if hasattr(self, 'fit_result'):
             self.fit_result.setText('')
+        if hasattr(self, 'int_result'):
+            self.int_result.setText('')
 
     def _set_result(self, x, channels, meta, show_source=True, xname='X',
                     residuals=None):
@@ -2377,7 +2475,7 @@ class MainWindow(QMainWindow):
         i = np.asarray(i, dtype=float)
         method = self.smooth_method.currentText()
         try:
-            if self.is_pair():
+            if self._distinct_pair():
                 xq, q = self.q_xy()
                 q = np.asarray(q, dtype=float)
                 if q.shape != i.shape:
@@ -2392,7 +2490,7 @@ class MainWindow(QMainWindow):
             self.set_status(f'{method} failed: {e}')
             return
         meta = [f'Smoothing: {method}'
-                + (' (I & Q)' if self.is_pair() else ''),
+                + (' (I & Q)' if self._distinct_pair() else ''),
                 f'window = {self.smooth_window.value()}, '
                 f'poly order = {self.smooth_order.value()}']
         if method == 'Baseline subtract':
@@ -2400,7 +2498,80 @@ class MainWindow(QMainWindow):
                         f'(N = {self.base_npts.value()})')
         self._set_result(x, channels, meta, show_source=True, xname=self._xname())
         self.set_status(f'{method} applied'
-                        + (' to I & Q.' if self.is_pair() else '.'))
+                        + (' to I & Q.' if self._distinct_pair() else '.'))
+
+    def do_integrate(self):
+        """First integral (absorption) or double integral of the I channel, or of
+        I and Q, over the X window. The absorption can have a straight baseline
+        through its end points removed before the second integration."""
+        x, i = self.i_xy()
+        if x is None or len(x) < 2:
+            self.set_status('Need at least two points to integrate.')
+            return
+        x = np.asarray(x, dtype=float)
+        combos = [self.i_combo]
+        chans = [np.asarray(i, dtype=float)]
+        pair = self._distinct_pair()
+        if pair:
+            xq, q = self.q_xy()
+            q = np.asarray(q, dtype=float)
+            if q.shape != chans[0].shape:
+                self.set_status('I and Q channels must have the same length.')
+                return
+            combos.append(self.q_combo)
+            chans.append(q)
+        # integrate along increasing X, whatever the stored order
+        order = np.argsort(x, kind='stable')
+        x = x[order]
+        chans = [y[order] for y in chans]
+        lo, hi = sorted((self.int_from.value(), self.int_to.value()))
+        if lo != hi:
+            sel = (x >= lo) & (x <= hi)
+            if sel.sum() < 2:
+                self.set_status('Fewer than two points inside the X window.')
+                return
+            x = x[sel]
+            chans = [y[sel] for y in chans]
+        npts = self.int_npts.value()
+        base = self.int_base_check.isChecked()
+        if base and 2*npts >= len(x):
+            self.set_status(f'N points ({npts}) must be less than half of the '
+                            f'{len(x)} points integrated.')
+            return
+
+        output = self.int_output.currentText()
+        xunit = _split_unit(self._xname())[1]
+        channels, rows, values = [], [], []
+        for combo, y in zip(combos, chans):
+            absorption = _cumtrapz(x, y)
+            raw_end = absorption[-1]
+            if base:
+                absorption = self.sp.baseline_poly(x, absorption, 1, region='ends', npts=npts)
+            double = _cumtrapz(x, absorption)
+            if output == 'First integral':
+                out, name = absorption, 'absorption'
+            else:
+                out, name = double, 'double integral'
+            label = combo.currentText()
+            yunit = self._y_unit(label)
+            u1, u2 = _unit_product(yunit, xunit, 1), _unit_product(yunit, xunit, 2)
+            channels.append(((('I ', 'Q ')[len(channels)] + name) if pair else name, out))
+            rows.append([label, f'{raw_end:.6g} {u1}'.strip(), f'{double[-1]:.6g} {u2}'.strip()])
+            values.append(f'{label}: integral at end (before absorption baseline) = '
+                          f'{raw_end:.6g} {u1}; double integral = {double[-1]:.6g} {u2}')
+
+        window = 'whole trace' if lo == hi else f'{lo:.6g} to {hi:.6g} {xunit}'.strip()
+        meta = [f'Integration: {output} (cumulative trapezoid)' + (' (I & Q)' if pair else ''),
+                f'X window: {window} ({len(x)} points)',
+                f'absorption baseline: straight line from first & last {npts} points'
+                if base else 'absorption baseline: none'] + values
+        self._set_result(x, channels, meta, show_source=False, xname=self._xname())
+        self.int_result.setText(_html_table(['channel', '∫ y dx at end', '∫∫ y dx²'], rows))
+        self.set_status(f'{output} computed over '
+                        + ('the whole trace' if lo == hi else window)
+                        + (' for I & Q; ' if pair else '; ')
+                        + f'double integral = {rows[0][2]}'
+                        + (f' (I), {rows[1][2]} (Q).' if pair else '.'))
 
     def do_filter(self):
         """FFT → zero frequencies outside the passband → inverse FFT, giving a
