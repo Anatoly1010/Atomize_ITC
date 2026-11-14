@@ -19,6 +19,23 @@ from atomize.general_modules.gui_style import CHECKBOX_STYLE
 # a repetition map is only worth drawing once it has some rows
 REP_PLOT_MIN = 5
 
+# ---- Setup constants: measured on this spectrometer, re-measure after hardware changes ----
+# Lock-in reference phase (deg) that gives the +/- first-derivative line sign
+LOCK_IN_PHASE = 159.6
+# Modulation amplitude in G peak-to-peak per lock-in volt at 100 kHz, through the coil
+# amplifier. None until measured: the amplitude is then shown and saved in V only.
+MOD_G_PER_V = None
+# Field calibration of this magnet: (controller setpoint, true field by NMR gaussmeter) in G,
+# at least three points, e.g. ((1500, 1485.6), (3500, 3466.7), (4500, 4456.1)). None until
+# measured: the Field Calibration checkbox is disabled and the setpoint is sent as it is.
+FIELD_NMR = None
+if FIELD_NMR is not None:
+    FIELD_C2, FIELD_C1, FIELD_C0 = np.polyfit(*zip(*FIELD_NMR), 2)
+# Wait per field point, in lock-in time constants. A 12 dB/oct filter lags by about two time
+# constants, which shifts the line along the sweep; measure the factor that removes the
+# up/down sweep difference on this lock-in. 1 is the original single time constant.
+TC_WAIT = 1
+
 
 class MainWindow(QMainWindow):
     """
@@ -34,6 +51,7 @@ class MainWindow(QMainWindow):
         self.two_side = 0
         self.rep_mode = 0
         self.save_hdf5 = 0
+        self.field_cal = 0
         self.design()
         self.exit_clicked = 0
         self.stop_requested = False
@@ -80,7 +98,7 @@ class MainWindow(QMainWindow):
 
 
         # ---- Labels & Inputs ----
-        labels = [("Start Field", "label_1"), ("End Field", "label_2"), ("Field Step", "label_3"), ("Lock In Amplitude", "label_4"), ("Lock In Time Constant", "label_5"), ("Lock In Sensitivity", "label_6"), ("Number of Scans", "label_7"), ("Two-Side Measurement", "label_8"), ("Experiment Name", "label_9"), ("Curve Name", "label_10"), ("Progress", "label_11"), ("Repetition Delay", "label_12"), ("Repetitive Mode", "label_13"), ("Next Run In", "label_14"), ("Save as HDF5", "label_15")]
+        labels = [("Start Field", "label_1"), ("End Field", "label_2"), ("Field Step", "label_3"), ("Lock In Amplitude", "label_4"), ("Lock In Time Constant", "label_5"), ("Lock In Sensitivity", "label_6"), ("Number of Scans", "label_7"), ("Two-Side Measurement", "label_8"), ("Experiment Name", "label_9"), ("Curve Name", "label_10"), ("Progress", "label_11"), ("Repetition Delay", "label_12"), ("Repetitive Mode", "label_13"), ("Next Run In", "label_14"), ("Save as HDF5", "label_15"), ("Field Calibration", "label_16")]
 
         for name, attr_name in labels:
             lbl = QLabel(name)
@@ -169,13 +187,20 @@ class MainWindow(QMainWindow):
         # ---- Check Boxes ----
         check_boxes = [("checkbox_back_scan", self.two_side_measure),
                        ("checkbox_repeat", self.repeat_mode),
-                       ("checkbox_hdf5", self.hdf5_mode)]
+                       ("checkbox_hdf5", self.hdf5_mode),
+                       ("checkbox_field_cal", self.field_cal_mode)]
 
         for attr_name, func in check_boxes:
             check = QCheckBox("")
             setattr(self, attr_name, check)
             check.stateChanged.connect(func)
             check.setStyleSheet(CHECKBOX_STYLE)
+
+        if FIELD_NMR is not None:
+            self.checkbox_field_cal.setCheckState(Qt.CheckState.Checked)
+        else:
+            self.checkbox_field_cal.setEnabled(False)
+            self.checkbox_field_cal.setToolTip("No NMR field calibration for this magnet yet (FIELD_NMR in cw_control.py)")
 
         # ---- Buttons ----
         buttons = [("Start", "button_start", self.start),
@@ -228,55 +253,59 @@ class MainWindow(QMainWindow):
         gridLayout.addWidget(self.label_3, 2, 0)
         gridLayout.addWidget(self.box_step_field, 2, 1)
 
-        gridLayout.addWidget(hline(), 3, 0, 1, 2)
+        gridLayout.addWidget(self.label_16, 3, 0)
+        gridLayout.addWidget(self.checkbox_field_cal, 3, 1)
 
-        gridLayout.addWidget(self.label_4, 4, 0)
-        gridLayout.addWidget(self.box_lock_ampl, 4, 1)
+        gridLayout.addWidget(hline(), 4, 0, 1, 2)
 
-        gridLayout.addWidget(self.label_5, 5, 0)
-        gridLayout.addWidget(self.combo_tc, 5, 1)
+        gridLayout.addWidget(self.label_4, 5, 0)
+        gridLayout.addWidget(self.box_lock_ampl, 5, 1)
+        self.lock_ampl()
 
-        gridLayout.addWidget(self.label_6, 6, 0)
-        gridLayout.addWidget(self.combo_sens, 6, 1)
+        gridLayout.addWidget(self.label_5, 6, 0)
+        gridLayout.addWidget(self.combo_tc, 6, 1)
 
-        gridLayout.addWidget(hline(), 7, 0, 1, 2)
+        gridLayout.addWidget(self.label_6, 7, 0)
+        gridLayout.addWidget(self.combo_sens, 7, 1)
 
-        gridLayout.addWidget(self.label_7, 8, 0)
-        gridLayout.addWidget(self.box_scan, 8, 1)
-        gridLayout.addWidget(self.label_8, 9, 0)
-        gridLayout.addWidget(self.checkbox_back_scan, 9, 1)
+        gridLayout.addWidget(hline(), 8, 0, 1, 2)
 
-        gridLayout.addWidget(hline(), 10, 0, 1, 2)
+        gridLayout.addWidget(self.label_7, 9, 0)
+        gridLayout.addWidget(self.box_scan, 9, 1)
+        gridLayout.addWidget(self.label_8, 10, 0)
+        gridLayout.addWidget(self.checkbox_back_scan, 10, 1)
 
-        gridLayout.addWidget(self.label_9, 11, 0)
-        gridLayout.addWidget(self.text_edit_exp_name, 11, 1)
-        gridLayout.addWidget(self.label_10, 12, 0)
-        gridLayout.addWidget(self.text_edit_curve, 12, 1)
+        gridLayout.addWidget(hline(), 11, 0, 1, 2)
 
-        gridLayout.addWidget(hline(), 13, 0, 1, 2)
+        gridLayout.addWidget(self.label_9, 12, 0)
+        gridLayout.addWidget(self.text_edit_exp_name, 12, 1)
+        gridLayout.addWidget(self.label_10, 13, 0)
+        gridLayout.addWidget(self.text_edit_curve, 13, 1)
 
-        gridLayout.addWidget(self.label_11, 14, 0)
-        gridLayout.addWidget(self.progress_bar, 14, 1)
+        gridLayout.addWidget(hline(), 14, 0, 1, 2)
 
-        gridLayout.addWidget(hline(), 15, 0, 1, 2)
+        gridLayout.addWidget(self.label_11, 15, 0)
+        gridLayout.addWidget(self.progress_bar, 15, 1)
 
-        gridLayout.addWidget(self.label_12, 16, 0)
-        gridLayout.addWidget(self.box_rep_delay, 16, 1)
-        gridLayout.addWidget(self.label_13, 17, 0)
-        gridLayout.addWidget(self.checkbox_repeat, 17, 1)
-        gridLayout.addWidget(self.label_14, 18, 0)
-        gridLayout.addWidget(self.rep_progress_bar, 18, 1)
-        gridLayout.addWidget(self.label_15, 19, 0)
-        gridLayout.addWidget(self.checkbox_hdf5, 19, 1)
+        gridLayout.addWidget(hline(), 16, 0, 1, 2)
 
-        gridLayout.addWidget(hline(), 20, 0, 1, 2)
+        gridLayout.addWidget(self.label_12, 17, 0)
+        gridLayout.addWidget(self.box_rep_delay, 17, 1)
+        gridLayout.addWidget(self.label_13, 18, 0)
+        gridLayout.addWidget(self.checkbox_repeat, 18, 1)
+        gridLayout.addWidget(self.label_14, 19, 0)
+        gridLayout.addWidget(self.rep_progress_bar, 19, 1)
+        gridLayout.addWidget(self.label_15, 20, 0)
+        gridLayout.addWidget(self.checkbox_hdf5, 20, 1)
 
-        gridLayout.addWidget(self.button_start, 21, 0)
-        gridLayout.addWidget(self.button_stop, 22, 0)
-        gridLayout.addWidget(self.button_off, 23, 0)
+        gridLayout.addWidget(hline(), 21, 0, 1, 2)
+
+        gridLayout.addWidget(self.button_start, 22, 0)
+        gridLayout.addWidget(self.button_stop, 23, 0)
+        gridLayout.addWidget(self.button_off, 24, 0)
 
 
-        gridLayout.setRowStretch(24, 2)
+        gridLayout.setRowStretch(25, 2)
         gridLayout.setColumnStretch(19, 2)
 
     def menu(self):
@@ -321,6 +350,15 @@ class MainWindow(QMainWindow):
             self.save_hdf5 = 1
         elif self.checkbox_hdf5.checkState().value == 0: # unchecked
             self.save_hdf5 = 0
+
+    def field_cal_mode(self):
+        """
+        Turn on/off the NMR field calibration (GUI fields are true fields when on)
+        """
+        if self.checkbox_field_cal.checkState().value == 2: # checked
+            self.field_cal = 1
+        elif self.checkbox_field_cal.checkState().value == 0: # unchecked
+            self.field_cal = 0
 
     def rep_delay(self):
         """
@@ -395,6 +433,8 @@ class MainWindow(QMainWindow):
         A function to send a lock in amplitude value
         """
         self.cur_lock_ampl = round( float( self.box_lock_ampl.value() ), 3 )
+        if MOD_G_PER_V is not None and hasattr(self, 'label_4'):
+            self.label_4.setText(f'Lock In Amplitude ({self.cur_lock_ampl * MOD_G_PER_V:.2f} G)')
         #print(self.cur_lock_ampl)
 
     def scan(self):
@@ -584,7 +624,7 @@ class MainWindow(QMainWindow):
         self.last_error = False
         self.parent_conn, self.child_conn = Pipe()
         
-        self.exp_process = Process( target = worker.exp_test, args = ( self.child_conn, self.cur_curve_name, self.cur_exp_name, self.cur_end_field, self.cur_start_field, self.cur_step, self.cur_lock_ampl, self.cur_scan, self.cur_tc, self.cur_sens, self.two_side, ) )
+        self.exp_process = Process( target = worker.exp_test, args = ( self.child_conn, self.cur_curve_name, self.cur_exp_name, self.cur_end_field, self.cur_start_field, self.cur_step, self.cur_lock_ampl, self.cur_scan, self.cur_tc, self.cur_sens, self.two_side, None, self.field_cal, ) )
 
         self.button_start.setStyleSheet(REFINED_STYLES['PRIMARY_BUTTON_STYLE'])
         self.progress_bar.setValue(0)
@@ -611,7 +651,7 @@ class MainWindow(QMainWindow):
             args = (self.child_conn, self.cur_curve_name, self.cur_exp_name, 
                   self.cur_end_field, self.cur_start_field, self.cur_step, 
                   self.cur_lock_ampl, self.cur_scan, self.cur_tc, 
-                  self.cur_sens, self.two_side, rep_info)
+                  self.cur_sens, self.two_side, rep_info, self.field_cal)
         )
         self.exp_process.start()
         self.parent_conn.send('start')
@@ -827,7 +867,7 @@ class Worker():
         return matrix
 
 
-    def exp_on(self, conn, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11 = (0, 0, 0.0, 0, '')):
+    def exp_on(self, conn, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11 = (0, 0, 0.0, 0, ''), p12 = 0):
         """
         function that contains experimental script
         """
@@ -839,6 +879,8 @@ class Worker():
         #self.two_side,    
         #                                                                      11,        ]
         #(rep_active, rep_index, seconds since the series started, rep_delay, file of the series),
+        #                                                                      12,        ]
+        #self.field_cal (1: GUI fields are true fields, sent through FIELD_NMR),
 
         # should be inside dig_on() function;
         # freezing after digitizer restart otherwise
@@ -861,6 +903,16 @@ class Worker():
             #itc_fc = itc.ITC_FC()
             itc_fc = itc.BH_15()
 
+            # GUI fields are true fields; with the calibration on, the setpoint is the
+            # inverse of the NMR quadratic. Returns the true field b, never the setpoint,
+            # so the return-to-start loops (field = set_field(...)) count in true G.
+            def set_field(b):
+                if p12 and FIELD_NMR is not None:
+                    itc_fc.magnet_field( round( (-FIELD_C1 + np.sqrt(FIELD_C1**2 - 4 * FIELD_C2 * (FIELD_C0 - b))) / (2 * FIELD_C2), 3 ) )
+                else:
+                    itc_fc.magnet_field( b )
+                return b
+
             # parameters for initial initialization
             field = p4
             START_FIELD = p4
@@ -875,6 +927,8 @@ class Worker():
 
             tc_wait = 0
             raw = p8.split(" ")
+            # the lock-in output lags the field; wait TC_WAIT time constants per point
+            wait_pt = f'{TC_WAIT * int( raw[0] )} {raw[1]}'
             if int( raw[0] ) > 100 or raw[1] == 's':
                 tc_wait = 1
 
@@ -885,7 +939,7 @@ class Worker():
             sr860.lock_in_time_constant( p8 )
             sr860.lock_in_sensitivity( '1 V' )
             sr860.lock_in_ref_amplitude( f'{p6} V' )
-            sr860.lock_in_phase( 159.6 - 0 ) #159.6
+            sr860.lock_in_phase( LOCK_IN_PHASE )
             sr860.lock_in_ref_frequency( '100 kHz' )
 
             t_start = str( ls335.tc_temperature('A') )
@@ -901,10 +955,10 @@ class Worker():
             while self.command != 'exit':
                 # Start of experiment
                 while field < START_FIELD:
-                    field = itc_fc.magnet_field( field + initialization_step)
+                    field = set_field( field + initialization_step)
                     field = START_FIELD
 
-                field = itc_fc.magnet_field( START_FIELD )#, calibration = 'True' )
+                field = set_field( START_FIELD )#, calibration = 'True' )
                 sr860.lock_in_sensitivity( p9 )
 
                 j = 1
@@ -923,7 +977,7 @@ class Worker():
                     while field <= END_FIELD:
                         
                         #if tc_wait == 1:
-                        general.wait( p8 )
+                        general.wait( wait_pt )
                             #general.wait('10 ms')
 
                         if p10 == 0:
@@ -941,7 +995,7 @@ class Worker():
                             text = 'Scan / Field: ' + str(j) + ' / ' + str(field), pr = process )
 
                         field = round( (FIELD_STEP + field), 3 )
-                        itc_fc.magnet_field(field) #, calibration = 'True')
+                        set_field(field) #, calibration = 'True')
 
                         # check our polling data
                         if self.command[0:2] == 'SC':
@@ -958,20 +1012,20 @@ class Worker():
                     if p10 == 0:
                         if j != SCANS:
                             while field > START_FIELD:
-                                field = itc_fc.magnet_field( field - initialization_step)
+                                field = set_field( field - initialization_step)
                                 field = field - initialization_step
-                            itc_fc.magnet_field( START_FIELD )
+                            set_field( START_FIELD )
 
                     elif p10 == 1:
                         while field > START_FIELD:
 
                             i -= 1
                             #if tc_wait == 1:
-                            general.wait( p8 )
+                            general.wait( wait_pt )
                                 #general.wait('10 ms')
                             
                             field = round( (-FIELD_STEP + field), 3 )
-                            itc_fc.magnet_field(field) #, calibration = 'True')
+                            set_field(field) #, calibration = 'True')
                             
                             conn.send( ('Status', int( 100 * ((2*j - 1) * points - i + points) / points / SCANS / 2)) )
 
@@ -1010,12 +1064,13 @@ class Worker():
                     f"{'Start Field:':<{w}} {START_FIELD} G\n"
                     f"{'End Field:':<{w}} {END_FIELD} G\n"
                     f"{'Field Step:':<{w}} {FIELD_STEP} G\n"
+                    f"{'Field Calibration:':<{w}} {f'NMR, (setpoint, true) G {FIELD_NMR}' if p12 and FIELD_NMR is not None else 'off, controller setpoint'}\n"
                     f"{'Number of Scans:':<{w}} {SCANS}\n"
                     f"{'Temperature Start Exp:':<{w}} {t_start} K\n"
                     f"{'Temperature End Exp:':<{w}} {ls335.tc_temperature('A')} K\n"
                     f"{'Temperature Cernox:':<{w}} {ls335.tc_temperature('B')} K\n"
                     f"{'Time Constant:':<{w}} {p8}\n"
-                    f"{'Modulation Ampl:':<{w}} {p6} V\n"
+                    f"{'Modulation Ampl:':<{w}} {p6} V{f' ({round(p6 * MOD_G_PER_V, 3)} G)' if MOD_G_PER_V is not None else ''}\n"
                     f"{'Frequency:':<{w}} {ag53131a.freq_counter_frequency('CH3')}\n"
                 )
 
@@ -1074,9 +1129,9 @@ class Worker():
                     file_handler.save_data(file_data, np.c_[x_axis, data], header = header, mode = 'w')
 
                 while field > START_FIELD:
-                    field = itc_fc.magnet_field( field - initialization_step )
+                    field = set_field( field - initialization_step )
                     field = field - initialization_step 
-                itc_fc.magnet_field( START_FIELD )
+                set_field( START_FIELD )
 
                 conn.send( ('', f'Script {p2} finished') )
                 general.wait('200 ms')
@@ -1086,7 +1141,7 @@ class Worker():
             exc_info = f"{type(e)} \n{str(e)} \n{traceback.format_exc()}"
             conn.send( ('Error', exc_info) )
 
-    def exp_test(self, conn, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10):
+    def exp_test(self, conn, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11 = None, p12 = 0):
         """
         function that contains experimental script
         """
@@ -1096,6 +1151,8 @@ class Worker():
         #self.cur_step, self.cur_lock_ampl, self.cur_scan, self.cur_tc, self.cur_sens, 
         #           10,         ]
         #self.two_side,    
+        #                                                                      12,        ]
+        #self.field_cal (1: GUI fields are true fields, sent through FIELD_NMR),
 
         # should be inside dig_on() function;
         # freezing after digitizer restart otherwise
@@ -1121,6 +1178,16 @@ class Worker():
             #itc_fc = itc.ITC_FC()
             itc_fc = itc.BH_15()
 
+            # GUI fields are true fields; with the calibration on, the setpoint is the
+            # inverse of the NMR quadratic. Returns the true field b, never the setpoint,
+            # so the return-to-start loops (field = set_field(...)) count in true G.
+            def set_field(b):
+                if p12 and FIELD_NMR is not None:
+                    itc_fc.magnet_field( round( (-FIELD_C1 + np.sqrt(FIELD_C1**2 - 4 * FIELD_C2 * (FIELD_C0 - b))) / (2 * FIELD_C2), 3 ) )
+                else:
+                    itc_fc.magnet_field( b )
+                return b
+
             # parameters for initial initialization
             field = p4
             START_FIELD = p4
@@ -1134,6 +1201,8 @@ class Worker():
 
             tc_wait = 0
             raw = p8.split(" ")
+            # the lock-in output lags the field; wait TC_WAIT time constants per point
+            wait_pt = f'{TC_WAIT * int( raw[0] )} {raw[1]}'
             if int( raw[0] ) > 100 or raw[1] == 's':
                 tc_wait = 1
 
@@ -1144,7 +1213,7 @@ class Worker():
             sr860.lock_in_time_constant( p8 )
             sr860.lock_in_sensitivity( '1 V' )
             sr860.lock_in_ref_amplitude( f'{p6} V' )
-            sr860.lock_in_phase( 159.6 - 0 ) #159.6
+            sr860.lock_in_phase( LOCK_IN_PHASE )
             sr860.lock_in_ref_frequency( '100 kHz' )
 
             t_start = str( ls335.tc_temperature('A') )
@@ -1160,10 +1229,10 @@ class Worker():
             while self.command != 'exit':
                 # Start of experiment
                 while field < START_FIELD:
-                    field = itc_fc.magnet_field( field + initialization_step)
+                    field = set_field( field + initialization_step)
                     field = START_FIELD
 
-                field = itc_fc.magnet_field( START_FIELD )#, calibration = 'True' )
+                field = set_field( START_FIELD )#, calibration = 'True' )
                 sr860.lock_in_sensitivity( p9 )
 
                 #j = 1
@@ -1182,7 +1251,7 @@ class Worker():
                     while field <= END_FIELD:
                         
                         #if tc_wait == 1:
-                        general.wait( p8 )
+                        general.wait( wait_pt )
                             #general.wait('10 ms')
 
                         if p10 == 0:
@@ -1200,7 +1269,7 @@ class Worker():
                             text = 'Scan / Field: ' + str(j) + ' / ' + str(field), pr = process )
 
                         field = round( (FIELD_STEP + field), 3 )
-                        itc_fc.magnet_field(field) #, calibration = 'True')
+                        set_field(field) #, calibration = 'True')
 
                         # check our polling data
                         if self.command[0:2] == 'SC':
@@ -1217,20 +1286,20 @@ class Worker():
                     if p10 == 0:
                         if j != SCANS:
                             while field > START_FIELD:
-                                field = itc_fc.magnet_field( field - initialization_step)
+                                field = set_field( field - initialization_step)
                                 field = field - initialization_step
-                            itc_fc.magnet_field( START_FIELD )
+                            set_field( START_FIELD )
 
                     elif p10 == 1:
                         while field > START_FIELD:
 
                             i -= 1
                             #if tc_wait == 1:
-                            general.wait( p8 )
+                            general.wait( wait_pt )
                                 #general.wait('10 ms')
                             
                             field = round( (-FIELD_STEP + field), 3 )
-                            itc_fc.magnet_field(field) #, calibration = 'True')
+                            set_field(field) #, calibration = 'True')
                             
                             #conn.send( ('Status', int( 100 * ((2*j - 1) * points - i + points) / points / SCANS / 2)) )
 
@@ -1269,12 +1338,13 @@ class Worker():
                     f"{'Start Field:':<{w}} {START_FIELD} G\n"
                     f"{'End Field:':<{w}} {END_FIELD} G\n"
                     f"{'Field Step:':<{w}} {FIELD_STEP} G\n"
+                    f"{'Field Calibration:':<{w}} {f'NMR, (setpoint, true) G {FIELD_NMR}' if p12 and FIELD_NMR is not None else 'off, controller setpoint'}\n"
                     f"{'Number of Scans:':<{w}} {SCANS}\n"
                     f"{'Temperature Start Exp:':<{w}} {t_start} K\n"
                     f"{'Temperature End Exp:':<{w}} {ls335.tc_temperature('A')} K\n"
                     f"{'Temperature Cernox:':<{w}} {ls335.tc_temperature('B')} K\n"
                     f"{'Time Constant:':<{w}} {p8}\n"
-                    f"{'Modulation Ampl:':<{w}} {p6} V\n"
+                    f"{'Modulation Ampl:':<{w}} {p6} V{f' ({round(p6 * MOD_G_PER_V, 3)} G)' if MOD_G_PER_V is not None else ''}\n"
                     f"{'Frequency:':<{w}} {ag53131a.freq_counter_frequency('CH3')}\n"
                     f"{'-'*50}\n"
                     f"Field (G), X (V)"
@@ -1293,9 +1363,9 @@ class Worker():
                 #file_handler.save_data(file_data, np.c_[x_axis, data], header = header, mode = 'w')
 
                 while field > START_FIELD:
-                    field = itc_fc.magnet_field( field - initialization_step )
+                    field = set_field( field - initialization_step )
                     field = field - initialization_step 
-                itc_fc.magnet_field( START_FIELD )
+                set_field( START_FIELD )
 
                 conn.send( ('test', f'Script {p2} finished') )
                 conn.close()
