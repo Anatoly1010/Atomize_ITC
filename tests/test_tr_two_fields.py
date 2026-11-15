@@ -39,6 +39,10 @@ class Oscilloscope:
         self.trigger = 'CH2'
         self.acquisition = 'Average'
         self.rng = np.random.default_rng()
+        self.test_flag = 'test'
+
+    def oscilloscope_command(self, command):
+        pass
 
     def oscilloscope_trigger_channel(self, channel=None):
         if channel is not None:

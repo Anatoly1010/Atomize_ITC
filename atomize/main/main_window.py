@@ -39,7 +39,7 @@ os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "1"
 IDLE_PLOT_S = 10
 TOOLTIP_CURVES = 10
 LAYOUTS = {'Free': None, 'Rows': (None, 1), 'Columns': (1, None), '2 per row': (2, 2), '3 per row': (3, 3)}
-LAYOUT_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'libs', 'liveplot_layout.txt')
+LAYOUT_FILE = os.path.join(lconf.ROOT_DIR, 'libs', 'liveplot_layout.txt')
 
 class MainWindow(QMainWindow):
     """

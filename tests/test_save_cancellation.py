@@ -118,6 +118,14 @@ def _run(nodes, namespace):
     exec(code, namespace)
 
 
+def _awg_self(save_hdf5):
+    return SimpleNamespace(save_hdf5=save_hdf5, _det_corrected=lambda pb, data, dec, iq_freq: data,
+                           _det_header=lambda w: '', _save_det_curve=lambda *args: None)
+
+
+AWG_NAMES = {'decay_mode': False, 'cpmg': None, 'pb': None, 'DEC_COEF': 1, 'iq_freq': 0., 'w': 30}
+
+
 def _awg_save_block(method):
     node = _worker_method('atomize/control_center/awg_phasing_insys.py', method)
     branch = next(child for child in ast.walk(node) if isinstance(child, ast.If)
@@ -138,7 +146,7 @@ def test_awg_workers_do_not_write_after_cancelled_fl(monkeypatch, tmp_path, meth
         'receiver_level': None, 'iq_cor': 1, 'save2d': 1,
         'data': np.ones((2, 2)), 'data_x': np.ones(2), 'data_y': np.ones(2),
         'header': 'header', 'header2': 'header', 'EXP_NAME': 'test',
-        'self': SimpleNamespace(save_hdf5=1),
+        'self': _awg_self(1), **AWG_NAMES,
     }
 
     _run(_awg_save_block(method), namespace)
@@ -156,7 +164,7 @@ def test_awg_workers_write_primary_and_2d_files_after_valid_fl(monkeypatch, tmp_
         'dec_calc': 1., 'x_axis_plot': np.array([0., 1.]), 'iq_cor': 1, 'save2d': 1,
         'data': np.ones((2, 2)), 'data_x': np.ones(2), 'data_y': np.ones(2),
         'header': 'header', 'header2': 'header', 'EXP_NAME': 'test',
-        'self': SimpleNamespace(save_hdf5=1),
+        'self': _awg_self(1), **AWG_NAMES,
     }
 
     _run(_awg_save_block('exp'), namespace)
@@ -176,7 +184,7 @@ def test_eseem_cycle_saves_respect_cancelled_fl(monkeypatch, tmp_path, filename)
         'dec_calc': 1., 'x_axis_plot': np.array([0., 1.]), 'iq_cor': 0, 'save2d': 0,
         'data': data, 'data_x': np.ones(2), 'data_y': np.ones(2), 'header': 'header',
         'header2': 'header', 'EXP_NAME': 'test', 'save_each': True,
-        'cycle_snapshots': [data, data], 'self': SimpleNamespace(save_hdf5=0),
+        'cycle_snapshots': [data, data], 'self': _awg_self(0), **AWG_NAMES,
     }
 
     _run(_awg_save_block('exp_eseem'), namespace)
@@ -194,7 +202,7 @@ def test_eseem_cycle_saves_after_valid_fl(monkeypatch, tmp_path):
         'dec_calc': 1., 'x_axis_plot': np.array([0., 1.]), 'iq_cor': 0, 'save2d': 0,
         'data': data, 'data_x': np.ones(2), 'data_y': np.ones(2), 'header': 'header',
         'header2': 'header', 'EXP_NAME': 'test', 'save_each': True,
-        'cycle_snapshots': [data, data], 'self': SimpleNamespace(save_hdf5=0),
+        'cycle_snapshots': [data, data], 'self': _awg_self(0), **AWG_NAMES,
     }
 
     _run(_awg_save_block('exp_eseem'), namespace)

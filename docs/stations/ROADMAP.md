@@ -20,13 +20,24 @@ Session 1: a real `--sync` on scratch copies of all repos gave no drift and iden
 every fork. The Liveplot test crash (about 1 run in 4) came from PyQt6 6.9–6.11; both venvs now
 have 6.12.1 (0 crashes in 30 runs). pytest is installed in both venvs (with `uv`).
 
+Session 2, after the push: `sync_check.py --sync` copied plain's 9 shared files into each fork
+(36 in all); the audit reports every fork in sync. The failing fork tests were old tests that the
+code had moved past; they are fixed: the Liveplot tests in NIOCH, NIOCH_Q and Cryomech (as in
+plain), ITC `test_save_cancellation.py` and NIOCH `test_phase_saving.py` (the detection correction
+added to the AWG tools), ITC `test_tr_two_fields.py` (scope stand-in in test mode), NIOCH_Q
+`test_tr_two_fields.py` (own temporary user config). In a clean venv with no Atomize installed:
+ITC 361 passed, NIOCH 115, NIOCH_Q 130, Cryomech 186, plain 187, all 0 failed. In the real ITC
+folder the three `epr_auto` check scripts and `epr-auto run protocols/tune_up.yaml --test` pass,
+and `libs/exam_*.ini` stay unchanged. Example scripts fixed and passing in test mode: `math.py` (ITC,
+Cryomech) and NIOCH `math_test.py` take plain's version (`csv_opener_saver`); NIOCH_Q
+`CuPr_set_temperature.py` uses PyQt6; NIOCH `devices_tests/ask_PB_Insys.py` runs on
+`PB_ESR_500_pro` (NIOCH has no Insys board or `libs/`) with the trigger on `DETECTION`. The sync, the
+test fixes and the script fixes are committed in the four forks (not pushed).
+
 Next, in order:
 
-1. Push all six repos (the user does this).
-2. `sync_check.py --sync` into the forks, then the audit; run a few test-mode scripts per fork.
-   Until then ITC's own `Insys_FPGA.py` still has `np.row_stack`, so `epr-auto ... --test` fails
-   in the real ITC folder.
-3. Start Phase 2.
+1. Push the four forks (the user does this).
+2. Start Phase 2.
 
 Decisions made: station repo `Atomize_stations`, fresh history; `Keysight_2000_Xseries_2.py` stays a
 station device; `PB_Insys_DAC_config.ini` is read from the user copy. On the spectrometer PC only
