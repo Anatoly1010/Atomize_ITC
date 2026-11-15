@@ -1,5 +1,9 @@
 # Two repos instead of five — roadmap
 
+**Moved.** The current roadmap is `itc/docs/stations/ROADMAP.md` in
+[Atomize_stations](https://github.com/Anatoly1010/Atomize_stations); this copy stopped before
+Phase 2 (2026-11-15) and is no longer updated.
+
 Created 2026-11-15. Status: Phase 1 done and committed in plain Atomize, the forks and `atomize_sync` (not synced).
 
 ## Resume here
