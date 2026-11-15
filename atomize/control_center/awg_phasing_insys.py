@@ -207,6 +207,10 @@ class MainWindow(QMainWindow):
         self.action_save.triggered.connect(self.save_file_dialog)
         file_menu.addAction(self.action_save)
 
+        self.action_save_traces = QAction("Save Preview Traces", self)
+        self.action_save_traces.triggered.connect(self.save_traces)
+        file_menu.addAction(self.action_save_traces)
+
         self.reset_all = QAction("Reset All", self)
         self.reset_all.triggered.connect(self.reset_all_func)
         pulse_menu.addAction(self.reset_all)
@@ -2993,6 +2997,20 @@ class MainWindow(QMainWindow):
             return
         self.parent_conn_dig.send('AP')
 
+    def save_traces(self):
+        """Save the preview's current I/Q trace (and FFT when shown) with its pulse settings."""
+        if getattr(self, 'is_experiment', False):
+            self.message('Save Preview Traces works only in the preview, not during an experiment.')
+            return
+        if getattr(self, 'is_testing', False) or not self._live_run_alive():
+            self.message('Save Preview Traces: start the preview and wait for preflight to finish.')
+            return
+        file_data = self.file_handler.create_file_dialog(multiprocessing = True,
+            directory = ldir.load('phase_awg', self.path), fmt = 'csv')
+        if file_data and file_data != 'None' and self._live_run_alive():
+            self.save_file(os.path.splitext(file_data)[0])
+            self.parent_conn_dig.send('SV' + file_data)
+
     def auto_window(self):
         """Ask the running preview to centre the integration window on the echo."""
         if getattr(self, 'is_experiment', False):
@@ -4674,6 +4692,49 @@ class Worker():
             model = 'Measured fit'
         return f"{'Detection Correction:':<{w}} {model}\n"
 
+    def _save_preview(self, pb, path, x_axis, trace, fft_data, field, averages, win, quad, orders, drop):
+        """Write the preview's last I/Q trace (and its FFT when shown) with the current settings; returns the log line."""
+        import datetime
+        try:
+            w = 30
+            zero, first, second = orders
+            header = (
+                f"{'Date:':<{w}} {datetime.datetime.now().strftime('%d-%m-%Y %H-%M-%S')}\n"
+                f"{'Experiment:':<{w}} Pulsed EPR AWG Preview\n"
+                f"{'Field:':<{w}} {field} G\n"
+                f"{'Repetition Rate:':<{w}} {pb.pulser_repetition_rate()}\n"
+                f"{'Averages:':<{w}} {averages}\n"
+                f"{'Integration Window:':<{w}} {round(win[0], 1)} - {round(win[1], 1)} ns\n"
+            )
+            pulses = (
+                f"{'-'*50}\n"
+                f"Pulse List:\n{pb.pulser_pulse_list()}"
+                f"{'-'*50}\n"
+                f"AWG Pulse List:\n{pb.awg_pulse_list()}"
+                f"{'-'*50}\n"
+            )
+            zero_line = f"{'Zero Order:':<{w}} {round(np.degrees(zero), 4)} deg\n"
+            trace_hdr = header + (zero_line if quad == 0 else '') + pulses
+            saver = openfile.Saver_Opener()
+            saver.save_data(path, np.c_[x_axis / 1e9, trace[0], trace[1]], header = trace_hdr + "Time (s), I (mV), Q (mV)", mode = 'w')
+            if fft_data is None:
+                return f'Preview traces saved: {path}'
+            det = self._det_header(w)
+            if quad == 0:
+                fft_hdr = header + det + pulses + "Offset (Hz), Magnitude (A.U.)"
+            else:
+                fft_hdr = (header
+                    + f"{'Points to Drop:':<{w}} {drop}\n"
+                    + zero_line
+                    + f"{'First Order:':<{w}} {round(np.degrees(first) * 1e-9, 4)} deg/MHz\n"
+                    + f"{'Second Order:':<{w}} {round(np.degrees(second) * 1e-18, 4)} deg/MHz²\n"
+                    + det + pulses + "Offset (Hz), Re (A.U.), Im (A.U.)")
+            fft_path = os.path.splitext(path)[0] + '_fft.csv'
+            saver.save_data(fft_path, np.column_stack(fft_data), header = fft_hdr, mode = 'w')
+            return f'Preview traces saved: {path}, {fft_path}'
+        except Exception as e:
+            return f'Save Preview Traces failed: {e}'
+
     def _save_det_curve(self, pb, file_handler, base_data, data, dec, iq_freq, w):
         """Save K(f) next to the corrected 2D data; dividing the time-axis FFT by K retracts the correction."""
         if self.det_cor_cur == 0 or np.isnan(data).any():
@@ -4872,6 +4933,8 @@ class Worker():
             auto_window_pts = 0
             echo_center_pts = 0
             last_trace = None
+            last_fft = None
+            save_path = ''
             live_rate_index = 0
             if live_rates is not None:
                 if l_mode != 0 or PHASES < 2:
@@ -4982,6 +5045,8 @@ class Worker():
                     auto_window_pts = int( self.command[2:] )
                 elif self.command[0:2] == 'EC':
                     echo_center_pts = int( self.command[2:] )
+                elif self.command[0:2] == 'SV':
+                    save_path = self.command[2:]
                 elif self.command[0:2] == 'FO':
                     first_order = float( self.command[2:] )
                 elif self.command[0:2] == 'SO':
@@ -5213,7 +5278,8 @@ class Worker():
                     else:
                         pass
 
-                    if np.isfinite(data_x).all() and np.isfinite(data_y).all():
+                    finite = np.isfinite(data_x).all() and np.isfinite(data_y).all()
+                    if finite:
                         last_trace = (data_x.copy(), data_y.copy(), zero_order)
 
                     if live_rates is not None and not script_test:
@@ -5237,6 +5303,7 @@ class Worker():
                             vline = (win_left * t_res / 1e9, win_right * t_res / 1e9),
                             text = 'I/Q ' + str(int_x) + '/' + str(int_y)
                             )
+                    fft_now = None
 
                     if fft_flag == 1:
 
@@ -5245,6 +5312,7 @@ class Worker():
                             det_k = self._det_factor(pb, freq_axis, iq_freq if iq_cor == 1 else 0, iq_freq)
                             if det_k is not None:
                                 abs_values = abs_values * np.abs(det_k)
+                            fft_now = (freq_axis * 1e6, abs_values)
                             m_val = round( np.amax( abs_values ), 2 )
                             general.plot_1d('FFT', freq_axis * 1e6, abs_values,
                                 xname = 'Offset', label = 'FFT', xscale = 'Hz',
@@ -5261,10 +5329,14 @@ class Worker():
                                 spec = (fft_x + 1j * fft_y) * det_k
                                 fft_x, fft_y = spec.real, spec.imag
                             data_fft = fft.ph_correction( freq, fft_x, fft_y, -zero_order, -first_order * 1e-9, -second_order * 1e-18 )
+                            fft_now = (freq * 1e6, data_fft[0], data_fft[1])
                             general.plot_1d('FFT', freq * 1e6, ( data_fft[0], data_fft[1] ),
                                 xname = 'Offset', xscale = 'Hz',
                                 yscale = 'A.U.', label = 'FFT'
                                 )
+
+                    if finite:
+                        last_fft = fft_now
 
                 if auto_phase_req and last_trace is not None:
                     auto_phase_req = False
@@ -5278,6 +5350,11 @@ class Worker():
                             conn.send(('Message', 'Auto phase: no signal in the integration window.'))
                     else:
                         conn.send(('Message', 'Auto phase needs time-domain mode and a non-empty integration window.'))
+
+                if save_path and last_trace is not None:
+                    conn.send(('Message', self._save_preview(pb, save_path, x_axis, last_trace, last_fft, mag_field, n_averages,
+                        (win_left * t_res, win_right * t_res), quad, (zero_order, first_order, second_order), p_to_drop)))
+                    save_path = ''
 
                 if auto_window_pts > 0 and last_trace is not None:
                     width = min(auto_window_pts, WIN_ADC)
