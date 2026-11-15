@@ -170,13 +170,8 @@ def executor_checks():
 
 
 def buffer_restore_checks():
-    source_config = Path(insys.__file__).parent / 'config' / 'PB_Insys_DAC_config.ini'
     with tempfile.TemporaryDirectory(prefix='live-rate-restore-') as directory:
         root = Path(directory)
-        module = root / 'atomize' / 'device_modules' / 'Insys_FPGA.py'
-        config = module.parent / 'config'
-        config.mkdir(parents=True)
-        (config / source_config.name).write_bytes(source_config.read_bytes())
         libs = root / 'libs'
         libs.mkdir()
         adc, dac = libs / 'exam_adc.ini', libs / 'exam_edac.ini'
@@ -185,7 +180,7 @@ def buffer_restore_checks():
         for mode in ('complete', 'stop', 'read_error', 'open_error', 'close_error', 'restore_error'):
             for path in (adc, dac):
                 path.write_bytes(original)
-            with patch.object(insys, '__file__', str(module)):
+            with patch.object(insys.lconf, 'ROOT_DIR', str(root)):
                 pb = Insys_FPGA()
                 original_adc, original_dac = adc.read_bytes(), dac.read_bytes()
                 active_adc = original_adc.replace(b'streamBufSizeKb = 2048', b'streamBufSizeKb = 512')

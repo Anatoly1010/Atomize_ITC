@@ -138,18 +138,12 @@ def concurrent_checks(adc):
 
 
 def main():
-    dac_config = Path(insys.__file__).resolve().parent / 'config' / 'PB_Insys_DAC_config.ini'
     with tempfile.TemporaryDirectory(prefix='insys-ini-check-') as directory:
         root = Path(directory)
-        fake_module = root / 'atomize' / 'device_modules' / 'Insys_FPGA.py'
-        fake_module.parent.mkdir(parents=True)
-        fake_config = fake_module.parent / 'config'
-        fake_config.mkdir()
-        (fake_config / dac_config.name).write_bytes(dac_config.read_bytes())
         (root / 'libs').mkdir()
         paths = [root / 'libs' / name for name in ('exam_adc.ini', 'exam_edac.ini')]
         reset(paths)
-        with patch.object(insys, '__file__', str(fake_module)):
+        with patch.object(insys.lconf, 'ROOT_DIR', str(root)):
             test_mode_checks(paths)
             write_checks(paths)
             failure_checks(paths[0])

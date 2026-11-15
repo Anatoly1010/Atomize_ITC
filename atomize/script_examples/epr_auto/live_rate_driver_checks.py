@@ -113,21 +113,15 @@ def gim_checks():
 
 
 def main():
-    dac_config = Path(insys.__file__).resolve().parent / 'config' / 'PB_Insys_DAC_config.ini'
     with tempfile.TemporaryDirectory(prefix='insys-driver-check-') as directory:
         root = Path(directory)
-        fake_module = root / 'atomize' / 'device_modules' / 'Insys_FPGA.py'
-        fake_module.parent.mkdir(parents=True)
-        fake_config = fake_module.parent / 'config'
-        fake_config.mkdir()
-        (fake_config / dac_config.name).write_bytes(dac_config.read_bytes())
         libs = root / 'libs'
         libs.mkdir()
         sample = ('[Option]\nstreamBufSizeKb = 1024\nBaseClockValue = 999.0\n'
                   'ClockSource = 0x3\nStartBaseSource = 0\n')
         for name in ('exam_adc.ini', 'exam_edac.ini'):
             (libs / name).write_text(sample, encoding='utf-8')
-        with patch.object(insys, '__file__', str(fake_module)):
+        with patch.object(insys.lconf, 'ROOT_DIR', str(root)):
             buffer_checks()
             parser_checks()
             gim_checks()

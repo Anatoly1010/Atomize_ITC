@@ -1399,7 +1399,7 @@ class NameList(QDockWidget):
         targets = self.pin_targets()
         self.pin_button.setEnabled(bool(targets))
         self.show_run_button.setEnabled(bool(active))
-        self.show_run_button.setChecked(bool(active) and following and shown == active)
+        self.show_run_button.setChecked(bool(active) and following and active <= shown <= active | self.pinned)
         all_pinned = bool(targets) and targets <= self.pinned
         self.pin_button.setChecked(all_pinned)
         self.pin_button.setText("Unpin" if all_pinned else "Pin")

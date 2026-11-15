@@ -4721,12 +4721,13 @@ class Worker():
             import atomize.device_modules.Insys_FPGA as pb_pro
             import atomize.math_modules.fft as fft_module
             import atomize.device_modules.BH_15 as itc
+            import atomize.main.local_config as lconf
 
             pb = pb_pro.Insys_FPGA()
             if live_rates is not None:
                 if not live_rates or not all(np.isfinite(rate) and 10 <= rate <= 100000 for rate in live_rates):
                     raise ValueError('Live repetition rates must be within 10–100000 Hz')
-                ini_path = os.path.join(os.path.dirname(pb_pro.__file__), '..', '..', 'libs', 'exam_adc.ini')
+                ini_path = os.path.join(lconf.ROOT_DIR, 'libs', 'exam_adc.ini')
                 with open(ini_path, encoding='utf-8') as stream:
                     sizes = re.findall(r'^[ \t]*streamBufSizeKb[ \t]*=[ \t]*(\d+)\b', stream.read(), re.MULTILINE)
                 if len(sizes) != 1 or int(sizes[0]) <= 0:
